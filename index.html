@@ -225,8 +225,8 @@ aside.ticket{position:sticky;top:18px}
     <fieldset>
       <legend>Contact</legend>
       <div class="grid2">
-        <div><label class="f" for="owner">Owner name</label><input type="text" id="owner" data-k="owner" placeholder="First & last name"></div>
-        <div></div>
+        <div><label class="f" for="firstName">First name</label><input type="text" id="firstName" data-k="firstName" placeholder="First name"></div>
+        <div><label class="f" for="lastName">Last name</label><input type="text" id="lastName" data-k="lastName" placeholder="Last name"></div>
         <div><label class="f" for="phone">Phone</label><input type="tel" id="phone" data-k="phone" placeholder="(815) 555-0123"></div>
         <div><label class="f" for="email">Email</label><input type="email" id="email" data-k="email" placeholder="you@email.com"></div>
       </div>
@@ -579,7 +579,7 @@ const STEP_LABELS = {
 /* ================= STATE ================= */
 const S = {
   unit:'boat',
-  owner:'', phone:'', email:'', ymm:'', notes:'',
+  firstName:'', lastName:'', phone:'', email:'', ymm:'', notes:'',
   loa:0, beam:0, lwt:0,
   skiLen:0, skiWid:0, skiDetail:0,
   hasTrailer:false,
@@ -614,6 +614,7 @@ function ensureQuoteNo(){
   }
   return S.quoteNo;
 }
+function ownerName(){ return [S.firstName,S.lastName].filter(Boolean).join(' '); }
 
 /* ================= CONFIG-DRIVEN COPY ================= */
 function fillConfig(){
@@ -903,7 +904,8 @@ function logQuote(status){
   const payload={
     status, quoteNo:ensureQuoteNo(), ts:new Date().toISOString(),
     unit:unitName, storageTab:storageTabName(),
-    owner:S.owner, phone:S.phone, email:S.email, ymm:S.ymm, dims,
+    owner:ownerName(), firstName:S.firstName, lastName:S.lastName,
+    phone:S.phone, email:S.email, ymm:S.ymm, dims,
     total:t.total.toFixed(2), deposit:t.deposit.toFixed(2),
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
@@ -919,7 +921,7 @@ function logQuote(status){
 }
 function saveAndPrint(){
   ensureQuoteNo();
-  $('#ticketQn').textContent='QUOTE Nº '+S.quoteNo;
+  $('#ticketQn').textContent='QUOTE# '+S.quoteNo;
   logQuote('Saved / printed');
   window.print();
 }
@@ -935,7 +937,7 @@ function buildAdobeParams(){
   set('quote_no', ensureQuoteNo());
   set('quote_date', new Date().toLocaleDateString('en-US'));
   set('unit', unitName);
-  set('owner', S.owner); set('phone', S.phone); set('email', S.email); set('ymm', S.ymm);
+  set('owner', ownerName()); set('phone', S.phone); set('email', S.email); set('ymm', S.ymm);
   if(S.unit==='boat'){
     set('loa', S.loa||''); set('beam', S.beam||''); set('lwt', S.hasTrailer?(S.lwt||''):'');
     set('trailer', S.hasTrailer?'Yes':'No');
@@ -1004,10 +1006,10 @@ function buildAdobeParams(){
 
 function renderSignPay(){
   ensureQuoteNo();
-  $('#ticketQn').textContent='QUOTE Nº '+S.quoteNo;
+  $('#ticketQn').textContent='QUOTE# '+S.quoteNo;
 
   const missing=[];
-  if(!S.owner) missing.push('your name');
+  if(!ownerName()) missing.push('your name');
   if(!S.email) missing.push('your email (Adobe Sign needs it to deliver your signed copy)');
   const mBox=$('#signMissing');
   if(missing.length){ mBox.style.display='block'; mBox.textContent='Heads up — go back to the first step and add '+missing.join(' and ')+' before signing.'; }
@@ -1063,7 +1065,7 @@ function refresh(){
     let html='', lastSec='';
     const meta=[];
     const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t;
-    if(S.owner) meta.push(S.owner);
+    if(ownerName()) meta.push(ownerName());
     meta.push(unitName + (S.ymm?` — ${S.ymm}`:''));
     if(S.phone||S.email) meta.push([S.phone,S.email].filter(Boolean).join(' · '));
     let dims='';

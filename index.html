@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quest Watersports — Winter Services Quote &amp; Signup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#14293E;
+  --navy-deep:#0C1B2A;
+  --ice:#EBF1F6;
+  --frost:#4A81A6;
+  --frost-soft:#D8E6EF;
+  --gold:#C08A22;
+  --gold-soft:#F4E8CF;
+  --paper:#FDFCF7;
+  --ink:#1D2B38;
+  --muted:#5C7185;
+  --line:#C7D5E0;
+  --warn:#A6541F;
+  --warn-bg:#FBEEE2;
+  --ok:#2E7D4F;
+  --ok-bg:#E4F1E9;
+  --radius:10px;
+  --disp:"Barlow Condensed",Impact,sans-serif;
+  --body:"Source Sans 3","Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono","Courier New",monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+body{font-family:var(--body);background:var(--ice);color:var(--ink);font-size:16px;line-height:1.45}
+
+/* ===== Header ===== */
+header.site{background:var(--navy);color:#fff;padding:22px 20px 18px;border-bottom:4px solid var(--gold)}
+.site-inner{max-width:1180px;margin:0 auto;display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.brand{font-family:var(--disp);font-weight:700;font-size:30px;letter-spacing:.04em;text-transform:uppercase}
+.brand span{color:#9FC3DC;font-weight:500}
+.season{font-family:var(--mono);font-size:13px;color:#B9CDDD;letter-spacing:.06em}
+
+/* ===== Layout ===== */
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 120px;display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:28px;align-items:start}
+@media(max-width:960px){.wrap{grid-template-columns:1fr;padding-bottom:150px}}
+
+/* ===== Steps nav ===== */
+nav.steps{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}
+nav.steps button{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:.05em;text-transform:uppercase;border:1.5px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:7px 14px;cursor:pointer}
+nav.steps button.active{background:var(--navy);border-color:var(--navy);color:#fff}
+nav.steps button.done{border-color:var(--frost);color:var(--frost)}
+nav.steps button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+/* ===== Panels ===== */
+section.panel{display:none;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px 26px 22px;box-shadow:0 1px 3px rgba(20,41,62,.06)}
+section.panel.active{display:block}
+.panel h2{font-family:var(--disp);font-size:30px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--navy);line-height:1.05}
+.panel .lead{color:var(--muted);margin:6px 0 20px;max-width:60ch}
+fieldset{border:0;margin:0 0 22px}
+legend,.grp{font-family:var(--disp);font-size:19px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--frost);margin-bottom:10px;display:block}
+.note{font-size:13.5px;color:var(--muted);font-style:italic;margin-top:6px}
+.warnbox{border:1.5px solid var(--warn);background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600;margin:10px 0}
+
+/* form controls */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:640px){.grid2,.grid3{grid-template-columns:1fr}}
+label.f{display:block;font-weight:600;font-size:14px;margin-bottom:4px;color:var(--navy)}
+label.f small{font-weight:400;color:var(--muted)}
+input[type=text],input[type=number],input[type=tel],input[type=email],textarea,select{
+  width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:7px;font-family:var(--body);font-size:15.5px;background:#fff;color:var(--ink)}
+input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--frost-soft);border-color:var(--frost)}
+input[type=number]{font-family:var(--mono)}
+
+/* option cards */
+.opt{display:flex;gap:12px;align-items:flex-start;border:1.5px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:10px;cursor:pointer;background:#fff}
+.opt:hover{border-color:var(--frost)}
+.opt.sel{border-color:var(--navy);background:var(--frost-soft);box-shadow:inset 3px 0 0 var(--navy)}
+.opt input{margin-top:4px;accent-color:var(--navy);width:17px;height:17px;flex:none}
+.opt .t{font-weight:700;color:var(--navy)}
+.opt .d{font-size:13.5px;color:var(--muted)}
+.opt .p{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:600;white-space:nowrap;margin-left:auto;padding-left:10px}
+.opt.disabled{opacity:.45;cursor:not-allowed}
+.opt.disabled:hover{border-color:var(--line)}
+
+/* unit picker */
+.unitgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:720px){.unitgrid{grid-template-columns:1fr 1fr}}
+.unit{border:1.5px solid var(--line);border-radius:10px;background:#fff;padding:16px 12px;text-align:center;cursor:pointer}
+.unit:hover{border-color:var(--frost)}
+.unit.sel{border-color:var(--navy);background:var(--frost-soft);box-shadow:inset 0 -3px 0 var(--navy)}
+.unit .ic{font-size:26px}
+.unit .t{font-family:var(--disp);font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:.04em;color:var(--navy);margin-top:4px}
+.unit .d{font-size:12px;color:var(--muted);margin-top:2px}
+.unit:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+/* qty stepper */
+.qty{display:inline-flex;align-items:center;border:1.5px solid var(--line);border-radius:7px;overflow:hidden}
+.qty.disabled{opacity:.45;pointer-events:none}
+.qty button{width:34px;height:34px;border:0;background:var(--ice);font-size:18px;font-weight:700;color:var(--navy);cursor:pointer}
+.qty button:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
+.qty input{width:44px;border:0;text-align:center;font-family:var(--mono);font-size:15px;height:34px}
+.qtyrow{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px dashed var(--line);padding:10px 2px}
+.qtyrow:last-child{border-bottom:0}
+.qtyrow .t{font-weight:600}
+.qtyrow .sub{font-size:13px;color:var(--muted)}
+.qtyrow .p{font-family:var(--mono);font-size:13.5px;color:var(--gold);font-weight:600}
+.qtyrow.disabled{opacity:.45}
+
+/* nav buttons */
+.panel-nav{display:flex;justify-content:space-between;margin-top:26px;gap:10px}
+.btn{font-family:var(--disp);font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;border-radius:8px;padding:11px 26px;cursor:pointer;border:2px solid var(--navy);text-decoration:none;display:inline-block}
+.btn.primary{background:var(--navy);color:#fff}
+.btn.primary:hover{background:var(--navy-deep)}
+.btn.ghost{background:#fff;color:var(--navy)}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#fff}
+
+/* flat-rate info card (golf/ebike) */
+.flatcard{border:1.5px solid var(--gold);background:var(--gold-soft);border-radius:10px;padding:16px 18px;margin-bottom:20px}
+.flatcard .t{font-family:var(--disp);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--navy)}
+.flatcard .p{font-family:var(--mono);font-size:22px;font-weight:600;color:#7A5A12}
+.flatcard .d{font-size:14px;color:#6B5A2A;margin-top:4px}
+
+/* ===== The Ticket ===== */
+aside.ticket{position:sticky;top:18px}
+.ticket-card{background:var(--paper);border:1px solid var(--line);border-radius:4px;box-shadow:0 2px 8px rgba(20,41,62,.1);font-family:var(--mono);font-size:13px;overflow:hidden}
+.ticket-head{background:var(--navy);color:#fff;padding:13px 16px;text-align:center}
+.ticket-head .co{font-family:var(--disp);font-size:21px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.ticket-head .sub{font-size:11px;color:#B9CDDD;letter-spacing:.08em}
+.ticket-head .qn{font-size:12px;color:var(--gold-soft);letter-spacing:.08em;margin-top:3px}
+.perf{height:12px;background:
+  radial-gradient(circle at 8px 0, transparent 6px, var(--paper) 6.5px);
+  background-size:16px 12px;background-repeat:repeat-x;margin-top:-1px}
+.ticket-body{padding:6px 16px 14px;max-height:46vh;overflow:auto}
+.trow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dotted #D8D2C2}
+.trow .l{flex:1;min-width:0}
+.trow .r{white-space:nowrap;font-weight:600}
+.trow.sec{border-bottom:1px solid var(--navy);color:var(--frost);text-transform:uppercase;font-size:11px;letter-spacing:.09em;font-weight:600;margin-top:8px}
+.trow .calc{display:block;font-size:11px;color:#8A8672}
+.ticket-empty{color:#8A8672;text-align:center;padding:26px 8px;font-style:italic;font-family:var(--body)}
+.ticket-totals{border-top:2px solid var(--navy);background:#F6F1E3;padding:12px 16px 14px}
+.trow2{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}
+.trow2 .k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.trow2 .v{font-weight:600;color:var(--navy);font-size:15px}
+.trow2.deposit{background:var(--gold-soft);border:1px solid var(--gold);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+.trow2.deposit .k{color:#7A5A12}
+.trow2.deposit .v{font-size:17px;color:#7A5A12}
+.trow2.total .v{font-size:19px}
+.trow2.total{border-top:1px solid var(--navy);margin-top:4px;padding-top:8px}
+.payfoot{font-family:var(--body);font-size:11.5px;color:#6B6650;line-height:1.45;margin-top:8px}
+.payfoot b{color:var(--warn)}
+.ticket-foot{padding:9px 16px 13px;font-size:10.5px;color:#8A8672;font-family:var(--body);line-height:1.4;border-top:1px dashed var(--line)}
+
+/* mobile sticky bar */
+.mobilebar{display:none;position:fixed;left:0;right:0;bottom:0;background:var(--navy);color:#fff;padding:12px 18px;z-index:50;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 -3px 12px rgba(0,0,0,.25)}
+.mobilebar .amt{font-family:var(--mono);font-size:19px;font-weight:600}
+.mobilebar .k{font-size:11px;color:#B9CDDD;text-transform:uppercase;letter-spacing:.07em}
+.mobilebar button{font-family:var(--disp);font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:var(--gold);border:0;color:#fff;border-radius:7px;padding:9px 16px;font-size:15px;cursor:pointer}
+@media(max-width:960px){.mobilebar{display:flex}aside.ticket{position:static}}
+
+/* review + signpay */
+.review-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.stepcard{border:1.5px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
+.stepcard .sc-head{display:flex;align-items:center;gap:12px;background:var(--frost-soft);padding:13px 16px}
+.stepcard .sc-num{font-family:var(--disp);font-weight:700;font-size:20px;color:#fff;background:var(--navy);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
+.stepcard .sc-title{font-family:var(--disp);font-size:21px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--navy)}
+.stepcard .sc-body{padding:16px}
+.signframe{width:100%;height:640px;border:0;display:block;background:#fff}
+.demo-embed{border:2px dashed var(--frost);border-radius:8px;background:var(--ice);padding:28px 22px;text-align:center}
+.demo-embed .de-title{font-family:var(--disp);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--frost)}
+.demo-embed p{color:var(--muted);font-size:14px;max-width:52ch;margin:8px auto 0}
+.paramview{margin-top:14px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:7px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;color:var(--ink);word-break:break-all;max-height:150px;overflow:auto}
+.paybig{display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--gold-soft);border:1.5px solid var(--gold);border-radius:9px;padding:14px 18px;margin:12px 0;flex-wrap:wrap}
+.paybig .k{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:#7A5A12;font-weight:700}
+.paybig .v{font-family:var(--mono);font-size:26px;font-weight:600;color:var(--navy)}
+.refline{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:15px;margin:8px 0}
+.copybtn{font-family:var(--body);font-size:12px;font-weight:700;border:1.5px solid var(--frost);color:var(--frost);background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
+.copybtn:hover{background:var(--frost-soft)}
+.okbox{border:1.5px solid var(--ok);background:var(--ok-bg);color:var(--ok);border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600;margin:10px 0}
+
+/* modal */
+.modal-back{display:none;position:fixed;inset:0;background:rgba(12,27,42,.55);z-index:100;align-items:center;justify-content:center;padding:20px}
+.modal-back.open{display:flex}
+.modal{background:#fff;border-radius:12px;max-width:440px;width:100%;padding:24px;border-top:6px solid var(--warn);box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.modal h3{font-family:var(--disp);font-size:24px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--navy)}
+.modal p{margin:10px 0 18px;color:var(--ink);font-size:15px}
+
+/* print */
+@media print{
+  header.site,nav.steps,section.panel,.mobilebar,.panel-nav,.modal-back{display:none!important}
+  body{background:#fff}
+  .wrap{display:block;padding:0;max-width:none}
+  aside.ticket{position:static}
+  .ticket-card{box-shadow:none;border:1px solid #999}
+  .ticket-body{max-height:none;overflow:visible}
+}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="site-inner">
+    <div class="brand">Quest <span>Watersports</span></div>
+    <div class="season"><span data-cfg="seasonLabel"></span> WINTER SERVICES · OTTAWA, IL · (815) 433-2200</div>
+  </div>
+</header>
+
+<div class="wrap">
+<main>
+  <nav class="steps" id="stepsNav" aria-label="Quote steps"></nav>
+
+  <!-- STEP: start -->
+  <section class="panel" data-step="start">
+    <h2>What are we wintering?</h2>
+    <p class="lead">Pick what you're storing or servicing and we'll only ask the questions that apply.</p>
+    <fieldset>
+      <legend>I'm here with a…</legend>
+      <div class="unitgrid" id="unitGrid"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Contact</legend>
+      <div class="grid2">
+        <div><label class="f" for="owner">Owner name</label><input type="text" id="owner" data-k="owner" placeholder="First & last name"></div>
+        <div></div>
+        <div><label class="f" for="phone">Phone</label><input type="tel" id="phone" data-k="phone" placeholder="(815) 555-0123"></div>
+        <div><label class="f" for="email">Email</label><input type="email" id="email" data-k="email" placeholder="you@email.com"></div>
+      </div>
+      <div style="margin-top:12px"><label class="f" for="ymm">Year / make / model</label><input type="text" id="ymm" data-k="ymm" placeholder="e.g. 2019 Chaparral 227 SSX"></div>
+    </fieldset>
+
+    <fieldset id="trailerFs">
+      <legend>Trailer</legend>
+      <label class="opt"><input type="radio" name="hasTrailer" value="yes"><div><div class="t">I have a trailer</div><div class="d">On-trailer storage rates apply · $<span data-cfg="depositTrailer"></span> storage deposit</div></div></label>
+      <label class="opt"><input type="radio" name="hasTrailer" value="no" checked><div><div class="t">No trailer</div><div class="d">Boat is blocked on stands for storage · $<span data-cfg="depositNoTrailer"></span> storage deposit</div></div></label>
+    </fieldset>
+
+    <fieldset id="dimsBoat">
+      <legend>Dimensions</legend>
+      <div class="grid3">
+        <div><label class="f" for="loa">Boat length — LOA (ft) <small>incl. platform, drives, etc.</small></label><input type="number" id="loa" data-k="loa" min="0" step="0.5" placeholder="e.g. 22"></div>
+        <div><label class="f" for="beam">Beam — B (ft)</label><input type="number" id="beam" data-k="beam" min="0" step="0.5" placeholder="e.g. 8.5"></div>
+        <div id="lwtField"><label class="f" for="lwt">Length with trailer — LWT (ft)</label><input type="number" id="lwt" data-k="lwt" min="0" step="0.5" placeholder="incl. tongue"></div>
+      </div>
+      <p class="note"><b>LOA includes swim platform, drives, outboards, etc.</b> Most boat manufacturers do not include these in their listed LOA. We reserve the right to remeasure and adjust the bill accordingly.</p>
+    </fieldset>
+
+    <fieldset id="dimsSki" style="display:none">
+      <legend>Stored footprint</legend>
+      <p class="note" style="margin:-4px 0 12px">Jetskis are stored on their trailers, so we price the space the whole rig occupies — including tandem trailers carrying a single ski.</p>
+      <div class="grid2">
+        <div><label class="f" for="skiLen">Stored length (ft) <small>tip of the trailer tongue to the rearmost point — jetski or trailer, whichever extends further</small></label><input type="number" id="skiLen" data-k="skiLen" min="0" step="0.5" placeholder="e.g. 14"></div>
+        <div><label class="f" for="skiWid">Stored width (ft) <small>full width of the trailer at its widest point</small></label><input type="number" id="skiWid" data-k="skiWid" min="0" step="0.5" placeholder="e.g. 5.5"></div>
+      </div>
+      <p class="note">We reserve the right to remeasure and adjust the bill accordingly.</p>
+    </fieldset>
+
+    <div class="flatcard" id="flatInfo" style="display:none"></div>
+
+    <div class="panel-nav"><span></span><button class="btn primary" id="startNext" onclick="goNext()">Next →</button></div>
+  </section>
+
+  <!-- STEP: engines (boat) -->
+  <section class="panel" data-step="engines">
+    <h2>Engine winterization</h2>
+    <p class="lead">Every motor in unheated storage needs winterizing. Pick a level for each engine type on board — twins? Just set the count.</p>
+
+    <fieldset>
+      <legend>What's powering it?</legend>
+      <div id="engineRows"></div>
+      <p class="note">Extra charges apply for non-stock filters, oil capacities over 5 quarts, and special OEM/synthetic lubes. Spring start not included.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Drive train service</legend>
+      <p class="note" style="margin:0 0 8px">Inboard: drive oil change. I/O: remove drive, check alignment, grease input shaft &amp; u-joints, check bellows, gimbal ring &amp; bearing, transom plate. Misalignments corrected at shop rate. Recommended every 2 yrs/200 hrs for I/O.</p>
+      <div class="qtyrow">
+        <div><div class="t">Transmission or V-drive service</div><div class="p" data-price="dtTrans" data-suffix=" / drive"></div></div>
+        <div class="qty" data-qty="dtTrans"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Transmission or V-drive quantity"><button type="button" aria-label="increase">+</button></div>
+      </div>
+      <div class="qtyrow">
+        <div><div class="t">Inboard/outboard transom service</div><div class="p" data-price="dtTransom" data-suffix=" / drive"></div></div>
+        <div class="qty" data-qty="dtTransom"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Transom service quantity"><button type="button" aria-label="increase">+</button></div>
+      </div>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Systems →</button></div>
+  </section>
+
+  <!-- STEP: systems (boat) -->
+  <section class="panel" data-step="systems">
+    <h2>Onboard systems</h2>
+    <p class="lead">Fresh water, heads, ballast, A/C, generators — anything that holds water needs protecting too. Skip this page if none apply.</p>
+    <fieldset>
+      <legend>Water systems winterization</legend>
+      <div class="qtyrow"><div><div class="t">Ballast system (drain only)</div><div class="p" data-price="ballast" data-suffix=" / tank"></div></div>
+        <div class="qty" data-qty="ballast"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Ballast tanks"><button type="button" aria-label="increase">+</button></div></div>
+      <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="waterCold"><div><div class="t">Water system — cold only</div><div class="d">Fresh water system, no head</div></div><span class="p" data-price="waterCold"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="waterHead"><div><div class="t">Water system including 1 head</div><div class="d">Fresh water system plus one head</div></div><span class="p" data-price="waterHead"></span></label>
+      <div class="qtyrow" id="addlHeadsRow"><div><div class="t">Additional heads</div><div class="sub">Requires "Water system including 1 head" above</div><div class="p" data-price="addlHeads" data-suffix=" each"></div></div>
+        <div class="qty" data-qty="addlHeads"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Additional heads"><button type="button" aria-label="increase">+</button></div></div>
+      <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="pumpout"><div><div class="t">Pumpout service charge</div><div class="d">Applies if holding tank isn't emptied before drop-off</div></div><span class="p" data-price="pumpout"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="ac"><div><div class="t">Air conditioning</div><div class="d">Up to 2 units</div></div><span class="p" data-price="ac"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="genBasic"><div><div class="t">Generator — basic winterization</div></div><span class="p" data-price="genBasic"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="genFull"><div><div class="t">Generator — including oil &amp; filter change</div></div><span class="p" data-price="genFull"></span></label>
+      <p class="note">Generator disassembly or difficult access charged at shop rates.</p>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Storage →</button></div>
+  </section>
+
+  <!-- STEP: storage (boat) -->
+  <section class="panel" data-step="storage">
+    <h2>Storage &amp; retrieval</h2>
+    <p class="lead">Inside rates include retrieval, set &amp; relaunch. Outside storage is priced per foot, with retrieval options below.</p>
+    <fieldset>
+      <legend>Where's it wintering?</legend>
+      <div id="storageOpts"></div>
+      <p class="note" id="storageNote"></p>
+    </fieldset>
+
+    <fieldset id="retrievalFs" style="display:none">
+      <legend>Retrieval, set &amp; relaunch</legend>
+      <div id="retrievalOpts"></div>
+      <p class="note">Retrieval date requests before <span data-cfg="storageStartShort"></span> or after <span data-cfg="payByShort"></span> are subject to approval and/or surcharge. Canvas removal at shop rates.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Timing</legend>
+      <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Shrinkwrap &amp; extras →</button></div>
+  </section>
+
+  <!-- STEP: wrap & extras (boat) -->
+  <section class="panel" data-step="wrap">
+    <h2>Shrinkwrap &amp; extras</h2>
+    <p class="lead">Shrinkwrap is recommended for outside storage — we price it automatically from your boat's LOA.</p>
+    <fieldset>
+      <legend>Shrinkwrap your boat?</legend>
+      <label class="opt"><input type="radio" name="wrapYN" value="no" checked><div><div class="t">No shrinkwrap</div></div></label>
+      <label class="opt"><input type="radio" name="wrapYN" value="yes"><div><div class="t">Yes, shrinkwrap it</div><div class="d" id="wrapAutoDesc">Enter your LOA on the first step to see pricing</div></div><span class="p" id="wrapAutoPrice"></span></label>
+      <label class="opt" id="inWaterOpt" style="display:none"><input type="checkbox" data-chk="inWater"><div><div class="t">Wrapped while in-water</div><div class="d">Additional labor, $<span data-cfg="wrapInWaterFt"></span> per foot (LOA)</div></div><span class="p" id="iwPrice">—</span></label>
+      <p class="note">Wrap removal/disposal not included.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Washing</legend>
+      <label class="opt" id="powerwashOpt"><input type="checkbox" data-chk="powerwash"><div><div class="t">Powerwash hull</div><div class="d">$<span data-cfg="powerwashFt"></span> per foot (LOA). Does not remove stains. Not available with acid wash.</div></div><span class="p" id="pwPrice">—</span></label>
+      <label class="opt"><input type="checkbox" data-chk="acidWash"><div><div class="t">Acid wash hull</div><div class="d">$<span data-cfg="acidNarrowFt"></span>/ft (LOA) up to <span data-cfg="acidBeamMax"></span>' beam · $<span data-cfg="acidWideFt"></span>/ft over. Replaces powerwash; the two can't be combined.</div></div><span class="p" id="acidPrice">—</span></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Request a quote — hull &amp; running gear</legend>
+      <label class="opt"><input type="checkbox" data-chk="bottomTouch" data-excl="bottomStrip"><div><div class="t">Bottom paint touch-up</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="bottomStrip" data-excl="bottomTouch"><div><div class="t">Strip bottom paint &amp; reapply</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="propRefurb"><div><div class="t">Propeller refurbishment</div></div><span class="p">quote</span></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Request a quote — detailing</legend>
+      <label class="opt"><input type="checkbox" data-chk="extDetail" data-excl="washWax"><div><div class="t">Exterior detail</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="washWax" data-excl="extDetail"><div><div class="t">Wash &amp; wax</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="intDetail" data-excl="intWipe"><div><div class="t">Interior detail</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="intWipe" data-excl="intDetail"><div><div class="t">Interior wipe-down</div></div><span class="p">quote</span></label>
+      <p class="note">Pick one option per pair — a Quest team member will follow up with pricing.</p>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
+  </section>
+
+  <!-- STEP: ski services (jetski) -->
+  <section class="panel" data-step="ski">
+    <h2>Jetski winterization</h2>
+    <p class="lead">Every ski in unheated storage needs winterizing — set the count for how many are on the trailer, then pick a service level.</p>
+    <fieldset>
+      <legend>How many jetskis?</legend>
+      <div class="qtyrow">
+        <div><div class="t">Jetskis on this trailer</div><div class="sub">Tandem trailer with two skis? Set it to 2.</div></div>
+        <div class="qty" data-qty="eng-pwc"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="1" aria-label="Jetski count"><button type="button" aria-label="increase">+</button></div>
+      </div>
+      <div class="lvl" id="skiLvl" style="display:flex;margin-top:12px;gap:8px;flex-wrap:wrap"></div>
+      <p class="note">Includes 2-stroke. Extra charges apply for non-stock filters, oil capacities over 5 quarts, and special OEM/synthetic lubes. Spring start not included.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Detailing</legend>
+      <div class="qtyrow">
+        <div><div class="t">Jetski detail</div><div class="sub">Flat rate, per ski</div><div class="p" data-price="skiDetail" data-suffix=" each"></div></div>
+        <div class="qty" data-qty="skiDetail"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Jetski details"><button type="button" aria-label="increase">+</button></div>
+      </div>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Storage →</button></div>
+  </section>
+
+  <!-- STEP: ski storage (jetski) -->
+  <section class="panel" data-step="skistore">
+    <h2>Jetski storage</h2>
+    <p class="lead">Jetskis winter inside, on their trailers — retrieval, set &amp; relaunch included.</p>
+    <fieldset>
+      <legend>Where's it wintering?</legend>
+      <div id="skiStorageOpts"></div>
+      <p class="note" id="skiStorageNote"></p>
+    </fieldset>
+    <fieldset>
+      <legend>Timing</legend>
+      <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
+      <label class="opt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+    </fieldset>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
+  </section>
+
+  <!-- STEP: review -->
+  <section class="panel" data-step="review">
+    <h2>Your winter quote</h2>
+    <p class="lead">Everything you picked, itemized on the ticket. Look it over, add any notes, then continue to sign your agreement and pay your deposit online.</p>
+    <div><label class="f" for="notes">Notes / special requests</label><textarea id="notes" data-k="notes" rows="3" placeholder="Retrieval date requests, slip number, anything we should know…"></textarea></div>
+    <div class="review-actions">
+      <button class="btn gold" onclick="goNext()">Sign &amp; pay deposit →</button>
+      <button class="btn ghost" onclick="saveAndPrint()">Print / save PDF</button>
+    </div>
+    <p class="note" style="margin-top:16px">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the vessel and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b><span data-cfg="payByDate"></span></b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after <span data-cfg="payByShort"></span> increase by <span data-cfg="latePct"></span>%, and a 2% monthly service charge (min. $5) applies beginning <span data-cfg="lateChargeStart"></span>. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs <span data-cfg="storageStart"></span> – <span data-cfg="storageEnd"></span> and is subject to Quest's Storage Terms.</p>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><span></span></div>
+  </section>
+
+  <!-- STEP: sign & pay -->
+  <section class="panel" data-step="signpay">
+    <h2>Sign &amp; lock it in</h2>
+    <p class="lead">Two steps and you're on the winter schedule: sign the storage &amp; services agreement, then pay your deposit. Your quote number ties it all together.</p>
+    <div class="warnbox" id="signMissing" style="display:none"></div>
+
+    <div class="stepcard">
+      <div class="sc-head"><div class="sc-num">1</div><div class="sc-title">Review &amp; sign your agreement</div></div>
+      <div class="sc-body">
+        <p class="note" style="margin:0 0 12px">Your agreement is pre-filled with every selection and total from this quote, plus Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
+        <div id="signEmbed"></div>
+      </div>
+    </div>
+
+    <div class="stepcard">
+      <div class="sc-head"><div class="sc-num">2</div><div class="sc-title">Pay your deposit</div></div>
+      <div class="sc-body">
+        <div id="payChoices"></div>
+        <div class="paybig"><div><div class="k" id="payAmtLabel">Amount to pay</div><div class="refline" style="margin:2px 0 0">Reference: <b id="payRef">—</b> <button type="button" class="copybtn" data-copy="payRef">Copy</button></div></div><div class="v" id="payAmt">$0.00</div><button type="button" class="copybtn" data-copy="payAmt" style="align-self:center">Copy amount</button></div>
+        <p class="note" style="margin:4px 0 12px">On the payment page, enter the amount above and put your quote number in the memo/reference field so we can match your payment instantly. Card payments are subject to a 3% fee — cash, check, debit, Zelle &amp; ACH carry no surcharge.</p>
+        <a class="btn gold" id="payLink" href="#" target="_blank" rel="noopener">Open secure payment page →</a>
+      </div>
+    </div>
+
+    <div class="okbox">Once we receive your signed agreement and deposit, your retrieval window is reserved in the order received — last out, first in. We'll confirm by email.</div>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back to quote</button><button class="btn ghost" onclick="saveAndPrint()">Print quote</button></div>
+  </section>
+</main>
+
+<!-- ===== Live ticket ===== -->
+<aside class="ticket" id="ticketAnchor">
+  <div class="ticket-card">
+    <div class="ticket-head">
+      <div class="co">Quest Watersports</div>
+      <div class="sub">WINTER SERVICES ESTIMATE · <span data-cfg="seasonLabel"></span></div>
+      <div class="qn" id="ticketQn"></div>
+    </div>
+    <div class="perf"></div>
+    <div class="ticket-body" id="ticketBody"><div class="ticket-empty">Your selections will print here, line by line — just like the paper quote.</div></div>
+    <div class="ticket-totals">
+      <div class="trow2 deposit"><span class="k">Deposit due today to lock in</span><span class="v" id="tDeposit">$0.00</span></div>
+      <div class="trow2 total"><span class="k">Total — cash, check, debit, Zelle or ACH by <span data-cfg="payByShort"></span></span><span class="v" id="tCash">$0.00</span></div>
+      <div class="trow2"><span class="k">Paying by credit card? (+3% fee)</span><span class="v" id="tCC">$0.00</span></div>
+      <div class="payfoot">No surcharge for cash, check, debit card, Zelle, or ACH. <b>Paid after <span data-cfg="payByShort"></span>?</b> Balance increases <span data-cfg="latePct"></span>% to <b id="tLate">$0.00</b> (<b id="tLateCC">$0.00</b> by card), plus a 2%/month service charge beginning <span data-cfg="lateChargeStart"></span>.</div>
+    </div>
+    <div class="ticket-foot">This is an estimate for planning purposes. All rates subject to Quest's review; corrective charges or credits may apply. Quest Watersports · 1851 Old Chicago Rd, Ottawa, IL · (815) 433-2200.</div>
+  </div>
+</aside>
+</div>
+
+<div class="mobilebar">
+  <div><div class="k">Total · deposit due today</div><div class="amt"><span id="mAmt">$0.00</span> · <span id="mDep" style="color:var(--gold-soft)">$0.00</span></div></div>
+  <button onclick="document.getElementById('ticketAnchor').scrollIntoView({behavior:'smooth'})">View quote</button>
+</div>
+
+<!-- Jetski trailer modal -->
+<div class="modal-back" id="skiModal" role="dialog" aria-modal="true" aria-labelledby="skiModalTitle">
+  <div class="modal">
+    <h3 id="skiModalTitle">A trailer is required</h3>
+    <p>Quest cannot offer winter services on jetskis without trailers. Jetskis must be stored on their trailers, and can't be brought to our store without one. We don't offer trailer rentals, and lead time on ordering a new trailer is at least 3 weeks — plan ahead!</p>
+    <button class="btn primary" onclick="closeSkiModal()">Got it</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   INTEGRATIONS — paste your live URLs here.
+   adobeWebFormUrl: the full public URL of your Acrobat Sign web form
+     (looks like https://secure.na1.adobesign.com/public/esignWidget?wid=XXXX).
+     Leave empty ('') to show the demo placeholder instead of a live iframe.
+     Field names must match adobe-webform-field-map.md; each pre-filled field
+     needs "Default value may come from URL" checked.
+   paymentPageUrl: your POS+ hosted payment page.
+   quoteLogUrl: the Google Apps Script Web App /exec URL from
+     quote-logger-apps-script.gs (logs quotes to Sheets + emails service@).
+     Leave empty ('') to skip logging (demo mode).
+============================================================================ */
+const INTEGRATIONS = {
+  adobeWebFormUrl: '',
+  paymentPageUrl: 'https://pay.pospluslogin.com/questwatersports',
+  quoteLogUrl: 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec',
+};
+
+/* ============================================================================
+   ANNUAL UPDATE ZONE — everything that changes year to year lives here.
+============================================================================ */
+const SEASON = {
+  seasonLabel:      '2025–2026',
+  payByDate:        'November 15, 2025',
+  payByShort:       'Nov 15',
+  lateChargeStart:  'Dec 1, 2025',
+  storageStart:     'October 15, 2025',
+  storageStartShort:'Oct 15',
+  storageEnd:       'April 15, 2026',
+};
+
+const PRICES = {
+  basic:  { inboard:298, io:298, outboard:177, pwc:111 },
+  full:   { inboard:458, io:502, outboard:253, pwc:230 },
+  dtTrans:144, dtTransom:191,
+  ballast:80, waterCold:122, waterHead:252, pumpout:88, addlHeads:46, ac:116, genBasic:101, genFull:270,
+  retrieveSmall:17,
+  retrieveLarge:23,
+  retrieveCustTrailer:198,
+  outsidePerFt:18,
+  insidePremNT:8.29, insidePremT:7.29, insideNT:6.29, insideT:5.29,
+  golfCart:365,
+  ebikeStorage:160,     // includes a tune-up
+  skiDetail:175,        // flat, per ski
+  wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
+  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, blocking:185, lateRetrieval:225,
+};
+
+const RULES = {
+  latePct:10,
+  ccPct:3,
+  depositTrailer:500,
+  depositNoTrailer:1000,
+  wrapFlat20MaxLOA:20,
+  wrapFlat24MaxLOA:24,
+  acidBeamMax:8.5,
+  retrieveSmallMaxLOA:36,
+};
+/* ========================= END ANNUAL UPDATE ZONE ========================= */
+
+const LEVEL_DESC = {
+  basic:'Drain water, run on anti-freeze, drain & fog, disconnect batteries.',
+  full: 'Everything in Basic, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
+  fullPwc:'Everything in Basic, plus (as applicable): engine oil & filter change, fuel conditioner. Fuel filter not included for PWC.'
+};
+const BOAT_ENGINES = [
+  {id:'inboard',  name:'Inboard'},
+  {id:'io',       name:'Inboard/Outboard (sterndrive)'},
+  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'}
+];
+const UNITS = [
+  {id:'boat',   ic:'⛵', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
+  {id:'jetski', ic:'🌊', t:'Jetski',    d:'Winterize, detail & inside storage'},
+  {id:'golf',   ic:'⛳', t:'Golf cart', d:'Flat-rate storage w/ HHO pickup'},
+  {id:'ebike',  ic:'🚲', t:'E-bike',    d:'Flat-rate storage incl. tune-up'}
+];
+const FLOWS = {
+  boat:   ['start','engines','systems','storage','wrap','review','signpay'],
+  jetski: ['start','ski','skistore','review','signpay'],
+  golf:   ['start','review','signpay'],
+  ebike:  ['start','review','signpay'],
+};
+const STEP_LABELS = {
+  start:'Start', engines:'Engines', systems:'Systems', storage:'Storage', wrap:'Wrap & Extras',
+  ski:'Winterize', skistore:'Storage', review:'Quote', signpay:'Sign & Pay'
+};
+
+/* ================= STATE ================= */
+const S = {
+  unit:'boat',
+  owner:'', phone:'', email:'', ymm:'', notes:'',
+  loa:0, beam:0, lwt:0,
+  skiLen:0, skiWid:0, skiDetail:0,
+  hasTrailer:false,
+  engines:{ inboard:{qty:0,level:'basic'}, io:{qty:0,level:'basic'}, outboard:{qty:0,level:'basic'}, pwc:{qty:1,level:'basic'} },
+  dtTrans:0, dtTransom:0,
+  ballast:0, addlHeads:0,
+  waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
+  storage:'none', retrieval:'none',
+  wrap:false, inWater:false,
+  powerwash:false, acidWash:false, lateRetrieval:false, hho:false,
+  bottomTouch:false, bottomStrip:false, propRefurb:false,
+  extDetail:false, washWax:false, intDetail:false, intWipe:false,
+  quoteNo:'', payMode:'deposit'
+};
+
+const $ = s=>document.querySelector(s), $$ = s=>[...document.querySelectorAll(s)];
+const fmt = n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const QUOTE_ITEMS = [
+  ['bottomTouch','Bottom paint touch-up'],
+  ['bottomStrip','Strip bottom paint & reapply'],
+  ['propRefurb','Propeller refurbishment'],
+  ['extDetail','Exterior detail'],
+  ['washWax','Wash & wax'],
+  ['intDetail','Interior detail'],
+  ['intWipe','Interior wipe-down']
+];
+
+function ensureQuoteNo(){
+  if(!S.quoteNo){
+    const yy=String(new Date().getFullYear()).slice(2);
+    S.quoteNo=`QW-${yy}-${String(Math.floor(1000+Math.random()*9000))}`;
+  }
+  return S.quoteNo;
+}
+
+/* ================= CONFIG-DRIVEN COPY ================= */
+function fillConfig(){
+  $$('[data-cfg]').forEach(el=>{
+    const k=el.dataset.cfg;
+    el.textContent = SEASON[k] ?? RULES[k] ?? PRICES[k] ?? '';
+  });
+  $$('[data-price]').forEach(el=>{
+    el.textContent = fmt(PRICES[el.dataset.price]) + (el.dataset.suffix||'');
+  });
+}
+
+/* ================= UNIT SELECTION & START PANEL ================= */
+function buildUnits(){
+  $('#unitGrid').innerHTML = UNITS.map(u=>`
+    <button type="button" class="unit ${S.unit===u.id?'sel':''}" data-unit="${u.id}">
+      <div class="ic">${u.ic}</div><div class="t">${u.t}</div><div class="d">${u.d}</div>
+    </button>`).join('');
+  $$('#unitGrid .unit').forEach(b=>b.addEventListener('click',()=>setUnit(b.dataset.unit)));
+}
+function setUnit(u){
+  S.unit=u;
+  if(u==='jetski'){ S.hasTrailer=true; if(!['inside','none'].includes(S.storage)) S.storage='none'; S.wrap=false; }
+  if(u==='golf'){ S.storage='golf'; }
+  else if(u==='ebike'){ S.storage='ebike'; }
+  else if(S.storage==='golf'||S.storage==='ebike'){ S.storage='none'; }
+  buildUnits(); syncStartUI(); buildNav(); refresh();
+}
+function syncStartUI(){
+  const u=S.unit;
+  $('#trailerFs').style.display=(u==='boat'||u==='jetski')?'block':'none';
+  $('#dimsBoat').style.display=u==='boat'?'block':'none';
+  $('#dimsSki').style.display=u==='jetski'?'block':'none';
+  // trailer radios reflect state (jetski forces yes)
+  $$('input[name=hasTrailer]').forEach(r=>r.checked=(r.value==='yes')===S.hasTrailer);
+  $('#lwtField').style.display=(u==='boat'&&S.hasTrailer)?'block':'none';
+  if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.lwt=0;$('#lwt').value='';} }
+  // flat info card
+  const fc=$('#flatInfo');
+  if(u==='golf'){
+    fc.style.display='block';
+    fc.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span class="t">Golf cart winter storage</span><span class="p">${fmt(PRICES.golfCart)}</span></div><div class="d">Includes pickup &amp; delivery at Heritage Harbor. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd}.</div>`;
+  }else if(u==='ebike'){
+    fc.style.display='block';
+    fc.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span class="t">E-bike winter storage</span><span class="p">${fmt(PRICES.ebikeStorage)}</span></div><div class="d">Includes a tune-up — your e-bike comes back ready to ride. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd}.</div>`;
+  }else fc.style.display='none';
+  if(u==='boat') buildStorage();
+  if(u==='jetski') buildSkiStorage();
+}
+function openSkiModal(){ $('#skiModal').classList.add('open'); }
+function closeSkiModal(){ $('#skiModal').classList.remove('open'); }
+
+/* ================= BUILD DYNAMIC UI ================= */
+function buildEngines(){
+  $('#engineRows').innerHTML = BOAT_ENGINES.map(e=>`
+    <div style="border:1.5px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:10px" data-eng="${e.id}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div><div class="t" style="font-weight:700;color:var(--navy)">${e.name}</div>${e.sub?`<div class="d" style="font-size:13px;color:var(--muted)">${e.sub}</div>`:''}</div>
+        <div class="qty" data-qty="eng-${e.id}"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="${e.name} count"><button type="button" aria-label="increase">+</button></div>
+      </div>
+      <div class="lvl" style="display:none;margin-top:10px;gap:8px;flex-wrap:wrap" data-lvl="${e.id}">
+        <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="basic" checked><div><div class="t">Basic</div><div class="d">${LEVEL_DESC.basic}</div></div><span class="p">${fmt(PRICES.basic[e.id])} ea</span></label>
+        <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="full"><div><div class="t">Full service</div><div class="d">${LEVEL_DESC.full}</div></div><span class="p">${fmt(PRICES.full[e.id])} ea</span></label>
+      </div>
+    </div>`).join('');
+}
+function buildSkiLevels(){
+  $('#skiLvl').innerHTML=`
+    <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-pwc" value="basic" ${S.engines.pwc.level==='basic'?'checked':''}><div><div class="t">Basic</div><div class="d">${LEVEL_DESC.basic}</div></div><span class="p">${fmt(PRICES.basic.pwc)} ea</span></label>
+    <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-pwc" value="full" ${S.engines.pwc.level==='full'?'checked':''}><div><div class="t">Full service</div><div class="d">${LEVEL_DESC.fullPwc}</div></div><span class="p">${fmt(PRICES.full.pwc)} ea</span></label>`;
+  $$('input[name=lvl-pwc]').forEach(r=>r.addEventListener('change',e=>{S.engines.pwc.level=e.target.value;refresh();}));
+}
+function buildStorage(){
+  const T=S.hasTrailer;
+  const insideRate = T?PRICES.insideT:PRICES.insideNT;
+  const premRate   = T?PRICES.insidePremT:PRICES.insidePremNT;
+  const dim = T?'LWT × Beam':'LOA × Beam';
+  $('#storageOpts').innerHTML = [
+    {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
+    {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
+    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`},
+    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`}
+  ].map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
+  $$('input[name=storage]').forEach(r=>r.addEventListener('change',e=>{
+    S.storage=e.target.value;
+    if(S.storage==='inside'||S.storage==='insidePrem') S.retrieval='none';
+    syncStorageUI(); refresh();
+  }));
+  $('#storageNote').innerHTML = `Inside non-trailer storage may be subject to size limitations. Storage runs <b>${SEASON.storageStart} – ${SEASON.storageEnd}</b>. Premium inside storage requires Quest approval before it can be confirmed.`;
+}
+function buildSkiStorage(){
+  const len=S.skiLen||0, wid=S.skiWid||0;
+  const amt=(len&&wid)?PRICES.insideT*len*wid:null;
+  $('#skiStorageOpts').innerHTML=[
+    {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
+    {v:'inside', t:'Inside storage — on trailer', d:`Retrieval, set & relaunch included · $${PRICES.insideT}/sqft (stored length × width)`, p:amt!=null?fmt(amt):'needs stored dimensions'}
+  ].map(o=>`<label class="opt"><input type="radio" name="skiStorage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p">${o.p||''}</span></label>`).join('');
+  $$('input[name=skiStorage]').forEach(r=>r.addEventListener('change',e=>{S.storage=e.target.value;refresh();}));
+  $('#skiStorageNote').innerHTML=`Storage runs <b>${SEASON.storageStart} – ${SEASON.storageEnd}</b>.`;
+}
+function buildRetrieval(){
+  const loa=S.loa||0, small=loa<=RULES.retrieveSmallMaxLOA;
+  const rate=small?PRICES.retrieveSmall:PRICES.retrieveLarge;
+  const opts=[];
+  if(S.hasTrailer){
+    opts.push({v:'custTrailer', t:'Retrieve & relaunch only, on my trailer', d:'You supply the trailer', p:fmt(PRICES.retrieveCustTrailer)});
+  }else{
+    opts.push({v:'quest', t:`Quest retrieve, set & relaunch (${small?RULES.retrieveSmallMaxLOA+"' and under":"over "+RULES.retrieveSmallMaxLOA+"'"})`, d:`$${rate}/ft × ${loa||'—'} ft LOA`, p:loa?fmt(rate*loa):'needs LOA'});
+  }
+  opts.push({v:'none', t:"No retrieval — I'll drop off & pick up", d:''});
+  if(S.hasTrailer && S.retrieval==='quest') S.retrieval='none';
+  if(!S.hasTrailer && S.retrieval==='custTrailer') S.retrieval='none';
+  $('#retrievalOpts').innerHTML = opts.map(o=>`<label class="opt"><input type="radio" name="retrieval" value="${o.v}" ${S.retrieval===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p">${o.p||''}</span></label>`).join('');
+  $$('input[name=retrieval]').forEach(r=>r.addEventListener('change',e=>{S.retrieval=e.target.value;refresh();}));
+}
+function wrapAuto(){
+  const loa=S.loa||0, beam=S.beam||0;
+  if(!loa) return {label:'Enter your LOA on the first step to see pricing', amt:null, type:''};
+  if(loa<=RULES.wrapFlat20MaxLOA) return {label:`Package rate — ${RULES.wrapFlat20MaxLOA}' and under`, amt:PRICES.wrapFlat20, type:`Package ≤${RULES.wrapFlat20MaxLOA}'`};
+  if(loa<=RULES.wrapFlat24MaxLOA) return {label:`Package rate — ${RULES.wrapFlat24MaxLOA}' and under`, amt:PRICES.wrapFlat24, type:`Package ≤${RULES.wrapFlat24MaxLOA}'`};
+  if(!beam) return {label:`Over ${RULES.wrapFlat24MaxLOA}' — priced per foot; enter your beam on the first step`, amt:null, type:''};
+  const labor=PRICES.wrapLaborFt*loa, mat=PRICES.wrapMatSqft*loa*beam;
+  return {label:`Over ${RULES.wrapFlat24MaxLOA}' — labor $${PRICES.wrapLaborFt}/ft + materials $${PRICES.wrapMatSqft}/sqft`, amt:labor+mat, type:'Per-foot labor + materials',
+          split:[['Shrinkwrap labor',labor,`${loa} ft × ${fmt(PRICES.wrapLaborFt)}`],['Shrinkwrap materials',mat,`${loa}×${beam} sqft × $${PRICES.wrapMatSqft}`]]};
+}
+function syncWrapUI(){
+  const w=wrapAuto();
+  const d=$('#wrapAutoDesc'); if(d) d.textContent=w.label;
+  const p=$('#wrapAutoPrice'); if(p) p.textContent=w.amt!=null?fmt(w.amt):'';
+  $('#inWaterOpt').style.display=S.wrap?'flex':'none';
+  $('#iwPrice').textContent=S.loa?fmt(PRICES.wrapInWaterFt*S.loa):'needs LOA';
+}
+function syncStorageUI(){
+  $('#retrievalFs').style.display=(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none'))?'block':'none';
+  if(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
+}
+function syncHeadsUI(){
+  const row=$('#addlHeadsRow'), q=row.querySelector('.qty');
+  row.classList.toggle('disabled',!S.waterHead);
+  q.classList.toggle('disabled',!S.waterHead);
+  if(!S.waterHead && S.addlHeads>0){S.addlHeads=0;q.querySelector('input').value=0;}
+}
+
+/* ================= QUOTE ENGINE ================= */
+function computeLines(){
+  const L=[], loa=S.loa||0, beam=S.beam||0, lwt=S.lwt||0, T=S.hasTrailer, u=S.unit;
+  const need=[];
+  const add=(sec,label,amt,calc)=>L.push({sec,label,amt,calc});
+
+  /* ---- flat-rate units ---- */
+  if(u==='golf'){
+    add('Storage','Golf cart storage (incl. HHO pickup/delivery)', PRICES.golfCart);
+    return {L, need, rq:[]};
+  }
+  if(u==='ebike'){
+    add('Storage','E-bike storage — includes tune-up', PRICES.ebikeStorage);
+    return {L, need, rq:[]};
+  }
+
+  /* ---- jetski ---- */
+  if(u==='jetski'){
+    const g=S.engines.pwc;
+    if(g.qty>0){
+      const rate=PRICES[g.level].pwc;
+      add('Winterization', `${g.level==='full'?'Full service':'Basic'} — PWC / Jetski${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`);
+    }
+    if(S.skiDetail>0) add('Detailing', `Jetski detail${S.skiDetail>1?` × ${S.skiDetail}`:''}`, PRICES.skiDetail*S.skiDetail, `${S.skiDetail} × ${fmt(PRICES.skiDetail)}`);
+    if(S.storage==='inside'){
+      const len=S.skiLen||0, wid=S.skiWid||0;
+      if(len&&wid) add('Storage','Inside storage — on trailer', PRICES.insideT*len*wid, `${len}×${wid} sqft × $${PRICES.insideT}`);
+      else need.push('stored length & width for inside storage');
+      add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
+    }
+    if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
+    if(S.hho) add('Misc','Heritage Harbor slipholder — discount applied by Quest', 0);
+    return {L, need, rq:[]};
+  }
+
+  /* ---- boat ---- */
+  for(const e of BOAT_ENGINES){
+    const g=S.engines[e.id];
+    if(g.qty>0){
+      const rate=PRICES[g.level][e.id];
+      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`);
+    }
+  }
+  if(S.dtTrans>0) add('Drive train','Transmission or V-drive'+(S.dtTrans>1?` × ${S.dtTrans}`:''), PRICES.dtTrans*S.dtTrans, `${S.dtTrans} × ${fmt(PRICES.dtTrans)}`);
+  if(S.dtTransom>0) add('Drive train','I/O transom service'+(S.dtTransom>1?` × ${S.dtTransom}`:''), PRICES.dtTransom*S.dtTransom, `${S.dtTransom} × ${fmt(PRICES.dtTransom)}`);
+
+  if(S.ballast>0) add('Water systems',`Ballast drain × ${S.ballast} tank${S.ballast>1?'s':''}`, PRICES.ballast*S.ballast, `${S.ballast} × ${fmt(PRICES.ballast)}`);
+  if(S.waterCold) add('Water systems','Water system — cold only', PRICES.waterCold);
+  if(S.waterHead) add('Water systems','Water system incl. 1 head', PRICES.waterHead);
+  if(S.waterHead && S.addlHeads>0) add('Water systems',`Additional heads × ${S.addlHeads}`, PRICES.addlHeads*S.addlHeads, `${S.addlHeads} × ${fmt(PRICES.addlHeads)}`);
+  if(S.pumpout) add('Water systems','Pumpout service charge', PRICES.pumpout);
+  if(S.ac) add('Water systems','Air conditioning (up to 2 units)', PRICES.ac);
+  if(S.genBasic) add('Water systems','Generator — basic', PRICES.genBasic);
+  if(S.genFull) add('Water systems','Generator — oil & filter', PRICES.genFull);
+
+  if(S.storage==='outside'){
+    if(loa) add('Storage','Outside storage', PRICES.outsidePerFt*loa, `${loa} ft × ${fmt(PRICES.outsidePerFt)}`); else need.push('LOA for outside storage');
+  }
+  if(S.storage==='inside'||S.storage==='insidePrem'){
+    const prem=S.storage==='insidePrem';
+    const name=(prem?'Premium inside':'Inside')+' storage'+(prem?' (pending Quest approval)':'');
+    if(T){
+      const r=prem?PRICES.insidePremT:PRICES.insideT;
+      if(lwt&&beam) add('Storage',name+' — on trailer', r*lwt*beam, `${lwt}×${beam} sqft × $${r}`); else need.push('LWT & beam for on-trailer inside storage');
+    }else{
+      const r=prem?PRICES.insidePremNT:PRICES.insideNT;
+      if(loa&&beam) add('Storage',name+' — non-trailer', r*loa*beam, `${loa}×${beam} sqft × $${r}`); else need.push('LOA & beam for inside storage');
+    }
+  }
+
+  const insideSel=S.storage==='inside'||S.storage==='insidePrem';
+  if(!insideSel){
+    if(S.retrieval==='quest' && !T){
+      const rate=loa<=RULES.retrieveSmallMaxLOA?PRICES.retrieveSmall:PRICES.retrieveLarge;
+      if(loa) add('Retrieval',`Retrieve, set & relaunch (${loa<=RULES.retrieveSmallMaxLOA?'≤':'\u003e'}${RULES.retrieveSmallMaxLOA}')`, rate*loa, `${loa} ft × ${fmt(rate)}`); else need.push('LOA for retrieval');
+    }else if(S.retrieval==='custTrailer' && T){
+      add('Retrieval','Retrieve & relaunch, customer trailer', PRICES.retrieveCustTrailer);
+    }
+  }
+  if(insideSel) add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
+
+  if((S.storage==='outside'||insideSel) && !T){
+    add('Blocking & washing','Blocking, stands & handling (non-trailer)', PRICES.blocking);
+  }
+
+  if(S.wrap){
+    const w=wrapAuto();
+    if(w.amt==null){ need.push(loa?'beam for shrinkwrap':'LOA for shrinkwrap'); }
+    else if(w.split){ for(const [lbl,amt,calc] of w.split) add('Shrinkwrap',lbl,amt,calc); }
+    else add('Shrinkwrap',`Shrinkwrap package (${w.type})`, w.amt);
+    if(S.inWater){
+      if(loa) add('Shrinkwrap','Additional in-water wrap labor', PRICES.wrapInWaterFt*loa, `${loa} ft × ${fmt(PRICES.wrapInWaterFt)}`); else need.push('LOA for in-water wrap');
+    }
+  }
+
+  if(S.powerwash && !S.acidWash){
+    if(loa) add('Blocking & washing','Powerwash hull', PRICES.powerwashFt*loa, `${loa} ft × ${fmt(PRICES.powerwashFt)}`); else need.push('LOA for powerwash');
+  }
+  if(S.acidWash){
+    if(loa&&beam){
+      const r=beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt;
+      add('Blocking & washing',`Acid wash hull (${beam<=RULES.acidBeamMax?'≤':'\u003e'}${RULES.acidBeamMax}' beam)`, r*loa, `${loa} ft × ${fmt(r)}`);
+    } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
+  }
+  if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
+  if(S.hho) add('Misc','Heritage Harbor slipholder — discount applied by Quest', 0);
+
+  const rq=QUOTE_ITEMS.filter(([k])=>S[k]).map(([,lbl])=>lbl);
+  return {L, need, rq};
+}
+function totals(){
+  const {L}=computeLines();
+  const total=L.reduce((a,b)=>a+b.amt,0);
+  const depBase=S.hasTrailer?RULES.depositTrailer:RULES.depositNoTrailer;
+  return {
+    total,
+    cc: total*(1+RULES.ccPct/100),
+    late: total*(1+RULES.latePct/100),
+    lateCC: total*(1+RULES.latePct/100)*(1+RULES.ccPct/100),
+    deposit: Math.min(depBase,total)
+  };
+}
+
+/* ================= QUOTE LOGGING (Google Sheets + email) =================
+   Posts the quote to the Apps Script web app in quote-logger-apps-script.gs,
+   which appends/updates a row on the tab matching the storage location and
+   emails service@questwatersports.com. Fire-and-forget; never blocks the UI.
+========================================================================== */
+function storageTabName(){
+  if(S.unit==='golf') return 'Golf Cart';
+  if(S.unit==='ebike') return 'E-Bike';
+  if(S.storage==='outside') return 'Outside';
+  if(S.storage==='inside') return 'Inside';
+  if(S.storage==='insidePrem') return 'Premium Inside';
+  return 'No Storage';
+}
+function logQuote(status){
+  const {L,rq}=computeLines(); const t=totals();
+  const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
+  const dims=S.unit==='boat' ? [S.loa?`LOA ${S.loa}'`:'',S.beam?`B ${S.beam}'`:'',(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:'',S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ')
+           : S.unit==='jetski' ? [S.skiLen?`stored L ${S.skiLen}'`:'',S.skiWid?`stored W ${S.skiWid}'`:''].filter(Boolean).join(' · ') : '';
+  const payload={
+    status, quoteNo:ensureQuoteNo(), ts:new Date().toISOString(),
+    unit:unitName, storageTab:storageTabName(),
+    owner:S.owner, phone:S.phone, email:S.email, ymm:S.ymm, dims,
+    total:t.total.toFixed(2), deposit:t.deposit.toFixed(2),
+    totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
+    payMode:S.payMode,
+    items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join(' | '),
+    lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt})),
+    quotesRequested:rq.join('; '), notes:S.notes,
+    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd}
+  };
+  if(!INTEGRATIONS.quoteLogUrl){ console.log('Quote log (demo mode — set INTEGRATIONS.quoteLogUrl):', payload); return; }
+  try{
+    fetch(INTEGRATIONS.quoteLogUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+  }catch(e){ console.warn('Quote log failed', e); }
+}
+function saveAndPrint(){
+  ensureQuoteNo();
+  $('#ticketQn').textContent='QUOTE Nº '+S.quoteNo;
+  logQuote('Saved / printed');
+  window.print();
+}
+
+/* ================= ADOBE SIGN WEB FORM PREFILL ================= */
+function buildAdobeParams(){
+  const {L,rq}=computeLines();
+  const t=totals();
+  const p={};
+  const set=(k,v)=>{ if(v!==''&&v!=null&&v!==0&&v!=='0') p[k]=String(v); };
+  const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
+
+  set('quote_no', ensureQuoteNo());
+  set('quote_date', new Date().toLocaleDateString('en-US'));
+  set('unit', unitName);
+  set('owner', S.owner); set('phone', S.phone); set('email', S.email); set('ymm', S.ymm);
+  if(S.unit==='boat'){
+    set('loa', S.loa||''); set('beam', S.beam||''); set('lwt', S.hasTrailer?(S.lwt||''):'');
+    set('trailer', S.hasTrailer?'Yes':'No');
+  }
+  if(S.unit==='jetski'){
+    set('ski_len', S.skiLen||''); set('ski_wid', S.skiWid||'');
+    set('trailer','Yes');
+  }
+
+  // winterization lines (boat engines or jetski PWC)
+  const engMap={inboard:'in', io:'io', outboard:'ob'};
+  if(S.unit==='boat'){
+    for(const [id,code] of Object.entries(engMap)){
+      const g=S.engines[id];
+      if(g.qty>0){
+        const pre=(g.level==='full'?'fw_':'bw_')+code;
+        set(pre, g.qty); set(pre+'_amt', fmt(PRICES[g.level][id]*g.qty));
+      }
+    }
+    if(S.dtTrans>0){set('dt_trans',S.dtTrans);set('dt_trans_amt',fmt(PRICES.dtTrans*S.dtTrans));}
+    if(S.dtTransom>0){set('dt_transom',S.dtTransom);set('dt_transom_amt',fmt(PRICES.dtTransom*S.dtTransom));}
+
+    if(S.ballast>0){set('ws_ballast',S.ballast);set('ws_ballast_amt',fmt(PRICES.ballast*S.ballast));}
+    if(S.waterCold) set('ws_cold_amt',fmt(PRICES.waterCold));
+    if(S.waterHead) set('ws_head_amt',fmt(PRICES.waterHead));
+    if(S.waterHead&&S.addlHeads>0){set('ws_addl',S.addlHeads);set('ws_addl_amt',fmt(PRICES.addlHeads*S.addlHeads));}
+    if(S.pumpout) set('ws_pump_amt',fmt(PRICES.pumpout));
+    if(S.ac) set('ws_ac_amt',fmt(PRICES.ac));
+    if(S.genBasic) set('ws_genb_amt',fmt(PRICES.genBasic));
+    if(S.genFull) set('ws_genf_amt',fmt(PRICES.genFull));
+  }
+  if(S.unit==='jetski'){
+    const g=S.engines.pwc;
+    if(g.qty>0){
+      const pre=(g.level==='full'?'fw_':'bw_')+'pwc';
+      set(pre, g.qty); set(pre+'_amt', fmt(PRICES[g.level].pwc*g.qty));
+    }
+    if(S.skiDetail>0){ set('det_ski', S.skiDetail); set('det_ski_amt', fmt(PRICES.skiDetail*S.skiDetail)); }
+  }
+
+  for(const li of L){
+    if(li.sec==='Storage'){ set('st_type', li.label); set('st_amt', li.amt?fmt(li.amt):''); }
+    if(li.sec==='Retrieval'){ set('ret_type', li.label); set('ret_amt', li.amt?fmt(li.amt):'Included'); }
+    if(li.label.startsWith('Blocking')) set('blk_amt', fmt(li.amt));
+    if(li.label==='Powerwash hull') set('pw_amt', fmt(li.amt));
+    if(li.label.startsWith('Acid wash hull')) set('acid_amt', fmt(li.amt));
+    if(li.label==='Additional in-water wrap labor') set('wrap_iw_amt', fmt(li.amt));
+  }
+  if(S.unit==='boat'&&S.wrap){
+    const w=wrapAuto();
+    if(w.amt!=null){ set('wrap_type', w.type); set('wrap_amt', fmt(w.amt)); }
+  }
+  if(S.lateRetrieval) set('late_amt', fmt(PRICES.lateRetrieval));
+  if(S.hho) set('hho','Yes — discount to be applied by Quest');
+  if(rq.length) set('rq', rq.join('; '));
+  if(S.notes) set('cust_notes', S.notes);
+
+  set('total_cash', fmt(t.total));
+  set('total_cc', fmt(t.cc));
+  set('total_late', fmt(t.late));
+  set('total_late_cc', fmt(t.lateCC));
+  set('deposit', fmt(t.deposit));
+
+  return Object.entries(p).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
+}
+
+function renderSignPay(){
+  ensureQuoteNo();
+  $('#ticketQn').textContent='QUOTE Nº '+S.quoteNo;
+
+  const missing=[];
+  if(!S.owner) missing.push('your name');
+  if(!S.email) missing.push('your email (Adobe Sign needs it to deliver your signed copy)');
+  const mBox=$('#signMissing');
+  if(missing.length){ mBox.style.display='block'; mBox.textContent='Heads up — go back to the first step and add '+missing.join(' and ')+' before signing.'; }
+  else mBox.style.display='none';
+
+  const params=buildAdobeParams();
+  const target=$('#signEmbed');
+  if(INTEGRATIONS.adobeWebFormUrl){
+    const src=INTEGRATIONS.adobeWebFormUrl + '#' + params;
+    target.innerHTML=`<iframe class="signframe" src="${src}" title="Quest Watersports storage & services agreement"></iframe>`;
+  }else{
+    target.innerHTML=`
+      <div class="demo-embed">
+        <div class="de-title">Adobe Acrobat Sign loads here</div>
+        <p>In the live version, the ${SEASON.seasonLabel} Storage &amp; Services Agreement appears in this space with every line of this quote already filled in — the customer reads and signs without leaving the page, and the executed copy is emailed to both parties automatically.</p>
+        <p style="margin-top:10px"><b>Pre-fill payload built live from this quote</b> (passed to the web form via URL parameters):</p>
+        <div class="paramview">${params?('#'+params.replaceAll('&','\u200b&')):'— make selections to build the payload —'}</div>
+      </div>`;
+  }
+
+  const t=totals();
+  const full=S.payMode==='full';
+  $('#payChoices').innerHTML=`
+    <label class="opt"><input type="radio" name="payMode" value="deposit" ${!full?'checked':''}><div><div class="t">Pay deposit now</div><div class="d">Locks in your selections & retrieval window · balance due by ${SEASON.payByShort}</div></div><span class="p">${fmt(t.deposit)}</span></label>
+    <label class="opt"><input type="radio" name="payMode" value="full" ${full?'checked':''}><div><div class="t">Pay in full</div><div class="d">Done and dusted — nothing due later</div></div><span class="p">${fmt(t.total)}</span></label>`;
+  $$('input[name=payMode]').forEach(r=>r.addEventListener('change',e=>{S.payMode=e.target.value;renderSignPay();}));
+  const amt=full?t.total:t.deposit;
+  $('#payAmtLabel').textContent=full?'Pay in full':'Deposit due today';
+  $('#payAmt').textContent=fmt(amt);
+  $('#payRef').textContent=S.quoteNo;
+  $('#payLink').href=INTEGRATIONS.paymentPageUrl;
+  refresh();
+}
+
+/* ================= RENDER ================= */
+function refresh(){
+  const {L,need,rq}=computeLines();
+  const body=$('#ticketBody');
+  if(!L.length && !rq.length){ body.innerHTML='<div class="ticket-empty">Your selections will print here, line by line — just like the paper quote.</div>'; }
+  else{
+    let html='', lastSec='';
+    const meta=[];
+    const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t;
+    if(S.owner) meta.push(S.owner);
+    meta.push(unitName + (S.ymm?` — ${S.ymm}`:''));
+    if(S.phone||S.email) meta.push([S.phone,S.email].filter(Boolean).join(' · '));
+    let dims='';
+    if(S.unit==='boat') dims=[S.loa?`LOA ${S.loa}'`:null,S.beam?`B ${S.beam}'`:null,(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:null,S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ');
+    if(S.unit==='jetski') dims=[S.skiLen?`stored L ${S.skiLen}'`:null,S.skiWid?`stored W ${S.skiWid}'`:null,'on trailer'].filter(Boolean).join(' · ');
+    if(meta.length||dims) html+=`<div class="trow" style="border-bottom:1px solid var(--navy)"><div class="l">${meta.join('<br>')}${dims?`<span class="calc">${dims}</span>`:''}</div></div>`;
+    for(const li of L){
+      if(li.sec!==lastSec){ html+=`<div class="trow sec"><div class="l">${li.sec}</div></div>`; lastSec=li.sec; }
+      html+=`<div class="trow"><div class="l">${li.label}${li.calc?`<span class="calc">${li.calc}</span>`:''}</div><div class="r">${li.amt?fmt(li.amt):'incl.'}</div></div>`;
+    }
+    if(rq.length){
+      html+=`<div class="trow sec"><div class="l">Quotes requested</div></div>`;
+      html+=rq.map(x=>`<div class="trow"><div class="l">${x}</div><div class="r">TBD</div></div>`).join('');
+    }
+    if(need.length) html+=`<div class="trow" style="border:0"><div class="l" style="color:var(--warn);font-family:var(--body);font-size:12px">Add ${[...new Set(need)].join(', ')} on the first step to finish pricing.</div></div>`;
+    body.innerHTML=html;
+  }
+
+  const t=totals();
+  $('#tDeposit').textContent=fmt(t.deposit);
+  $('#tCash').textContent=fmt(t.total);
+  $('#tCC').textContent=fmt(t.cc);
+  $('#tLate').textContent=fmt(t.late);
+  $('#tLateCC').textContent=fmt(t.lateCC);
+  $('#mAmt').textContent=fmt(t.total);
+  $('#mDep').textContent=fmt(t.deposit);
+
+  $('#pwPrice').textContent=S.loa?fmt(PRICES.powerwashFt*S.loa):'needs LOA';
+  $('#acidPrice').textContent=(S.loa&&S.beam)?fmt((S.beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt)*S.loa):'needs LOA & beam';
+  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'';
+  syncWrapUI();
+  if(S.unit==='jetski') buildSkiStorage();
+  $$('.opt').forEach(o=>{const i=o.querySelector('input');o.classList.toggle('sel',i&&i.checked&&!i.disabled);});
+}
+
+/* ================= FLOW NAVIGATION ================= */
+let cur='start';
+function flow(){ return FLOWS[S.unit]; }
+function buildNav(){
+  const f=flow();
+  if(!f.includes(cur)) cur='start';
+  $('#stepsNav').innerHTML=f.map((s,i)=>`<button type="button" data-go="${s}">${i+1}. ${STEP_LABELS[s]}</button>`).join('');
+  $$('#stepsNav button').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+  paintNav();
+}
+function paintNav(){
+  const f=flow(), idx=f.indexOf(cur);
+  $$('#stepsNav button').forEach((b,i)=>{b.classList.toggle('active',i===idx);b.classList.toggle('done',i<idx);});
+  $$('.panel').forEach(p=>p.classList.toggle('active',p.dataset.step===cur));
+}
+function go(name){
+  cur=name;
+  if(name==='storage') syncStorageUI();
+  if(name==='ski') buildSkiLevels();
+  if(name==='skistore') buildSkiStorage();
+  if(name==='signpay') renderSignPay();
+  paintNav(); refresh();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function goNext(){ const f=flow(), i=f.indexOf(cur); if(i<f.length-1) go(f[i+1]); }
+function goPrev(){ const f=flow(), i=f.indexOf(cur); if(i>0) go(f[i-1]); }
+
+/* ================= WIRING ================= */
+function init(){
+  fillConfig();
+  buildUnits(); buildEngines(); buildStorage(); buildSkiLevels(); buildSkiStorage(); buildNav();
+
+  $$('input[data-k],textarea[data-k]').forEach(el=>el.addEventListener('input',e=>{
+    const k=e.target.dataset.k;
+    S[k]=e.target.type==='number'?(parseFloat(e.target.value)||0):e.target.value;
+    if(['loa','beam','lwt'].includes(k)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
+    refresh();
+  }));
+
+  $$('input[data-chk]').forEach(el=>el.addEventListener('change',e=>{
+    const k=e.target.dataset.chk;
+    S[k]=e.target.checked;
+    const excl=e.target.dataset.excl;
+    if(excl && e.target.checked){
+      S[excl]=false;
+      const other=document.querySelector(`input[data-chk="${excl}"]`); if(other) other.checked=false;
+    }
+    if(k==='acidWash' && e.target.checked){
+      S.powerwash=false;
+      const pw=document.querySelector('input[data-chk="powerwash"]'); pw.checked=false; pw.disabled=true;
+      $('#powerwashOpt').classList.add('disabled');
+    }
+    if(k==='acidWash' && !e.target.checked){
+      const pw=document.querySelector('input[data-chk="powerwash"]'); pw.disabled=false;
+      $('#powerwashOpt').classList.remove('disabled');
+    }
+    if(k==='waterHead') syncHeadsUI();
+    refresh();
+  }));
+
+  $$('.qty').forEach(q=>{
+    const key=q.dataset.qty, inp=q.querySelector('input'), [dec,inc]=q.querySelectorAll('button');
+    const setV=v=>{
+      v=Math.max(0,Math.min(99,v|0)); inp.value=v;
+      if(key.startsWith('eng-')){
+        const id=key.slice(4); S.engines[id].qty=v;
+        const lvl=document.querySelector(`[data-lvl="${id}"]`); if(lvl) lvl.style.display=v>0?'flex':'none';
+      } else S[key]=v;
+      refresh();
+    };
+    dec.onclick=()=>setV(+inp.value-1); inc.onclick=()=>setV(+inp.value+1);
+    inp.addEventListener('input',()=>setV(+inp.value||0));
+  });
+
+  BOAT_ENGINES.forEach(e=>$$(`input[name=lvl-${e.id}]`).forEach(r=>r.addEventListener('change',ev=>{S.engines[e.id].level=ev.target.value;refresh();})));
+
+  $$('input[name=hasTrailer]').forEach(r=>r.addEventListener('change',e=>{
+    const wantNo=e.target.value==='no';
+    if(S.unit==='jetski' && wantNo){
+      openSkiModal();
+      S.hasTrailer=true;
+      $$('input[name=hasTrailer]').forEach(x=>x.checked=x.value==='yes');
+      return;
+    }
+    S.hasTrailer=!wantNo;
+    syncStartUI(); if(S.unit==='boat') syncStorageUI();
+    refresh();
+  }));
+  $$('input[name=wrapYN]').forEach(r=>r.addEventListener('change',e=>{
+    S.wrap=e.target.value==='yes';
+    if(!S.wrap){S.inWater=false;const iw=document.querySelector('input[data-chk="inWater"]');if(iw)iw.checked=false;}
+    refresh();
+  }));
+
+  $('#payLink').addEventListener('click',()=>{
+    logQuote('Signed & paying — '+(S.payMode==='full'?'pay in full':'deposit'));
+  });
+
+  document.addEventListener('click',e=>{
+    const b=e.target.closest('.copybtn'); if(!b) return;
+    const src=$('#'+b.dataset.copy);
+    navigator.clipboard?.writeText(src.textContent.trim()).then(()=>{
+      const old=b.textContent; b.textContent='Copied!'; setTimeout(()=>b.textContent=old,1400);
+    });
+  });
+
+  syncStartUI(); syncHeadsUI(); go('start');
+}
+init();
+</script>
+</body>
+</html>

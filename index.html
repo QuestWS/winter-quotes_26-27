@@ -695,8 +695,8 @@ function buildStorage(){
   $('#storageOpts').innerHTML = [
     {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
     {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
-    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`},
-    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`}
+    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
+    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`, pid:'stP'}
   ].map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
   $$('input[name=storage]').forEach(r=>r.addEventListener('change',e=>{
     S.storage=e.target.value;
@@ -1102,7 +1102,11 @@ function refresh(){
 
   $('#pwPrice').textContent=S.loa?fmt(PRICES.powerwashFt*S.loa):'needs LOA';
   $('#acidPrice').textContent=(S.loa&&S.beam)?fmt((S.beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt)*S.loa):'needs LOA & beam';
-  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'';
+  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'needs LOA';
+  const inSq = S.hasTrailer ? ((S.lwt&&S.beam)?S.lwt*S.beam:null) : ((S.loa&&S.beam)?S.loa*S.beam:null);
+  const inNeed = S.hasTrailer ? 'needs LWT & beam' : 'needs LOA & beam';
+  const stI=$('#stI'); if(stI) stI.textContent=inSq?fmt((S.hasTrailer?PRICES.insideT:PRICES.insideNT)*inSq):inNeed;
+  const stP=$('#stP'); if(stP) stP.textContent=inSq?fmt((S.hasTrailer?PRICES.insidePremT:PRICES.insidePremNT)*inSq):inNeed;
   syncWrapUI();
   if(S.unit==='jetski') buildSkiStorage();
   $$('.opt').forEach(o=>{const i=o.querySelector('input');o.classList.toggle('sel',i&&i.checked&&!i.disabled);});

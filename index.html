@@ -545,6 +545,7 @@ const RULES = {
   wrapFlat20MaxLOA:20,
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
+  insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
   retrieveSmallMaxLOA:36,
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
@@ -692,12 +693,16 @@ function buildStorage(){
   const insideRate = T?PRICES.insideT:PRICES.insideNT;
   const premRate   = T?PRICES.insidePremT:PRICES.insidePremNT;
   const dim = T?'LWT × Beam':'LOA × Beam';
-  $('#storageOpts').innerHTML = [
+  // Non-trailered boats with beam over the limit can't go in regular inside storage
+  const hideInside = !T && (S.beam||0) > RULES.insideBeamMaxNT;
+  if(hideInside && S.storage==='inside') S.storage='none';
+  const opts = [
     {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
     {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
-    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
-    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`, pid:'stP'}
-  ].map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
+    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`},
+    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`}
+  ].filter(o=>!(hideInside && o.v==='inside'));
+  $('#storageOpts').innerHTML = opts.map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
   $$('input[name=storage]').forEach(r=>r.addEventListener('change',e=>{
     S.storage=e.target.value;
     if(S.storage==='inside'||S.storage==='insidePrem') S.retrieval='none';
@@ -1102,11 +1107,7 @@ function refresh(){
 
   $('#pwPrice').textContent=S.loa?fmt(PRICES.powerwashFt*S.loa):'needs LOA';
   $('#acidPrice').textContent=(S.loa&&S.beam)?fmt((S.beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt)*S.loa):'needs LOA & beam';
-  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'needs LOA';
-  const inSq = S.hasTrailer ? ((S.lwt&&S.beam)?S.lwt*S.beam:null) : ((S.loa&&S.beam)?S.loa*S.beam:null);
-  const inNeed = S.hasTrailer ? 'needs LWT & beam' : 'needs LOA & beam';
-  const stI=$('#stI'); if(stI) stI.textContent=inSq?fmt((S.hasTrailer?PRICES.insideT:PRICES.insideNT)*inSq):inNeed;
-  const stP=$('#stP'); if(stP) stP.textContent=inSq?fmt((S.hasTrailer?PRICES.insidePremT:PRICES.insidePremNT)*inSq):inNeed;
+  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'';
   syncWrapUI();
   if(S.unit==='jetski') buildSkiStorage();
   $$('.opt').forEach(o=>{const i=o.querySelector('input');o.classList.toggle('sel',i&&i.checked&&!i.disabled);});
@@ -1148,6 +1149,7 @@ function init(){
     const k=e.target.dataset.k;
     S[k]=e.target.type==='number'?(parseFloat(e.target.value)||0):e.target.value;
     if(['loa','beam','lwt'].includes(k)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
+    if(k==='beam'&&S.unit==='boat'){ buildStorage(); syncStorageUI(); }
     refresh();
   }));
 

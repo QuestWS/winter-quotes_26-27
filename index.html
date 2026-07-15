@@ -141,6 +141,7 @@ aside.ticket{position:sticky;top:18px}
 .trow .r{white-space:nowrap;font-weight:600}
 .trow.sec{border-bottom:1px solid var(--navy);color:var(--frost);text-transform:uppercase;font-size:11px;letter-spacing:.09em;font-weight:600;margin-top:8px}
 .trow .calc{display:block;font-size:11px;color:#8A8672}
+.trow .desc{font-style:italic;margin-top:1px}
 .ticket-empty{color:#8A8672;text-align:center;padding:26px 8px;font-style:italic;font-family:var(--body)}
 .ticket-totals{border-top:2px solid var(--navy);background:#F6F1E3;padding:12px 16px 14px}
 .trow2{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}
@@ -419,6 +420,7 @@ aside.ticket{position:sticky;top:18px}
     <div class="review-actions">
       <button class="btn gold" onclick="goNext()">Sign &amp; pay online →</button>
       <button class="btn ghost" onclick="saveAndPrint()">Print / save PDF</button>
+      <button class="btn ghost" onclick="emailQuote(this)">📧 Email me this quote</button>
     </div>
     <p class="note" style="margin-top:16px">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the vessel and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b><span data-cfg="payByDate"></span></b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after <span data-cfg="payByShort"></span> increase by <span data-cfg="latePct"></span>%, and a 2% monthly service charge (min. $5) applies beginning <span data-cfg="lateChargeStart"></span>. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs <span data-cfg="storageStart"></span> – <span data-cfg="storageEnd"></span> and is subject to Quest's Storage Terms.</p>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><span></span></div>
@@ -449,7 +451,7 @@ aside.ticket{position:sticky;top:18px}
     </div>
 
     <div class="okbox">Once we receive your signed agreement and deposit, your retrieval window is reserved in the order received — last out, first in. We'll confirm by email.</div>
-    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back to quote</button><button class="btn ghost" onclick="saveAndPrint()">Print quote</button></div>
+    <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back to quote</button><button class="btn ghost" onclick="saveAndPrint()">Print quote</button><button class="btn ghost" onclick="emailQuote(this)">📧 Email me this quote</button></div>
   </section>
 </main>
 
@@ -553,7 +555,11 @@ const RULES = {
 const LEVEL_DESC = {
   basic:'Drain water, run on anti-freeze, drain & fog, disconnect batteries.',
   full: 'Everything in Basic, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
-  fullPwc:'Everything in Basic, plus (as applicable): engine oil & filter change, fuel conditioner. Fuel filter not included for PWC.'
+  fullPwc:'Everything in Basic, plus (as applicable): engine oil & filter change, fuel conditioner. Fuel filter not included for PWC.',
+  /* Standalone versions for the quote sheet / PDF — must make sense a year
+     later with no Basic line to compare against */
+  fullQuote:'Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
+  fullPwcQuote:'Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change and fuel conditioner. Fuel filter not included for PWC.'
 };
 const BOAT_ENGINES = [
   {id:'inboard',  name:'Inboard'},
@@ -699,8 +705,8 @@ function buildStorage(){
   const opts = [
     {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
     {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
-    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`},
-    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`}
+    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
+    {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`, pid:'stP'}
   ].filter(o=>!(hideInside && o.v==='inside'));
   $('#storageOpts').innerHTML = opts.map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
   $$('input[name=storage]').forEach(r=>r.addEventListener('change',e=>{
@@ -767,7 +773,7 @@ function syncHeadsUI(){
 function computeLines(){
   const L=[], loa=S.loa||0, beam=S.beam||0, lwt=S.lwt||0, T=S.hasTrailer, u=S.unit;
   const need=[];
-  const add=(sec,label,amt,calc)=>L.push({sec,label,amt,calc});
+  const add=(sec,label,amt,calc,desc)=>L.push({sec,label,amt,calc,desc});
 
   /* ---- flat-rate units ---- */
   if(u==='golf'){
@@ -784,7 +790,7 @@ function computeLines(){
     const g=S.engines.pwc;
     if(g.qty>0){
       const rate=PRICES[g.level].pwc;
-      add('Winterization', `${g.level==='full'?'Full service':'Basic'} — PWC / Jetski${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`);
+      add('Winterization', `${g.level==='full'?'Full service':'Basic'} — PWC / Jetski${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`, g.level==='full'?LEVEL_DESC.fullPwcQuote:LEVEL_DESC.basic);
     }
     if(S.skiDetail>0) add('Detailing', `Jetski detail${S.skiDetail>1?` × ${S.skiDetail}`:''}`, PRICES.skiDetail*S.skiDetail, `${S.skiDetail} × ${fmt(PRICES.skiDetail)}`);
     if(S.storage==='inside'){
@@ -803,7 +809,7 @@ function computeLines(){
     const g=S.engines[e.id];
     if(g.qty>0){
       const rate=PRICES[g.level][e.id];
-      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`);
+      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`, g.level==='full'?LEVEL_DESC.fullQuote:LEVEL_DESC.basic);
     }
   }
   if(S.dtTrans>0) add('Drive train','Transmission or V-drive'+(S.dtTrans>1?` × ${S.dtTrans}`:''), PRICES.dtTrans*S.dtTrans, `${S.dtTrans} × ${fmt(PRICES.dtTrans)}`);
@@ -901,7 +907,7 @@ function storageTabName(){
   if(S.storage==='insidePrem') return 'Premium Inside';
   return 'No Storage';
 }
-function logQuote(status){
+function logQuote(status, extra){
   const {L,rq}=computeLines(); const t=totals();
   const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
   const dims=S.unit==='boat' ? [S.loa?`LOA ${S.loa}'`:'',S.beam?`B ${S.beam}'`:'',(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:'',S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ')
@@ -915,14 +921,30 @@ function logQuote(status){
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join(' | '),
-    lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt})),
+    lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
-    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd}
+    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd},
+    dueToday:t.dueToday?1:0,
+    adobeUrl:INTEGRATIONS.adobeWebFormUrl?INTEGRATIONS.adobeWebFormUrl+'#'+buildAdobeParams():'',
+    ...(extra||{})
   };
   if(!INTEGRATIONS.quoteLogUrl){ console.log('Quote log (demo mode — set INTEGRATIONS.quoteLogUrl):', payload); return; }
   try{
     fetch(INTEGRATIONS.quoteLogUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
   }catch(e){ console.warn('Quote log failed', e); }
+}
+function emailQuote(btn){
+  ensureQuoteNo();
+  if(!S.email){
+    btn.textContent='Add an email address on the first step';
+    setTimeout(()=>{btn.textContent='📧 Email me this quote';},3500);
+    go('start'); const f=$('#email'); if(f){f.focus();}
+    return;
+  }
+  logQuote('Emailed to customer',{emailCustomer:1});
+  btn.textContent='✓ Sent to '+S.email;
+  btn.disabled=true;
+  setTimeout(()=>{btn.textContent='📧 Email me this quote';btn.disabled=false;},6000);
 }
 function saveAndPrint(){
   ensureQuoteNo();
@@ -1079,7 +1101,7 @@ function refresh(){
     if(meta.length||dims) html+=`<div class="trow" style="border-bottom:1px solid var(--navy)"><div class="l">${meta.join('<br>')}${dims?`<span class="calc">${dims}</span>`:''}</div></div>`;
     for(const li of L){
       if(li.sec!==lastSec){ html+=`<div class="trow sec"><div class="l">${li.sec}</div></div>`; lastSec=li.sec; }
-      html+=`<div class="trow"><div class="l">${li.label}${li.calc?`<span class="calc">${li.calc}</span>`:''}</div><div class="r">${li.amt?fmt(li.amt):'incl.'}</div></div>`;
+      html+=`<div class="trow"><div class="l">${li.label}${li.calc?`<span class="calc">${li.calc}</span>`:''}${li.desc?`<span class="calc desc">${li.desc}</span>`:''}</div><div class="r">${li.amt?fmt(li.amt):'incl.'}</div></div>`;
     }
     if(rq.length){
       html+=`<div class="trow sec"><div class="l">Quotes requested</div></div>`;
@@ -1107,7 +1129,11 @@ function refresh(){
 
   $('#pwPrice').textContent=S.loa?fmt(PRICES.powerwashFt*S.loa):'needs LOA';
   $('#acidPrice').textContent=(S.loa&&S.beam)?fmt((S.beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt)*S.loa):'needs LOA & beam';
-  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'';
+  const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'needs LOA';
+  const inSq = S.hasTrailer ? ((S.lwt&&S.beam)?S.lwt*S.beam:null) : ((S.loa&&S.beam)?S.loa*S.beam:null);
+  const inNeed = S.hasTrailer ? 'needs LWT & beam' : 'needs LOA & beam';
+  const stI=$('#stI'); if(stI) stI.textContent=inSq?fmt((S.hasTrailer?PRICES.insideT:PRICES.insideNT)*inSq):inNeed;
+  const stP=$('#stP'); if(stP) stP.textContent=inSq?fmt((S.hasTrailer?PRICES.insidePremT:PRICES.insidePremNT)*inSq):inNeed;
   syncWrapUI();
   if(S.unit==='jetski') buildSkiStorage();
   $$('.opt').forEach(o=>{const i=o.querySelector('input');o.classList.toggle('sel',i&&i.checked&&!i.disabled);});

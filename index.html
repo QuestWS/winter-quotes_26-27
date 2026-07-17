@@ -216,6 +216,15 @@ aside.ticket{position:sticky;top:18px}
 
   <!-- STEP: start -->
   <section class="panel" data-step="start">
+    <div id="loadBox" style="border:1.5px dashed var(--line);border-radius:10px;padding:12px 15px;margin-bottom:18px">
+      <div style="font-weight:700;color:var(--navy);margin-bottom:6px">Already have a quote? Load it to make changes.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="f" for="loadQn">Quote number</label><input type="text" id="loadQn" placeholder="QW-26-1234" style="max-width:160px"></div>
+        <div><label class="f" for="loadLn">Last name</label><input type="text" id="loadLn" placeholder="Last name" style="max-width:180px"></div>
+        <button class="btn ghost" type="button" onclick="loadQuote()" id="loadBtn">Load my quote</button>
+      </div>
+      <div id="loadMsg" class="note" style="margin-top:8px;display:none"></div>
+    </div>
     <h2>What are we wintering?</h2>
     <p class="lead">Pick what you're storing or servicing and we'll only ask the questions that apply.</p>
     <fieldset>
@@ -331,7 +340,8 @@ aside.ticket{position:sticky;top:18px}
     <fieldset>
       <legend>Timing</legend>
       <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
-      <label class="opt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
     </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Shrinkwrap &amp; extras →</button></div>
   </section>
@@ -407,7 +417,8 @@ aside.ticket{position:sticky;top:18px}
     <fieldset>
       <legend>Timing</legend>
       <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
-      <label class="opt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
     </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
   </section>
@@ -548,6 +559,7 @@ const RULES = {
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
   insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
+  hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
   retrieveSmallMaxLOA:36,
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
@@ -596,7 +608,7 @@ const S = {
   waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
   storage:'none', retrieval:'none',
   wrap:false, inWater:false,
-  powerwash:false, acidWash:false, lateRetrieval:false, hho:false,
+  powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'',
   bottomTouch:false, bottomStrip:false, propRefurb:false,
   extDetail:false, washWax:false, intDetail:false, intWipe:false,
   quoteNo:'', payMode:'deposit'
@@ -800,7 +812,7 @@ function computeLines(){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(S.hho) add('Misc','Heritage Harbor slipholder — discount applied by Quest', 0);
+    if(S.hho) add('Misc','Heritage Harbor Slipholder'+(S.slipNo?` — slip ${S.slipNo}`:'')+' — discount applied by Quest', 0);
     return {L, need, rq:[]};
   }
 
@@ -874,7 +886,7 @@ function computeLines(){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(S.hho) add('Misc','Heritage Harbor slipholder — discount applied by Quest', 0);
+  if(S.hho) add('Misc','Heritage Harbor Slipholder'+(S.slipNo?` — slip ${S.slipNo}`:'')+' — discount applied by Quest', 0);
 
   const rq=QUOTE_ITEMS.filter(([k])=>S[k]).map(([,lbl])=>lbl);
   return {L, need, rq};
@@ -920,11 +932,14 @@ function logQuote(status, extra){
     total:t.total.toFixed(2), deposit:t.deposit.toFixed(2),
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
-    items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join(' | '),
+    slipNo:S.slipNo, hasTrailer:S.hasTrailer?1:0,
+    depositBase:S.hasTrailer?RULES.depositTrailer:RULES.depositNoTrailer,
+    items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
     season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd},
     dueToday:t.dueToday?1:0,
+    state:JSON.parse(JSON.stringify(S)),
     adobeUrl:INTEGRATIONS.adobeWebFormUrl?INTEGRATIONS.adobeWebFormUrl+'#'+buildAdobeParams():'',
     ...(extra||{})
   };
@@ -932,6 +947,62 @@ function logQuote(status, extra){
   try{
     fetch(INTEGRATIONS.quoteLogUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
   }catch(e){ console.warn('Quote log failed', e); }
+}
+/* ============ LOAD A SAVED QUOTE ============ */
+function loadMsg(txt, ok){
+  const m=$('#loadMsg'); m.style.display='block';
+  m.style.color=ok?'#1E6B3A':'#A6541F';
+  m.textContent=txt;
+}
+let loadTimer=null;
+function loadQuote(){
+  const qn=$('#loadQn').value.trim().toUpperCase();
+  const ln=$('#loadLn').value.trim();
+  if(!qn||!ln){ loadMsg('Enter both your quote number and last name.'); return; }
+  if(!INTEGRATIONS.quoteLogUrl){ loadMsg('Quote loading is not configured.'); return; }
+  $('#loadBtn').disabled=true; loadMsg('Looking up your quote…', true);
+  window.__qwLoad=function(res){
+    clearTimeout(loadTimer); $('#loadBtn').disabled=false;
+    if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
+    try{ hydrateFromState(res.state, qn); loadMsg('Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.', true); }
+    catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
+  };
+  const sc=document.createElement('script');
+  sc.src=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&callback=__qwLoad&t='+Date.now();
+  sc.onerror=function(){ clearTimeout(loadTimer); $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again.'); };
+  document.body.appendChild(sc);
+  loadTimer=setTimeout(function(){ $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again.'); },12000);
+}
+function hydrateFromState(state, qn){
+  Object.assign(S, state);
+  S.quoteNo=qn; // updates land on the same spreadsheet row / PDF
+  setUnit(S.unit); // rebuilds units, start UI, storage, nav
+  // text inputs
+  $$('input[data-k],textarea[data-k]').forEach(el=>{ const k=el.dataset.k; if(k in S) el.value=S[k]||''; });
+  // checkboxes
+  $$('input[data-chk]').forEach(el=>{ const k=el.dataset.chk; el.checked=!!S[k]; });
+  // acid wash disables powerwash
+  const pw=document.querySelector('input[data-chk="powerwash"]');
+  if(pw){ pw.disabled=!!S.acidWash; $('#powerwashOpt').classList.toggle('disabled', !!S.acidWash); }
+  // qty steppers (engines + generic counters)
+  $$('.qty').forEach(q=>{
+    const key=q.dataset.qty, inp=q.querySelector('input');
+    if(key.startsWith('eng-')){
+      const id=key.slice(4), g=S.engines[id]; if(!g) return;
+      inp.value=g.qty||0;
+      const lvl=document.querySelector(`[data-lvl="${id}"]`); if(lvl) lvl.style.display=(g.qty||0)>0?'flex':'none';
+    } else if(key in S){ inp.value=S[key]||0; }
+  });
+  // engine level radios
+  Object.keys(S.engines||{}).forEach(id=>{
+    $$(`input[name=lvl-${id}]`).forEach(r=>{ r.checked=r.value===S.engines[id].level; });
+  });
+  // wrap radios + storage-dependent sections
+  $$('input[name=wrapYN]').forEach(r=>{ r.checked=(r.value==='yes')===!!S.wrap; });
+  if(S.unit==='boat'){ buildRetrieval(); syncStorageUI(); }
+  if(typeof syncHeadsUI==='function') syncHeadsUI();
+  syncHhoUI();
+  refresh();
 }
 function emailQuote(btn){
   ensureQuoteNo();
@@ -946,6 +1017,15 @@ function emailQuote(btn){
   btn.disabled=true;
   setTimeout(()=>{btn.textContent='📧 Email me this quote';btn.disabled=false;},6000);
 }
+function syncHhoUI(){
+  document.querySelectorAll('.hhoSlipWrap').forEach(w=>{
+    w.style.display=S.hho?'block':'none';
+    const inp=w.querySelector('.hhoSlipInput'); if(inp&&inp.value!==S.slipNo) inp.value=S.slipNo;
+  });
+}
+document.querySelectorAll('.hhoSlipInput').forEach(inp=>{
+  inp.addEventListener('input',()=>{ S.slipNo=inp.value.trim(); refresh(); });
+});
 function saveAndPrint(){
   ensureQuoteNo();
   $('#ticketQn').textContent='QUOTE# '+S.quoteNo;
@@ -1018,7 +1098,7 @@ function buildAdobeParams(){
     if(w.amt!=null){ set('wrap_type', w.type); set('wrap_amt', fmt(w.amt)); }
   }
   if(S.lateRetrieval) set('late_amt', fmt(PRICES.lateRetrieval));
-  if(S.hho) set('hho','Yes — discount to be applied by Quest');
+  if(S.hho) set('hho','Yes'+(S.slipNo?' — slip '+S.slipNo:'')+' — discount to be applied by Quest');
   if(rq.length) set('rq', rq.join('; '));
   if(S.notes) set('cust_notes', S.notes);
 
@@ -1037,6 +1117,7 @@ function renderSignPay(){
 
   const missing=[];
   if(!ownerName()) missing.push('your name');
+  if(S.hho && !S.slipNo) missing.push('your Heritage Harbor slip number');
   if(!S.email) missing.push('your email (Adobe Sign needs it to deliver your signed copy)');
   const mBox=$('#signMissing');
   if(missing.length){ mBox.style.display='block'; mBox.textContent='Heads up — go back to the first step and add '+missing.join(' and ')+' before signing.'; }
@@ -1112,6 +1193,13 @@ function refresh(){
   }
 
   const t=totals();
+  const hhoOk = t.total >= RULES.hhoMinTotal;
+  document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
+  if(!hhoOk && S.hho){
+    S.hho=false;
+    document.querySelectorAll('[data-chk="hho"]').forEach(c=>{ c.checked=false; });
+  }
+  syncHhoUI();
   $('#tDepRow').style.display = t.dueToday ? 'none' : '';
   $('#tTotalLabel').textContent = t.dueToday
     ? 'Total due today — cash, check, debit, Zelle or ACH'

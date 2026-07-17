@@ -955,23 +955,32 @@ function loadMsg(txt, ok){
   m.textContent=txt;
 }
 let loadTimer=null;
+function handleLoadResult(res, qn){
+  $('#loadBtn').disabled=false;
+  if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
+  try{ hydrateFromState(res.state, qn); loadMsg('Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.', true); }
+  catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
+}
+function loadQuoteJsonp(qn, ln){
+  // fallback path if fetch is blocked
+  window.__qwLoad=function(res){ clearTimeout(loadTimer); handleLoadResult(res, qn); };
+  const sc=document.createElement('script');
+  sc.src=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&callback=__qwLoad&t='+Date.now();
+  sc.onerror=function(){ clearTimeout(loadTimer); $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again or call (815) 433-2200.'); };
+  document.body.appendChild(sc);
+  loadTimer=setTimeout(function(){ $('#loadBtn').disabled=false; loadMsg('The quote system is taking too long — please try again.'); },20000);
+}
 function loadQuote(){
   const qn=$('#loadQn').value.trim().toUpperCase();
   const ln=$('#loadLn').value.trim();
   if(!qn||!ln){ loadMsg('Enter both your quote number and last name.'); return; }
   if(!INTEGRATIONS.quoteLogUrl){ loadMsg('Quote loading is not configured.'); return; }
   $('#loadBtn').disabled=true; loadMsg('Looking up your quote…', true);
-  window.__qwLoad=function(res){
-    clearTimeout(loadTimer); $('#loadBtn').disabled=false;
-    if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
-    try{ hydrateFromState(res.state, qn); loadMsg('Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.', true); }
-    catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
-  };
-  const sc=document.createElement('script');
-  sc.src=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&callback=__qwLoad&t='+Date.now();
-  sc.onerror=function(){ clearTimeout(loadTimer); $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again.'); };
-  document.body.appendChild(sc);
-  loadTimer=setTimeout(function(){ $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again.'); },12000);
+  const url=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&t='+Date.now();
+  fetch(url,{method:'GET',redirect:'follow'})
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(res=>handleLoadResult(res, qn))
+    .catch(()=>{ loadQuoteJsonp(qn, ln); }); // CORS/network hiccup -> JSONP fallback
 }
 function hydrateFromState(state, qn){
   Object.assign(S, state);

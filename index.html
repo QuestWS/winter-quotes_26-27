@@ -478,9 +478,9 @@ aside.ticket{position:sticky;top:18px}
     <div class="ticket-body" id="ticketBody"><div class="ticket-empty">Your selections will print here, line by line — just like the paper quote.</div></div>
     <div class="ticket-totals">
       <div class="trow2 deposit" id="tDepRow"><span class="k">Deposit due today to lock in</span><span class="v" id="tDeposit">$0.00</span></div>
-      <div class="trow2 total"><span class="k" id="tTotalLabel">Total — cash, check, debit, Zelle or ACH by <span data-cfg="payByShort"></span></span><span class="v" id="tCash">$0.00</span></div>
+      <div class="trow2 total"><span class="k" id="tTotalLabel">Total — Cash, Check, Debit, Zelle or ACH by <span data-cfg="payByShort"></span></span><span class="v" id="tCash">$0.00</span></div>
       <div class="trow2"><span class="k">Paying by credit card? (+3% fee)</span><span class="v" id="tCC">$0.00</span></div>
-      <div class="payfoot" id="payFoot">No surcharge for cash, check, debit card, Zelle, or ACH.</div>
+      <div class="payfoot" id="payFoot"></div>
     </div>
     <div class="ticket-foot">This is an estimate for planning purposes. All rates subject to Quest's review; corrective charges or credits may apply. Quest Watersports · 1851 Old Chicago Rd, Ottawa, IL · (815) 433-2200.</div>
   </div>
@@ -1211,11 +1211,14 @@ function refresh(){
   syncHhoUI();
   $('#tDepRow').style.display = t.dueToday ? 'none' : '';
   $('#tTotalLabel').textContent = t.dueToday
-    ? 'Total due today — cash, check, debit, Zelle or ACH'
-    : `Total — cash, check, debit, Zelle or ACH by ${SEASON.payByShort}`;
-  $('#payFoot').innerHTML = t.dueToday
-    ? 'No surcharge for cash, check, debit card, Zelle, or ACH. Credit card payments add a 3% fee.'
-    : `No surcharge for cash, check, debit card, Zelle, or ACH. <b>Paid after ${SEASON.payByShort}?</b> Balance increases ${RULES.latePct}% to <b>${fmt(t.late)}</b> (<b>${fmt(t.lateCC)}</b> by card), plus a 2%/month service charge beginning ${SEASON.lateChargeStart}.`;
+    ? 'Total due today — Cash, Check, Debit, Zelle or ACH'
+    : `Total — Cash, Check, Debit, Zelle or ACH by ${SEASON.payByShort}`;
+  const pf=$('#payFoot');
+  if(t.dueToday){ pf.style.display='none'; pf.innerHTML=''; }
+  else{
+    pf.style.display='';
+    pf.innerHTML=`<b>Paid after ${SEASON.payByShort}?</b> Balance increases ${RULES.latePct}% to <b>${fmt(t.late)}</b> (<b>${fmt(t.lateCC)}</b> by card), plus a 2%/month service charge beginning ${SEASON.lateChargeStart}.`;
+  }
   $('#tDeposit').textContent=fmt(t.deposit);
   $('#tCash').textContent=fmt(t.total);
   $('#tCC').textContent=fmt(t.cc);

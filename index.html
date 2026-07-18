@@ -480,6 +480,8 @@ aside.ticket{position:sticky;top:18px}
       <div class="trow2 deposit" id="tDepRow"><span class="k">Deposit due today to lock in</span><span class="v" id="tDeposit">$0.00</span></div>
       <div class="trow2 total"><span class="k" id="tTotalLabel">Total — Cash, Check, Debit, Zelle or ACH by <span data-cfg="payByShort"></span></span><span class="v" id="tCash">$0.00</span></div>
       <div class="trow2"><span class="k">Paying by credit card? (+3% fee)</span><span class="v" id="tCC">$0.00</span></div>
+      <div class="trow2" id="tPaidRow" style="display:none"><span class="k">Payments received</span><span class="v" id="tPaid">−$0.00</span></div>
+      <div class="trow2 total" id="tBalRow" style="display:none"><span class="k" id="tBalLabel">Balance due</span><span class="v" id="tBal">$0.00</span></div>
       <div class="payfoot" id="payFoot"></div>
     </div>
     <div class="ticket-foot">This is an estimate for planning purposes. All rates subject to Quest's review; corrective charges or credits may apply. Quest Watersports · 1851 Old Chicago Rd, Ottawa, IL · (815) 433-2200.</div>
@@ -634,6 +636,9 @@ function ensureQuoteNo(){
   return S.quoteNo;
 }
 function ownerName(){ return [S.firstName,S.lastName].filter(Boolean).join(' '); }
+let MANUAL=null;      // Quest-applied changes journal, loaded with a saved quote
+let PAYMENTS=[];      // payments collected, loaded with a saved quote (display only)
+function paymentsTotal(){ return PAYMENTS.reduce((a,p)=>a+Number(p.amt||0),0); }
 
 /* ================= CONFIG-DRIVEN COPY ================= */
 function fillConfig(){
@@ -902,7 +907,10 @@ function totals(){
     late: total*(1+RULES.latePct/100),
     lateCC: total*(1+RULES.latePct/100)*(1+RULES.ccPct/100),
     deposit,
-    dueToday: total>0 && deposit>=total   // whole balance is due now — no deposit/late split
+    dueToday: total>0 && deposit>=total,  // whole balance is due now — no deposit/late split
+    paid: paymentsTotal(),
+    balance: Math.max(0, total-paymentsTotal()),
+    paidInFull: paymentsTotal()>0 && total-paymentsTotal()<=0
   };
 }
 
@@ -940,6 +948,7 @@ function logQuote(status, extra){
     season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd},
     dueToday:t.dueToday?1:0,
     state:JSON.parse(JSON.stringify(S)),
+    manual:MANUAL||undefined,
     adobeUrl:INTEGRATIONS.adobeWebFormUrl?INTEGRATIONS.adobeWebFormUrl+'#'+buildAdobeParams():'',
     ...(extra||{})
   };
@@ -1228,6 +1237,14 @@ function refresh(){
   $('#tDeposit').textContent=fmt(t.deposit);
   $('#tCash').textContent=fmt(t.total);
   $('#tCC').textContent=fmt(t.cc);
+  if(t.paid>0){
+    $('#tDepRow').style.display='none';
+    $('#tPaidRow').style.display='flex';
+    $('#tPaid').textContent='−'+fmt(t.paid);
+    $('#tBalRow').style.display='flex';
+    $('#tBalLabel').textContent=t.paidInFull?'PAID IN FULL — thank you!':'Balance due';
+    $('#tBal').textContent=fmt(t.balance);
+  } else { $('#tPaidRow').style.display='none'; $('#tBalRow').style.display='none'; }
   $('#mAmt').textContent=fmt(t.total);
   $('#mDep').textContent=fmt(t.deposit);
   $('#mDepWrap').style.display = t.dueToday ? 'none' : '';

@@ -433,7 +433,7 @@ aside.ticket{position:sticky;top:18px}
       <button class="btn ghost" onclick="saveAndPrint()">Print / save PDF</button>
       <button class="btn ghost" onclick="emailQuote(this)">📧 Email me this quote</button>
     </div>
-    <p class="note" style="margin-top:16px">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the vessel and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b><span data-cfg="payByDate"></span></b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after <span data-cfg="payByShort"></span> increase by <span data-cfg="latePct"></span>%, and a 2% monthly service charge (min. $5) applies beginning <span data-cfg="lateChargeStart"></span>. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs <span data-cfg="storageStart"></span> – <span data-cfg="storageEnd"></span> and is subject to Quest's Storage Terms.</p>
+    <p class="note" id="quoteTerms" style="margin-top:16px">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b><span data-cfg="payByDate"></span></b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after <span data-cfg="payByShort"></span> increase by <span data-cfg="latePct"></span>%, and a 2% monthly service charge (min. $5) applies beginning <span data-cfg="lateChargeStart"></span>. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs <span data-cfg="storageStart"></span> – <span data-cfg="storageEnd"></span> and is subject to Quest's Storage Terms.</p>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><span></span></div>
   </section>
 
@@ -446,7 +446,7 @@ aside.ticket{position:sticky;top:18px}
     <div class="stepcard">
       <div class="sc-head"><div class="sc-num">1</div><div class="sc-title">Review &amp; sign your agreement</div></div>
       <div class="sc-body">
-        <p class="note" style="margin:0 0 12px">Your agreement is pre-filled with every selection and total from this quote, plus Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
+        <p class="note" id="signNote" style="margin:0 0 12px">Your agreement is pre-filled with every selection and total from this quote, plus Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
         <div id="signEmbed"></div>
       </div>
     </div>
@@ -581,7 +581,7 @@ const BOAT_ENGINES = [
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
   {id:'jetski', ic:'🌊', t:'Jetski',    d:'Winterize, detail & inside storage'},
-  {id:'golf',   ic:'⛳', t:'Golf cart', d:'Flat-rate storage w/ HHO pickup'},
+  {id:'golf',   ic:'⛳', t:'Golf cart', d:'Flat-rate storage w/ Heritage Harbor pickup'},
   {id:'ebike',  ic:'🚲', t:'E-bike',    d:'Flat-rate storage incl. tune-up'}
 ];
 const FLOWS = {
@@ -789,7 +789,7 @@ function computeLines(){
 
   /* ---- flat-rate units ---- */
   if(u==='golf'){
-    add('Storage','Golf cart storage (incl. HHO pickup/delivery)', PRICES.golfCart);
+    add('Storage','Golf cart storage (incl. Heritage Harbor pickup & delivery)', PRICES.golfCart);
     return {L, need, rq:[]};
   }
   if(u==='ebike'){
@@ -1134,16 +1134,16 @@ function renderSignPay(){
 
   const params=buildAdobeParams();
   const target=$('#signEmbed');
+  $('#signNote').style.display = INTEGRATIONS.adobeWebFormUrl ? '' : 'none';
   if(INTEGRATIONS.adobeWebFormUrl){
     const src=INTEGRATIONS.adobeWebFormUrl + '#' + params;
     target.innerHTML=`<iframe class="signframe" src="${src}" title="Quest Watersports storage & services agreement"></iframe>`;
   }else{
     target.innerHTML=`
       <div class="demo-embed">
-        <div class="de-title">Adobe Acrobat Sign loads here</div>
-        <p>In the live version, the ${SEASON.seasonLabel} Storage &amp; Services Agreement appears in this space with every line of this quote already filled in — the customer reads and signs without leaving the page, and the executed copy is emailed to both parties automatically.</p>
-        <p style="margin-top:10px"><b>Pre-fill payload built live from this quote</b> (passed to the web form via URL parameters):</p>
-        <div class="paramview">${params?('#'+params.replaceAll('&','\u200b&')):'— make selections to build the payload —'}</div>
+        <div class="de-title">Online signing is almost here</div>
+        <p>We're putting the finishing touches on online signing. For now: save or email yourself this quote, pay your deposit online below to lock in your spot, and we'll have your Storage &amp; Services Agreement ready to sign — takes two minutes by phone or at the shop, whichever is easier.</p>
+        <p style="margin-top:10px">Questions? Call us at (815) 433-2200 with quote# <b>${S.quoteNo}</b>.</p>
       </div>`;
   }
 
@@ -1218,6 +1218,12 @@ function refresh(){
   else{
     pf.style.display='';
     pf.innerHTML=`<b>Paid after ${SEASON.payByShort}?</b> Balance increases ${RULES.latePct}% to <b>${fmt(t.late)}</b> (<b>${fmt(t.lateCC)}</b> by card), plus a 2%/month service charge beginning ${SEASON.lateChargeStart}.`;
+  }
+  const qt=$('#quoteTerms');
+  if(qt){
+    qt.innerHTML = t.dueToday
+      ? `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Payment is due today; credit card payments are subject to a 3% fee. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`
+      : `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b>${SEASON.payByDate}</b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after ${SEASON.payByShort} increase by ${RULES.latePct}%, and a 2% monthly service charge (min. $5) applies beginning ${SEASON.lateChargeStart}. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`;
   }
   $('#tDeposit').textContent=fmt(t.deposit);
   $('#tCash').textContent=fmt(t.total);

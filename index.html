@@ -787,7 +787,7 @@ function syncHeadsUI(){
 }
 
 /* ================= QUOTE ENGINE ================= */
-function computeLines(){
+function computeLinesRaw(){
   const L=[], loa=S.loa||0, beam=S.beam||0, lwt=S.lwt||0, T=S.hasTrailer, u=S.unit;
   const need=[];
   const add=(sec,label,amt,calc,desc)=>L.push({sec,label,amt,calc,desc});
@@ -896,6 +896,19 @@ function computeLines(){
   const rq=QUOTE_ITEMS.filter(([k])=>S[k]).map(([,lbl])=>lbl);
   return {L, need, rq};
 }
+function pricedRqLabels(){ return MANUAL?(MANUAL.priced||[]).map(p=>p.rqLabel):[]; }
+function computeLines(){
+  const r=computeLinesRaw();
+  // Re-apply Quest-made changes (discounts, edits, removals, priced requests)
+  if(MANUAL){
+    (MANUAL.removed||[]).forEach(lb=>{ const i=r.L.findIndex(l=>l.label===lb); if(i>-1) r.L.splice(i,1); });
+    (MANUAL.edits||[]).forEach(e=>{ const l=r.L.find(x=>x.label===e.label); if(l){ if(e.newAmt!=null){l.amt=Number(e.newAmt); l.calc='';} if(e.newLabel) l.label=e.newLabel; } });
+    (MANUAL.priced||[]).forEach(pr=>{ r.L.push({sec:pr.sec||'Additional services',label:pr.label,calc:'',amt:Number(pr.amt)}); });
+    (MANUAL.adjustments||[]).forEach(a=>{ r.L.push({sec:'Adjustments',label:a.label,calc:'',amt:Number(a.amt)}); });
+    r.rq=(r.rq||[]).filter(l=>!pricedRqLabels().includes(l));
+  }
+  return r;
+}
 function totals(){
   const {L}=computeLines();
   const total=L.reduce((a,b)=>a+b.amt,0);
@@ -967,7 +980,14 @@ let loadTimer=null;
 function handleLoadResult(res, qn){
   $('#loadBtn').disabled=false;
   if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
-  try{ hydrateFromState(res.state, qn); loadMsg('Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.', true); }
+  try{
+    MANUAL=res.manual||null; PAYMENTS=res.payments||[];
+    hydrateFromState(res.state, qn);
+    let msg='Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.';
+    if(MANUAL&&((MANUAL.adjustments||[]).length||(MANUAL.edits||[]).length||(MANUAL.removed||[]).length||(MANUAL.priced||[]).length)) msg='Loaded '+qn+' — including updates applied by Quest. Totals shown are your official totals.';
+    if(PAYMENTS.length) msg+=' Payments you\'ve made are reflected in the balance below.';
+    loadMsg(msg, true);
+  }
   catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
 }
 function loadQuoteJsonp(qn, ln){

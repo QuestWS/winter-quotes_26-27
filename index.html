@@ -427,6 +427,9 @@ aside.ticket{position:sticky;top:18px}
   <section class="panel" data-step="review">
     <h2>Your winter quote</h2>
     <p class="lead">Everything you picked, itemized on the ticket. Look it over, add any notes, then continue to sign your agreement and pay online.</p>
+    <div class="golfOnly" style="display:none;margin-bottom:12px"><label class="f" for="hhoAddr">Heritage Harbor address for pickup &amp; delivery (street &amp; number only)</label><input type="text" id="hhoAddr" data-k="hhoAddr" placeholder="e.g. 123 Anchor Ln" style="max-width:320px"></div>
+    <div class="keysOnly" style="display:none;margin-bottom:12px"><label class="f" for="keyLoc">Where will the keys be?</label><input type="text" id="keyLoc" data-k="keyLoc" placeholder="e.g. in the glove box / at the front desk / on the seat" style="max-width:380px">
+      <p class="note" id="keysNote" style="margin-top:6px"></p></div>
     <div><label class="f" for="notes">Notes / special requests</label><textarea id="notes" data-k="notes" rows="3" placeholder="Retrieval date requests, slip number, anything we should know…"></textarea></div>
     <div class="review-actions">
       <button class="btn gold" onclick="goNext()">Sign &amp; pay online →</button>
@@ -471,7 +474,7 @@ aside.ticket{position:sticky;top:18px}
   <div class="ticket-card">
     <div class="ticket-head">
       <div class="co">Quest Watersports</div>
-      <div class="sub">WINTER SERVICES ESTIMATE · <span data-cfg="seasonLabel"></span></div>
+      <div class="sub"><span id="tDocTerm">WINTER SERVICES ESTIMATE</span> · <span data-cfg="seasonLabel"></span></div>
       <div class="qn" id="ticketQn"></div>
     </div>
     <div class="perf"></div>
@@ -610,7 +613,7 @@ const S = {
   waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
   storage:'none', retrieval:'none',
   wrap:false, inWater:false,
-  powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'',
+  powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'', hhoAddr:'', keyLoc:'',
   bottomTouch:false, bottomStrip:false, propRefurb:false,
   extDetail:false, washWax:false, intDetail:false, intWipe:false,
   quoteNo:'', payMode:'deposit'
@@ -637,6 +640,7 @@ function ensureQuoteNo(){
 }
 function ownerName(){ return [S.firstName,S.lastName].filter(Boolean).join(' '); }
 let MANUAL=null;      // Quest-applied changes journal, loaded with a saved quote
+let LOCKED=false;     // true once a deposit/payment is on file — selections frozen
 let PAYMENTS=[];      // payments collected, loaded with a saved quote (display only)
 function paymentsTotal(){ return PAYMENTS.reduce((a,p)=>a+Number(p.amt||0),0); }
 
@@ -944,7 +948,8 @@ function logQuote(status, extra){
   const {L,rq}=computeLines(); const t=totals();
   const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
   const dims=S.unit==='boat' ? [S.loa?`LOA ${S.loa}'`:'',S.beam?`B ${S.beam}'`:'',(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:'',S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ')
-           : S.unit==='jetski' ? [S.skiLen?`stored L ${S.skiLen}'`:'',S.skiWid?`stored W ${S.skiWid}'`:''].filter(Boolean).join(' · ') : '';
+           : S.unit==='jetski' ? [S.skiLen?`stored L ${S.skiLen}'`:'',S.skiWid?`stored W ${S.skiWid}'`:''].filter(Boolean).join(' · ')
+           : S.unit==='golf' ? (S.hhoAddr?`HHO: ${S.hhoAddr}`:'') : '';
   const payload={
     status, quoteNo:ensureQuoteNo(), ts:new Date().toISOString(),
     unit:unitName, storageTab:storageTabName(),
@@ -953,7 +958,7 @@ function logQuote(status, extra){
     total:t.total.toFixed(2), deposit:t.deposit.toFixed(2),
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
-    slipNo:S.slipNo, hasTrailer:S.hasTrailer?1:0,
+    slipNo:S.slipNo, hhoAddr:S.hhoAddr, keyLoc:S.keyLoc, hasTrailer:S.hasTrailer?1:0,
     depositBase:S.hasTrailer?RULES.depositTrailer:RULES.depositNoTrailer,
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
@@ -971,6 +976,27 @@ function logQuote(status, extra){
   }catch(e){ console.warn('Quote log failed', e); }
 }
 /* ============ LOAD A SAVED QUOTE ============ */
+function unlockUI(){
+  document.querySelectorAll('.panel input,.panel select,.panel textarea,.panel button').forEach(el=>{ el.disabled=false; });
+  const b=$('#lockBanner'); if(b) b.remove();
+}
+function lockUI(){
+  if(!LOCKED) return;
+  document.querySelectorAll('.panel input,.panel select,.panel textarea,.panel button').forEach(el=>{
+    if(el.closest('#loadBox')) return;                      // loading stays available
+    const oc=el.getAttribute('onclick')||'';
+    if(oc.includes('goPrev')||oc.includes('goNext')||oc.includes('saveAndPrint')||oc.includes('emailQuote')) return;
+    el.disabled=true;
+  });
+  if(!$('#lockBanner')){
+    const b=document.createElement('div');
+    b.id='lockBanner';
+    b.style.cssText='background:#F4E8CF;border:1.5px solid var(--gold);border-radius:9px;padding:11px 15px;margin:0 0 16px;color:#6B5A2A;font-size:14px;line-height:1.45';
+    b.innerHTML='<b>A deposit has been received on this quote, so selections are locked.</b> You can review everything, print or email your quote, sign, and pay your balance. Need a change? Call Quest at (815) 433-2200 and we\'ll take care of it.';
+    const firstPanel=document.querySelector('.panel');
+    firstPanel.parentNode.insertBefore(b, firstPanel);
+  }
+}
 function loadMsg(txt, ok){
   const m=$('#loadMsg'); m.style.display='block';
   m.style.color=ok?'#1E6B3A':'#A6541F';
@@ -982,10 +1008,13 @@ function handleLoadResult(res, qn){
   if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
   try{
     MANUAL=res.manual||null; PAYMENTS=res.payments||[];
+    LOCKED=PAYMENTS.length>0;
+    unlockUI();
     hydrateFromState(res.state, qn);
+    lockUI();
     let msg='Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.';
     if(MANUAL&&((MANUAL.adjustments||[]).length||(MANUAL.edits||[]).length||(MANUAL.removed||[]).length||(MANUAL.priced||[]).length)) msg='Loaded '+qn+' — including updates applied by Quest. Totals shown are your official totals.';
-    if(PAYMENTS.length) msg+=' Payments you\'ve made are reflected in the balance below.';
+    if(LOCKED) msg='Loaded '+qn+' — a deposit is on file, so selections are locked. You can review, print, sign, and pay your balance; call (815) 433-2200 for changes.';
     loadMsg(msg, true);
   }
   catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
@@ -1137,6 +1166,8 @@ function buildAdobeParams(){
   }
   if(S.lateRetrieval) set('late_amt', fmt(PRICES.lateRetrieval));
   if(S.hho) set('hho','Yes'+(S.slipNo?' — slip '+S.slipNo:'')+' — discount to be applied by Quest');
+  if(S.keyLoc) set('keys', S.keyLoc);
+  if(S.unit==='golf'&&S.hhoAddr) set('hho_addr', S.hhoAddr);
   if(rq.length) set('rq', rq.join('; '));
   if(S.notes) set('cust_notes', S.notes);
 
@@ -1156,6 +1187,8 @@ function renderSignPay(){
   const missing=[];
   if(!ownerName()) missing.push('your name');
   if(S.hho && !S.slipNo) missing.push('your Heritage Harbor slip number');
+  if(S.unit==='golf' && !S.hhoAddr) missing.push('your Heritage Harbor pickup address');
+  if(['boat','jetski','golf'].includes(S.unit) && !S.keyLoc) missing.push('where the keys will be');
   if(!S.email) missing.push('your email (Adobe Sign needs it to deliver your signed copy)');
   const mBox=$('#signMissing');
   if(missing.length){ mBox.style.display='block'; mBox.textContent='Heads up — go back to the first step and add '+missing.join(' and ')+' before signing.'; }
@@ -1177,6 +1210,30 @@ function renderSignPay(){
   }
 
   const t=totals();
+  if(t.paidInFull){
+    S.payMode='balance';
+    $('#payStepTitle').textContent='Payment complete';
+    $('#payChoices').innerHTML='';
+    $('#payAmtLabel').textContent='Balance';
+    $('#payAmt').textContent='$0.00 — paid in full, thank you!';
+    $('#payRef').textContent=S.quoteNo;
+    $('#payLink').style.display='none';
+    refresh();
+    return;
+  }
+  if(t.paid>0){
+    S.payMode='balance';
+    $('#payStepTitle').textContent='Pay your balance';
+    $('#payChoices').innerHTML='';
+    $('#payAmtLabel').textContent='Balance due';
+    $('#payAmt').textContent=fmt(t.balance);
+    $('#payRef').textContent=S.quoteNo;
+    $('#payLink').style.display='';
+    $('#payLink').href=INTEGRATIONS.paymentPageUrl;
+    refresh();
+    return;
+  }
+  $('#payLink').style.display='';
   if(t.dueToday){
     S.payMode='full';
     $('#payStepTitle').textContent='Pay your total';
@@ -1231,6 +1288,13 @@ function refresh(){
   }
 
   const t=totals();
+  document.querySelectorAll('.golfOnly').forEach(el=>{ el.style.display = S.unit==='golf' ? '' : 'none'; });
+  const keysApply=['boat','jetski','golf'].includes(S.unit);
+  document.querySelectorAll('.keysOnly').forEach(el=>{ el.style.display = keysApply ? '' : 'none'; });
+  const kn=$('#keysNote');
+  if(kn) kn.textContent = S.unit==='golf'
+    ? 'Golf carts cannot be picked up without keys.'
+    : keysApply ? 'Units that must be towed out and/or mechanically started because keys aren\'t available are subject to a $500 fee.' : '';
   const hhoOk = t.total >= RULES.hhoMinTotal;
   document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
   if(!hhoOk && S.hho){
@@ -1257,6 +1321,7 @@ function refresh(){
   $('#tDeposit').textContent=fmt(t.deposit);
   $('#tCash').textContent=fmt(t.total);
   $('#tCC').textContent=fmt(t.cc);
+  $('#tDocTerm').textContent = PAYMENTS.length ? 'WINTER SERVICES INVOICE' : 'WINTER SERVICES ESTIMATE';
   if(t.paid>0){
     $('#tDepRow').style.display='none';
     $('#tPaidRow').style.display='flex';
@@ -1378,7 +1443,7 @@ function init(){
   }));
 
   $('#payLink').addEventListener('click',()=>{
-    logQuote('Signed & paying — '+(S.payMode==='full'?'pay in full':'deposit'));
+    logQuote('Signed & paying — '+(S.payMode==='balance'?'balance':S.payMode==='full'?'pay in full':'deposit'));
   });
 
   document.addEventListener('click',e=>{

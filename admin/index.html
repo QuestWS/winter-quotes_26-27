@@ -52,6 +52,13 @@ line-height:1;border-radius:9px;padding:8px 12px;cursor:pointer}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;
 box-shadow:0 1px 4px rgba(20,41,62,.06)}
 .card h2{margin:0 0 12px;font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--frost)}
+.card{position:relative}
+.qclose{position:absolute;top:12px;right:12px;width:30px;height:30px;border-radius:8px;border:1.5px solid var(--line);
+background:#fff;color:var(--muted);font-size:15px;cursor:pointer;line-height:1}
+.qclose:hover{border-color:var(--red);color:var(--red)}
+.ctr{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;
+padding-top:10px;border-top:1px solid var(--ice);font-size:13.5px}
+.ctr .lab{color:var(--muted);letter-spacing:.05em;text-transform:uppercase;font-size:11.5px}
 .pill{display:inline-block;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
 .pill.blue{background:#E2ECF4;color:var(--frost)}.pill.green{background:#E2F1E7;color:var(--green)}
 .pill.gold{background:var(--gold-soft);color:#8A6516}.pill.red{background:#FBEEE2;color:var(--red)}
@@ -186,19 +193,20 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div class="grid">
         <div>
           <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-              <h2 style="margin:0" id="qName"></h2>
-              <div style="display:flex;align-items:center;gap:8px">
-                <span class="pill blue" id="qStatus"></span>
-                <button class="btn ghost sm" onclick="closeQuote()" title="Close this quote">✕</button>
-              </div>
-            </div>
+            <button class="qclose" onclick="closeQuote()" title="Close this quote">✕</button>
+            <h2 style="margin:0 26px 8px 0" id="qName"></h2>
+            <span class="pill blue" id="qStatus"></span>
             <div class="stats">
               <div class="stat"><div class="v" id="stTotal">—</div><div class="k">Total</div></div>
               <div class="stat"><div class="v" id="stPaid">—</div><div class="k">Paid</div></div>
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
+            <div class="ctr" id="contractRow">
+              <span class="lab">Signed contract</span>
+              <span id="contractCtl"></span>
+            </div>
+            <input type="file" id="contractFile" accept="application/pdf,image/*" class="hide">
             <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Line items</summary>
               <div class="lines" id="qLines" style="margin-top:8px"></div></details>
           </div>
@@ -386,6 +394,8 @@ function renderQuote(r){
     kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'');
   $('qLines').textContent=r.lines.join('\n');
   const P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});
+  window._contract=r.contractUrl||'';
+  renderContract(P);
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
   const owed=(r.balNum||0)>0.005;
@@ -396,6 +406,25 @@ function renderQuote(r){
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
+}
+function renderContract(P){
+  const c=$('contractCtl');
+  const canUp=!!P.pay;
+  let h='';
+  if(window._contract) h+=`<a href="${window._contract}" target="_blank" class="btn ghost sm" style="text-decoration:none;display:inline-block">View</a> `;
+  if(canUp) h+=`<button class="btn navy sm" onclick="$('contractFile').click()">${window._contract?'Replace':'Upload signed copy'}</button>`;
+  if(!h) h='<span class="msg" style="margin:0">— not on file —</span>';
+  c.innerHTML=h;
+}
+async function uploadContract(f){
+  const c=$('contractCtl');c.innerHTML='<span class="msg">Uploading…</span>';
+  try{
+    const b64=await fileToB64(f);
+    const r=await api('uploadContract',[QN,f.name,b64,f.type]);
+    if(!r.ok){c.innerHTML='<span class="msg err">'+r.error+'</span>';return;}
+    window._contract=r.url;toast('Signed contract saved');
+    renderContract(ME.admin?{pay:1}:(ME.perms||{}));
+  }catch(e){c.innerHTML='<span class="msg err">'+e.message+'</span>';}
 }
 async function act(btnId,msgId,fn,args){
   const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
@@ -431,6 +460,8 @@ function wireDrop(){
   inp.onchange=()=>{queueFiles(inp.files);inp.value='';};
   const cam=$('cameraInput');
   cam.onchange=()=>{queueFiles(cam.files);cam.value='';};
+  const cf=$('contractFile');
+  cf.onchange=()=>{if(cf.files.length)uploadContract(cf.files[0]);cf.value='';};
 }
 function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Read failed'));r.readAsDataURL(f);});}

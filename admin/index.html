@@ -84,6 +84,43 @@ padding:12px 22px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0
 .login img{display:block;margin:0 auto 6px;max-height:74px}
 .login h1{text-align:center;font-size:20px;color:var(--navy);margin:8px 0 18px}
 .hide{display:none!important}
+.hit{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 6px;
+border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px}
+.hit:hover{background:#F4F9FC}
+.sgH{display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 6px;
+padding-bottom:6px;border-bottom:2px solid var(--gold)}
+.sgH:first-child{margin-top:2px}
+.sgH b{color:var(--navy);font-size:16px;letter-spacing:.03em}
+.sgH span{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
+padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
+.srow:hover{background:#F4F9FC}
+.srow .nm{font-weight:700;color:var(--navy)}
+.srow .un{color:var(--muted)}
+.srow .bl{font-family:var(--mono);text-align:right;white-space:nowrap}
+.srow .bl.paid{color:var(--green)}.srow .bl.owe{color:var(--gold)}
+@media(max-width:640px){.srow{grid-template-columns:1fr auto}.srow .un{grid-column:1/-1;font-size:12px}}
+#printArea{display:none}
+@media print{
+  body>*{display:none!important}
+  #printArea{display:block!important;font-family:Arial,Helvetica,sans-serif;color:#000}
+  .pg{page-break-after:always;padding:0 2px}
+  .pg:last-child{page-break-after:auto}
+  .pgHead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:3px solid #000;padding-bottom:6px;margin-bottom:4px}
+  .pgHead h1{font-size:20px;margin:0;letter-spacing:.02em}
+  .pgHead .meta{font-size:11px;text-align:right}
+  table.yard{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.yard th{text-align:left;border-bottom:1.5px solid #000;padding:5px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+  table.yard td{border-bottom:.75px solid #999;padding:7px 6px;vertical-align:top}
+  .cb{width:14px;height:14px;border:1.5px solid #000;display:inline-block}
+  .yn{font-weight:bold}
+  .ysub{color:#444;font-size:10.5px}
+  .ybal{white-space:nowrap;font-family:monospace}
+  .pgFoot{font-size:9.5px;color:#555;margin-top:8px}
+}
+.hit .l b{color:var(--navy);font-size:15px}.hit .l div{font-size:12.5px;color:var(--muted)}
+.hit .r{text-align:right;font-family:var(--mono);font-size:13px;color:var(--navy);white-space:nowrap}
+
 .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:28px}
 </style>
 </head>
@@ -109,16 +146,22 @@ padding:12px 22px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0
     <div class="ttl">STAFF CONSOLE<small>WINTER SERVICES</small></div>
     <div class="spacer"></div>
     <div class="userchip">Signed in as <b id="userName"></b></div>
-    <button class="linkbtn hide" id="adminOpen" onclick="loadStaff()">Staff &amp; permissions</button>
+    <button class="linkbtn" onclick="toggleStorage()">Storage view</button>
+    <button class="linkbtn hide" id="adminOpen" onclick="toggleStaff()">Staff &amp; permissions</button>
     <button class="linkbtn" onclick="logout()">Log out</button>
   </div>
 
   <div class="wrap">
     <div class="hero">
-      <input id="qn" placeholder="Quote / invoice number — e.g. QW-26-3477" autocapitalize="characters" autocomplete="off">
-      <button class="btn navy" onclick="doLookup()">Look up</button>
+      <input id="qn" placeholder="Quote # (QW-26-3477) or last name — partial OK, e.g. Kuj" autocapitalize="characters" autocomplete="off">
+      <button class="btn navy" onclick="doSearch()">Look up</button>
     </div>
     <div class="msg" id="lookupMsg"></div>
+
+    <div class="card hide" id="resultsCard">
+      <h2>Matches</h2>
+      <div id="resultsList"></div>
+    </div>
 
     <div id="quoteArea" class="hide">
       <div class="grid">
@@ -178,12 +221,25 @@ padding:12px 22px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0
             <div class="msg" id="adjMsg"></div>
           </div>
 
+          <div class="card hide" id="feeCard">
+            <h2>Late fee</h2>
+            <div class="msg" id="feeSuggest" style="margin:0 0 4px"></div>
+            <div class="row2">
+              <div><label class="fld">Fee amount</label><input class="txt" id="feeAmt" inputmode="decimal" placeholder="91.50"></div>
+              <div><label class="fld">Wording on the invoice</label><input class="txt" id="feeLabel" placeholder="December service charge (2%)"></div>
+            </div>
+            <label class="chk"><input type="checkbox" id="feeEmail" checked> Email "you've been charged a late fee" now</label>
+            <button class="btn navy" id="feeBtn" onclick="doFee()">Apply late fee</button>
+            <div class="msg" id="feeMsg"></div>
+          </div>
+
           <div class="card hide" id="emailCard">
             <h2>Customer emails</h2>
             <div class="emailbtns">
               <button class="btn navy" id="em_stored" onclick="sendKind('stored')">📦 We have your unit</button>
               <button class="btn navy" id="em_spring" onclick="sendKind('spring')">🌱 Spring alert</button>
               <button class="btn navy" id="em_splash" onclick="sendKind('splash')">🌊 Back in / back home</button>
+              <button class="btn gold" id="em_latewarn" onclick="sendKind('latewarn')">⏰ Late fee warning</button>
               <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">📧 Re-send invoice</button>
             </div>
             <div class="row2" style="margin-top:10px">
@@ -197,14 +253,29 @@ padding:12px 22px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0
     </div>
 
     <div class="card hide" id="adminCard">
-      <h2>Staff &amp; permissions</h2>
-      <div class="stafftbl" id="staffList"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Staff &amp; permissions</h2>
+        <button class="btn ghost sm" onclick="$('adminCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="stafftbl" id="staffList" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card hide" id="storageCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Storage overview</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn navy sm" onclick="printStorage()">🖨 Print yard sheets</button>
+          <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
+        </div>
+      </div>
+      <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
     <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log</p>
   </div>
 </div>
 
+<div id="printArea"></div>
 <div class="toast" id="toast"></div>
 <script>
 const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
@@ -218,6 +289,7 @@ async function api(fn,args){
   if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
   return j;
 }
+function fmt$(n){return '$'+Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600);}
 function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
 
@@ -242,8 +314,27 @@ function pillClass(st){
   if(st.includes('review')||st.includes('late'))return 'red';
   return 'blue';
 }
-async function doLookup(){
-  QN=$('qn').value.trim().toUpperCase();if(!QN)return;
+async function doSearch(){
+  const q=$('qn').value.trim();if(!q)return;
+  $('resultsCard').classList.add('hide');
+  if(/^qw[- ]?\d/i.test(q)||/^\d{3,}$/.test(q)){ doLookup(q.toUpperCase().replace(/\s+/g,'')); return; }
+  setMsg('lookupMsg','Searching for "'+q+'"…');
+  try{const r=await api('search',[q]);
+    if(!r.ok){setMsg('lookupMsg',r.error,false);return;}
+    if(!r.hits.length){setMsg('lookupMsg','No customers matching "'+q+'".',false);$('quoteArea').classList.add('hide');return;}
+    if(r.hits.length===1){setMsg('lookupMsg','');doLookup(r.hits[0].quoteNo);return;}
+    setMsg('lookupMsg',r.hits.length+' matches'+(r.truncated?' (showing first 25 — narrow the search)':'')+' — tap the right one:');
+    $('quoteArea').classList.add('hide');
+    $('resultsCard').classList.remove('hide');
+    $('resultsList').innerHTML=r.hits.map(h=>
+      `<div class="hit" onclick="pickHit('${h.quoteNo}')">
+         <div class="l"><b>${h.name}</b><div>${h.unit}${h.ymm?' · '+h.ymm:''} · ${h.status}</div></div>
+         <div class="r">${h.quoteNo}<br>${h.balance}</div></div>`).join('');
+  }catch(e){setMsg('lookupMsg',e.message,false);}
+}
+function pickHit(qn){$('resultsCard').classList.add('hide');doLookup(qn);}
+async function doLookup(qn){
+  QN=qn||$('qn').value.trim().toUpperCase();if(!QN)return;
   setMsg('lookupMsg','Looking up '+QN+'…');
   try{const r=await api('lookup',[QN]);
     if(!r.ok){setMsg('lookupMsg',r.error,false);$('quoteArea').classList.add('hide');return;}
@@ -268,6 +359,11 @@ function renderQuote(r){
   const P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
+  const owed=(r.balNum||0)>0.005;
+  $('feeCard').classList.toggle('hide',!(P.adjust&&owed));
+  if(P.adjust&&owed){
+    $('feeSuggest').textContent='Suggested: first fee '+fmt$(r.feeSuggest10)+' (10% of balance) · monthly '+fmt$(r.feeSuggest2)+' (2%, min $5) · pay-by '+r.payByShort;
+  }
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
@@ -284,6 +380,7 @@ async function act(btnId,msgId,fn,args){
 const doPay=()=>act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod').value,$('payReceipt').checked]);
 const doAdjust=()=>act('adjBtn','adjMsg','adjust',[QN,$('adjAmt').value,$('adjDesc').value,$('adjEmail').checked]);
 const sendKind=k=>act('em_'+k,'emailMsg','sendEmail',[QN,k,'']);
+const doFee=()=>act('feeBtn','feeMsg','lateFee',[QN,$('feeAmt').value,$('feeLabel').value,$('feeEmail').checked]);
 const sendUpNext=()=>act('em_upnext','emailMsg','sendEmail',[QN,'upnext',$('upnextWhen').value]);
 
 /* ---------- photos: drag-drop, multi, PARALLEL upload ---------- */
@@ -333,6 +430,62 @@ async function queueFiles(fileList){
 }
 
 /* ---------- admin ---------- */
+function toggleStaff(){
+  const c=$('adminCard');
+  if(c.classList.contains('hide')){loadStaff();}else{c.classList.add('hide');}
+}
+function toggleStorage(){
+  const c=$('storageCard');
+  if(c.classList.contains('hide')){loadStorage();}else{c.classList.add('hide');}
+}
+async function loadStorage(){
+  $('storageCard').classList.remove('hide');
+  $('adminCard').classList.add('hide');
+  $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
+  try{
+    const r=await api('storageView',[]);
+    if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
+    window._sg=r.groups;
+    let total=0;
+    const html=r.groups.map(g=>{
+      total+=g.count;
+      const rows=g.rows.length?g.rows.map(x=>{
+        const owe=!(x.balance==='Paid'||x.balance.startsWith('CREDIT'));
+        return `<div class="srow" onclick="fromStorage('${x.qn}')">
+          <span class="nm">${x.name}</span>
+          <span class="un">${x.unit}${x.ymm?' · '+x.ymm:''}${x.dims?' · '+x.dims:''} · ${x.status}</span>
+          <span class="bl ${owe?'owe':'paid'}">${x.balance}</span></div>`;
+      }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
+      return `<div class="sgH"><b>${g.tab}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
+    }).join('');
+    $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${total} total units on file — tap any row to open it</div>`+html;
+  }catch(e){$('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';}
+}
+function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
+async function printStorage(){
+  if(!window._sg){await loadStorage();}
+  if(!window._sg){return;}
+  const today=new Date().toLocaleDateString();
+  $('printArea').innerHTML=window._sg.filter(g=>g.count>0).map(g=>`
+    <div class="pg">
+      <div class="pgHead">
+        <h1>QUEST WATERSPORTS — ${g.tab.toUpperCase()}</h1>
+        <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · winter services</div>
+      </div>
+      <table class="yard">
+        <tr><th style="width:22px">✓</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
+        ${g.rows.map(x=>`<tr>
+          <td><span class="cb"></span></td>
+          <td><span class="yn">${x.name}</span><br><span class="ysub">${x.qn}</span></td>
+          <td>${x.unit}${x.ymm?' · '+x.ymm:''}${x.dims?'<br><span class="ysub">'+x.dims+'</span>':''}</td>
+          <td>${x.keys||'—'}</td>
+          <td>${x.status}</td>
+          <td class="ybal" style="text-align:right">${x.balance}</td></tr>`).join('')}
+      </table>
+      <div class="pgFoot">Check ✓ as each unit is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
+    </div>`).join('');
+  window.print();
+}
 async function loadStaff(){
   $('adminCard').classList.remove('hide');
   const r=await api('listStaff',[]);
@@ -350,7 +503,7 @@ async function resetPin(n){if(!confirm('Reset '+n+"'s PIN?"))return;
   const r=await api('resetPin',[n]);if(!r.ok){toast(r.error);return;}
   alert(n+"'s new PIN: "+r.pin+"\nWrite it down now — it will not be shown again.");}
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
-  $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doLookup();});
+  $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 });
 </script>

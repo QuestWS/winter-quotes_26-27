@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Quest Staff Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#14293E;--navy2:#1D3A57;--frost:#4A81A6;--gold:#C08A22;--gold-soft:#F4E8CF;
+--ice:#EBF1F6;--line:#C7D5E0;--muted:#5C7185;--ink:#1D2B38;--green:#1E6B3A;--red:#A6541F;
+--card:#FFFFFF;--mono:'JetBrains Mono',ui-monospace,monospace;--disp:'Archivo',system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{font-family:var(--disp);background:linear-gradient(180deg,#E3ECF3 0%,var(--ice) 240px);color:var(--ink);min-height:100vh}
+.topbar{background:var(--navy);color:#fff;display:flex;align-items:center;gap:14px;padding:10px 20px;
+box-shadow:0 2px 10px rgba(20,41,62,.25);position:sticky;top:0;z-index:50}
+.topbar img{height:38px;width:auto;background:#fff;border-radius:7px;padding:3px 7px}
+.topbar .ttl{font-weight:800;letter-spacing:.05em;font-size:15px}
+.topbar .ttl small{display:block;font-weight:400;color:#9FC3DC;font-size:11px;letter-spacing:.08em}
+.spacer{flex:1}
+.userchip{background:var(--navy2);border:1px solid #2C4E73;border-radius:999px;padding:6px 14px;font-size:13px}
+.userchip b{color:#F4D9A6}
+.linkbtn{background:none;border:1px solid #2C4E73;color:#B9CDDD;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
+.linkbtn:hover{background:var(--navy2)}
+.wrap{max-width:1060px;margin:0 auto;padding:22px 16px 60px}
+.hero{display:flex;gap:10px;margin-bottom:20px}
+.hero input{flex:1;font-size:17px;padding:14px 16px;border:1.5px solid var(--line);border-radius:12px;font-family:var(--mono);letter-spacing:.04em}
+.hero input:focus{outline:2px solid var(--frost)}
+.btn{border:0;border-radius:12px;padding:14px 22px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--disp)}
+.btn.navy{background:var(--navy);color:#fff}.btn.navy:hover{background:var(--navy2)}
+.btn.gold{background:var(--gold);color:#fff}.btn.gold:hover{filter:brightness(1.06)}
+.btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
+.btn.sm{padding:8px 14px;font-size:13px;border-radius:9px}
+.btn:disabled{opacity:.45;cursor:default}
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px}
+@media(max-width:840px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;
+box-shadow:0 1px 4px rgba(20,41,62,.06)}
+.card h2{margin:0 0 12px;font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--frost)}
+.pill{display:inline-block;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
+.pill.blue{background:#E2ECF4;color:var(--frost)}.pill.green{background:#E2F1E7;color:var(--green)}
+.pill.gold{background:var(--gold-soft);color:#8A6516}.pill.red{background:#FBEEE2;color:var(--red)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.stat{background:#FAFCFE;border:1px solid var(--line);border-radius:11px;padding:10px 12px;text-align:center}
+.stat .v{font-family:var(--mono);font-weight:700;font-size:17px;color:var(--navy)}
+.stat .k{font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-top:2px}
+.stat.bal .v{color:var(--gold)}.stat.credit .v{color:var(--green)}
+.kv{display:flex;justify-content:space-between;gap:14px;padding:5px 0;font-size:14px;border-bottom:1px dashed var(--ice)}
+.kv:last-child{border:0}.kv b{text-align:right;color:var(--navy)}
+.lines{font-family:var(--mono);font-size:12.5px;background:#FDFCF7;border:1px solid var(--line);
+border-radius:10px;padding:10px 14px;white-space:pre-wrap;max-height:220px;overflow:auto}
+label.fld{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}
+input.txt,select.txt{width:100%;padding:11px 13px;font-size:15px;border:1.5px solid var(--line);border-radius:10px;font-family:var(--disp)}
+input.txt:focus,select.txt:focus{outline:2px solid var(--frost)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0}
+.msg{font-size:13.5px;margin-top:8px;min-height:18px}.msg.ok{color:var(--green);font-weight:700}.msg.err{color:var(--red);font-weight:700}
+.emailbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:520px){.emailbtns{grid-template-columns:1fr}}
+.drop{border:2px dashed var(--frost);border-radius:12px;background:#F4F9FC;padding:22px;text-align:center;color:var(--muted);
+cursor:pointer;transition:background .15s}
+.drop.hot{background:#E2ECF4;border-color:var(--navy)}
+.drop b{color:var(--navy)}
+.seg{display:inline-flex;border:1.5px solid var(--navy);border-radius:10px;overflow:hidden;margin-bottom:10px}
+.seg button{border:0;background:#fff;color:var(--navy);padding:9px 18px;font-weight:700;cursor:pointer;font-size:14px}
+.seg button.on{background:var(--navy);color:#fff}
+.uplist{margin-top:10px;font-size:13px}
+.uplist .u{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed var(--ice)}
+.bar{height:8px;background:var(--ice);border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .2s}
+.stafftbl .prm{display:inline-block;margin:3px 5px 3px 0}
+.stafftbl .prm button{border-radius:999px;padding:5px 13px;font-size:12px;font-weight:700;border:1.5px solid var(--line);
+background:#fff;color:var(--muted);cursor:pointer}
+.stafftbl .prm button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.staffrow{padding:12px 0;border-bottom:1px solid var(--ice)}
+.staffrow .nm{font-weight:800;color:var(--navy);font-size:15px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;
+padding:12px 22px;border-radius:12px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.25);opacity:0;transition:opacity .25s;z-index:99}
+.toast.show{opacity:1}
+.login{max-width:420px;margin:9vh auto 0;padding:0 16px}
+.login .card{padding:30px}
+.login img{display:block;margin:0 auto 6px;max-height:74px}
+.login h1{text-align:center;font-size:20px;color:var(--navy);margin:8px 0 18px}
+.hide{display:none!important}
+.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:28px}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView" class="login hide">
+  <div class="card">
+    <img src="https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/refs/heads/main/Quest%20wet%20rect.png" alt="Quest Watersports">
+    <h1>Staff Console</h1>
+    <label class="fld" for="pin">Your PIN</label>
+    <input class="txt" id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+    <div style="margin-top:14px"><button class="btn navy" style="width:100%" onclick="doLogin()">Log in</button></div>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+  <p class="foot">Quest Watersports · authorized staff only · all activity is logged</p>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appView" class="hide">
+  <div class="topbar">
+    <img src="https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/refs/heads/main/Quest%20wet%20rect.png" alt="Quest">
+    <div class="ttl">STAFF CONSOLE<small>WINTER SERVICES</small></div>
+    <div class="spacer"></div>
+    <div class="userchip">Signed in as <b id="userName"></b></div>
+    <button class="linkbtn hide" id="adminOpen" onclick="loadStaff()">Staff &amp; permissions</button>
+    <button class="linkbtn" onclick="logout()">Log out</button>
+  </div>
+
+  <div class="wrap">
+    <div class="hero">
+      <input id="qn" placeholder="Quote / invoice number — e.g. QW-26-3477" autocapitalize="characters" autocomplete="off">
+      <button class="btn navy" onclick="doLookup()">Look up</button>
+    </div>
+    <div class="msg" id="lookupMsg"></div>
+
+    <div id="quoteArea" class="hide">
+      <div class="grid">
+        <div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <h2 style="margin:0" id="qName"></h2>
+              <span class="pill blue" id="qStatus"></span>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="v" id="stTotal">—</div><div class="k">Total</div></div>
+              <div class="stat"><div class="v" id="stPaid">—</div><div class="k">Paid</div></div>
+              <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
+            </div>
+            <div id="qInfo"></div>
+            <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Line items</summary>
+              <div class="lines" id="qLines" style="margin-top:8px"></div></details>
+          </div>
+
+          <div class="card hide" id="photoCard">
+            <h2>Condition photos</h2>
+            <div class="seg">
+              <button class="on" onclick="setSeason('winter',this)">❄ Winter</button>
+              <button onclick="setSeason('spring',this)">🌱 Spring</button>
+            </div>
+            <div class="drop" id="drop"><b>Tap to take / choose photos</b><br>or drag &amp; drop here — multiple at once</div>
+            <input type="file" id="photoFiles" accept="image/*" capture="environment" multiple class="hide">
+            <div class="bar hide" id="upbar"><i id="upbarI"></i></div>
+            <div class="uplist" id="uplist"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+              <span class="msg" id="photoCounts" style="margin:0"></span>
+              <button class="btn ghost sm" onclick="openPhotos()">Open folder</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card hide" id="payCard">
+            <h2>Record payment / deposit</h2>
+            <div class="row2">
+              <div><label class="fld">Amount (negative = refund)</label><input class="txt" id="payAmt" inputmode="decimal" placeholder="500"></div>
+              <div><label class="fld">Method</label><input class="txt" id="payMethod" placeholder="Cash / Check #1042 / Zelle"></div>
+            </div>
+            <label class="chk"><input type="checkbox" id="payReceipt" checked> Email receipt to customer</label>
+            <button class="btn gold" id="payBtn" onclick="doPay()">Record payment</button>
+            <div class="msg" id="payMsg"></div>
+          </div>
+
+          <div class="card hide" id="adjCard">
+            <h2>Adjustment</h2>
+            <div class="row2">
+              <div><label class="fld">Amount (negative = discount)</label><input class="txt" id="adjAmt" inputmode="decimal" placeholder="-50"></div>
+              <div><label class="fld">Wording on the invoice</label><input class="txt" id="adjDesc" placeholder="Heritage Harbor Slipholder discount — slip B-14"></div>
+            </div>
+            <label class="chk"><input type="checkbox" id="adjEmail"> Email the updated copy now</label>
+            <button class="btn navy" id="adjBtn" onclick="doAdjust()">Apply adjustment</button>
+            <div class="msg" id="adjMsg"></div>
+          </div>
+
+          <div class="card hide" id="emailCard">
+            <h2>Customer emails</h2>
+            <div class="emailbtns">
+              <button class="btn navy" id="em_stored" onclick="sendKind('stored')">📦 We have your unit</button>
+              <button class="btn navy" id="em_spring" onclick="sendKind('spring')">🌱 Spring alert</button>
+              <button class="btn navy" id="em_splash" onclick="sendKind('splash')">🌊 Back in / back home</button>
+              <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">📧 Re-send invoice</button>
+            </div>
+            <div class="row2" style="margin-top:10px">
+              <div><label class="fld">Up next — when?</label><input class="txt" id="upnextWhen" placeholder="tomorrow / Thursday"></div>
+              <div style="display:flex;align-items:flex-end"><button class="btn gold" id="em_upnext" style="width:100%" onclick="sendUpNext()">🚤 Send "You're up next"</button></div>
+            </div>
+            <div class="msg" id="emailMsg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card hide" id="adminCard">
+      <h2>Staff &amp; permissions</h2>
+      <div class="stafftbl" id="staffList"></div>
+    </div>
+
+    <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+let T=localStorage.getItem('qwtok')||'',ME=JSON.parse(localStorage.getItem('qwme')||'null'),QN='',PURL='';
+const $=id=>document.getElementById(id);
+async function api(fn,args){
+  const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({api:'console',fn,token:T,args:args||[]})});
+  if(!res.ok)throw new Error('Network error ('+res.status+')');
+  const j=await res.json();
+  if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
+  return j;
+}
+function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600);}
+function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
+
+function boot(){
+  if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
+    $('userName').textContent=ME.name;
+    if(ME.admin)$('adminOpen').classList.remove('hide');
+  } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
+}
+async function doLogin(){
+  setMsg('loginMsg','Checking…');
+  try{const r=await api('auth',[$('pin').value]);
+    if(!r.ok){setMsg('loginMsg',r.error,false);return;}
+    T=r.token;ME=r;localStorage.setItem('qwtok',T);localStorage.setItem('qwme',JSON.stringify(r));boot();
+  }catch(e){setMsg('loginMsg',e.message,false);}
+}
+function logout(){localStorage.clear();location.reload();}
+function pillClass(st){
+  st=st.toLowerCase();
+  if(st.includes('paid in full')||st.includes('credit'))return 'green';
+  if(st.includes('signed')||st.includes('payment'))return 'gold';
+  if(st.includes('review')||st.includes('late'))return 'red';
+  return 'blue';
+}
+async function doLookup(){
+  QN=$('qn').value.trim().toUpperCase();if(!QN)return;
+  setMsg('lookupMsg','Looking up '+QN+'…');
+  try{const r=await api('lookup',[QN]);
+    if(!r.ok){setMsg('lookupMsg',r.error,false);$('quoteArea').classList.add('hide');return;}
+    setMsg('lookupMsg','');renderQuote(r);
+  }catch(e){setMsg('lookupMsg',e.message,false);}
+}
+function renderQuote(r){
+  $('quoteArea').classList.remove('hide');
+  $('qName').textContent=r.quoteNo+' — '+r.name;
+  $('qStatus').textContent=r.status||'—';$('qStatus').className='pill '+pillClass(r.status||'');
+  const credit=r.balance.startsWith('CREDIT');
+  $('stTotal').textContent=r.total;$('stPaid').textContent=r.paid;
+  $('stBal').textContent=credit?r.balance.replace('CREDIT ',''):r.balance;
+  $('stBalBox').className='stat '+(credit?'credit':'bal');
+  $('stBalK').textContent=credit?'Credit due':'Balance';
+  const kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+  $('qInfo').innerHTML=kv('Unit',r.unit+(r.ymm?' · '+r.ymm:''))+
+    (r.keyLoc?kv('Keys',r.keyLoc):'')+(r.hhoAddr?kv('HHO address',r.hhoAddr):'')+
+    (r.rq?kv('Open quote requests',r.rq):'')+
+    kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'');
+  $('qLines').textContent=r.lines.join('\n');
+  const P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});
+  $('payCard').classList.toggle('hide',!P.pay);
+  $('adjCard').classList.toggle('hide',!P.adjust);
+  $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
+  $('photoCard').classList.toggle('hide',!P.photos);
+  if(P.photos)refreshPhotos();
+}
+async function act(btnId,msgId,fn,args){
+  const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
+  try{const r=await api(fn,args);
+    if(!r.ok){setMsg(msgId,r.error,false);b.disabled=false;return;}
+    setMsg(msgId,r.msg||'Done.',true);toast(r.msg||'Done');
+    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){setMsg(msgId,e.message,false);}
+  b.disabled=false;
+}
+const doPay=()=>act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod').value,$('payReceipt').checked]);
+const doAdjust=()=>act('adjBtn','adjMsg','adjust',[QN,$('adjAmt').value,$('adjDesc').value,$('adjEmail').checked]);
+const sendKind=k=>act('em_'+k,'emailMsg','sendEmail',[QN,k,'']);
+const sendUpNext=()=>act('em_upnext','emailMsg','sendEmail',[QN,'upnext',$('upnextWhen').value]);
+
+/* ---------- photos: drag-drop, multi, PARALLEL upload ---------- */
+let SEASON='winter';
+function setSeason(s,btn){SEASON=s;document.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');}
+async function refreshPhotos(){
+  try{const r=await api('photoInfo',[QN]);
+    if(r.ok){PURL=r.url;$('photoCounts').textContent='Winter: '+r.counts.winter+' · Spring: '+r.counts.spring+' photos on file';}
+  }catch(e){}
+}
+function openPhotos(){if(PURL)window.open(PURL,'_blank');}
+const drop=()=>$('drop');
+function wireDrop(){
+  const d=drop(),inp=$('photoFiles');
+  d.onclick=()=>inp.click();
+  d.ondragover=e=>{e.preventDefault();d.classList.add('hot');};
+  d.ondragleave=()=>d.classList.remove('hot');
+  d.ondrop=e=>{e.preventDefault();d.classList.remove('hot');queueFiles(e.dataTransfer.files);};
+  inp.onchange=()=>{queueFiles(inp.files);inp.value='';};
+}
+function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();
+  r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Read failed'));r.readAsDataURL(f);});}
+async function queueFiles(fileList){
+  const files=[...fileList].filter(f=>f.type.startsWith('image/'));
+  if(!files.length)return;
+  const list=$('uplist');list.innerHTML='';
+  const rows=files.map(f=>{const div=document.createElement('div');div.className='u';
+    div.innerHTML=`<span>${f.name}</span><span class="st">queued</span>`;list.appendChild(div);return div.querySelector('.st');});
+  let done=0,failed=0;const total=files.length;
+  $('upbar').classList.remove('hide');
+  const setbar=()=>{$('upbarI').style.width=Math.round(100*done/total)+'%';};
+  const CONCURRENCY=3;let idx=0;
+  async function worker(){
+    while(idx<files.length){
+      const i=idx++;rows[i].textContent='uploading…';
+      try{const b64=await fileToB64(files[i]);
+        const r=await api('uploadPhoto',[QN,SEASON,files[i].name,b64,files[i].type]);
+        if(r.ok){rows[i].textContent='✓ done';}
+        else{rows[i].textContent='✗ '+r.error;failed++;}
+      }catch(e){rows[i].textContent='✗ '+e.message;failed++;}
+      done++;setbar();
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(CONCURRENCY,total)},worker));
+  toast(failed?`${done-failed} uploaded, ${failed} failed`:`All ${total} photos uploaded to ${SEASON==='winter'?'Winter':'Spring'}`);
+  refreshPhotos();
+}
+
+/* ---------- admin ---------- */
+async function loadStaff(){
+  $('adminCard').classList.remove('hide');
+  const r=await api('listStaff',[]);
+  if(!r.ok){toast(r.error);return;}
+  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',admin:'Admin'};
+  $('staffList').innerHTML=r.staff.map(st=>{
+    const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm('${st.name}','${p}',${on?0:1})">${names[p]}</button></span>`;
+    return `<div class="staffrow"><div class="nm">${st.name}${st.admin?' · admin':''}</div>
+      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('admin',st.admin)}
+      <span class="prm"><button onclick="resetPin('${st.name}')">Reset PIN</button></span></div>`;
+  }).join('');
+}
+async function togglePerm(n,p,v){const r=await api('setPerm',[n,p,v]);if(!r.ok){toast(r.error);return;}loadStaff();}
+async function resetPin(n){if(!confirm('Reset '+n+"'s PIN?"))return;
+  const r=await api('resetPin',[n]);if(!r.ok){toast(r.error);return;}
+  alert(n+"'s new PIN: "+r.pin+"\nWrite it down now — it will not be shown again.");}
+document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
+  $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doLookup();});
+  $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+});
+</script>
+</body>
+</html>

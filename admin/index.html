@@ -209,8 +209,13 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <button class="on" onclick="setSeason('winter',this)">❄ Winter</button>
               <button onclick="setSeason('spring',this)">🌱 Spring</button>
             </div>
-            <div class="drop" id="drop"><b>Tap to take / choose photos</b><br>or drag &amp; drop here — multiple at once</div>
-            <input type="file" id="photoFiles" accept="image/*" capture="environment" multiple class="hide">
+            <div class="drop" id="drop"><b>Tap to choose from your gallery</b><br>or drag &amp; drop here — multiple at once</div>
+            <div class="row2" style="margin-top:8px">
+              <button class="btn ghost sm" onclick="$('cameraInput').click()">📷 Take photos now</button>
+              <button class="btn ghost sm" onclick="$('photoFiles').click()">🖼 Upload from gallery</button>
+            </div>
+            <input type="file" id="photoFiles" accept="image/*" multiple class="hide">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hide">
             <div class="bar hide" id="upbar"><i id="upbarI"></i></div>
             <div class="uplist" id="uplist"></div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
@@ -424,6 +429,8 @@ function wireDrop(){
   d.ondragleave=()=>d.classList.remove('hot');
   d.ondrop=e=>{e.preventDefault();d.classList.remove('hot');queueFiles(e.dataTransfer.files);};
   inp.onchange=()=>{queueFiles(inp.files);inp.value='';};
+  const cam=$('cameraInput');
+  cam.onchange=()=>{queueFiles(cam.files);cam.value='';};
 }
 function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Read failed'));r.readAsDataURL(f);});}

@@ -59,6 +59,22 @@ background:#fff;color:var(--muted);font-size:15px;cursor:pointer;line-height:1}
 .ctr{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;
 padding-top:10px;border-top:1px solid var(--ice);font-size:13.5px}
 .ctr .lab{color:var(--muted);letter-spacing:.05em;text-transform:uppercase;font-size:11.5px}
+.lnrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 4px;
+border-bottom:1px solid var(--ice);font-size:13px}
+.lnrow .ll{flex:1;min-width:0}.lnrow .ll .sec{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+.lnrow .amt{font-family:var(--mono);white-space:nowrap}
+.lnbtn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;color:var(--navy)}
+.lnbtn.del:hover{border-color:var(--red);color:var(--red)}
+.lnedit{background:#F4F9FC;border:1.5px solid var(--frost);border-radius:10px;padding:12px;margin-top:8px}
+.histrow{padding:6px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
+.histrow b{color:var(--navy)}.histrow .hm{color:var(--muted)}
+.modal{position:fixed;inset:0;background:rgba(20,41,62,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:14px}
+.mbox{background:#fff;border-radius:14px;max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.mhead{padding:14px 18px;border-bottom:1px solid var(--line)}
+.mhead .msub{font-size:13px;color:var(--muted)}.mhead b{color:var(--navy)}
+.mbody{flex:1;min-height:280px}.mbody iframe{width:100%;height:100%;min-height:340px;border:0}
+.mfoot{display:flex;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
+.mfoot .btn{flex:1}
 .pill{display:inline-block;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
 .pill.blue{background:#E2ECF4;color:var(--frost)}.pill.green{background:#E2F1E7;color:var(--green)}
 .pill.gold{background:var(--gold-soft);color:#8A6516}.pill.red{background:#FBEEE2;color:var(--red)}
@@ -207,8 +223,22 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <span id="contractCtl"></span>
             </div>
             <input type="file" id="contractFile" accept="application/pdf,image/*" class="hide">
-            <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Line items</summary>
-              <div class="lines" id="qLines" style="margin-top:8px"></div></details>
+            <details style="margin-top:10px" open><summary style="cursor:pointer;color:var(--muted);font-size:13px">Line items</summary>
+              <div id="qLines" style="margin-top:6px"></div>
+              <div class="lnedit hide" id="lnEdit">
+                <div class="row2">
+                  <div><label class="fld">Amount</label><input class="txt" id="lnAmt" inputmode="decimal"></div>
+                  <div><label class="fld">Wording</label><input class="txt" id="lnLabel"></div>
+                </div>
+                <div class="row2" style="margin-top:8px">
+                  <button class="btn navy sm" onclick="saveLine()">Save change</button>
+                  <button class="btn ghost sm" onclick="$('lnEdit').classList.add('hide')">Cancel</button>
+                </div>
+                <div class="msg" id="lnMsg"></div>
+              </div>
+            </details>
+            <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Email history</summary>
+              <div id="qHist" style="margin-top:6px"></div></details>
           </div>
 
           <div class="card hide" id="photoCard">
@@ -310,6 +340,16 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   </div>
 </div>
 
+<div class="modal hide" id="pvModal">
+  <div class="mbox">
+    <div class="mhead"><b id="pvSub"></b><div class="msub">To: <span id="pvTo"></span> — review, then send or cancel</div></div>
+    <div class="mbody"><iframe id="pvFrame" sandbox=""></iframe></div>
+    <div class="mfoot">
+      <button class="btn ghost" onclick="pvCancel()">Cancel</button>
+      <button class="btn gold" id="pvSend" onclick="pvConfirm()">Send it</button>
+    </div>
+  </div>
+</div>
 <div id="printArea"></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -392,7 +432,11 @@ function renderQuote(r){
     (r.keyLoc?kv('Keys',r.keyLoc):'')+(r.hhoAddr?kv('HHO address',r.hhoAddr):'')+
     (r.rq?kv('Open quote requests',r.rq):'')+
     kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'');
-  $('qLines').textContent=r.lines.join('\n');
+  window._lines=r.linesRaw||[];
+  renderLines();
+  $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
+    `<div class="histrow"><b>${e.kind}</b> → ${e.to} <span class="hm">· ${e.ts} · by ${e.by}</span></div>`).join('')
+    :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
   const P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});
   window._contract=r.contractUrl||'';
   renderContract(P);
@@ -426,6 +470,59 @@ async function uploadContract(f){
     renderContract(ME.admin?{pay:1}:(ME.perms||{}));
   }catch(e){c.innerHTML='<span class="msg err">'+e.message+'</span>';}
 }
+function renderLines(){
+  const canAdj=ME.admin||((ME.perms||{}).adjust);
+  $('qLines').innerHTML=window._lines.map(l=>
+    `<div class="lnrow"><div class="ll"><div class="sec">${l.sec||''}</div>${l.label}</div>
+      <span class="amt">${l.amt?fmt$(l.amt):'incl.'}</span>
+      ${canAdj?`<button class="lnbtn" onclick="editLine(${l.i})">Edit</button>
+      <button class="lnbtn del" onclick="delLine(${l.i})">✕</button>`:''}</div>`).join('')
+    ||'<div class="msg" style="padding:4px">No line items.</div>';
+}
+let LNIDX=-1;
+function editLine(i){
+  LNIDX=i;const l=window._lines.find(x=>x.i===i);
+  $('lnAmt').value=l.amt||'';$('lnLabel').value=l.label;
+  $('lnEdit').classList.remove('hide');setMsg('lnMsg','');$('lnAmt').focus();
+}
+async function saveLine(){
+  setMsg('lnMsg','Saving…');
+  try{const r=await api('editLine',[QN,LNIDX,'edit',$('lnAmt').value,$('lnLabel').value]);
+    if(!r.ok){setMsg('lnMsg',r.error,false);return;}
+    $('lnEdit').classList.add('hide');toast(r.msg);
+    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){setMsg('lnMsg',e.message,false);}
+}
+async function delLine(i){
+  const l=window._lines.find(x=>x.i===i);
+  if(!confirm('Remove this line?\n\n'+l.label+' — '+(l.amt?fmt$(l.amt):'incl.')))return;
+  try{const r=await api('editLine',[QN,i,'delete','','']);
+    if(!r.ok){toast(r.error);return;}
+    toast(r.msg);
+    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){toast(e.message);}
+}
+
+/* ---- preview-before-send ---- */
+let PV={kind:'',extra:''};
+async function previewSend(kind,extra){
+  PV={kind,extra:extra||''};
+  setMsg('emailMsg','Building preview…');
+  try{const r=await api('emailPreview',[QN,kind,PV.extra]);
+    if(!r.ok){setMsg('emailMsg',r.error,false);return;}
+    setMsg('emailMsg','');
+    $('pvSub').textContent=r.subject;$('pvTo').textContent=r.to;
+    $('pvFrame').srcdoc=r.html;
+    $('pvModal').classList.remove('hide');
+  }catch(e){setMsg('emailMsg',e.message,false);}
+}
+function pvCancel(){$('pvModal').classList.add('hide');}
+async function pvConfirm(){
+  $('pvSend').disabled=true;
+  await act('pvSend','emailMsg','sendEmail',[QN,PV.kind,PV.extra]);
+  $('pvSend').disabled=false;
+  pvCancel();
+}
 async function act(btnId,msgId,fn,args){
   const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
   try{const r=await api(fn,args);
@@ -437,9 +534,9 @@ async function act(btnId,msgId,fn,args){
 }
 const doPay=()=>act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod').value,$('payReceipt').checked]);
 const doAdjust=()=>act('adjBtn','adjMsg','adjust',[QN,$('adjAmt').value,$('adjDesc').value,$('adjEmail').checked]);
-const sendKind=k=>act('em_'+k,'emailMsg','sendEmail',[QN,k,'']);
+const sendKind=k=>previewSend(k,'');
 const doFee=()=>act('feeBtn','feeMsg','lateFee',[QN,$('feeAmt').value,$('feeLabel').value,$('feeEmail').checked]);
-const sendUpNext=()=>act('em_upnext','emailMsg','sendEmail',[QN,'upnext',$('upnextWhen').value]);
+const sendUpNext=()=>previewSend('upnext',$('upnextWhen').value);
 
 /* ---------- photos: drag-drop, multi, PARALLEL upload ---------- */
 let SEASON='winter';

@@ -926,8 +926,9 @@ function totals(){
     deposit,
     dueToday: total>0 && deposit>=total,  // whole balance is due now — no deposit/late split
     paid: paymentsTotal(),
-    balance: Math.max(0, total-paymentsTotal()),
-    paidInFull: paymentsTotal()>0 && total-paymentsTotal()<=0
+    balance: total-paymentsTotal(),   // negative = credit due to the customer
+    paidInFull: paymentsTotal()>0 && Math.abs(total-paymentsTotal())<=0.005,
+    credit: total-paymentsTotal()<-0.005 ? paymentsTotal()-total : 0
   };
 }
 
@@ -963,7 +964,7 @@ function logQuote(status, extra){
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
-    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd},
+    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd,lateRetrievalFee:PRICES.lateRetrieval,lateRetrievalLabel:'Late retrieval surcharge (after '+SEASON.payByShort+')'},
     dueToday:t.dueToday?1:0,
     state:JSON.parse(JSON.stringify(S)),
     manual:MANUAL||undefined,
@@ -1210,12 +1211,12 @@ function renderSignPay(){
   }
 
   const t=totals();
-  if(t.paidInFull){
+  if(t.paidInFull||t.credit){
     S.payMode='balance';
     $('#payStepTitle').textContent='Payment complete';
     $('#payChoices').innerHTML='';
-    $('#payAmtLabel').textContent='Balance';
-    $('#payAmt').textContent='$0.00 — paid in full, thank you!';
+    $('#payAmtLabel').textContent=t.credit?'Credit on your account':'Balance';
+    $('#payAmt').textContent=t.credit?fmt(t.credit)+' — we\'ll settle up with you':'$0.00 — paid in full, thank you!';
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').style.display='none';
     refresh();
@@ -1292,9 +1293,9 @@ function refresh(){
   const keysApply=['boat','jetski','golf'].includes(S.unit);
   document.querySelectorAll('.keysOnly').forEach(el=>{ el.style.display = keysApply ? '' : 'none'; });
   const kn=$('#keysNote');
-  if(kn) kn.textContent = S.unit==='golf'
-    ? 'Golf carts cannot be picked up without keys.'
-    : keysApply ? 'Units that must be towed out and/or mechanically started because keys aren\'t available are subject to a $500 fee.' : '';
+  if(kn) kn.innerHTML = S.unit==='golf'
+    ? 'Golf carts cannot be picked up without keys.<br>If the battery is dead and needs a jump start, a $50 fee applies.'
+    : keysApply ? 'Units that must be towed out and/or mechanically started because keys aren\'t available are subject to a $500 fee.<br>If the battery/batteries are dead and require a jump start, a $50 fee applies.' : '';
   const hhoOk = t.total >= RULES.hhoMinTotal;
   document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
   if(!hhoOk && S.hho){
@@ -1327,8 +1328,8 @@ function refresh(){
     $('#tPaidRow').style.display='flex';
     $('#tPaid').textContent='−'+fmt(t.paid);
     $('#tBalRow').style.display='flex';
-    $('#tBalLabel').textContent=t.paidInFull?'PAID IN FULL — thank you!':'Balance due';
-    $('#tBal').textContent=fmt(t.balance);
+    $('#tBalLabel').textContent=t.credit?'CREDIT DUE TO YOU':t.paidInFull?'PAID IN FULL — thank you!':'Balance due';
+    $('#tBal').textContent=t.credit?fmt(t.credit):fmt(Math.max(0,t.balance));
   } else { $('#tPaidRow').style.display='none'; $('#tBalRow').style.display='none'; }
   $('#mAmt').textContent=fmt(t.total);
   $('#mDep').textContent=fmt(t.deposit);

@@ -66,6 +66,14 @@ border-bottom:1px solid var(--ice);font-size:13px}
 .lnbtn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;color:var(--navy)}
 .lnbtn.del:hover{border-color:var(--red);color:var(--red)}
 .lnedit{background:#F4F9FC;border:1.5px solid var(--frost);border-radius:10px;padding:12px;margin-top:8px}
+.rqrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;
+background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bottom:6px;font-size:13px}
+.rqrow .btn{flex:0 0 auto}
+.sdbox{background:#F4F9FC;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px}
+.sdbox .lab{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
+.sdopts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.sdopts button{border:1.5px solid var(--line);background:#fff;color:var(--navy);border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer}
+.sdopts button.on{background:var(--navy);border-color:var(--navy);color:#fff}
 .histrow{padding:6px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .histrow b{color:var(--navy)}.histrow .hm{color:var(--muted)}
 .modal{position:fixed;inset:0;background:rgba(20,41,62,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:14px}
@@ -218,6 +226,8 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
+            <div id="rqBlock" style="margin-top:8px"></div>
+            <div id="seasonBlock" style="margin-top:8px"></div>
             <div class="ctr" id="contractRow">
               <span class="lab">Signed contract</span>
               <span id="contractCtl"></span>
@@ -430,10 +440,14 @@ function renderQuote(r){
   const kv=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   $('qInfo').innerHTML=kv('Unit',r.unit+(r.ymm?' · '+r.ymm:''))+
     (r.keyLoc?kv('Keys',r.keyLoc):'')+(r.hhoAddr?kv('HHO address',r.hhoAddr):'')+
-    (r.rq?kv('Open quote requests',r.rq):'')+
+
     kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'');
   window._lines=r.linesRaw||[];
   renderLines();
+  window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
+  const canAdj2=ME.admin||((ME.perms||{}).adjust);
+  renderRequests(canAdj2);
+  renderSeasonDone(canAdj2);
   $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
     `<div class="histrow"><b>${e.kind}</b> → ${e.to} <span class="hm">· ${e.ts} · by ${e.by}</span></div>`).join('')
     :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
@@ -469,6 +483,51 @@ async function uploadContract(f){
     window._contract=r.url;toast('Signed contract saved');
     renderContract(ME.admin?{pay:1}:(ME.perms||{}));
   }catch(e){c.innerHTML='<span class="msg err">'+e.message+'</span>';}
+}
+function renderRequests(canAdj){
+  const b=$('rqBlock');
+  if(!window._rq.length){b.innerHTML='';return;}
+  b.innerHTML='<div class="msg" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Open quote requests (price to convert to a line):</div>'+
+    window._rq.map(q=>`<div class="rqrow"><span>${q}</span>`+
+      (canAdj?`<button class="btn navy sm" onclick="priceReq(${JSON.stringify(q).replace(/"/g,'&quot;')})">Price this</button>`:'')+
+      `</div>`).join('');
+}
+async function priceReq(label){
+  const amt=prompt('Price for "'+label+'"?\nEnter a dollar amount (e.g. 225):');
+  if(amt===null)return;
+  try{const r=await api('priceRequest',[QN,label,amt]);
+    if(!r.ok){toast(r.error);return;}
+    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){toast(e.message);}
+}
+function renderSeasonDone(canAdj){
+  const b=$('seasonBlock');
+  const sd=window._seasonDone;
+  const cur=sd?(sd.choice==='now'?'Done now':sd.choice==='call'?'Will call when done':'Done by '+(sd.date||'a set date')):'Not answered yet';
+  if(!canAdj&&!sd){b.innerHTML='';return;}
+  let h=`<div class="sdbox"><span class="lab">Season timing</span><div style="font-weight:700;color:var(--navy);margin:2px 0">${cur}</div>`;
+  if(canAdj){
+    h+=`<div class="sdopts">
+      <button class="${sd&&sd.choice==='now'?'on':''}" onclick="setSeason('now')">Done now</button>
+      <button class="${sd&&sd.choice==='date'?'on':''}" onclick="setSeasonDate()">Set date…</button>
+      <button class="${sd&&sd.choice==='call'?'on':''}" onclick="setSeason('call')">Will call</button>
+    </div><div class="msg" id="sdMsg"></div>`;
+  }
+  h+='</div>';b.innerHTML=h;
+}
+async function setSeason(choice){
+  try{const r=await api('setSeasonDone',[QN,choice,'']);
+    if(!r.ok){setMsg('sdMsg',r.error,false);return;}
+    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){setMsg('sdMsg',e.message,false);}
+}
+async function setSeasonDate(){
+  const d=prompt('Done date (YYYY-MM-DD)?\nDates after Nov 15 add the late retrieval surcharge:');
+  if(d===null)return;
+  try{const r=await api('setSeasonDone',[QN,'date',d]);
+    if(!r.ok){setMsg('sdMsg',r.error,false);return;}
+    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+  }catch(e){setMsg('sdMsg',e.message,false);}
 }
 function renderLines(){
   const canAdj=ME.admin||((ME.perms||{}).adjust);

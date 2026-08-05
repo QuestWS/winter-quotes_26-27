@@ -70,6 +70,15 @@ if [ -f admin/index.html ]; then
   if [ "$(grep -c 'capture=' admin/index.html)" != "1" ]; then
     echo "  FAIL trap: 'capture' should appear exactly once (camera input only)"; FAIL=1
   else echo "  OK   trap: capture attribute on camera input only"; fi
+  # Duplicate top-level function names silently shadow each other (the later
+  # declaration wins). This killed the season-done buttons once: a photo-toggle
+  # setSeason(s,btn) overwrote the season-done setSeason(choice).
+  DUPFN=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/admin.js" \
+          | grep -oE '[A-Za-z0-9_$]+$' | sort | uniq -d)
+  if [ -n "$DUPFN" ]; then
+    echo "  FAIL trap: duplicate function name(s) in console — later declaration shadows earlier:"
+    echo "$DUPFN" | sed 's/^/         /'; FAIL=1
+  else echo "  OK   trap: no duplicate function names in console"; fi
 else echo "  (admin/index.html not present)"; fi
 
 echo "== Pricing engine parity =="

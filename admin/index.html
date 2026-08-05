@@ -526,9 +526,9 @@ function renderSeasonDone(canAdj){
   const note=sd&&sd.note?`<div class="msg" style="margin:4px 0 0;color:var(--muted)">Note: ${sd.note}</div>`:'';
   if(canAdj){
     h+=`<div class="sdopts">
-      <button class="${sd&&sd.choice==='now'?'on':''}" onclick="setSeason('now')">Done now</button>
+      <button class="${sd&&sd.choice==='now'?'on':''}" onclick="setSeasonDoneChoice('now')">Done now</button>
       <button class="${sd&&sd.choice==='date'?'on':''}" onclick="openSeasonDate()">Set date…</button>
-      <button class="${sd&&sd.choice==='call'?'on':''}" onclick="setSeason('call')">Will call</button>
+      <button class="${sd&&sd.choice==='call'?'on':''}" onclick="setSeasonDoneChoice('call')">Will call</button>
     </div>${note}
     <div class="inlineEd hide" id="sdDateEd">
       <label>Finish date</label><input type="date" id="sdDate">
@@ -558,7 +558,7 @@ async function saveSeasonDate(){
     toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
-async function setSeason(choice){
+async function setSeasonDoneChoice(choice){
   try{const r=await api('setSeasonDone',[QN,choice,'','']);
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
     toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);

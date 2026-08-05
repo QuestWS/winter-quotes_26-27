@@ -209,6 +209,16 @@ pay+email+photos; Marina → photos only.
   golf carts **cannot be picked up without keys at all**.
 - **Every close control closes.** Panels (storage, staff, matches, quote) each
   need a working ✕. Users noticed when one didn't.
+- **No duplicate top-level function names in the console.** `admin/index.html`
+  is one big `<script>`, so a second `function foo()` silently *replaces* the
+  first (declarations hoist; the later one wins). This shipped: a photo-toggle
+  `setSeason(s,btn)` overwrote the season-done `setSeason(choice)`, killing the
+  "Done now" and "Will call" buttons — they threw on `btn.classList` and never
+  sent the answer, while also corrupting the photo upload target. "Set date…"
+  kept working (different name, `openSeasonDate`), which is why it hid for so
+  long. `verify.sh` now fails on any duplicate function name in the console.
+  Name console handlers for their feature (`setSeasonDoneChoice`), not the
+  generic noun.
 
 ---
 

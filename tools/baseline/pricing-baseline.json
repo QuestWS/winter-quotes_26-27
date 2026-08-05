@@ -7,49 +7,57 @@
         "sec": "Engine winterization",
         "label": "Full service — Inboard × 2",
         "amt": 916,
-        "calc": "2 × $458.00"
+        "calc": "2 × $458.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter."
       },
       {
         "sec": "Drive train",
         "label": "Transmission or V-drive × 2",
         "amt": 288,
-        "calc": "2 × $144.00"
+        "calc": "2 × $144.00",
+        "desc": ""
       },
       {
         "sec": "Water systems",
         "label": "Water system — cold only",
         "amt": 122,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Storage",
         "label": "Inside storage — on trailer",
         "amt": 1269.6,
-        "calc": "30×8 sqft × $5.29"
+        "calc": "30×8 sqft × $5.29",
+        "desc": ""
       },
       {
         "sec": "Retrieval",
         "label": "Retrieve, set & relaunch — included with inside storage",
         "amt": 0,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap labor",
         "amt": 644,
-        "calc": "28 ft × $23.00"
+        "calc": "28 ft × $23.00",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap materials",
         "amt": 168,
-        "calc": "28×8 sqft × $0.75"
+        "calc": "28×8 sqft × $0.75",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Acid wash hull (≤8.5' beam)",
         "amt": 476,
-        "calc": "28 ft × $17.00"
+        "calc": "28 ft × $17.00",
+        "desc": ""
       }
     ],
     "need": [],
@@ -64,49 +72,57 @@
         "sec": "Engine winterization",
         "label": "Full service — Inboard/Outboard (sterndrive)",
         "amt": 502,
-        "calc": "1 × $502.00"
+        "calc": "1 × $502.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter."
       },
       {
         "sec": "Drive train",
         "label": "I/O transom service",
         "amt": 191,
-        "calc": "1 × $191.00"
+        "calc": "1 × $191.00",
+        "desc": ""
       },
       {
         "sec": "Storage",
         "label": "Inside storage — non-trailer",
         "amt": 1851.7759999999998,
-        "calc": "32×9.2 sqft × $6.29"
+        "calc": "32×9.2 sqft × $6.29",
+        "desc": ""
       },
       {
         "sec": "Retrieval",
         "label": "Retrieve, set & relaunch — included with inside storage",
         "amt": 0,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Blocking, stands & handling (non-trailer)",
         "amt": 185,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap labor",
         "amt": 736,
-        "calc": "32 ft × $23.00"
+        "calc": "32 ft × $23.00",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap materials",
         "amt": 220.79999999999998,
-        "calc": "32×9.2 sqft × $0.75"
+        "calc": "32×9.2 sqft × $0.75",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Acid wash hull (>8.5' beam)",
         "amt": 704,
-        "calc": "32 ft × $22.00"
+        "calc": "32 ft × $22.00",
+        "desc": ""
       }
     ],
     "need": [],
@@ -121,73 +137,85 @@
         "sec": "Engine winterization",
         "label": "Basic — Inboard × 2",
         "amt": 596,
-        "calc": "2 × $298.00"
+        "calc": "2 × $298.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries."
       },
       {
         "sec": "Water systems",
         "label": "Water system incl. 1 head",
         "amt": 252,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Water systems",
         "label": "Additional heads × 2",
         "amt": 92,
-        "calc": "2 × $46.00"
+        "calc": "2 × $46.00",
+        "desc": ""
       },
       {
         "sec": "Water systems",
         "label": "Air conditioning (up to 2 units)",
         "amt": 116,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Water systems",
         "label": "Generator — oil & filter",
         "amt": 270,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Storage",
         "label": "Outside storage",
         "amt": 720,
-        "calc": "40 ft × $18.00"
+        "calc": "40 ft × $18.00",
+        "desc": ""
       },
       {
         "sec": "Retrieval",
         "label": "Retrieve, set & relaunch (>36')",
         "amt": 920,
-        "calc": "40 ft × $23.00"
+        "calc": "40 ft × $23.00",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Blocking, stands & handling (non-trailer)",
         "amt": 185,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap labor",
         "amt": 920,
-        "calc": "40 ft × $23.00"
+        "calc": "40 ft × $23.00",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap materials",
         "amt": 360,
-        "calc": "40×12 sqft × $0.75"
+        "calc": "40×12 sqft × $0.75",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Additional in-water wrap labor",
         "amt": 440,
-        "calc": "40 ft × $11.00"
+        "calc": "40 ft × $11.00",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Powerwash hull",
         "amt": 215.6,
-        "calc": "40 ft × $5.39"
+        "calc": "40 ft × $5.39",
+        "desc": ""
       }
     ],
     "need": [],
@@ -202,25 +230,29 @@
         "sec": "Engine winterization",
         "label": "Basic — Outboard",
         "amt": 177,
-        "calc": "1 × $177.00"
+        "calc": "1 × $177.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries."
       },
       {
         "sec": "Retrieval",
         "label": "Retrieve & relaunch, customer trailer",
         "amt": 198,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Shrinkwrap",
         "label": "Shrinkwrap package (Package ≤20')",
         "amt": 325,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Powerwash hull",
         "amt": 102.41,
-        "calc": "19 ft × $5.39"
+        "calc": "19 ft × $5.39",
+        "desc": ""
       }
     ],
     "need": [],
@@ -235,25 +267,29 @@
         "sec": "Winterization",
         "label": "Full service — PWC / Jetski × 2",
         "amt": 460,
-        "calc": "2 × $230.00"
+        "calc": "2 × $230.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change and fuel conditioner. Fuel filter not included for PWC."
       },
       {
         "sec": "Detailing",
         "label": "Jetski detail × 2",
         "amt": 350,
-        "calc": "2 × $175.00"
+        "calc": "2 × $175.00",
+        "desc": ""
       },
       {
         "sec": "Storage",
         "label": "Inside storage — on trailer",
         "amt": 317.40000000000003,
-        "calc": "12×5 sqft × $5.29"
+        "calc": "12×5 sqft × $5.29",
+        "desc": ""
       },
       {
         "sec": "Retrieval",
         "label": "Retrieve, set & relaunch — included with inside storage",
         "amt": 0,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       }
     ],
     "need": [],
@@ -268,7 +304,8 @@
         "sec": "Storage",
         "label": "Golf cart storage (incl. Heritage Harbor pickup & delivery)",
         "amt": 365,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       }
     ],
     "need": [],
@@ -283,7 +320,8 @@
         "sec": "Storage",
         "label": "E-bike storage — includes tune-up",
         "amt": 160,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       }
     ],
     "need": [],
@@ -298,31 +336,36 @@
         "sec": "Engine winterization",
         "label": "Basic — Inboard/Outboard (sterndrive)",
         "amt": 298,
-        "calc": "1 × $298.00"
+        "calc": "1 × $298.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries."
       },
       {
         "sec": "Storage",
         "label": "Outside storage",
         "amt": 432,
-        "calc": "24 ft × $18.00"
+        "calc": "24 ft × $18.00",
+        "desc": ""
       },
       {
         "sec": "Blocking & washing",
         "label": "Blocking, stands & handling (non-trailer)",
         "amt": 185,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Misc",
         "label": "Late retrieval surcharge (after Nov 15)",
         "amt": 225,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       },
       {
         "sec": "Misc",
         "label": "Heritage Harbor Slipholder — slip B-14 — discount applied by Quest",
         "amt": 0,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       }
     ],
     "need": [],
@@ -341,13 +384,15 @@
         "sec": "Engine winterization",
         "label": "Basic — Inboard",
         "amt": 298,
-        "calc": "1 × $298.00"
+        "calc": "1 × $298.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries."
       },
       {
         "sec": "Blocking & washing",
         "label": "Blocking, stands & handling (non-trailer)",
         "amt": 185,
-        "calc": ""
+        "calc": "",
+        "desc": ""
       }
     ],
     "need": [

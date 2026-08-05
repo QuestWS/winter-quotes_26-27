@@ -12,11 +12,12 @@
  * numbers it reports always come from the real file. If index.html changes,
  * this re-reads the change. A copy would drift; a slice cannot.
  *
- *   node tools/price-fixtures.js            # human-readable
+ *   node tools/price-fixtures.js            # human-readable, legacy engine
  *   node tools/price-fixtures.js --json     # machine-diffable
+ *   node tools/price-fixtures.js --engine   # same fixtures via pricing-engine.js
+ *   node tools/price-fixtures.js --compare  # run BOTH and deep-diff them
  *
- * After the extraction lands, this same file is pointed at the shared engine
- * and the two outputs must match exactly.
+ * --compare is the prove-identical gate. It exits non-zero on any difference.
  */
 'use strict';
 const fs = require('fs');
@@ -153,27 +154,88 @@ function applyOverrides(S, over) {
   }
 }
 
-function runFixture(fx) {
-  // Fresh sandbox per fixture so no state bleeds between cases.
+/* Build a fixture's full state: the page's own base object with overrides on
+ * top. Returned as a plain value so both engines get an identical input. */
+function buildState(fx) {
   const ctx = vm.createContext({});
-  vm.runInContext(BLOCKS.join('\n'), ctx, { filename: 'index.html:engine' });
   vm.runInContext(BASE_STATE_SRC.replace(/^const S = \{/, 'var S = {'), ctx, { filename: 'index.html:state' });
   ctx.__over = JSON.parse(JSON.stringify(fx.state));
   ctx.__apply = applyOverrides;
   vm.runInContext('__apply(S, __over)', ctx);
-  const out = vm.runInContext('computeLinesRaw()', ctx);
+  return vm.runInContext('JSON.parse(JSON.stringify(S))', ctx);
+}
 
-  const lines = out.L.map(l => ({
+/* Normalize either engine's return value to one comparable shape, so a
+ * difference in output *structure* can't disguise a difference in pricing. */
+function normalize(fx, out) {
+  const raw = out.lines || out.L;
+  const lines = raw.map(l => ({
     sec: l.sec || '', label: l.label,
     amt: l.amt == null ? null : Number(l.amt),
     calc: l.calc || '',
+    desc: l.desc || '',
   }));
   // Total is the sum of line amounts — the same basis the page and sheet use.
   const total = lines.reduce((a, l) => a + (Number(l.amt) || 0), 0);
-  return { name: fx.name, why: fx.why, lines, need: out.need, rq: out.rq, total: Number(total.toFixed(2)) };
+  const r = { name: fx.name, why: fx.why, lines, need: out.need, rq: out.rq, total: Number(total.toFixed(2)) };
+  if (out.flags) r.flags = out.flags;
+  return r;
 }
 
-const results = FIXTURES.map(runFixture);
+/* LEGACY: the original computeLinesRaw(), sliced verbatim out of index.html. */
+function runLegacy(fx) {
+  const ctx = vm.createContext({});
+  vm.runInContext(BLOCKS.join('\n'), ctx, { filename: 'index.html:engine' });
+  vm.runInContext('var S = ' + JSON.stringify(buildState(fx)) + ';', ctx);
+  return normalize(fx, vm.runInContext('computeLinesRaw()', ctx));
+}
+
+/* SHARED: the extracted pricing-engine.js. */
+function runEngine(fx) {
+  const enginePath = path.join(ROOT, 'pricing-engine.js');
+  delete require.cache[require.resolve(enginePath)];
+  const E = require(enginePath);
+  const state = buildState(fx);
+  const frozen = JSON.stringify(state);
+  const out = E.computeQuote(state);
+  // The engine must not mutate the state it is handed.
+  if (JSON.stringify(state) !== frozen) {
+    throw new Error(`IMPURE: computeQuote mutated state in fixture ${fx.name}`);
+  }
+  return normalize(fx, out);
+}
+
+const useEngine = process.argv.includes('--engine');
+
+if (process.argv.includes('--compare')) {
+  const a = FIXTURES.map(runLegacy);
+  const b = FIXTURES.map(runEngine);
+  let bad = 0;
+  for (let i = 0; i < a.length; i++) {
+    // flags are new information the legacy engine never produced; compare
+    // everything that existed before, exactly.
+    const strip = o => JSON.stringify({ lines: o.lines, need: o.need, rq: o.rq, total: o.total }, null, 1);
+    if (strip(a[i]) !== strip(b[i])) {
+      bad++;
+      console.log('\n### DIFFERS: ' + a[i].name);
+      const la = strip(a[i]).split('\n'), lb = strip(b[i]).split('\n');
+      for (let j = 0; j < Math.max(la.length, lb.length); j++) {
+        if (la[j] !== lb[j]) console.log('  legacy: ' + la[j] + '\n  engine: ' + lb[j]);
+      }
+    } else {
+      const fl = (b[i].flags || []).length;
+      console.log('  MATCH  ' + a[i].name.padEnd(38) + '$' + a[i].total.toFixed(2).padStart(10) +
+        (fl ? '   (+' + fl + ' flag' + (fl > 1 ? 's' : '') + ')' : ''));
+    }
+  }
+  const sum = a.reduce((x, r) => x + r.total, 0);
+  console.log('\n' + (bad
+    ? bad + ' of ' + a.length + ' fixtures DIFFER — extraction is wrong'
+    : 'ALL ' + a.length + ' FIXTURES IDENTICAL — grand total $' + sum.toFixed(2)));
+  process.exit(bad ? 1 : 0);
+}
+
+const results = FIXTURES.map(useEngine ? runEngine : runLegacy);
 
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify(results, null, 2));

@@ -91,6 +91,19 @@ if [ -f pricing-engine.js ]; then
   else echo "  OK   trap: engine is DOM-free"; fi
   # if the .gs embeds a copy, it must match. Extract between the parity markers
   # // ENGINE-START / // ENGINE-END in both files and diff them.
+  # PROVE-IDENTICAL GATE: the extracted engine must price exactly as the
+  # legacy computeLinesRaw() still embedded in index.html. This is the whole
+  # point of the extraction (docs/TASK-pricing-engine.md step 2) and must fail
+  # loudly, not warn. Skipped only once the legacy copy is finally removed.
+  if grep -q "function computeLinesRaw()" index.html 2>/dev/null; then
+    if node tools/price-fixtures.js --compare > "$TMP/cmp.txt" 2>&1; then
+      echo "  OK   gate: engine prices identically to legacy ($(grep -c '^  MATCH' "$TMP/cmp.txt") fixtures)"
+    else
+      echo "  FAIL gate: engine DIVERGES from legacy pricing"; sed 's/^/       /' "$TMP/cmp.txt"; FAIL=1
+    fi
+  else
+    echo "  (legacy computeLinesRaw removed — parity gate retired)"
+  fi
   if grep -q "ENGINE-START" quote-logger-apps-script.gs 2>/dev/null; then
     sed -n '/ENGINE-START/,/ENGINE-END/p' pricing-engine.js > "$TMP/eng-a" 2>/dev/null
     sed -n '/ENGINE-START/,/ENGINE-END/p' quote-logger-apps-script.gs > "$TMP/eng-b" 2>/dev/null

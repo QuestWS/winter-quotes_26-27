@@ -19,6 +19,7 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | File in repo | Deploys to | Purpose |
 |---|---|---|
 | `index.html` | GitHub Pages root | Customer quote page |
+| `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
@@ -94,6 +95,14 @@ s = s.replace(old, new)
 
 If an assert fails, **write nothing** — fix the anchor and re-run the whole
 batch. A partially-applied batch is worse than none.
+
+**Verify against an absolute path, not a relative one.** A restore during the
+engine work was copied into the scratch directory instead of the repo, because
+an earlier `cd` in the same shell was still in effect — and the `grep` that
+"confirmed" the restore read that same wrong copy, so it reported success. The
+repo file still held the test value. Relative paths make a check agree with
+itself; absolute paths make it agree with reality. Confirm with
+`git status` / `git diff` too — git always speaks about the repo.
 
 **After any edit to any file, before presenting it:**
 1. Syntax check. `.gs` → copy to `.js`, `node --check`. HTML → extract
@@ -314,7 +323,7 @@ that's a customer conversation. Flag it and let him move it manually.
 | Adobe Sign web form | **Chris's task** | `adobeWebFormUrl:''` in the page; a customer-appropriate "signing almost here" placeholder shows until set. Last blocker to full couch-to-paid. |
 | Excel import of last year's selections | Blocked | Needs a sample workbook from Chris to map columns. Architecture supports it — quotes store selections, not prices. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
-| Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES via the **Annual Update Zone** checklist at the top of `index.html`. Old quotes re-price against new rates on reload. |
+| Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
 

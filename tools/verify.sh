@@ -91,18 +91,32 @@ if [ -f pricing-engine.js ]; then
   else echo "  OK   trap: engine is DOM-free"; fi
   # if the .gs embeds a copy, it must match. Extract between the parity markers
   # // ENGINE-START / // ENGINE-END in both files and diff them.
-  # PROVE-IDENTICAL GATE: the extracted engine must price exactly as the
-  # legacy computeLinesRaw() still embedded in index.html. This is the whole
-  # point of the extraction (docs/TASK-pricing-engine.md step 2) and must fail
-  # loudly, not warn. Skipped only once the legacy copy is finally removed.
-  if grep -q "function computeLinesRaw()" index.html 2>/dev/null; then
+  # PROVE-IDENTICAL GATE (permanent). The committed baseline was generated
+  # from the legacy computeLinesRaw() BEFORE any extraction, so matching it is
+  # the same guarantee as matching the old page — and it keeps holding now
+  # that the legacy code is gone. An intentional price change must regenerate
+  # the baseline in the same commit, so money never moves silently.
+  if node tools/price-fixtures.js --check-baseline > "$TMP/base.txt" 2>&1; then
+    echo "  OK   gate: engine matches committed baseline ($(grep -c '^  MATCH' "$TMP/base.txt") fixtures)"
+  else
+    echo "  FAIL gate: pricing MOVED vs tools/baseline/"; sed 's/^/       /' "$TMP/base.txt"; FAIL=1
+  fi
+  # Legacy cross-check, only meaningful while index.html still carries its own
+  # inline copy of the rules (i.e. before step 2 lands).
+  if grep -q "^const PRICES = {" index.html 2>/dev/null; then
     if node tools/price-fixtures.js --compare > "$TMP/cmp.txt" 2>&1; then
-      echo "  OK   gate: engine prices identically to legacy ($(grep -c '^  MATCH' "$TMP/cmp.txt") fixtures)"
+      echo "  OK   gate: engine prices identically to inline legacy"
     else
-      echo "  FAIL gate: engine DIVERGES from legacy pricing"; sed 's/^/       /' "$TMP/cmp.txt"; FAIL=1
+      echo "  FAIL gate: engine DIVERGES from inline legacy"; sed 's/^/       /' "$TMP/cmp.txt"; FAIL=1
     fi
   else
-    echo "  (legacy computeLinesRaw removed — parity gate retired)"
+    echo "  OK   page delegates to the shared engine (no inline rule copy)"
+  fi
+  # The page must actually load the engine, or it has no pricing at all.
+  if grep -q 'src="pricing-engine.js"' index.html 2>/dev/null; then
+    echo "  OK   page loads pricing-engine.js"
+  else
+    echo "  FAIL page does not load pricing-engine.js"; FAIL=1
   fi
   if grep -q "ENGINE-START" quote-logger-apps-script.gs 2>/dev/null; then
     sed -n '/ENGINE-START/,/ENGINE-END/p' pricing-engine.js > "$TMP/eng-a" 2>/dev/null

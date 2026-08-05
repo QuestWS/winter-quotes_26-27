@@ -46,21 +46,31 @@ function slice(openLine, closeLine) {
   throw new Error(`MISS: no terminator ${JSON.stringify(closeLine)} after ${JSON.stringify(openLine)}`);
 }
 
-const BLOCKS = [
-  slice('const SEASON = {', '};'),
-  slice('const PRICES = {', '};'),
-  slice('const RULES = {', '};'),
-  slice('const LEVEL_DESC = {', '};'),
-  slice('const BOAT_ENGINES = [', '];'),
-  slice('const QUOTE_ITEMS = [', '];'),
-  SRC.split('\n').find(l => l.startsWith('const fmt = ')),
-  slice('function wrapAuto(){', '}'),
-  slice('function computeLinesRaw(){', '}'),
-];
-if (!BLOCKS[6]) throw new Error('MISS: fmt declaration not found');
+/* The legacy inline engine, if index.html still carries one. After step 2 it
+ * does not — the page delegates to pricing-engine.js — so legacy comparison
+ * is only available on pre-step-2 checkouts. Computed lazily so the harness
+ * keeps working either way. */
+const HAS_LEGACY = SRC.includes('\nconst PRICES = {');
+function legacyBlocks() {
+  if (!HAS_LEGACY) throw new Error('index.html no longer contains an inline engine — use --check-baseline');
+  const blocks = [
+    slice('const SEASON = {', '};'),
+    slice('const PRICES = {', '};'),
+    slice('const RULES = {', '};'),
+    slice('const LEVEL_DESC = {', '};'),
+    slice('const BOAT_ENGINES = [', '];'),
+    slice('const QUOTE_ITEMS = [', '];'),
+    SRC.split('\n').find(l => l.startsWith('const fmt = ')),
+    slice('function wrapAuto(){', '}'),
+    slice('function computeLinesRaw(){', '}'),
+  ];
+  if (!blocks[6]) throw new Error('MISS: fmt declaration not found');
+  return blocks;
+}
 
 /* The page's own initial state object, used as each fixture's base so a
- * fixture only has to state what it changes. */
+ * fixture only has to state what it changes. This stays in index.html after
+ * the extraction — it is page state, not a pricing rule. */
 const BASE_STATE_SRC = slice('const S = {', '};');
 
 /* ---- fixtures: the five shapes docs/TASK-pricing-engine.md calls for,
@@ -185,7 +195,7 @@ function normalize(fx, out) {
 /* LEGACY: the original computeLinesRaw(), sliced verbatim out of index.html. */
 function runLegacy(fx) {
   const ctx = vm.createContext({});
-  vm.runInContext(BLOCKS.join('\n'), ctx, { filename: 'index.html:engine' });
+  vm.runInContext(legacyBlocks().join('\n'), ctx, { filename: 'index.html:engine' });
   vm.runInContext('var S = ' + JSON.stringify(buildState(fx)) + ';', ctx);
   return normalize(fx, vm.runInContext('computeLinesRaw()', ctx));
 }
@@ -205,7 +215,46 @@ function runEngine(fx) {
   return normalize(fx, out);
 }
 
+/* Emit the fully-built fixture states so an out-of-process check (e.g. the
+ * real page in a real browser) can drive exactly these inputs. */
+if (process.argv.includes('--dump-states')) {
+  console.log(JSON.stringify(FIXTURES.map(fx => ({ name: fx.name, state: buildState(fx) })), null, 2));
+  process.exit(0);
+}
+
 const useEngine = process.argv.includes('--engine');
+
+/* PERMANENT GATE. The committed baseline was generated from the legacy
+ * computeLinesRaw() before any extraction, so "engine === baseline" is the
+ * same guarantee as "engine === legacy" — and it keeps holding after the
+ * legacy code is deleted from index.html. Any intentional price change must
+ * regenerate the baseline in the same commit, which makes the money move
+ * visible in the diff instead of silent. */
+if (process.argv.includes('--check-baseline')) {
+  const basePath = path.join(ROOT, 'tools', 'baseline', 'pricing-baseline.json');
+  const expected = JSON.parse(fs.readFileSync(basePath, 'utf8'));
+  const actual = FIXTURES.map(runEngine).map(r => { const c = Object.assign({}, r); delete c.flags; return c; });
+  let bad = 0;
+  for (let i = 0; i < expected.length; i++) {
+    const e = JSON.stringify(expected[i], null, 1), a = JSON.stringify(actual[i], null, 1);
+    if (e !== a) {
+      bad++;
+      console.log('\n### DIFFERS FROM BASELINE: ' + expected[i].name);
+      const le = e.split('\n'), la = a.split('\n');
+      for (let j = 0; j < Math.max(le.length, la.length); j++) {
+        if (le[j] !== la[j]) console.log('  baseline: ' + le[j] + '\n  now:      ' + la[j]);
+      }
+    } else {
+      console.log('  MATCH  ' + expected[i].name.padEnd(38) + '$' + expected[i].total.toFixed(2).padStart(10));
+    }
+  }
+  if (expected.length !== actual.length) { console.log('  FIXTURE COUNT CHANGED'); bad++; }
+  console.log('\n' + (bad
+    ? bad + ' fixture(s) MOVED vs the committed baseline'
+    : 'ALL ' + expected.length + ' FIXTURES MATCH BASELINE — grand total $' +
+      expected.reduce((x, r) => x + r.total, 0).toFixed(2)));
+  process.exit(bad ? 1 : 0);
+}
 
 if (process.argv.includes('--compare')) {
   const a = FIXTURES.map(runLegacy);

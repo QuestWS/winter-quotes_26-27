@@ -506,6 +506,9 @@ aside.ticket{position:sticky;top:18px}
   </div>
 </div>
 
+<!-- Shared pricing engine: ONE rule set, also embedded in the Apps Script
+     backend. Must load before the page script below. -->
+<script src="pricing-engine.js"></script>
 <script>
 /* ============================================================================
    INTEGRATIONS — paste your live URLs here.
@@ -526,63 +529,27 @@ const INTEGRATIONS = {
 };
 
 /* ============================================================================
-   ANNUAL UPDATE ZONE — everything that changes year to year lives here.
+   ANNUAL UPDATE ZONE — MOVED to pricing-engine.js
+   ----------------------------------------------------------------------------
+   SEASON, PRICES and RULES are no longer declared here. They live in
+   pricing-engine.js, the single rule set shared by this page and the Apps
+   Script backend, so the two can never drift. Edit them there — the yearly
+   rollover checklist now starts in that file. See CLAUDE.md §8.
 ============================================================================ */
-const SEASON = {
-  seasonLabel:      '2025–2026',
-  payByDate:        'November 15, 2025',
-  payByShort:       'Nov 15',
-  lateChargeStart:  'Dec 1, 2025',
-  storageStart:     'October 15, 2025',
-  storageStartShort:'Oct 15',
-  storageEnd:       'April 15, 2026',
-};
+if (typeof QuestPricing === 'undefined') {
+  document.addEventListener('DOMContentLoaded', function () {
+    document.body.innerHTML =
+      '<div style="font:16px/1.5 system-ui;padding:40px;max-width:640px;margin:0 auto">' +
+      '<h2>Sorry — this page didn\'t load correctly.</h2>' +
+      '<p>Please refresh. If it keeps happening, call us at (815) 433-2200 ' +
+      'and we\'ll take your information over the phone.</p></div>';
+  });
+  throw new Error('pricing-engine.js failed to load');
+}
+/* Exposed under the same names this page has always used, so every existing
+   call site is unchanged. */
+const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS} = QuestPricing;
 
-const PRICES = {
-  basic:  { inboard:298, io:298, outboard:177, pwc:111 },
-  full:   { inboard:458, io:502, outboard:253, pwc:230 },
-  dtTrans:144, dtTransom:191,
-  ballast:80, waterCold:122, waterHead:252, pumpout:88, addlHeads:46, ac:116, genBasic:101, genFull:270,
-  retrieveSmall:17,
-  retrieveLarge:23,
-  retrieveCustTrailer:198,
-  outsidePerFt:18,
-  insidePremNT:8.29, insidePremT:7.29, insideNT:6.29, insideT:5.29,
-  golfCart:365,
-  ebikeStorage:160,     // includes a tune-up
-  skiDetail:175,        // flat, per ski
-  wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
-  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, blocking:185, lateRetrieval:225,
-};
-
-const RULES = {
-  latePct:10,
-  ccPct:3,
-  depositTrailer:500,
-  depositNoTrailer:1000,
-  wrapFlat20MaxLOA:20,
-  wrapFlat24MaxLOA:24,
-  acidBeamMax:8.5,
-  insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
-  hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
-  retrieveSmallMaxLOA:36,
-};
-/* ========================= END ANNUAL UPDATE ZONE ========================= */
-
-const LEVEL_DESC = {
-  basic:'Drain water, run on anti-freeze, drain & fog, disconnect batteries.',
-  full: 'Everything in Basic, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
-  fullPwc:'Everything in Basic, plus (as applicable): engine oil & filter change, fuel conditioner. Fuel filter not included for PWC.',
-  /* Standalone versions for the quote sheet / PDF — must make sense a year
-     later with no Basic line to compare against */
-  fullQuote:'Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
-  fullPwcQuote:'Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change and fuel conditioner. Fuel filter not included for PWC.'
-};
-const BOAT_ENGINES = [
-  {id:'inboard',  name:'Inboard'},
-  {id:'io',       name:'Inboard/Outboard (sterndrive)'},
-  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'}
-];
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
   {id:'jetski', ic:'🌊', t:'Jetski',    d:'Winterize, detail & inside storage'},
@@ -621,15 +588,6 @@ const S = {
 
 const $ = s=>document.querySelector(s), $$ = s=>[...document.querySelectorAll(s)];
 const fmt = n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const QUOTE_ITEMS = [
-  ['bottomTouch','Bottom paint touch-up'],
-  ['bottomStrip','Strip bottom paint & reapply'],
-  ['propRefurb','Propeller refurbishment'],
-  ['extDetail','Exterior detail'],
-  ['washWax','Wash & wax'],
-  ['intDetail','Interior detail'],
-  ['intWipe','Interior wipe-down']
-];
 
 function ensureQuoteNo(){
   if(!S.quoteNo){
@@ -762,16 +720,9 @@ function buildRetrieval(){
   $('#retrievalOpts').innerHTML = opts.map(o=>`<label class="opt"><input type="radio" name="retrieval" value="${o.v}" ${S.retrieval===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p">${o.p||''}</span></label>`).join('');
   $$('input[name=retrieval]').forEach(r=>r.addEventListener('change',e=>{S.retrieval=e.target.value;refresh();}));
 }
-function wrapAuto(){
-  const loa=S.loa||0, beam=S.beam||0;
-  if(!loa) return {label:'Enter your LOA on the first step to see pricing', amt:null, type:''};
-  if(loa<=RULES.wrapFlat20MaxLOA) return {label:`Package rate — ${RULES.wrapFlat20MaxLOA}' and under`, amt:PRICES.wrapFlat20, type:`Package ≤${RULES.wrapFlat20MaxLOA}'`};
-  if(loa<=RULES.wrapFlat24MaxLOA) return {label:`Package rate — ${RULES.wrapFlat24MaxLOA}' and under`, amt:PRICES.wrapFlat24, type:`Package ≤${RULES.wrapFlat24MaxLOA}'`};
-  if(!beam) return {label:`Over ${RULES.wrapFlat24MaxLOA}' — priced per foot; enter your beam on the first step`, amt:null, type:''};
-  const labor=PRICES.wrapLaborFt*loa, mat=PRICES.wrapMatSqft*loa*beam;
-  return {label:`Over ${RULES.wrapFlat24MaxLOA}' — labor $${PRICES.wrapLaborFt}/ft + materials $${PRICES.wrapMatSqft}/sqft`, amt:labor+mat, type:'Per-foot labor + materials',
-          split:[['Shrinkwrap labor',labor,`${loa} ft × ${fmt(PRICES.wrapLaborFt)}`],['Shrinkwrap materials',mat,`${loa}×${beam} sqft × $${PRICES.wrapMatSqft}`]]};
-}
+/* Adapter over the shared engine. Existing call sites take no argument and
+   expect the page's live state, so that contract is preserved. */
+function wrapAuto(){ return QuestPricing.wrapAuto(S); }
 function syncWrapUI(){
   const w=wrapAuto();
   const d=$('#wrapAutoDesc'); if(d) d.textContent=w.label;
@@ -791,114 +742,13 @@ function syncHeadsUI(){
 }
 
 /* ================= QUOTE ENGINE ================= */
+/* Adapter over the shared engine. Returns this page's historical shape
+   ({L, need, rq}) plus the new `flags`, so computeLines() and every caller
+   below are unchanged. The pricing logic itself now lives in
+   pricing-engine.js and is shared with the server. */
 function computeLinesRaw(){
-  const L=[], loa=S.loa||0, beam=S.beam||0, lwt=S.lwt||0, T=S.hasTrailer, u=S.unit;
-  const need=[];
-  const add=(sec,label,amt,calc,desc)=>L.push({sec,label,amt,calc,desc});
-
-  /* ---- flat-rate units ---- */
-  if(u==='golf'){
-    add('Storage','Golf cart storage (incl. Heritage Harbor pickup & delivery)', PRICES.golfCart);
-    return {L, need, rq:[]};
-  }
-  if(u==='ebike'){
-    add('Storage','E-bike storage — includes tune-up', PRICES.ebikeStorage);
-    return {L, need, rq:[]};
-  }
-
-  /* ---- jetski ---- */
-  if(u==='jetski'){
-    const g=S.engines.pwc;
-    if(g.qty>0){
-      const rate=PRICES[g.level].pwc;
-      add('Winterization', `${g.level==='full'?'Full service':'Basic'} — PWC / Jetski${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`, g.level==='full'?LEVEL_DESC.fullPwcQuote:LEVEL_DESC.basic);
-    }
-    if(S.skiDetail>0) add('Detailing', `Jetski detail${S.skiDetail>1?` × ${S.skiDetail}`:''}`, PRICES.skiDetail*S.skiDetail, `${S.skiDetail} × ${fmt(PRICES.skiDetail)}`);
-    if(S.storage==='inside'){
-      const len=S.skiLen||0, wid=S.skiWid||0;
-      if(len&&wid) add('Storage','Inside storage — on trailer', PRICES.insideT*len*wid, `${len}×${wid} sqft × $${PRICES.insideT}`);
-      else need.push('stored length & width for inside storage');
-      add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
-    }
-    if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(S.hho) add('Misc','Heritage Harbor Slipholder'+(S.slipNo?` — slip ${S.slipNo}`:'')+' — discount applied by Quest', 0);
-    return {L, need, rq:[]};
-  }
-
-  /* ---- boat ---- */
-  for(const e of BOAT_ENGINES){
-    const g=S.engines[e.id];
-    if(g.qty>0){
-      const rate=PRICES[g.level][e.id];
-      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmt(rate)}`, g.level==='full'?LEVEL_DESC.fullQuote:LEVEL_DESC.basic);
-    }
-  }
-  if(S.dtTrans>0) add('Drive train','Transmission or V-drive'+(S.dtTrans>1?` × ${S.dtTrans}`:''), PRICES.dtTrans*S.dtTrans, `${S.dtTrans} × ${fmt(PRICES.dtTrans)}`);
-  if(S.dtTransom>0) add('Drive train','I/O transom service'+(S.dtTransom>1?` × ${S.dtTransom}`:''), PRICES.dtTransom*S.dtTransom, `${S.dtTransom} × ${fmt(PRICES.dtTransom)}`);
-
-  if(S.ballast>0) add('Water systems',`Ballast drain × ${S.ballast} tank${S.ballast>1?'s':''}`, PRICES.ballast*S.ballast, `${S.ballast} × ${fmt(PRICES.ballast)}`);
-  if(S.waterCold) add('Water systems','Water system — cold only', PRICES.waterCold);
-  if(S.waterHead) add('Water systems','Water system incl. 1 head', PRICES.waterHead);
-  if(S.waterHead && S.addlHeads>0) add('Water systems',`Additional heads × ${S.addlHeads}`, PRICES.addlHeads*S.addlHeads, `${S.addlHeads} × ${fmt(PRICES.addlHeads)}`);
-  if(S.pumpout) add('Water systems','Pumpout service charge', PRICES.pumpout);
-  if(S.ac) add('Water systems','Air conditioning (up to 2 units)', PRICES.ac);
-  if(S.genBasic) add('Water systems','Generator — basic', PRICES.genBasic);
-  if(S.genFull) add('Water systems','Generator — oil & filter', PRICES.genFull);
-
-  if(S.storage==='outside'){
-    if(loa) add('Storage','Outside storage', PRICES.outsidePerFt*loa, `${loa} ft × ${fmt(PRICES.outsidePerFt)}`); else need.push('LOA for outside storage');
-  }
-  if(S.storage==='inside'||S.storage==='insidePrem'){
-    const prem=S.storage==='insidePrem';
-    const name=(prem?'Premium inside':'Inside')+' storage'+(prem?' (pending Quest approval)':'');
-    if(T){
-      const r=prem?PRICES.insidePremT:PRICES.insideT;
-      if(lwt&&beam) add('Storage',name+' — on trailer', r*lwt*beam, `${lwt}×${beam} sqft × $${r}`); else need.push('LWT & beam for on-trailer inside storage');
-    }else{
-      const r=prem?PRICES.insidePremNT:PRICES.insideNT;
-      if(loa&&beam) add('Storage',name+' — non-trailer', r*loa*beam, `${loa}×${beam} sqft × $${r}`); else need.push('LOA & beam for inside storage');
-    }
-  }
-
-  const insideSel=S.storage==='inside'||S.storage==='insidePrem';
-  if(!insideSel){
-    if(S.retrieval==='quest' && !T){
-      const rate=loa<=RULES.retrieveSmallMaxLOA?PRICES.retrieveSmall:PRICES.retrieveLarge;
-      if(loa) add('Retrieval',`Retrieve, set & relaunch (${loa<=RULES.retrieveSmallMaxLOA?'≤':'\u003e'}${RULES.retrieveSmallMaxLOA}')`, rate*loa, `${loa} ft × ${fmt(rate)}`); else need.push('LOA for retrieval');
-    }else if(S.retrieval==='custTrailer' && T){
-      add('Retrieval','Retrieve & relaunch, customer trailer', PRICES.retrieveCustTrailer);
-    }
-  }
-  if(insideSel) add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
-
-  if((S.storage==='outside'||insideSel) && !T){
-    add('Blocking & washing','Blocking, stands & handling (non-trailer)', PRICES.blocking);
-  }
-
-  if(S.wrap){
-    const w=wrapAuto();
-    if(w.amt==null){ need.push(loa?'beam for shrinkwrap':'LOA for shrinkwrap'); }
-    else if(w.split){ for(const [lbl,amt,calc] of w.split) add('Shrinkwrap',lbl,amt,calc); }
-    else add('Shrinkwrap',`Shrinkwrap package (${w.type})`, w.amt);
-    if(S.inWater){
-      if(loa) add('Shrinkwrap','Additional in-water wrap labor', PRICES.wrapInWaterFt*loa, `${loa} ft × ${fmt(PRICES.wrapInWaterFt)}`); else need.push('LOA for in-water wrap');
-    }
-  }
-
-  if(S.powerwash && !S.acidWash){
-    if(loa) add('Blocking & washing','Powerwash hull', PRICES.powerwashFt*loa, `${loa} ft × ${fmt(PRICES.powerwashFt)}`); else need.push('LOA for powerwash');
-  }
-  if(S.acidWash){
-    if(loa&&beam){
-      const r=beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt;
-      add('Blocking & washing',`Acid wash hull (${beam<=RULES.acidBeamMax?'≤':'\u003e'}${RULES.acidBeamMax}' beam)`, r*loa, `${loa} ft × ${fmt(r)}`);
-    } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
-  }
-  if(S.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(S.hho) add('Misc','Heritage Harbor Slipholder'+(S.slipNo?` — slip ${S.slipNo}`:'')+' — discount applied by Quest', 0);
-
-  const rq=QUOTE_ITEMS.filter(([k])=>S[k]).map(([,lbl])=>lbl);
-  return {L, need, rq};
+  const r = QuestPricing.computeQuote(S);
+  return {L:r.lines, need:r.need, rq:r.rq, flags:r.flags};
 }
 function pricedRqLabels(){ return MANUAL?(MANUAL.priced||[]).map(p=>p.rqLabel):[]; }
 function computeLines(){

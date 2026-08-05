@@ -49,6 +49,13 @@ API via POST), `?action=launchpref&...` (spring email buttons),
 ## 2. Deploy rituals — non-negotiable
 
 ### Apps Script
+**Preferred: GitHub Actions → "Deploy Apps Script" → Run workflow.** Manual
+trigger only, runs `verify.sh` first, and calls `clasp update-deployment`,
+which points the *existing* deployment at a new version — so the rule below is
+enforced by the tool rather than by memory. Setup and troubleshooting:
+`docs/APPS-SCRIPT-DEPLOY.md`.
+
+Fallback (and what the workflow automates):
 1. Paste the full file over the editor contents, **Save**.
 2. **Deploy → Manage deployments → pencil (edit) → Version: New version → Deploy.**
 

@@ -129,6 +129,41 @@ else
   echo "  (pricing-engine.js not present yet — see docs/TASK-pricing-engine.md)"
 fi
 
+echo "== Apps Script deploy workflow =="
+WF=.github/workflows/deploy-apps-script.yml
+if [ -f "$WF" ]; then
+  # Deploying the live money backend must stay a deliberate human act. If this
+  # ever gains a push/schedule trigger, a bad commit reaches customers by
+  # itself. Also assert it updates the EXISTING deployment (CLAUDE.md §2) —
+  # create-deployment would mint a new URL and orphan both front ends.
+  python3 - "$WF" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+trig = d.get(True) or d.get('on')          # bare `on:` parses as boolean True
+keys = sorted(trig.keys())
+fail = 0
+if keys != ['workflow_dispatch']:
+    print("  FAIL trap: deploy workflow must be manual-only, found triggers: %s" % keys); fail = 1
+else:
+    print("  OK   trap: deploy workflow is manual-only")
+steps = d['jobs']['deploy']['steps']
+names = [s.get('name', '') for s in steps]
+runs = ' '.join(str(s.get('run', '')) for s in steps)
+if 'Verify before deploying' in names and names.index('Verify before deploying') < names.index('Push code to Apps Script'):
+    print("  OK   trap: verify.sh gates the deploy")
+else:
+    print("  FAIL trap: verify.sh must run before the push"); fail = 1
+if 'update-deployment' in runs and 'create-deployment' not in runs:
+    print("  OK   trap: updates existing deployment (URL preserved)")
+else:
+    print("  FAIL trap: workflow must use update-deployment, never create-deployment"); fail = 1
+sys.exit(fail)
+PY
+  [ $? -eq 0 ] || FAIL=1
+else
+  echo "  (no deploy workflow — Apps Script is deployed by hand)"
+fi
+
 echo "== URL sync =="
 U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null | sort -u | head -1)
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)

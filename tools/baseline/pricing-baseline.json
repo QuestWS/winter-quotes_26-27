@@ -1,0 +1,362 @@
+[
+  {
+    "name": "boat-twin-inboard-full",
+    "why": "Twin inboard, full service, shrinkwrap + acid wash + inside-on-trailer. The brief's headline case.",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Full service — Inboard × 2",
+        "amt": 916,
+        "calc": "2 × $458.00"
+      },
+      {
+        "sec": "Drive train",
+        "label": "Transmission or V-drive × 2",
+        "amt": 288,
+        "calc": "2 × $144.00"
+      },
+      {
+        "sec": "Water systems",
+        "label": "Water system — cold only",
+        "amt": 122,
+        "calc": ""
+      },
+      {
+        "sec": "Storage",
+        "label": "Inside storage — on trailer",
+        "amt": 1269.6,
+        "calc": "30×8 sqft × $5.29"
+      },
+      {
+        "sec": "Retrieval",
+        "label": "Retrieve, set & relaunch — included with inside storage",
+        "amt": 0,
+        "calc": ""
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap labor",
+        "amt": 644,
+        "calc": "28 ft × $23.00"
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap materials",
+        "amt": 168,
+        "calc": "28×8 sqft × $0.75"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Acid wash hull (≤8.5' beam)",
+        "amt": 476,
+        "calc": "28 ft × $17.00"
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 3883.6
+  },
+  {
+    "name": "boat-wide-beam-no-trailer",
+    "why": "Beam 9.2 > RULES.acidBeamMax and > insideBeamMaxNT, non-trailered. Exercises the wide-beam acid rate and the blocking charge.",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Full service — Inboard/Outboard (sterndrive)",
+        "amt": 502,
+        "calc": "1 × $502.00"
+      },
+      {
+        "sec": "Drive train",
+        "label": "I/O transom service",
+        "amt": 191,
+        "calc": "1 × $191.00"
+      },
+      {
+        "sec": "Storage",
+        "label": "Inside storage — non-trailer",
+        "amt": 1851.7759999999998,
+        "calc": "32×9.2 sqft × $6.29"
+      },
+      {
+        "sec": "Retrieval",
+        "label": "Retrieve, set & relaunch — included with inside storage",
+        "amt": 0,
+        "calc": ""
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Blocking, stands & handling (non-trailer)",
+        "amt": 185,
+        "calc": ""
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap labor",
+        "amt": 736,
+        "calc": "32 ft × $23.00"
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap materials",
+        "amt": 220.79999999999998,
+        "calc": "32×9.2 sqft × $0.75"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Acid wash hull (>8.5' beam)",
+        "amt": 704,
+        "calc": "32 ft × $22.00"
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 4390.58
+  },
+  {
+    "name": "boat-outside-perfoot-retrieval-large",
+    "why": "LOA 40 > retrieveSmallMaxLOA (36) with outside storage — the large retrieval tier and per-foot outside rate.",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Basic — Inboard × 2",
+        "amt": 596,
+        "calc": "2 × $298.00"
+      },
+      {
+        "sec": "Water systems",
+        "label": "Water system incl. 1 head",
+        "amt": 252,
+        "calc": ""
+      },
+      {
+        "sec": "Water systems",
+        "label": "Additional heads × 2",
+        "amt": 92,
+        "calc": "2 × $46.00"
+      },
+      {
+        "sec": "Water systems",
+        "label": "Air conditioning (up to 2 units)",
+        "amt": 116,
+        "calc": ""
+      },
+      {
+        "sec": "Water systems",
+        "label": "Generator — oil & filter",
+        "amt": 270,
+        "calc": ""
+      },
+      {
+        "sec": "Storage",
+        "label": "Outside storage",
+        "amt": 720,
+        "calc": "40 ft × $18.00"
+      },
+      {
+        "sec": "Retrieval",
+        "label": "Retrieve, set & relaunch (>36')",
+        "amt": 920,
+        "calc": "40 ft × $23.00"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Blocking, stands & handling (non-trailer)",
+        "amt": 185,
+        "calc": ""
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap labor",
+        "amt": 920,
+        "calc": "40 ft × $23.00"
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap materials",
+        "amt": 360,
+        "calc": "40×12 sqft × $0.75"
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Additional in-water wrap labor",
+        "amt": 440,
+        "calc": "40 ft × $11.00"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Powerwash hull",
+        "amt": 215.6,
+        "calc": "40 ft × $5.39"
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 5086.6
+  },
+  {
+    "name": "boat-small-flat20-wrap",
+    "why": "LOA 19 hits the flat ≤20ft wrap package; trailered outboard with customer-trailer retrieval.",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Basic — Outboard",
+        "amt": 177,
+        "calc": "1 × $177.00"
+      },
+      {
+        "sec": "Retrieval",
+        "label": "Retrieve & relaunch, customer trailer",
+        "amt": 198,
+        "calc": ""
+      },
+      {
+        "sec": "Shrinkwrap",
+        "label": "Shrinkwrap package (Package ≤20')",
+        "amt": 325,
+        "calc": ""
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Powerwash hull",
+        "amt": 102.41,
+        "calc": "19 ft × $5.39"
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 802.41
+  },
+  {
+    "name": "jetski-inside-detail",
+    "why": "PWC full service, two skis detailed, inside storage priced from ski L×W.",
+    "lines": [
+      {
+        "sec": "Winterization",
+        "label": "Full service — PWC / Jetski × 2",
+        "amt": 460,
+        "calc": "2 × $230.00"
+      },
+      {
+        "sec": "Detailing",
+        "label": "Jetski detail × 2",
+        "amt": 350,
+        "calc": "2 × $175.00"
+      },
+      {
+        "sec": "Storage",
+        "label": "Inside storage — on trailer",
+        "amt": 317.40000000000003,
+        "calc": "12×5 sqft × $5.29"
+      },
+      {
+        "sec": "Retrieval",
+        "label": "Retrieve, set & relaunch — included with inside storage",
+        "amt": 0,
+        "calc": ""
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 1127.4
+  },
+  {
+    "name": "golf-cart",
+    "why": "Flat-rate land unit — the shape of CLAUDE.md's live test quote QW-26-3477.",
+    "lines": [
+      {
+        "sec": "Storage",
+        "label": "Golf cart storage (incl. Heritage Harbor pickup & delivery)",
+        "amt": 365,
+        "calc": ""
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 365
+  },
+  {
+    "name": "ebike",
+    "why": "Flat-rate land unit including tune-up.",
+    "lines": [
+      {
+        "sec": "Storage",
+        "label": "E-bike storage — includes tune-up",
+        "amt": 160,
+        "calc": ""
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 160
+  },
+  {
+    "name": "boat-late-retrieval-hho-quoterequests",
+    "why": "Late-retrieval surcharge, HHO zero-dollar line, and open quote-requests (rq list must survive the extraction too).",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Basic — Inboard/Outboard (sterndrive)",
+        "amt": 298,
+        "calc": "1 × $298.00"
+      },
+      {
+        "sec": "Storage",
+        "label": "Outside storage",
+        "amt": 432,
+        "calc": "24 ft × $18.00"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Blocking, stands & handling (non-trailer)",
+        "amt": 185,
+        "calc": ""
+      },
+      {
+        "sec": "Misc",
+        "label": "Late retrieval surcharge (after Nov 15)",
+        "amt": 225,
+        "calc": ""
+      },
+      {
+        "sec": "Misc",
+        "label": "Heritage Harbor Slipholder — slip B-14 — discount applied by Quest",
+        "amt": 0,
+        "calc": ""
+      }
+    ],
+    "need": [],
+    "rq": [
+      "Bottom paint touch-up",
+      "Propeller refurbishment",
+      "Exterior detail"
+    ],
+    "total": 1140
+  },
+  {
+    "name": "boat-missing-dims",
+    "why": "Deliberately incomplete — the `need` prompts are part of the contract and must not change either.",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Basic — Inboard",
+        "amt": 298,
+        "calc": "1 × $298.00"
+      },
+      {
+        "sec": "Blocking & washing",
+        "label": "Blocking, stands & handling (non-trailer)",
+        "amt": 185,
+        "calc": ""
+      }
+    ],
+    "need": [
+      "LOA for outside storage",
+      "LOA for retrieval",
+      "LOA for shrinkwrap",
+      "LOA & beam for acid wash"
+    ],
+    "rq": [],
+    "total": 483
+  }
+]

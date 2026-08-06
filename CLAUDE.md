@@ -206,6 +206,37 @@ pay+email+photos; Marina → photos only.
 
 ---
 
+## 4b. Real customer data — the hard boundary
+
+**The spreadsheet holds live customers, not test rows.** As of Aug 2026 the
+only test quote is **`QW-26-1255` (John White, "Demo Test Boat",
+john@questwatersports.com)**. Every other row is a paying customer with a real
+name, email and phone. (`QW-26-3477`, the golf cart this file used to name as
+the test quote, **no longer exists** — it survives only in Activity Log
+history, and the Golf Cart tab is empty. Don't go looking for it.)
+
+Rules, non-negotiable:
+
+- **Never send email to a customer.** Not a test, not a "just checking the
+  template renders." Every email in this system is a human-clicked action by
+  Quest staff. If you need to see an email, use `adminEmailPreview` /
+  `buildEmailFor_`, which render without sending.
+- **Never create a Gmail draft addressed to a customer.** A draft one click
+  away from sending is the same hazard.
+- **Test only against `QW-26-1255`.** Any save, payment, adjustment, line edit
+  or season-done change goes on that quote and no other.
+- **Treat the sheet as read-only** unless the task is explicitly to change a
+  specific quote. Reading is fine; writing needs a reason and a named row.
+- **Never put customer PII in the repo** — not in commits, fixtures, test
+  data, baselines, comments or commit messages. Identify quotes by number.
+  Extracted payloads belong in a scratch directory outside the repo.
+
+Remember the system emails **on its own** in exactly one place: the daily 9am
+auto-reminder trigger, which writes to real customers. It keeps running during
+any test window. Nothing else is automatic (§5).
+
+---
+
 ## 5. Product rules that are easy to break
 
 - **Nothing customer-facing is automatic except the single 10-day reminder.**
@@ -240,8 +271,11 @@ pay+email+photos; Marina → photos only.
 
 ## 6. Testing checklist before calling anything done
 
-Run against the test quote (`QW-26-3477`, golf cart) **and** a boat quote —
-the land-unit paths are the least-exercised and where wording bugs hide.
+Run against the test quote **`QW-26-1255`** (boat — see §4b; it is the only
+row you may write to). The old golf-cart test quote `QW-26-3477` is gone, so
+**there is currently no land-unit test row**: build a throwaway golf cart or
+e-bike quote when touching land-unit paths, since that wording is the
+least-exercised and is where bugs hide (§5).
 
 1. Build a new quote → save → check row lands on the right tab, PDF generates.
 2. Reload it with quote# + last name → all selections restored.

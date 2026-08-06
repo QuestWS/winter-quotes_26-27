@@ -1,0 +1,85 @@
+
+=== boat-twin-inboard-full ===
+  Twin inboard, full service, shrinkwrap + acid wash + inside-on-trailer. The brief's headline case.
+       $916.00  [Engine winterization] Full service — Inboard × 2   (2 × $458.00)
+       $288.00  [Drive train] Transmission or V-drive × 2   (2 × $144.00)
+       $122.00  [Water systems] Water system — cold only
+     $1,269.60  [Storage] Inside storage — on trailer   (30×8 sqft × $5.29)
+         $0.00  [Retrieval] Retrieve, set & relaunch — included with inside storage
+       $644.00  [Shrinkwrap] Shrinkwrap labor   (28 ft × $23.00)
+       $168.00  [Shrinkwrap] Shrinkwrap materials   (28×8 sqft × $0.75)
+       $476.00  [Blocking & washing] Acid wash hull (≤8.5' beam)   (28 ft × $17.00)
+       TOTAL  $3,883.60
+
+=== boat-wide-beam-no-trailer ===
+  Beam 9.2 > RULES.acidBeamMax and > insideBeamMaxNT, non-trailered. Exercises the wide-beam acid rate and the blocking charge.
+       $502.00  [Engine winterization] Full service — Inboard/Outboard (sterndrive)   (1 × $502.00)
+       $191.00  [Drive train] I/O transom service   (1 × $191.00)
+     $1,851.78  [Storage] Inside storage — non-trailer   (32×9.2 sqft × $6.29)
+         $0.00  [Retrieval] Retrieve, set & relaunch — included with inside storage
+       $185.00  [Blocking & washing] Blocking, stands & handling (non-trailer)
+       $736.00  [Shrinkwrap] Shrinkwrap labor   (32 ft × $23.00)
+       $220.80  [Shrinkwrap] Shrinkwrap materials   (32×9.2 sqft × $0.75)
+       $704.00  [Blocking & washing] Acid wash hull (>8.5' beam)   (32 ft × $22.00)
+       TOTAL  $4,390.58
+
+=== boat-outside-perfoot-retrieval-large ===
+  LOA 40 > retrieveSmallMaxLOA (36) with outside storage — the large retrieval tier and per-foot outside rate.
+       $596.00  [Engine winterization] Basic — Inboard × 2   (2 × $298.00)
+       $252.00  [Water systems] Water system incl. 1 head
+        $92.00  [Water systems] Additional heads × 2   (2 × $46.00)
+       $116.00  [Water systems] Air conditioning (up to 2 units)
+       $270.00  [Water systems] Generator — oil & filter
+       $720.00  [Storage] Outside storage   (40 ft × $18.00)
+       $920.00  [Retrieval] Retrieve, set & relaunch (>36')   (40 ft × $23.00)
+       $185.00  [Blocking & washing] Blocking, stands & handling (non-trailer)
+       $920.00  [Shrinkwrap] Shrinkwrap labor   (40 ft × $23.00)
+       $360.00  [Shrinkwrap] Shrinkwrap materials   (40×12 sqft × $0.75)
+       $440.00  [Shrinkwrap] Additional in-water wrap labor   (40 ft × $11.00)
+       $215.60  [Blocking & washing] Powerwash hull   (40 ft × $5.39)
+       TOTAL  $5,086.60
+
+=== boat-small-flat20-wrap ===
+  LOA 19 hits the flat ≤20ft wrap package; trailered outboard with customer-trailer retrieval.
+       $177.00  [Engine winterization] Basic — Outboard   (1 × $177.00)
+       $198.00  [Retrieval] Retrieve & relaunch, customer trailer
+       $325.00  [Shrinkwrap] Shrinkwrap package (Package ≤20')
+       $102.41  [Blocking & washing] Powerwash hull   (19 ft × $5.39)
+       TOTAL  $802.41
+
+=== jetski-inside-detail ===
+  PWC full service, two skis detailed, inside storage priced from ski L×W.
+       $460.00  [Winterization] Full service — PWC / Jetski × 2   (2 × $230.00)
+       $350.00  [Detailing] Jetski detail × 2   (2 × $175.00)
+       $317.40  [Storage] Inside storage — on trailer   (12×5 sqft × $5.29)
+         $0.00  [Retrieval] Retrieve, set & relaunch — included with inside storage
+       TOTAL  $1,127.40
+
+=== golf-cart ===
+  Flat-rate land unit — the shape of CLAUDE.md's live test quote QW-26-3477.
+       $365.00  [Storage] Golf cart storage (incl. Heritage Harbor pickup & delivery)
+       TOTAL  $365.00
+
+=== ebike ===
+  Flat-rate land unit including tune-up.
+       $160.00  [Storage] E-bike storage — includes tune-up
+       TOTAL  $160.00
+
+=== boat-late-retrieval-hho-quoterequests ===
+  Late-retrieval surcharge, HHO zero-dollar line, and open quote-requests (rq list must survive the extraction too).
+       $298.00  [Engine winterization] Basic — Inboard/Outboard (sterndrive)   (1 × $298.00)
+       $432.00  [Storage] Outside storage   (24 ft × $18.00)
+       $185.00  [Blocking & washing] Blocking, stands & handling (non-trailer)
+       $225.00  [Misc] Late retrieval surcharge (after Nov 15)
+         $0.00  [Misc] Heritage Harbor Slipholder — slip B-14 — discount applied by Quest
+   QUOTE REQUESTS: Bottom paint touch-up; Propeller refurbishment; Exterior detail
+       TOTAL  $1,140.00
+
+=== boat-missing-dims ===
+  Deliberately incomplete — the `need` prompts are part of the contract and must not change either.
+       $298.00  [Engine winterization] Basic — Inboard   (1 × $298.00)
+       $185.00  [Blocking & washing] Blocking, stands & handling (non-trailer)
+   NEEDS: LOA for outside storage; LOA for retrieval; LOA for shrinkwrap; LOA & beam for acid wash
+       TOTAL  $483.00
+
+9 fixtures · grand total $17,438.59

@@ -74,6 +74,11 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 .sdopts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .sdopts button{border:1.5px solid var(--line);background:#fff;color:var(--navy);border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer}
 .sdopts button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.inlineEd{background:#fff;border:1.5px solid var(--frost);border-radius:9px;padding:12px;margin-top:8px}
+.inlineEd label{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px}
+.inlineEd input,.inlineEd textarea{width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--disp)}
+.feewarn{display:none;background:#FBEEE2;border:1px solid #E4B48F;color:var(--red);border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:8px}
+.feewarn.show{display:block}
 .histrow{padding:6px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .histrow b{color:var(--navy)}.histrow .hm{color:var(--muted)}
 .modal{position:fixed;inset:0;background:rgba(20,41,62,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:14px}
@@ -441,7 +446,8 @@ function renderQuote(r){
   $('qInfo').innerHTML=kv('Unit',r.unit+(r.ymm?' · '+r.ymm:''))+
     (r.keyLoc?kv('Keys',r.keyLoc):'')+(r.hhoAddr?kv('HHO address',r.hhoAddr):'')+
 
-    kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'');
+    kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'')+
+    kv('Terms accepted',termsText(r.terms));
   window._lines=r.linesRaw||[];
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
@@ -464,6 +470,15 @@ function renderQuote(r){
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
+}
+/* Read-only: which terms version this customer accepted, and when. Quotes
+   saved before terms acceptance existed show as not recorded rather than
+   pretending to an acceptance that never happened. */
+function termsText(t){
+  if(!t||!t.accepted) return '— not recorded —';
+  let when='';
+  if(t.at){ const d=new Date(t.at); when=isNaN(d)?String(t.at):d.toLocaleString(); }
+  return 'v'+(t.version||'?')+(when?' · '+when:'');
 }
 function renderContract(P){
   const c=$('contractCtl');
@@ -488,14 +503,26 @@ function renderRequests(canAdj){
   const b=$('rqBlock');
   if(!window._rq.length){b.innerHTML='';return;}
   b.innerHTML='<div class="msg" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Open quote requests (price to convert to a line):</div>'+
-    window._rq.map(q=>`<div class="rqrow"><span>${q}</span>`+
-      (canAdj?`<button class="btn navy sm" onclick="priceReq(${JSON.stringify(q).replace(/"/g,'&quot;')})">Price this</button>`:'')+
-      `</div>`).join('');
+    window._rq.map((q,i)=>`<div class="rqrow"><span>${q}</span>`+
+      (canAdj?`<button class="btn navy sm" onclick="openPrice(${i})">Price this</button>`:'')+
+      `</div>
+      <div class="inlineEd hide" id="rqEd${i}">
+        <div class="row2">
+          <div><label>Price</label><input inputmode="decimal" id="rqAmt${i}" placeholder="225"></div>
+          <div><label>Note (optional)</label><input id="rqNote${i}" placeholder="e.g. incl. materials"></div>
+        </div>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn navy sm" onclick="priceReq(${i})">Add as line</button>
+          <button class="btn ghost sm" onclick="$('rqEd${i}').classList.add('hide')">Cancel</button>
+        </div>
+      </div>`).join('');
 }
-async function priceReq(label){
-  const amt=prompt('Price for "'+label+'"?\nEnter a dollar amount (e.g. 225):');
-  if(amt===null)return;
-  try{const r=await api('priceRequest',[QN,label,amt]);
+function openPrice(i){const e=$('rqEd'+i);e.classList.remove('hide');$('rqAmt'+i).focus();}
+async function priceReq(i){
+  const label=window._rq[i];
+  const amt=$('rqAmt'+i).value;
+  if(!amt){toast('Enter a price first.');return;}
+  try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value]);
     if(!r.ok){toast(r.error);return;}
     toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
   }catch(e){toast(e.message);}
@@ -506,25 +533,43 @@ function renderSeasonDone(canAdj){
   const cur=sd?(sd.choice==='now'?'Done now':sd.choice==='call'?'Will call when done':'Done by '+(sd.date||'a set date')):'Not answered yet';
   if(!canAdj&&!sd){b.innerHTML='';return;}
   let h=`<div class="sdbox"><span class="lab">Season timing</span><div style="font-weight:700;color:var(--navy);margin:2px 0">${cur}</div>`;
+  const note=sd&&sd.note?`<div class="msg" style="margin:4px 0 0;color:var(--muted)">Note: ${sd.note}</div>`:'';
   if(canAdj){
     h+=`<div class="sdopts">
-      <button class="${sd&&sd.choice==='now'?'on':''}" onclick="setSeason('now')">Done now</button>
-      <button class="${sd&&sd.choice==='date'?'on':''}" onclick="setSeasonDate()">Set date…</button>
-      <button class="${sd&&sd.choice==='call'?'on':''}" onclick="setSeason('call')">Will call</button>
-    </div><div class="msg" id="sdMsg"></div>`;
-  }
+      <button class="${sd&&sd.choice==='now'?'on':''}" onclick="setSeasonDoneChoice('now')">Done now</button>
+      <button class="${sd&&sd.choice==='date'?'on':''}" onclick="openSeasonDate()">Set date…</button>
+      <button class="${sd&&sd.choice==='call'?'on':''}" onclick="setSeasonDoneChoice('call')">Will call</button>
+    </div>${note}
+    <div class="inlineEd hide" id="sdDateEd">
+      <label>Finish date</label><input type="date" id="sdDate">
+      <div class="feewarn" id="sdFee">Dates after Nov 15 add the late retrieval surcharge ($225) to the balance.</div>
+      <label>Notes (optional)</label><textarea id="sdNote" rows="2" placeholder="Timing / access notes"></textarea>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn navy sm" onclick="saveSeasonDate()">Save date</button>
+        <button class="btn ghost sm" onclick="$('sdDateEd').classList.add('hide')">Cancel</button>
+      </div>
+    </div>
+    <div class="msg" id="sdMsg"></div>`;
+  } else { h+=note; }
   h+='</div>';b.innerHTML=h;
+  const de=$('sdDate');
+  if(de){ if(sd&&sd.choice==='date'&&sd.date)de.value=sd.date;
+    if(sd&&sd.note&&$('sdNote'))$('sdNote').value=sd.note;
+    de.addEventListener('change',()=>{const v=new Date(de.value+'T00:00:00');const cut=new Date(v.getFullYear(),10,15);
+      $('sdFee').className=(!isNaN(v)&&v>cut)?'feewarn show':'feewarn';});
+  }
 }
-async function setSeason(choice){
-  try{const r=await api('setSeasonDone',[QN,choice,'']);
+function openSeasonDate(){const e=$('sdDateEd');e.classList.remove('hide');$('sdDate').focus();}
+async function saveSeasonDate(){
+  const d=$('sdDate').value;if(!d){setMsg('sdMsg','Pick a date first.',false);return;}
+  setMsg('sdMsg','Saving…');
+  try{const r=await api('setSeasonDone',[QN,'date',d,$('sdNote').value]);
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
     toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
-async function setSeasonDate(){
-  const d=prompt('Done date (YYYY-MM-DD)?\nDates after Nov 15 add the late retrieval surcharge:');
-  if(d===null)return;
-  try{const r=await api('setSeasonDone',[QN,'date',d]);
+async function setSeasonDoneChoice(choice){
+  try{const r=await api('setSeasonDone',[QN,choice,'','']);
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
     toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
   }catch(e){setMsg('sdMsg',e.message,false);}

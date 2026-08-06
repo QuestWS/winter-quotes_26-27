@@ -33,6 +33,21 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
+/* Contact gate + terms acknowledgment (start step) */
+.req{color:var(--warn);font-weight:700}
+.startnav{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
+.ackline{
+  font-size:13.5px;color:var(--muted);line-height:1.5;margin:0;
+  flex:1 1 260px;min-width:0;
+}
+.ackline a{color:var(--frost);text-decoration:underline}
+.ackline a:hover{color:var(--navy)}
+.gatemsg{
+  display:none;background:var(--warn-bg);border:1px solid #E4B48F;border-left:4px solid var(--warn);
+  color:var(--warn);border-radius:8px;padding:10px 13px;font-size:14px;margin-bottom:12px;
+}
+.gatemsg.show{display:block}
+.fieldbad{border-color:var(--warn)!important;background:#FEF7F1}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
 body{font-family:var(--body);background:var(--ice);color:var(--ink);font-size:16px;line-height:1.45}
 
@@ -235,10 +250,10 @@ aside.ticket{position:sticky;top:18px}
     <fieldset>
       <legend>Contact</legend>
       <div class="grid2">
-        <div><label class="f" for="firstName">First name</label><input type="text" id="firstName" data-k="firstName" placeholder="First name"></div>
-        <div><label class="f" for="lastName">Last name</label><input type="text" id="lastName" data-k="lastName" placeholder="Last name"></div>
-        <div><label class="f" for="phone">Phone</label><input type="tel" id="phone" data-k="phone" placeholder="(815) 555-0123"></div>
-        <div><label class="f" for="email">Email</label><input type="email" id="email" data-k="email" placeholder="you@email.com"></div>
+        <div><label class="f" for="firstName">First name <span class="req">*</span></label><input type="text" id="firstName" data-k="firstName" placeholder="First name" required></div>
+        <div><label class="f" for="lastName">Last name <span class="req">*</span></label><input type="text" id="lastName" data-k="lastName" placeholder="Last name" required></div>
+        <div><label class="f" for="phone">Phone <span class="req">*</span></label><input type="tel" id="phone" data-k="phone" placeholder="(815) 555-0123" required></div>
+        <div><label class="f" for="email">Email <span class="req">*</span></label><input type="email" id="email" data-k="email" placeholder="you@email.com" required></div>
       </div>
       <div style="margin-top:12px"><label class="f" for="ymm">Year / make / model</label><input type="text" id="ymm" data-k="ymm" placeholder="e.g. 2019 Chaparral 227 SSX"></div>
     </fieldset>
@@ -271,7 +286,15 @@ aside.ticket{position:sticky;top:18px}
 
     <div class="flatcard" id="flatInfo" style="display:none"></div>
 
-    <div class="panel-nav"><span></span><button class="btn primary" id="startNext" onclick="goNext()">Next →</button></div>
+    <div class="startgate">
+      <div class="gatemsg" id="startGateMsg"></div>
+      <div class="panel-nav startnav">
+        <p class="ackline">By continuing, you agree to our
+          <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a> and
+          <a href="terms.html" target="_blank" rel="noopener">Terms</a>.</p>
+        <button class="btn primary" id="startNext" onclick="startAcceptAndContinue()">Next →</button>
+      </div>
+    </div>
   </section>
 
   <!-- STEP: engines (boat) -->
@@ -509,6 +532,9 @@ aside.ticket{position:sticky;top:18px}
 <!-- Shared pricing engine: ONE rule set, also embedded in the Apps Script
      backend. Must load before the page script below. -->
 <script src="pricing-engine.js"></script>
+<!-- Terms version, single source of truth. Shared with terms.html /
+     privacy.html so the version shown and the version stamped agree. -->
+<script src="terms-config.js"></script>
 <script>
 /* ============================================================================
    INTEGRATIONS — paste your live URLs here.
@@ -583,7 +609,11 @@ const S = {
   powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'', hhoAddr:'', keyLoc:'',
   bottomTouch:false, bottomStrip:false, propRefurb:false,
   extDetail:false, washWax:false, intDetail:false, intWipe:false,
-  quoteNo:'', payMode:'deposit'
+  quoteNo:'', payMode:'deposit',
+  /* Terms acceptance, stamped at the start step's proceed button and carried
+     into the saved payload. A value that lived only in the browser would prove
+     nothing later, which is the whole point of recording it. */
+  acceptedTerms:false, termsVersion:'', termsAcceptedAt:''
 };
 
 const $ = s=>document.querySelector(s), $$ = s=>[...document.querySelectorAll(s)];
@@ -599,6 +629,8 @@ function ensureQuoteNo(){
 function ownerName(){ return [S.firstName,S.lastName].filter(Boolean).join(' '); }
 let MANUAL=null;      // Quest-applied changes journal, loaded with a saved quote
 let LOCKED=false;     // true once a deposit/payment is on file — selections frozen
+let QUOTE_LOADED=false; // true once an existing quote was pulled from the server —
+                        // suppresses the contact gate and the "Quote started" log
 let PAYMENTS=[];      // payments collected, loaded with a saved quote (display only)
 function paymentsTotal(){ return PAYMENTS.reduce((a,p)=>a+Number(p.amt||0),0); }
 
@@ -816,6 +848,11 @@ function logQuote(status, extra){
     quotesRequested:rq.join('; '), notes:S.notes,
     season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd,lateRetrievalFee:PRICES.lateRetrieval,lateRetrievalLabel:'Late retrieval surcharge (after '+SEASON.payByShort+')'},
     dueToday:t.dueToday?1:0,
+    /* Terms acceptance, promoted to the top level of the payload so the sheet
+       and console can read it without unpacking `state`. */
+    acceptedTerms:S.acceptedTerms?1:0,
+    termsVersion:S.termsVersion||'',
+    termsAcceptedAt:S.termsAcceptedAt||'',
     state:JSON.parse(JSON.stringify(S)),
     manual:MANUAL||undefined,
     adobeUrl:INTEGRATIONS.adobeWebFormUrl?INTEGRATIONS.adobeWebFormUrl+'#'+buildAdobeParams():'',
@@ -860,6 +897,7 @@ function handleLoadResult(res, qn){
   try{
     MANUAL=res.manual||null; PAYMENTS=res.payments||[];
     LOCKED=PAYMENTS.length>0;
+    QUOTE_LOADED=true;
     unlockUI();
     hydrateFromState(res.state, qn);
     lockUI();
@@ -1214,6 +1252,12 @@ function paintNav(){
   $$('.panel').forEach(p=>p.classList.toggle('active',p.dataset.step===cur));
 }
 function go(name){
+  // Leaving the start step requires the gated contact fields. A quote loaded
+  // from the server already has them, so it is never blocked.
+  if(cur==='start' && name!=='start' && !QUOTE_LOADED){
+    const need=contactMissing_();
+    if(need.length){ showGate_(need); return; }
+  }
   cur=name;
   if(name==='storage') syncStorageUI();
   if(name==='ski') buildSkiLevels();
@@ -1223,6 +1267,59 @@ function go(name){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goNext(){ const f=flow(), i=f.indexOf(cur); if(i<f.length-1) go(f[i+1]); }
+
+/* ============ CONTACT GATE + TERMS ACCEPTANCE (start step) ============
+   Name, phone and email are required before the detailed build. The proceed
+   button is deliberately the acceptance point: it is the same click anyone
+   must make to reach the pricing, so it captures agreement to the Terms that
+   govern that access, timestamped. */
+const CONTACT_FIELDS=[['firstName','First name'],['lastName','Last name'],['phone','Phone'],['email','Email']];
+function contactMissing_(){
+  const need=[];
+  for(const [k,label] of CONTACT_FIELDS){
+    const v=String(S[k]||'').trim();
+    if(!v){ need.push({k,label}); continue; }
+    if(k==='email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) need.push({k,label:'A valid email'});
+    if(k==='phone' && v.replace(/\D/g,'').length<10) need.push({k,label:'A complete phone number'});
+  }
+  return need;
+}
+function clearGate_(){
+  const m=$('#startGateMsg'); if(m){ m.textContent=''; m.classList.remove('show'); }
+  CONTACT_FIELDS.forEach(([k])=>{ const el=$('#'+k); if(el) el.classList.remove('fieldbad'); });
+}
+function showGate_(need){
+  clearGate_();
+  const m=$('#startGateMsg');
+  if(m){
+    m.textContent='We need '+need.map(n=>n.label.toLowerCase()).join(', ')+' before we can build your quote.';
+    m.classList.add('show');
+  }
+  need.forEach(n=>{ const el=$('#'+n.k); if(el) el.classList.add('fieldbad'); });
+  const first=$('#'+need[0].k);
+  if(first){ first.scrollIntoView({behavior:'smooth',block:'center'}); first.focus({preventScroll:true}); }
+}
+/* Stamped once, and re-stamped only if the posted terms version has changed —
+   in that case the customer has affirmatively clicked under the new terms. */
+function stampTermsAcceptance_(){
+  const v=(window.QuestTerms&&QuestTerms.version)||'';
+  if(S.acceptedTerms && S.termsVersion===v) return;
+  S.acceptedTerms=true;
+  S.termsVersion=v;
+  S.termsAcceptedAt=new Date().toISOString();
+}
+function startAcceptAndContinue(){
+  const need=contactMissing_();
+  if(need.length){ showGate_(need); return; }
+  clearGate_();
+  stampTermsAcceptance_();
+  /* Log the started quote immediately so an abandoned build still leaves a
+     durable, timestamped record. Never for a quote loaded from the server —
+     posting a "Quote started" status over a real (possibly paid) quote would
+     overwrite its status. */
+  if(!QUOTE_LOADED && !LOCKED) logQuote('Quote started',{storageTab:'Quote Started',emailCustomer:0});
+  goNext();
+}
 function goPrev(){ const f=flow(), i=f.indexOf(cur); if(i>0) go(f[i-1]); }
 
 /* ================= WIRING ================= */

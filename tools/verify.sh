@@ -129,6 +129,46 @@ else
   echo "  (pricing-engine.js not present yet — see docs/TASK-pricing-engine.md)"
 fi
 
+echo "== Terms, privacy & lead capture =="
+for f in terms.html privacy.html terms-config.js legal.css; do
+  if [ -f "$f" ]; then echo "  OK   present: $f"; else echo "  FAIL missing: $f"; FAIL=1; fi
+done
+if [ -f terms-config.js ]; then
+  check_js terms-config.js "terms-config.js"
+  # One source of truth: the version must be declared here and nowhere else.
+  if grep -q "version:" terms-config.js; then echo "  OK   terms version declared in terms-config.js"
+  else echo "  FAIL terms-config.js has no version"; FAIL=1; fi
+  for f in terms.html privacy.html index.html; do
+    if grep -q 'terms-config.js' "$f" 2>/dev/null; then echo "  OK   $f reads the shared terms version"
+    else echo "  FAIL $f does not load terms-config.js"; FAIL=1; fi
+  done
+  # A hardcoded version string anywhere else can drift from what is stamped.
+  if grep -nE "Version 1\.0|termsVersion *[:=] *'1" terms.html privacy.html index.html 2>/dev/null | grep -v terms-config; then
+    echo "  FAIL trap: hardcoded terms version outside terms-config.js"; FAIL=1
+  else echo "  OK   trap: no hardcoded terms version outside terms-config.js"; fi
+fi
+if [ -f index.html ]; then
+  sweep index.html "gate" "startAcceptAndContinue" "contactMissing_" "stampTermsAcceptance_" \
+    "acceptedTerms" "termsAcceptedAt" "ackline" "QUOTE_LOADED" "Quote Started"
+  # The acknowledgment must be reachable text, not a hidden checkbox.
+  if grep -q 'By continuing, you agree' index.html; then echo "  OK   acknowledgment line present"
+  else echo "  FAIL acknowledgment line missing"; FAIL=1; fi
+fi
+if [ -f quote-logger-apps-script.gs ]; then
+  sweep quote-logger-apps-script.gs "lead capture" "STARTED_TAB" "isStartedTab_" "isStartedQuote_"
+  # THE load-bearing check: a started quote is a lead, not a customer. If the
+  # daily 9am reminder ever stops skipping that tab, it will email strangers.
+  if awk '/function dailyReminderCheck/,/^}/' quote-logger-apps-script.gs | grep -q "isStartedTab_"; then
+    echo "  OK   trap: daily reminder skips the lead tab"
+  else echo "  FAIL trap: dailyReminderCheck no longer skips STARTED_TAB — it will email leads"; FAIL=1; fi
+  if awk '/function sendSpringAlertAll/,/^}/' quote-logger-apps-script.gs | grep -q "isStartedTab_"; then
+    echo "  OK   trap: spring alert skips the lead tab"
+  else echo "  FAIL trap: sendSpringAlertAll no longer skips STARTED_TAB"; FAIL=1; fi
+fi
+if [ -f admin/index.html ]; then
+  sweep admin/index.html "console terms" "termsText" "Terms accepted"
+fi
+
 echo "== Apps Script deploy workflow =="
 WF=.github/workflows/deploy-apps-script.yml
 if [ -f "$WF" ]; then

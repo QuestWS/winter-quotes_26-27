@@ -20,6 +20,9 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 |---|---|---|
 | `index.html` | GitHub Pages root | Customer quote page |
 | `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
+| `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
+| `terms-config.js` | GitHub Pages root | **`TERMS_VERSION`, single source of truth** — read by the page *and* both legal pages |
+| `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
@@ -157,6 +160,45 @@ next customer save. Mutations that already journal correctly: line edits,
 deletes, priced quote-requests, adjustments, late fees, and the season-done
 survey's late-retrieval surcharge (`applySeasonDone_` adds/removes it via
 `m.adjustments`). Any dimension-repricing work must follow the same pattern.
+
+### Terms acceptance & lead capture
+Name, phone and email are **required** before a customer can leave the start
+step. That proceed button is deliberately the acceptance point: it is the same
+click anyone must make to reach the pricing, so it captures agreement to the
+Terms that govern that access, timestamped. The acknowledgment line sits beside
+the button — visually quiet, but real text with real links, because a hidden
+acknowledgment is not an enforceable one.
+
+`stampTermsAcceptance_()` writes `acceptedTerms` / `termsVersion` /
+`termsAcceptedAt` into `S`, and `logQuote()` promotes them to the **top level
+of the payload** — a value living only in the browser proves nothing later.
+Re-stamping happens only when the posted version differs from the stamped one,
+so a customer who clicks under new terms gets a fresh record and everyone else
+keeps their original.
+
+**`TERMS_VERSION` is declared once, in `terms-config.js`**, and read by
+`index.html`, `terms.html` and `privacy.html`. `verify.sh` fails on a
+hardcoded version anywhere else — the version shown and the version recorded
+must never disagree.
+
+Passing the gate immediately logs a row with status `Quote started` on its own
+**`Quote Started`** tab, so an abandoned build still leaves a durable record
+(who reached the pricing, and which terms they accepted). Completing the quote
+does *not* create a second row — the existing duplicate sweep moves it onto the
+real storage tab.
+
+**The lead tab is excluded from every customer-facing email sweep, and that
+exclusion is load-bearing.** `dailyReminderCheck()` runs at 9am on its own; if
+it stopped skipping `STARTED_TAB` it would email a stranger — possibly a
+competitor — a "your quote is waiting" nudge ten days after they poked at the
+pricing. `sendSpringAlertAll()` skips it too. `verify.sh` asserts both, and
+fails if either exclusion is removed. Started rows also skip PDF generation and
+are forced to `emailCustomer = 0` server-side. The internal `service@`
+notification still fires — that is the "someone started a quote" alert.
+
+A quote loaded from the server is never gated and never logs a start row:
+posting a `Quote started` status over a real (possibly paid) quote would
+overwrite it. `QUOTE_LOADED` guards both paths.
 
 ### Season-done survey
 The quote email carries a 3-option survey (done now / done on a date / will

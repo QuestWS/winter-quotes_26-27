@@ -86,6 +86,25 @@ const HEADERS = [
   'Sign link','Reminder','Payload','Paid','Photos'
 ];
 // Column numbers — single source of truth for every read/write below
+/* ---------------------------------------------------------------------------
+   LEAD CAPTURE — quotes that were started but not completed.
+   The customer page logs a row the moment someone passes the contact gate, so
+   an abandoned build still leaves a timestamped record (who accessed the
+   pricing, and which terms version they accepted).
+
+   These rows live on their own tab so they never mix with real storage
+   locations, and they are excluded from EVERY customer-facing email sweep.
+   That exclusion is the load-bearing part: dailyReminderCheck() runs on its
+   own at 9am and would otherwise email a stranger — or a competitor — a
+   "your quote is waiting" nudge ten days after they poked at the pricing.
+   The row still moves onto a real tab by the normal duplicate sweep once the
+   quote is completed, so completing a quote never leaves a second row.
+--------------------------------------------------------------------------- */
+const STARTED_TAB = 'Quote Started';
+const STARTED_STATUS = 'Quote started';
+function isStartedTab_(name) { return String(name) === STARTED_TAB; }
+function isStartedQuote_(d) { return String((d && d.storageTab) || '') === STARTED_TAB; }
+
 const COL = { LAST:1, FIRST:2, QN:3, BAL:4, TS:5, STATUS:6, UNIT:7, PHONE:8, EMAIL:9,
   YMM:10, DIMS:11, TOTAL:12, DEP:13, PAY:14, ITEMS:15, RQ:16, NOTES:17, PDF:18,
   SIGN:19, REM:20, PAYLOAD:21, PAID:22, PHOTOS:23 };
@@ -190,8 +209,12 @@ function doPost(e) {
       sh.setFrozenRows(1);
     }
 
-    // 4) PDF after merge/lock — always the official version
-    const pdfUrl = savePdf_(d);
+    // 4) PDF after merge/lock — always the official version.
+    //    A started quote has no selections yet, so there is nothing to render:
+    //    skip it, and make sure no customer copy can be sent for a lead row.
+    const startedRow = isStartedQuote_(d);
+    if (startedRow) d.emailCustomer = 0;
+    const pdfUrl = startedRow ? '' : savePdf_(d);
 
     // 5) Row in the new column order
     const paid0 = paymentsTotal_(d);
@@ -916,6 +939,14 @@ function adminLookup(token, qn) {
     rq: String(d.quotesRequested || ''),
     rqList: String(d.quotesRequested || '').split('; ').filter(function (x) { return x; }),
     seasonDone: d.seasonDone || null,
+    /* Terms acceptance, read-only on the console: which version this customer
+       agreed to, and when. Falls back to the copy inside `state` for quotes
+       saved before the field was promoted to the payload's top level. */
+    terms: {
+      accepted: !!(d.acceptedTerms || (d.state && d.state.acceptedTerms)),
+      version: String(d.termsVersion || (d.state && d.state.termsVersion) || ''),
+      at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
+    },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
     lines: (d.lines || []).map(function (l, i) { return (i + 1) + '. ' + l.label + ' — ' + (l.amt ? usd_(l.amt) : 'incl.'); }),
     linesRaw: (d.lines || []).map(function (l, i) { return { i: i, label: l.label, amt: Number(l.amt || 0), sec: l.sec }; }),
@@ -1479,6 +1510,7 @@ function sendSpringAlertAll() {
   ss.getSheets().forEach(function (sh) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
     if (sh.getName() === 'No Storage') return;
+    if (isStartedTab_(sh.getName())) return;  // leads are never emailed
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
@@ -1950,6 +1982,7 @@ function dailyReminderCheck() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(function (sh) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return; // not a quote tab
+    if (isStartedTab_(sh.getName())) return;  // leads are never emailed — see STARTED_TAB
     const last = sh.getLastRow();
     if (last < 2) return;
     const data = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();

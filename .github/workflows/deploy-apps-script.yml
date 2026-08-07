@@ -87,7 +87,43 @@ jobs:
           SCRIPT_ID: ${{ vars.SCRIPT_ID }}
         run: |
           set -euo pipefail
-          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASPRC_JSON" > /tmp/cred.raw
+          # Accept the credential either as raw JSON or base64-encoded, and
+          # fail with a precise message instead of clasp's opaque
+          # "Unexpected non-whitespace character after JSON at position N".
+          # Base64 is the recommended form: it survives terminal line-wrapping
+          # on copy, and being a single line it stops GitHub from masking every
+          # "}" in the logs (which it does for each line of a multi-line
+          # secret, making unrelated output look corrupted).
+          python3 - <<'PY'
+          import base64, json, os, re, sys
+          raw = open('/tmp/cred.raw', 'rb').read()
+          def parse(b):
+              try:
+                  return json.loads(b.decode('utf-8'))
+              except Exception:
+                  return None
+          cred = parse(raw)
+          how = 'raw JSON'
+          if cred is None:
+              try:
+                  cred = parse(base64.b64decode(re.sub(rb'\s+', b'', raw), validate=True))
+                  how = 'base64'
+              except Exception:
+                  cred = None
+          if cred is None:
+              print('::error::CLASPRC_JSON could not be parsed as JSON or as base64-encoded JSON. '
+                    'It was probably corrupted on copy (terminal line-wrapping is the usual cause). '
+                    "Re-store it with: base64 -w0 ~/.clasprc.json  — see docs/APPS-SCRIPT-DEPLOY.md step 4.")
+              sys.exit(1)
+          if not isinstance(cred, dict) or not cred:
+              print('::error::CLASPRC_JSON parsed but is not a credential object.')
+              sys.exit(1)
+          # Field NAMES only — never values.
+          print('Credential parsed as %s; top-level fields: %s' % (how, ', '.join(sorted(cred.keys()))))
+          with open(os.path.expanduser('~/.clasprc.json'), 'w') as fh:
+              json.dump(cred, fh)
+          PY
           chmod 600 "$HOME/.clasprc.json"
           printf '{"scriptId":"%s","rootDir":"build"}' "$SCRIPT_ID" > .clasp.json
           npx clasp show-authorized-user

@@ -95,13 +95,21 @@ cat appsscript.json
 
 ## Step 4 — Copy the credential into GitHub
 
-Still in Cloud Shell:
+Still in Cloud Shell. Use **base64** rather than `cat` — it collapses the
+credential to a single line, which survives copying out of a wrapping terminal
+and keeps GitHub from masking every `}` in future build logs:
 
 ```bash
-cat ~/.clasprc.json
+base64 -w0 ~/.clasprc.json
 ```
 
-Copy the **entire** output — it's one line of JSON containing a refresh token.
+Copy the **entire** single line of output.
+
+> The workflow accepts either base64 or raw JSON, and tells you plainly if the
+> value arrived corrupted — but base64 is what avoids the corruption in the
+> first place. A plain `cat` of a pretty-printed credential is easy to break on
+> copy, and the resulting error (`Unexpected non-whitespace character after
+> JSON`) points at nothing useful.
 
 > This is a key to your Google account. Treat it like a password: it goes into
 > the GitHub **secret** box and nowhere else — not into a file in the repo, not
@@ -204,6 +212,8 @@ want.
 | `User has not enabled the Apps Script API` | Step 1 skipped | Turn it on, wait a minute, re-run |
 | `Missing secret CLASPRC_JSON` | Step 4 skipped or misnamed | Name must be exactly `CLASPRC_JSON` |
 | `invalid_grant` / auth errors | The refresh token was revoked or expired | Redo steps 3–4 to mint a fresh credential |
+| `CLASPRC_JSON could not be parsed` | The value was corrupted on copy | Re-store it with `base64 -w0 ~/.clasprc.json` |
+| Logs show `***` where `}` should be | The secret was stored multi-line, so GitHub masks each line | Harmless, but re-storing as base64 clears it |
 | `apps-script/appsscript.json is missing` | Step 6 skipped | Commit the manifest |
 | verify.sh failures | The tree is broken | Fix first — this is the guard working |
 | Pushed fine but nothing changed | You used **push-only** | Re-run with **push-and-deploy** |

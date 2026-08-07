@@ -315,7 +315,9 @@ any test window. Nothing else is automatic (§5).
 - **Two customer-facing emails are automatic; everything else needs a click.**
   (1) the 10-day reminder on real quotes, and (2) the **lead follow-up**
   ("finish my quote") sent once, 24h after someone passes the contact gate and
-  walks away — `leadFollowUpCheck()`, hourly-capable trigger at :10. It scans
+  walks away — `leadFollowUpCheck()`, a **daily** trigger at 10am, so the real
+  delay is 24–47h: the first 10am sweep after a full 24 hours have elapsed. It
+  scans
   **only** the lead tab, which is what makes "walked away" true by
   construction: saving, printing, emailing or paying moves the row off that
   tab. Its sent-marker goes in the reminder column with the distinct prefix

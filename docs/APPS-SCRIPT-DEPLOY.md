@@ -100,10 +100,16 @@ credential to a single line, which survives copying out of a wrapping terminal
 and keeps GitHub from masking every `}` in future build logs:
 
 ```bash
-base64 -w0 ~/.clasprc.json
+echo "----BEGIN----"; base64 -w0 ~/.clasprc.json; echo; echo "----END----"
 ```
 
-Copy the **entire** single line of output.
+Copy **only what sits between the two markers**.
+
+> The markers matter. `base64 -w0` prints no trailing newline, so without them
+> your shell prompt ends up glued to the end of the value
+> (`...AAAA==questwsottawa@cloudshell:~$`) and gets copied along with it. The
+> workflow now trims that automatically, but copying it cleanly is better than
+> relying on the salvage.
 
 > The workflow accepts either base64 or raw JSON, and tells you plainly if the
 > value arrived corrupted — but base64 is what avoids the corruption in the

@@ -106,15 +106,30 @@ jobs:
           cred = parse(raw)
           how = 'raw JSON'
           if cred is None:
+              flat = re.sub(rb'\s+', b'', raw)
               try:
-                  cred = parse(base64.b64decode(re.sub(rb'\s+', b'', raw), validate=True))
+                  cred = parse(base64.b64decode(flat, validate=True))
                   how = 'base64'
               except Exception:
                   cred = None
+              if cred is None:
+                  # Salvage the common paste accident: `base64 -w0` emits no
+                  # trailing newline, so the shell prompt ends up glued to the
+                  # end of the value. Take the leading run of base64 characters
+                  # up to and including any padding, and try that.
+                  m = re.match(rb'[A-Za-z0-9+/]+={0,2}', flat)
+                  if m:
+                      try:
+                          cred = parse(base64.b64decode(m.group(0), validate=True))
+                          how = 'base64 (trailing junk trimmed — most likely a shell prompt copied with it)'
+                      except Exception:
+                          cred = None
           if cred is None:
               print('::error::CLASPRC_JSON could not be parsed as JSON or as base64-encoded JSON. '
-                    'It was probably corrupted on copy (terminal line-wrapping is the usual cause). '
-                    "Re-store it with: base64 -w0 ~/.clasprc.json  — see docs/APPS-SCRIPT-DEPLOY.md step 4.")
+                    'The usual cause is copying the shell prompt along with the value: `base64 -w0` '
+                    'prints no trailing newline, so the prompt sits on the same line. '
+                    'Re-store it using the BEGIN/END markers in docs/APPS-SCRIPT-DEPLOY.md step 4 '
+                    'and copy only what is between them.')
               sys.exit(1)
           if not isinstance(cred, dict) or not cred:
               print('::error::CLASPRC_JSON parsed but is not a credential object.')

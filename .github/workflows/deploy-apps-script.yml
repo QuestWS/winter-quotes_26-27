@@ -102,11 +102,22 @@ jobs:
           DESC: ${{ inputs.description }}
         run: |
           set -euo pipefail
-          # update-deployment points the SAME deployment id at a new version,
-          # so the /exec URL that index.html and admin/index.html reference
-          # never changes.
-          npx clasp update-deployment -d "$DESC" "$DEPLOYMENT_ID"
-          echo "Deployment $DEPLOYMENT_ID now serving: $DESC"
+          # Mirror the manual ritual exactly: cut an IMMUTABLE version, then
+          # point the SAME deployment id at it.
+          #
+          # The -V is not optional. clasp's update-deployment treats a missing
+          # version as @HEAD, which would (a) leave nothing pinned to roll back
+          # to in the Version dropdown and (b) make every future push go live
+          # the moment it lands, destroying the difference between push-only
+          # and push-and-deploy. Verified in clasp 3.3.0's source.
+          VERSION=$(npx clasp --json create-version "$DESC" | python3 -c 'import sys,json; print(json.load(sys.stdin)["versionNumber"])')
+          case "$VERSION" in
+            ''|*[!0-9]*) echo "::error::Could not read a version number from clasp (got: '$VERSION')"; exit 1;;
+          esac
+          echo "Created immutable version $VERSION"
+          npx clasp update-deployment -V "$VERSION" -d "$DESC" "$DEPLOYMENT_ID"
+          echo "Deployment $DEPLOYMENT_ID now serving version $VERSION: $DESC"
+          echo "APPS_SCRIPT_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Show deployments
         if: always()
@@ -126,7 +137,8 @@ jobs:
             echo "- Mode: \`${{ inputs.mode }}\`"
             echo "- Description: ${{ inputs.description }}"
             if [ "${{ inputs.mode }}" = "push-and-deploy" ]; then
-              echo "- Updated existing deployment \`${{ vars.DEPLOYMENT_ID }}\` — the /exec URL is unchanged."
+              echo "- Deployed **version ${APPS_SCRIPT_VERSION:-?}** to existing deployment \`${{ vars.DEPLOYMENT_ID }}\` — the /exec URL is unchanged."
+              echo "- Roll back any time: Apps Script → Deploy → Manage deployments → pencil → Version dropdown."
             else
               echo "- Code uploaded only. Nothing is live yet; run again with \`push-and-deploy\`."
             fi

@@ -42,14 +42,17 @@ API" error.
 2. In the editor: **Project Settings** (the gear, left sidebar)
 3. Copy **Script ID** — a long string of letters and numbers
 
-**Deployment ID:**
-1. Same editor → **Deploy → Manage deployments**
-2. Click your active deployment (the one whose URL ends in `/exec`)
-3. Copy the **Deployment ID**. It looks like `AKfycbxv8kqGKXU_4-9Tyt…` —
-   the same string that appears in the web app URL
+**Deployment ID — you already have this one.** It is the long string in the
+middle of the web app URL, between `/macros/s/` and `/exec`. For this project
+that is:
 
-> Sanity check: that ID should match the URL in `CLAUDE.md` §1. If it doesn't,
-> stop — you may be looking at the abandoned duplicate deployment
+```
+AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w
+```
+
+> If you ever need to confirm it: **Deploy → Manage deployments**, click the
+> active deployment, and check the Deployment ID matches the string above. If
+> it doesn't, stop — you may be looking at the abandoned duplicate deployment
 > (`AKfycbwEWDAuZM93…`), which must stay archived.
 
 ---
@@ -146,8 +149,14 @@ The workflow refuses to run without it, on purpose.
 6. **Run workflow**
 
 It runs `tools/verify.sh` first and **stops before touching the backend if
-anything fails**. Then it pushes, creates a version, and points the existing
-deployment at it.
+anything fails**. Then it pushes the code, cuts an **immutable version**, and
+points the existing deployment at that version by number — exactly the manual
+ritual, in the same order.
+
+That version number matters. If the deploy ever pointed at `@HEAD` instead,
+there would be nothing pinned in the Version dropdown to roll back to, and
+every later push would go live the instant it landed. `verify.sh` fails the
+build if the workflow stops cutting versions.
 
 Takes about a minute. Green check = live.
 

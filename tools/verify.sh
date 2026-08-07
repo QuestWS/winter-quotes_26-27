@@ -197,6 +197,12 @@ if 'update-deployment' in runs and 'create-deployment' not in runs:
     print("  OK   trap: updates existing deployment (URL preserved)")
 else:
     print("  FAIL trap: workflow must use update-deployment, never create-deployment"); fail = 1
+# clasp treats a missing -V as @HEAD: nothing pinned to roll back to, and every
+# later push goes live instantly. The version must be cut explicitly.
+if 'create-version' in runs and 'update-deployment -V' in runs:
+    print("  OK   trap: cuts an immutable version and deploys it by number")
+else:
+    print("  FAIL trap: deploy must create a version and pass -V, or it ships @HEAD"); fail = 1
 sys.exit(fail)
 PY
   [ $? -eq 0 ] || FAIL=1

@@ -77,10 +77,14 @@ Follow the link it prints, approve, paste the code back.
 
 ```bash
 mkdir ~/quest && cd ~/quest
-npx clasp clone-script <YOUR_SCRIPT_ID>
+npx clasp clone-script PASTE_YOUR_SCRIPT_ID_HERE
 ls -la
 cat appsscript.json
 ```
+
+> Replace `PASTE_YOUR_SCRIPT_ID_HERE` with the ID itself and **no brackets**.
+> A pasted `<...>` makes bash try to read from a file and you get
+> `syntax error near unexpected token`, with an empty folder to show for it.
 
 4. Note the **filename** of the code file it pulled — usually `Code.js`
    (clasp writes `.gs` files locally as `.js`). If it's something else, you'll
@@ -99,9 +103,13 @@ cat ~/.clasprc.json
 
 Copy the **entire** output — it's one line of JSON containing a refresh token.
 
-> This is a key to your Google account. Treat it like a password. It goes into
-> a GitHub **secret**, which is encrypted and never shown in logs, not into a
-> file in the repo.
+> This is a key to your Google account. Treat it like a password: it goes into
+> the GitHub **secret** box and nowhere else — not into a file in the repo, not
+> into a chat, not into an email. Unlike the short-lived code from the login
+> step, this one stays valid until revoked.
+>
+> If it ever leaks, `npx clasp logout` then `npx clasp login` mints a new one
+> and invalidates the old.
 
 1. GitHub → `QuestWS/winter-quotes_26-27` → **Settings**
 2. **Secrets and variables → Actions → Secrets** tab

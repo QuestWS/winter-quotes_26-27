@@ -1,83 +1,106 @@
 /* Shared styling for the standalone legal pages (terms.html, privacy.html).
-   Mirrors the customer quote page's palette and type so the pages read as the
-   same site. Kept as one file so both pages can never drift apart. */
+   ---------------------------------------------------------------------------
+   DELIBERATELY FORMAL, NOT INVITING. These read as a legal instrument rather
+   than a designed web page: small justified serif, long measure, tight
+   leading, no decorative callouts, all-caps disclaimer sections per the usual
+   convention for warranty and liability limitations.
+
+   What is deliberately NOT done, and should stay that way:
+   - contrast is full black-on-white. Greying the text down would be the one
+     change that actually undermines Terms section 5 -- an unusual term like
+     liquidated damages is easier to enforce when it was conspicuous and the
+     reader had fair notice. Dense is defensible; hidden is not.
+   - every section keeps a real, findable heading, and the liquidated-damages
+     paragraph stays bold.
+   - the acknowledgment line on the quote page stays plainly legible; that is
+     the click that ties a reader to these terms.
+   The site chrome (top bar) stays branded so the pages are obviously ours.
+--------------------------------------------------------------------------- */
 :root{
   --navy:#14293E;
   --navy-deep:#0C1B2A;
   --ice:#EBF1F6;
-  --frost:#4A81A6;
-  --frost-soft:#D8E6EF;
   --gold:#C08A22;
-  --gold-soft:#F4E8CF;
-  --paper:#FDFCF7;
-  --ink:#1D2B38;
-  --muted:#5C7185;
-  --line:#C7D5E0;
-  --radius:10px;
+  --ink:#000;
+  --line:#B9C6D2;
   --disp:"Barlow Condensed",Impact,sans-serif;
   --body:"Source Sans 3","Segoe UI",sans-serif;
+  --legal:Georgia,"Times New Roman",Times,serif;
   --mono:"IBM Plex Mono","Courier New",monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
-  font-family:var(--body);
+  font-family:var(--legal);
   color:var(--ink);
-  background:linear-gradient(180deg,#E3ECF3 0%,var(--ice) 260px);
-  line-height:1.62;
+  background:#fff;
   -webkit-text-size-adjust:100%;
 }
-.topbar{
-  background:var(--navy);color:#fff;
-  border-bottom:3px solid var(--gold);
-}
+
+/* Site chrome — kept branded, so the document is plainly ours. */
+.topbar{background:var(--navy);color:#fff;border-bottom:3px solid var(--gold)}
 .topbar .inner{
-  max-width:860px;margin:0 auto;padding:14px 20px;
+  max-width:1000px;margin:0 auto;padding:12px 24px;
   display:flex;align-items:center;gap:14px;flex-wrap:wrap;
 }
-.topbar img{height:40px;width:auto;background:#fff;border-radius:6px;padding:3px 7px}
-.topbar .ttl{font-family:var(--disp);font-size:20px;letter-spacing:.06em;text-transform:uppercase;line-height:1.1}
-.topbar .ttl small{display:block;font-family:var(--body);font-size:11.5px;letter-spacing:.09em;color:#9FC3DC;text-transform:uppercase}
+.topbar img{height:34px;width:auto;background:#fff;border-radius:5px;padding:3px 6px}
+.topbar .ttl{font-family:var(--disp);font-size:18px;letter-spacing:.06em;text-transform:uppercase;line-height:1.1}
+.topbar .ttl small{display:block;font-family:var(--body);font-size:11px;letter-spacing:.09em;color:#9FC3DC;text-transform:uppercase}
 .topbar .spacer{flex:1}
 .topbar a.back{
-  color:#CFE0EC;text-decoration:none;font-size:14px;
-  border:1px solid #2C4E73;border-radius:8px;padding:8px 14px;white-space:nowrap;
+  color:#CFE0EC;text-decoration:none;font-size:13px;font-family:var(--body);
+  border:1px solid #2C4E73;border-radius:6px;padding:7px 13px;white-space:nowrap;
 }
 .topbar a.back:hover{background:var(--navy-deep);color:#fff}
 
-.wrap{max-width:860px;margin:0 auto;padding:26px 20px 70px}
+/* The document itself. Long measure + small justified serif + tight leading:
+   the visual language of fine print, at full contrast. */
+.wrap{max-width:1000px;margin:0 auto;padding:26px 24px 80px}
 .doc{
-  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
-  padding:34px 38px;box-shadow:0 1px 5px rgba(20,41,62,.07);
+  font-size:13px;
+  line-height:1.38;
+  text-align:justify;
+  hyphens:auto;
+  -webkit-hyphens:auto;
 }
-@media(max-width:620px){ .doc{padding:24px 20px} }
+@media(max-width:700px){
+  .doc{font-size:12.5px;text-align:left;hyphens:manual}
+  .wrap{padding:18px 16px 60px}
+}
 
 h1{
-  font-family:var(--disp);font-size:34px;line-height:1.08;letter-spacing:.02em;
-  text-transform:uppercase;color:var(--navy);margin-bottom:6px;
+  font-family:var(--legal);
+  font-size:15px;font-weight:bold;text-transform:uppercase;letter-spacing:.04em;
+  text-align:center;margin-bottom:3px;
 }
 .stamp{
-  font-family:var(--mono);font-size:12.5px;color:var(--muted);
-  border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:26px;
+  font-family:var(--legal);font-size:11.5px;text-align:center;
+  border-bottom:1px solid var(--ink);padding-bottom:10px;margin-bottom:14px;
 }
 h2{
-  font-family:var(--disp);font-size:21px;letter-spacing:.03em;text-transform:uppercase;
-  color:var(--navy);margin:30px 0 8px;padding-top:4px;
+  font-family:var(--legal);
+  font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:.02em;
+  margin:14px 0 3px;text-align:left;
 }
-h2:first-of-type{margin-top:10px}
-h3{font-size:16px;color:var(--navy);margin:18px 0 4px}
-p{margin:0 0 12px}
-ul{margin:0 0 14px 22px}
-li{margin-bottom:6px}
-a{color:var(--frost)}
+h3{font-size:13px;font-weight:bold;font-style:italic;margin:9px 0 2px;text-align:left}
+p{margin:0 0 7px}
+ul{margin:0 0 7px 26px}
+li{margin-bottom:2px}
+a{color:var(--ink);text-decoration:underline}
 a:hover{color:var(--navy)}
-strong,b{color:var(--navy)}
-.callout{
-  background:var(--gold-soft);border:1px solid #E4CE9E;border-left:4px solid var(--gold);
-  border-radius:8px;padding:14px 16px;margin:16px 0;
-}
-.callout p:last-child{margin-bottom:0}
+strong,b{font-weight:bold}
+
+/* Formerly the highlighted callouts. Now plain prose that still reads as
+   important — bold, not boxed, not coloured. */
+.callout{margin:0 0 7px}
+.callout p{margin:0 0 7px;font-weight:bold}
+
+/* Warranty and liability limitations in caps, the long-standing convention
+   for conspicuous disclaimers. Applied in CSS so the underlying text is
+   unchanged and screen readers still announce it normally. */
+.caps{text-transform:uppercase}
+
 .foot{
-  margin-top:30px;padding-top:16px;border-top:1px solid var(--line);
-  font-size:13px;color:var(--muted);
+  margin-top:18px;padding-top:9px;border-top:1px solid var(--ink);
+  font-size:11.5px;text-align:left;
 }
 .foot a{white-space:nowrap}

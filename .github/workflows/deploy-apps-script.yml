@@ -122,7 +122,15 @@ jobs:
       - name: Show deployments
         if: always()
         continue-on-error: true
-        run: npx clasp list-deployments
+        run: |
+          # Diagnostic only. If the run stopped before clasp was installed
+          # (e.g. the config check failed), say so plainly instead of emitting
+          # a second, misleading "could not determine executable" error.
+          if [ ! -x node_modules/.bin/clasp ]; then
+            echo "clasp was not installed — the run stopped earlier. Nothing was deployed."
+            exit 0
+          fi
+          npx clasp list-deployments
 
       - name: Clean up credentials
         if: always()

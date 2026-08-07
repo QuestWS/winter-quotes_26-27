@@ -56,35 +56,40 @@ body{
    the visual language of fine print, at full contrast. */
 .wrap{max-width:1000px;margin:0 auto;padding:26px 24px 80px}
 .doc{
-  font-size:13px;
-  line-height:1.38;
+  font-size:11.5px;
+  line-height:1.28;
   text-align:justify;
   hyphens:auto;
   -webkit-hyphens:auto;
 }
+/* 12px is about as small as this can go while staying genuinely legible at
+   arm's length. Below that it stops reading as fine print and starts reading
+   as an attempt to prevent reading, which is the line described above. */
 @media(max-width:700px){
-  .doc{font-size:12.5px;text-align:left;hyphens:manual}
-  .wrap{padding:18px 16px 60px}
+  .doc{font-size:12px;text-align:left;hyphens:manual}
+  .wrap{padding:14px 14px 50px}
 }
 
 h1{
   font-family:var(--legal);
-  font-size:15px;font-weight:bold;text-transform:uppercase;letter-spacing:.04em;
-  text-align:center;margin-bottom:3px;
+  font-size:12.5px;font-weight:bold;text-transform:uppercase;letter-spacing:.03em;
+  text-align:center;margin-bottom:1px;
 }
 .stamp{
-  font-family:var(--legal);font-size:11.5px;text-align:center;
-  border-bottom:1px solid var(--ink);padding-bottom:10px;margin-bottom:14px;
+  font-family:var(--legal);font-size:10.5px;text-align:center;
+  border-bottom:1px solid var(--ink);padding-bottom:5px;margin-bottom:8px;
 }
+/* Headings sit tight against their paragraph so sections run together into a
+   single block of text rather than reading as browsable chunks. */
 h2{
   font-family:var(--legal);
-  font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:.02em;
-  margin:14px 0 3px;text-align:left;
+  font-size:11.5px;font-weight:bold;text-transform:uppercase;letter-spacing:.01em;
+  margin:8px 0 0;text-align:left;
 }
-h3{font-size:13px;font-weight:bold;font-style:italic;margin:9px 0 2px;text-align:left}
-p{margin:0 0 7px}
-ul{margin:0 0 7px 26px}
-li{margin-bottom:2px}
+h3{font-size:11.5px;font-weight:bold;font-style:italic;margin:4px 0 0;text-align:left}
+p{margin:0 0 4px}
+ul{margin:0 0 4px 22px}
+li{margin-bottom:0}
 a{color:var(--ink);text-decoration:underline}
 a:hover{color:var(--navy)}
 strong,b{font-weight:bold}
@@ -100,7 +105,7 @@ strong,b{font-weight:bold}
 .caps{text-transform:uppercase}
 
 .foot{
-  margin-top:18px;padding-top:9px;border-top:1px solid var(--ink);
-  font-size:11.5px;text-align:left;
+  margin-top:10px;padding-top:6px;border-top:1px solid var(--ink);
+  font-size:10.5px;text-align:left;
 }
 .foot a{white-space:nowrap}

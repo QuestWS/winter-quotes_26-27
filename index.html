@@ -33,6 +33,9 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
+/* Engine rows dim once a motor type is chosen — one type per boat */
+.engmuted{opacity:.5}
+.engmuted .qty{border-style:dashed}
 /* Contact gate + terms acknowledgment (start step) */
 .req{color:var(--warn);font-weight:700}
 .startnav{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between}
@@ -389,17 +392,17 @@ aside.ticket{position:sticky;top:18px}
 
     <fieldset>
       <legend>Request a quote — hull &amp; running gear</legend>
-      <label class="opt"><input type="checkbox" data-chk="bottomTouch" data-excl="bottomStrip"><div><div class="t">Bottom paint touch-up</div></div><span class="p">quote</span></label>
-      <label class="opt"><input type="checkbox" data-chk="bottomStrip" data-excl="bottomTouch"><div><div class="t">Strip bottom paint &amp; reapply</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="bottomTouch"><div><div class="t">Bottom paint touch-up</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="bottomStrip"><div><div class="t">Strip bottom paint &amp; reapply</div></div><span class="p">quote</span></label>
       <label class="opt"><input type="checkbox" data-chk="propRefurb"><div><div class="t">Propeller refurbishment</div></div><span class="p">quote</span></label>
     </fieldset>
 
     <fieldset>
       <legend>Request a quote — detailing</legend>
-      <label class="opt"><input type="checkbox" data-chk="extDetail" data-excl="washWax"><div><div class="t">Exterior detail</div></div><span class="p">quote</span></label>
-      <label class="opt"><input type="checkbox" data-chk="washWax" data-excl="extDetail"><div><div class="t">Wash &amp; wax</div></div><span class="p">quote</span></label>
-      <label class="opt"><input type="checkbox" data-chk="intDetail" data-excl="intWipe"><div><div class="t">Interior detail</div></div><span class="p">quote</span></label>
-      <label class="opt"><input type="checkbox" data-chk="intWipe" data-excl="intDetail"><div><div class="t">Interior wipe-down</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="extDetail"><div><div class="t">Exterior detail</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="washWax"><div><div class="t">Wash &amp; wax</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="intDetail"><div><div class="t">Interior detail</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="intWipe"><div><div class="t">Interior wipe-down</div></div><span class="p">quote</span></label>
       <p class="note">Pick one option per pair — a Quest team member will follow up with pricing.</p>
     </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
@@ -698,6 +701,27 @@ function buildEngines(){
         <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="full"><div><div class="t">Full service</div><div class="d">${LEVEL_DESC.full}</div></div><span class="p">${fmt(PRICES.full[e.id])} ea</span></label>
       </div>
     </div>`).join('');
+}
+/* One motor type per boat. Zeroes every other type's count and hides its
+   level picker; the count inputs are re-synced from state so the UI can never
+   disagree with what will be priced. */
+function clearOtherEngineTypes_(keepId){
+  BOAT_ENGINES.forEach(e=>{ if(e.id!==keepId) S.engines[e.id].qty=0; });
+}
+function syncEngineRows_(){
+  BOAT_ENGINES.forEach(e=>{
+    const q=S.engines[e.id].qty||0;
+    const inp=document.querySelector(`[data-qty="eng-${e.id}"] input`);
+    if(inp && Number(inp.value)!==q) inp.value=q;
+    const lvl=document.querySelector(`[data-lvl="${e.id}"]`);
+    if(lvl) lvl.style.display=q>0?'flex':'none';
+    const row=document.querySelector(`[data-eng="${e.id}"]`);
+    if(row) row.classList.toggle('engmuted', chosenEngineType_()!==null && chosenEngineType_()!==e.id);
+  });
+}
+function chosenEngineType_(){
+  const hit=BOAT_ENGINES.find(e=>(S.engines[e.id].qty||0)>0);
+  return hit?hit.id:null;
 }
 function buildSkiLevels(){
   $('#skiLvl').innerHTML=`
@@ -1338,11 +1362,10 @@ function init(){
   $$('input[data-chk]').forEach(el=>el.addEventListener('change',e=>{
     const k=e.target.dataset.chk;
     S[k]=e.target.checked;
-    const excl=e.target.dataset.excl;
-    if(excl && e.target.checked){
-      S[excl]=false;
-      const other=document.querySelector(`input[data-chk="${excl}"]`); if(other) other.checked=false;
-    }
+    /* No mutual exclusivity between detail options: a customer may request
+       any and all of them so Quest can quote every option, then remove what
+       they don't take. (Acid wash still supersedes powerwash below — that is
+       pricing logic, not a choice restriction.) */
     if(k==='acidWash' && e.target.checked){
       S.powerwash=false;
       const pw=document.querySelector('input[data-chk="powerwash"]'); pw.checked=false; pw.disabled=true;
@@ -1362,7 +1385,13 @@ function init(){
       v=Math.max(0,Math.min(99,v|0)); inp.value=v;
       if(key.startsWith('eng-')){
         const id=key.slice(4); S.engines[id].qty=v;
-        const lvl=document.querySelector(`[data-lvl="${id}"]`); if(lvl) lvl.style.display=v>0?'flex':'none';
+        /* A boat has one kind of motor. Multiples of that kind are normal;
+           a mix of inboards, outboards and I/Os is not, and a genuinely odd
+           rig is handled by Quest as a line-item adjustment rather than by
+           letting the customer build something that cannot exist. Choosing a
+           type therefore clears the others. */
+        if(v>0) clearOtherEngineTypes_(id);
+        syncEngineRows_();
       } else S[key]=v;
       refresh();
     };

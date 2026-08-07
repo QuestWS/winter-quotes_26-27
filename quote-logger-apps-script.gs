@@ -2034,13 +2034,29 @@ function balanceReportCheck() {
 
 /* ONE-TIME SETUP: creates/refreshes all three schedules — daily reminder check
  * (9am), daily backup (6pm), and the 1st/15th balance report (7am check). */
+/* All times are in the SCRIPT'S timezone, which is America/Chicago — verified
+   against the sheet, whose local Timestamp column runs UTC-5 in August (CDT).
+   DST is handled by Apps Script, so these stay correct year round.
+
+   Apps Script time triggers are approximate: "12:15" means Google will fire it
+   somewhere inside roughly a quarter-hour window around then, not on the dot.
+   That is fine for a lunchtime nudge and cannot be tightened from here. */
 function setupAllTriggers() {
-  const wanted = { dailyReminderCheck: 9, dailyBackup: 18, balanceReportCheck: 7, leadFollowUpCheck: 10 };
+  const wanted = {
+    dailyReminderCheck: { hour: 9 },
+    dailyBackup:        { hour: 18 },
+    balanceReportCheck: { hour: 7 },
+    // Lunch break: people have a moment to actually deal with it.
+    leadFollowUpCheck:  { hour: 12, minute: 15 }
+  };
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (wanted[t.getHandlerFunction()] !== undefined) ScriptApp.deleteTrigger(t);
   });
   Object.keys(wanted).forEach(function (fn) {
-    ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(wanted[fn]).create();
+    const w = wanted[fn];
+    let b = ScriptApp.newTrigger(fn).timeBased().everyDays(1).atHour(w.hour);
+    if (w.minute !== undefined) b = b.nearMinute(w.minute);
+    b.create();
   });
 }
 

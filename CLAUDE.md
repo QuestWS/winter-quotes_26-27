@@ -80,7 +80,7 @@ serves the cached old version and you'll debug a ghost.
 | Function | When | Notes |
 |---|---|---|
 | `initStaff()` | once, ever | Prints 6 PINs to the log. Refuses to run twice (won't clobber the roster). |
-| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am. Idempotent. |
+| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
 
@@ -315,9 +315,11 @@ any test window. Nothing else is automatic (§5).
 - **Two customer-facing emails are automatic; everything else needs a click.**
   (1) the 10-day reminder on real quotes, and (2) the **lead follow-up**
   ("finish my quote") sent once, 24h after someone passes the contact gate and
-  walks away — `leadFollowUpCheck()`, a **daily** trigger at 10am, so the real
-  delay is 24–47h: the first 10am sweep after a full 24 hours have elapsed. It
-  scans
+  walks away — `leadFollowUpCheck()`, a **daily** trigger at **12:15pm
+  Central**, chosen to land over lunch when someone has a moment to act on it.
+  The real delay is therefore 24–47h: the first 12:15 sweep after a full 24
+  hours have elapsed. Apps Script fires time triggers approximately, within
+  roughly a quarter-hour window — that cannot be tightened. It scans
   **only** the lead tab, which is what makes "walked away" true by
   construction: saving, printing, emailing or paying moves the row off that
   tab. Its sent-marker goes in the reminder column with the distinct prefix

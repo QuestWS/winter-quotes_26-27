@@ -1415,15 +1415,23 @@ function buildEmailFor_(d, kind, extra, photos) {
   if (kind === 'finishquote') {
     const resume = QUOTE_PAGE_URL + '?quote=' + encodeURIComponent(d.quoteNo || '') +
                    '&ln=' + encodeURIComponent(d.lastName || '');
-    const first = String(d.firstName || '').trim();
-    const intro = (first ? 'Hi ' + esc_(first) + ' — you' : 'You') +
-      ' started a winter services quote with us and didn\'t get to finish it. ' +
-      'Your details are saved, so you can pick up right where you left off — nothing to re-enter.<br><br>' +
-      'If you\'d rather talk it through, just call us at (815) 433-2200 and we\'ll build it with you.';
+    /* No greeting here: noticeHtml_ already opens with "Hi <first name>," for
+       every kind, and a second one reads like a mail merge gone wrong. */
+    const intro = 'It' +
+      ' looks like you started a winter services quote with us and didn\'t get a chance to finish. ' +
+      'No problem at all — everything you entered is saved, so you can pick up right where you left off.' +
+      '<br><br>' +
+      '<b>If anything was confusing, or you\'d rather not do it online, just call us at ' +
+      '(815) 433-2200 or stop by the shop at 1851 Old Chicago Road.</b> We\'re glad to walk through ' +
+      'it with you and build the quote together — measurements especially are often easier to sort ' +
+      'out over the phone than on a form.' +
+      '<br><br>' +
+      'Otherwise, the button below picks your quote right back up where you left it.';
     const btn = '<div style="margin:6px 0 10px">' + buttonHtml_(resume, 'Finish my quote', '#14293E') + '</div>' +
       '<div style="font-size:13px;color:#5C7185;margin-bottom:4px">Your quote number is <b>' +
-      esc_(d.quoteNo || '') + '</b> — you can also enter it with your last name on the quote page.</div>';
-    return { subject: 'Finish your Quest Watersports winter quote — ' + (d.quoteNo || ''),
+      esc_(d.quoteNo || '') + '</b> — you can also enter it with your last name on the quote page ' +
+      'if the button doesn\'t work for you.</div>';
+    return { subject: 'Your winter quote is saved — finish it any time · ' + (d.quoteNo || ''),
       html: noticeHtml_(d, intro, btn, false), status: 'Lead follow-up sent' };
   }
   if (kind === 'stored') {

@@ -161,6 +161,37 @@ deletes, priced quote-requests, adjustments, late fees, and the season-done
 survey's late-retrieval surcharge (`applySeasonDone_` adds/removes it via
 `m.adjustments`). Any dimension-repricing work must follow the same pattern.
 
+### One motor type per boat
+Inboard / outboard / I-O are mutually exclusive; multiples of one type are
+normal. Picking a type zeroes the others and dims their rows
+(`clearOtherEngineTypes_`, `syncEngineRows_`). Genuinely odd rigs are handled
+by Quest as a line-item adjustment, not by letting a customer build a boat
+that cannot exist.
+
+### Detail options are NOT mutually exclusive
+Exterior detail / wash & wax, interior detail / wipe-down, and bottom-paint
+touch-up / strip & reapply can all be requested together, deliberately: Quest
+quotes every option and removes what the customer doesn't take. Do not
+reintroduce `data-excl` on these. (Acid wash still suppresses powerwash — that
+is pricing logic in the engine, not a choice restriction.)
+
+### Resuming an unfinished quote
+The contact gate checks for an existing lead before minting a new quote number
+(`checkForUnfinished_` → server `?action=findlead`), and offers "continue that
+quote" or "start a new one". Without it, one person who comes back twice
+becomes three leads.
+
+**`findlead` only ever reads the lead tab, and requires email *and* last name.**
+That boundary is deliberate: lead rows hold no pricing, so the most it can
+reveal is that an address started a quote. Widening it to real quote tabs would
+turn an email address into a way to pull somebody's priced quote — which today
+needs the quote number. The check is best-effort: if it errors or times out the
+customer proceeds to a new quote rather than being blocked from a price.
+
+The follow-up email links back with `?quote=…&ln=…`; `autoLoadFromUrl_()`
+restores the quote on load and also fills the two fields, so a mangled link
+still leaves the customer one button press away.
+
 ### Terms acceptance & lead capture
 Name, phone and email are **required** before a customer can leave the start
 step. That proceed button is deliberately the acceptance point: it is the same
@@ -281,7 +312,16 @@ any test window. Nothing else is automatic (§5).
 
 ## 5. Product rules that are easy to break
 
-- **Nothing customer-facing is automatic except the single 10-day reminder.**
+- **Two customer-facing emails are automatic; everything else needs a click.**
+  (1) the 10-day reminder on real quotes, and (2) the **lead follow-up**
+  ("finish my quote") sent once, 24h after someone passes the contact gate and
+  walks away — `leadFollowUpCheck()`, hourly-capable trigger at :10. It scans
+  **only** the lead tab, which is what makes "walked away" true by
+  construction: saving, printing, emailing or paying moves the row off that
+  tab. Its sent-marker goes in the reminder column with the distinct prefix
+  `Lead follow-up sent `, and `doPost` **drops that marker when the row
+  graduates** to a real tab — otherwise the genuine 10-day reminder would see
+  a reminder already sent and stay silent forever.
   Late-fee warnings, fee application, receipts, seasonal emails — all require
   a human click and confirmation. The 1st/15th reports go to Chris only.
 - **Unit-appropriate wording.** Golf carts and e-bikes are *land units*

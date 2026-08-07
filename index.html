@@ -50,6 +50,8 @@ html{scroll-behavior:smooth}
   color:var(--warn);border-radius:8px;padding:10px 13px;font-size:14px;margin-bottom:12px;
 }
 .gatemsg.show{display:block}
+/* The resume offer is information, not an error — same box, calmer colours */
+.gatemsg.info{background:var(--frost-soft);border-color:var(--frost);border-left-color:var(--frost);color:var(--ink)}
 .fieldbad{border-color:var(--warn)!important;background:#FEF7F1}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
 body{font-family:var(--body);background:var(--ice);color:var(--ink);font-size:16px;line-height:1.45}
@@ -941,6 +943,21 @@ function loadQuoteJsonp(qn, ln){
   document.body.appendChild(sc);
   loadTimer=setTimeout(function(){ $('#loadBtn').disabled=false; loadMsg('The quote system is taking too long — please try again.'); },20000);
 }
+/* A "finish my quote" email links here with the quote number and last name
+   already attached, so the customer lands on their quote without typing
+   anything. The fields are filled in too, so if the auto-load fails for any
+   reason they can just press the button. */
+function autoLoadFromUrl_(){
+  const q=new URLSearchParams(location.search);
+  const qn=String(q.get('quote')||'').trim().toUpperCase();
+  const ln=String(q.get('ln')||'').trim();
+  if(!qn||!ln) return false;
+  const a=$('#loadQn'), b=$('#loadLn');
+  if(a) a.value=qn;
+  if(b) b.value=ln;
+  loadQuote();
+  return true;
+}
 function loadQuote(){
   const qn=$('#loadQn').value.trim().toUpperCase();
   const ln=$('#loadLn').value.trim();
@@ -1309,7 +1326,7 @@ function contactMissing_(){
   return need;
 }
 function clearGate_(){
-  const m=$('#startGateMsg'); if(m){ m.textContent=''; m.classList.remove('show'); }
+  const m=$('#startGateMsg'); if(m){ m.textContent=''; m.classList.remove('show','info'); }
   CONTACT_FIELDS.forEach(([k])=>{ const el=$('#'+k); if(el) el.classList.remove('fieldbad'); });
 }
 function showGate_(need){
@@ -1332,10 +1349,69 @@ function stampTermsAcceptance_(){
   S.termsVersion=v;
   S.termsAcceptedAt=new Date().toISOString();
 }
-function startAcceptAndContinue(){
+/* Before a NEW quote number is minted, see whether this person already has an
+   unfinished one. Without this, someone who wanders off and comes back later
+   quietly becomes two leads, then three. The check only ever looks at
+   unfinished quotes (see the server's findlead action) and is best-effort: if
+   it errors or times out, we carry on and make a new quote rather than
+   blocking someone from getting a price. */
+let RESUME_CHECKED=false;
+function resumeOfferHtml_(hit){
+  return '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">You already have a quote in progress</div>'+
+    '<div style="margin-bottom:8px">We started quote <b>'+hit.quoteNo+'</b> for you'+
+    (hit.startedAt?' on '+hit.startedAt:'')+'. Pick it up where you left off, or start fresh.</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    '<button type="button" class="btn primary" onclick="resumeExisting_()">Continue that quote</button>'+
+    '<button type="button" class="btn ghost" onclick="startFresh_()">Start a new one</button></div>';
+}
+function resumeExisting_(){
+  const hit=window._resumeHit||{};
+  const a=$('#loadQn'), b=$('#loadLn');
+  if(a) a.value=hit.quoteNo||'';
+  if(b) b.value=S.lastName||'';
+  $('#startGateMsg').classList.remove('show');
+  loadQuote();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function startFresh_(){
+  RESUME_CHECKED=true;
+  $('#startGateMsg').classList.remove('show');
+  startAcceptAndContinue();
+}
+function checkForUnfinished_(){
+  return new Promise(resolve=>{
+    /* The caller owns RESUME_CHECKED (it sets the flag before awaiting, so the
+       check runs at most once); guarding on it here too would short-circuit
+       the very call the caller is making. */
+    if(!INTEGRATIONS.quoteLogUrl||S.quoteNo){ resolve(null); return; }
+    const url=INTEGRATIONS.quoteLogUrl+'?action=findlead'+
+      '&email='+encodeURIComponent(S.email)+'&ln='+encodeURIComponent(S.lastName)+'&t='+Date.now();
+    const timer=setTimeout(()=>resolve(null),6000);
+    fetch(url,{method:'GET',redirect:'follow'})
+      .then(r=>r.ok?r.json():null)
+      .then(res=>{ clearTimeout(timer); resolve(res&&res.ok?res:null); })
+      .catch(()=>{ clearTimeout(timer); resolve(null); });
+  });
+}
+async function startAcceptAndContinue(){
   const need=contactMissing_();
   if(need.length){ showGate_(need); return; }
   clearGate_();
+  if(!RESUME_CHECKED){
+    RESUME_CHECKED=true;
+    const btn=$('#startNext'); const label=btn?btn.textContent:'';
+    if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
+    const hit=await checkForUnfinished_();
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+    if(hit&&hit.quoteNo){
+      window._resumeHit=hit;
+      const m=$('#startGateMsg');
+      m.innerHTML=resumeOfferHtml_(hit);
+      m.classList.add('show','info');
+      m.scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+  }
   stampTermsAcceptance_();
   /* Log the started quote immediately so an abandoned build still leaves a
      durable, timestamped record. Never for a quote loaded from the server —
@@ -1432,6 +1508,7 @@ function init(){
   });
 
   syncStartUI(); syncHeadsUI(); go('start');
+  autoLoadFromUrl_();
 }
 init();
 </script>

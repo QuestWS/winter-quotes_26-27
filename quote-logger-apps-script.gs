@@ -74,6 +74,9 @@ const REPORT_EMAIL = 'chris@questwatersports.com';
 // Used for one-click buttons in customer emails. If the deployment is ever
 // recreated (new URL), update this to match the page's quoteLogUrl.
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+// Public URL of the CUSTOMER QUOTE PAGE (GitHub Pages). Used to build
+// "pick your quote back up" links. Must end in a trailing slash.
+const QUOTE_PAGE_URL = 'https://questws.github.io/winter-quotes_26-27/';
 const REPORT_MONTHS = [11, 12, 1, 2, 3, 4];
 // Percentages used when recalculating totals after a manual adjustment
 const ADJ_CC_PCT = 3;
@@ -162,7 +165,15 @@ function doPost(e) {
       let r = findQuoteRow_(other, d.quoteNo);
       while (r > 0) {
         // capture carry-over data from whichever copy we see first
-        carriedReminder = carriedReminder || String(other.getRange(r, COL.REM).getValue() || '');
+        const remCell = String(other.getRange(r, COL.REM).getValue() || '');
+        /* A lead's follow-up marker lives in the reminder column (the lead tab
+           is skipped by dailyReminderCheck, so the column is free there). It
+           must NOT ride along when the quote graduates to a real tab, or the
+           genuine 10-day reminder would see a reminder already sent and stay
+           silent forever. */
+        if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(targetName))) {
+          carriedReminder = carriedReminder || remCell;
+        }
         oldPayloadJson = oldPayloadJson || String(other.getRange(r, COL.PAYLOAD).getValue() || '');
         oldPhotos = oldPhotos || String(other.getRange(r, COL.PHOTOS).getValue() || '');
         if (onTarget && keptRowOnTarget < 0) {
@@ -292,6 +303,43 @@ function doGet(e) {
       .setTitle('Quest Staff Console')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  /* Resume check: does this person already have an UNFINISHED quote?
+     Called from the contact gate before a new quote number is minted, so a
+     customer who wanders off and comes back does not accumulate duplicates.
+
+     Scope is deliberately narrow: it only ever looks at the lead tab, and it
+     requires BOTH the email and the last name to match. Lead rows hold no
+     pricing and no selections -- just contact details the caller has already
+     typed -- so the worst this can reveal is that an address started a quote.
+     It must never be widened to real quote tabs: that would turn an email
+     address into a way to pull somebody's priced quote, which today needs the
+     quote number. */
+  if (p.action === 'findlead') {
+    try {
+      const em = String(p.email || '').trim().toLowerCase();
+      const ln = String(p.ln || '').trim().toLowerCase();
+      if (!em || !ln) return out({ ok: 0 });
+      const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(STARTED_TAB);
+      if (!sh) return out({ ok: 0 });
+      const last = sh.getLastRow();
+      if (last < 2) return out({ ok: 0 });
+      const rows = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
+      for (let i = rows.length - 1; i >= 0; i--) {   // most recent first
+        const r = rows[i];
+        if (String(r[COL.EMAIL - 1] || '').trim().toLowerCase() !== em) continue;
+        if (String(r[COL.LAST - 1] || '').trim().toLowerCase() !== ln) continue;
+        const ts = r[COL.TS - 1];
+        return out({
+          ok: 1,
+          quoteNo: String(r[COL.QN - 1] || ''),
+          startedAt: (ts instanceof Date) ? ts.toLocaleDateString() : '',
+          unit: String(r[COL.UNIT - 1] || '')
+        });
+      }
+      return out({ ok: 0 });
+    } catch (err) { return out({ ok: 0, error: String(err) }); }
+  }
+
   // season-done survey from the quote email
   if (p.action === 'seasondone') {
     try {
@@ -1359,6 +1407,25 @@ function sendCustomerNotice_(d, subject, introHtml, extraButtonsHtml, includeMon
 
 /* One builder used by BOTH preview and send, so what you preview is what goes out */
 function buildEmailFor_(d, kind, extra, photos) {
+  /* Lead follow-up: someone started a quote and walked away. Deliberately
+     short and low-pressure -- they have no pricing yet, so there is nothing to
+     summarise and nothing to attach. The link carries quote number and last
+     name so the page restores their quote without them typing anything, and
+     the number is spelled out as well for anyone whose client mangles links. */
+  if (kind === 'finishquote') {
+    const resume = QUOTE_PAGE_URL + '?quote=' + encodeURIComponent(d.quoteNo || '') +
+                   '&ln=' + encodeURIComponent(d.lastName || '');
+    const first = String(d.firstName || '').trim();
+    const intro = (first ? 'Hi ' + esc_(first) + ' — you' : 'You') +
+      ' started a winter services quote with us and didn\'t get to finish it. ' +
+      'Your details are saved, so you can pick up right where you left off — nothing to re-enter.<br><br>' +
+      'If you\'d rather talk it through, just call us at (815) 433-2200 and we\'ll build it with you.';
+    const btn = '<div style="margin:6px 0 10px">' + buttonHtml_(resume, 'Finish my quote', '#14293E') + '</div>' +
+      '<div style="font-size:13px;color:#5C7185;margin-bottom:4px">Your quote number is <b>' +
+      esc_(d.quoteNo || '') + '</b> — you can also enter it with your last name on the quote page.</div>';
+    return { subject: 'Finish your Quest Watersports winter quote — ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, btn, false), status: 'Lead follow-up sent' };
+  }
   if (kind === 'stored') {
     const land = isLandUnit_(d);
     const intro = 'Good news — your ' + esc_(d.unit) + ' is safely with us for the winter. We photograph every unit as it arrives so you have a record of its condition' + (photos ? ' — you can view your photos any time using the button below.' : '.') + ' We\'ll see you in the spring, and we\'ll be in touch before ' + (land ? 'your ' + esc_(d.unit).toLowerCase() + '\'s return.' : 'relaunch.');
@@ -1960,7 +2027,7 @@ function balanceReportCheck() {
 /* ONE-TIME SETUP: creates/refreshes all three schedules — daily reminder check
  * (9am), daily backup (6pm), and the 1st/15th balance report (7am check). */
 function setupAllTriggers() {
-  const wanted = { dailyReminderCheck: 9, dailyBackup: 18, balanceReportCheck: 7 };
+  const wanted = { dailyReminderCheck: 9, dailyBackup: 18, balanceReportCheck: 7, leadFollowUpCheck: 10 };
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (wanted[t.getHandlerFunction()] !== undefined) ScriptApp.deleteTrigger(t);
   });
@@ -2018,6 +2085,62 @@ function dailyReminderCheck() {
           if (dl.quoteNo) { dl.email = email; recordEmail_(sh, i + 2, dl, 'auto-reminder', 'System'); } } catch (e4) {}
       } catch (err) { console.error('Reminder failed for ' + quoteNo + ': ' + err); }
     });
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   LEAD FOLLOW-UP — the "finish my quote" nudge.
+   The SECOND automatic customer-facing email in this system (see CLAUDE.md
+   section 5). It goes only to lead rows: someone who passed the contact gate
+   and then walked away without saving, printing, emailing or paying. Once a
+   quote does any of those, its row leaves the lead tab, so scanning that tab
+   alone is what makes "walked away" true by construction.
+
+   Sends once per lead, marked in the reminder column with a distinct prefix so
+   it can be told apart from the real 10-day reminder and dropped when the row
+   graduates (see doPost). The link carries quote number + last name so the
+   page can restore the quote without the customer typing anything.
+--------------------------------------------------------------------------- */
+const LEAD_FOLLOWUP_ENABLED = true;
+const LEAD_FOLLOWUP_AFTER_HOURS = 24;
+const LEAD_FOLLOWUP_MARK = 'Lead follow-up sent ';
+function isLeadFollowUpMark_(v) { return String(v || '').indexOf(LEAD_FOLLOWUP_MARK) === 0; }
+
+function leadFollowUpCheck() {
+  if (!LEAD_FOLLOWUP_ENABLED) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(STARTED_TAB);
+  if (!sh) return;
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const cutoff = Date.now() - LEAD_FOLLOWUP_AFTER_HOURS * 60 * 60 * 1000;
+  const rows = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
+  rows.forEach(function (r, i) {
+    const rowNum = i + 2;
+    const email = String(r[COL.EMAIL - 1] || '').trim();
+    const ts = r[COL.TS - 1];
+    if (!email) return;
+    if (String(r[COL.REM - 1] || '')) return;                    // already nudged
+    if (!(ts instanceof Date) || ts.getTime() > cutoff) return;   // not 24h yet
+    const quoteNo = String(r[COL.QN - 1] || '');
+    const lastName = String(r[COL.LAST - 1] || '');
+    if (!quoteNo) return;
+    try {
+      let d = {};
+      try { d = JSON.parse(r[COL.PAYLOAD - 1] || '{}'); } catch (e2) {}
+      d.quoteNo = quoteNo; d.email = email;
+      d.firstName = d.firstName || String(r[COL.FIRST - 1] || '');
+      d.lastName = d.lastName || lastName;
+      const built = buildEmailFor_(d, 'finishquote', '', null);
+      const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
+      const logo = getLogoBlob_();
+      if (logo) opts.inlineImages = { questlogo: logo };
+      if (FROM_ALIAS) opts.from = FROM_ALIAS;
+      GmailApp.sendEmail(email, built.subject,
+        'Pick your Quest Watersports winter quote back up: ' + quoteNo + '. Call (815) 433-2200 with questions.', opts);
+      sh.getRange(rowNum, COL.REM).setValue(LEAD_FOLLOWUP_MARK + new Date().toLocaleDateString());
+      recordEmail_(sh, rowNum, d, 'finish-quote', 'System');
+    } catch (err) { console.error('Lead follow-up failed for ' + quoteNo + ': ' + err); }
   });
 }
 

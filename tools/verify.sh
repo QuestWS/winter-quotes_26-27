@@ -119,11 +119,20 @@ if [ -f pricing-engine.js ]; then
     echo "  FAIL page does not load pricing-engine.js"; FAIL=1
   fi
   if grep -q "ENGINE-START" quote-logger-apps-script.gs 2>/dev/null; then
-    sed -n '/ENGINE-START/,/ENGINE-END/p' pricing-engine.js > "$TMP/eng-a" 2>/dev/null
-    sed -n '/ENGINE-START/,/ENGINE-END/p' quote-logger-apps-script.gs > "$TMP/eng-b" 2>/dev/null
-    if diff -q "$TMP/eng-a" "$TMP/eng-b" >/dev/null 2>&1; then
+    if node tools/sync-engine.js --check > "$TMP/sync.txt" 2>&1; then
       echo "  OK   trap: .gs engine copy matches pricing-engine.js"
-    else echo "  FAIL trap: .gs engine copy has DRIFTED from pricing-engine.js"; FAIL=1; fi
+    else
+      echo "  FAIL trap: .gs engine copy has DRIFTED from pricing-engine.js"
+      sed 's/^/       /' "$TMP/sync.txt"; FAIL=1
+    fi
+    # Identical text is not the same as working code: in the .gs the block runs
+    # at the top level, not inside the module's wrapper. Execute it there.
+    if node tools/check-embedded-engine.js > "$TMP/emb.txt" 2>&1; then
+      echo "  OK   gate: embedded .gs engine runs standalone and prices identically"
+    else
+      echo "  FAIL gate: embedded .gs engine is broken or diverges"
+      sed 's/^/       /' "$TMP/emb.txt"; FAIL=1
+    fi
   fi
 else
   echo "  (pricing-engine.js not present yet — see docs/TASK-pricing-engine.md)"

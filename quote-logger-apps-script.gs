@@ -440,6 +440,8 @@ function doPost(e) {
     //    change the quote — a locked save keeps the official version and only
     //    adopts the incoming status/pay intent.
     let manualRes = null;
+    let cross = null;
+    let driftNote = '';
     let oldD = {};
     try { oldD = oldPayloadJson ? JSON.parse(oldPayloadJson) : {}; } catch (err) {}
     const lockedByPayment = !!(oldD.payments && oldD.payments.length);
@@ -456,7 +458,20 @@ function doPost(e) {
       if (oldD.payments && oldD.payments.length) d.payments = oldD.payments;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
-      if (d.manual) manualRes = applyManualOps_(d);
+      /* Price it ourselves from the customer's selections, then replay the
+         staff journal onto those clean lines exactly once. A lead row has no
+         selections yet, so there is nothing to price and nothing to compare. */
+      if (!isStartedQuote_(d)) {
+        cross = rebuildLinesFromState_(d);
+        if (d.manual) manualRes = applyManualOps_(d);
+        else if (cross.rebuilt) recomputeTotals_(d);
+        driftNote = driftNoteFor_(d, cross);
+        /* Persist it: the row is written further down, so setting it here puts
+           the warning in the stored payload and not only in a passing email. */
+        if (driftNote) d._driftNote = driftNote; else delete d._driftNote;
+      } else if (d.manual) {
+        manualRes = applyManualOps_(d);
+      }
     }
 
     // 3) Target tab (locked quotes stay on their original tab)
@@ -865,6 +880,90 @@ function ensureManual_(d) {
 function originalLabelFor_(m, current) {
   const e2 = (m.edits || []).find(function (x) { return x.newLabel === current; });
   return e2 ? e2.label : current;
+}
+
+/* ================= SAVE-TIME PRICE CROSS-CHECK =================
+ * The page and this script now run the SAME rules (see the engine block near
+ * the top), so the server can price a quote itself instead of trusting the
+ * browser's arithmetic. Two things follow from that.
+ *
+ * 1. THE LINE ITEMS ARE REBUILT FROM THE CUSTOMER'S OWN SELECTIONS.
+ *    CLAUDE.md section 4 describes the intended flow: "the page recomputes
+ *    clean lines from their selections, and applyManualOps_() replays every
+ *    staff change on top". Until the server had an engine that could only be
+ *    half true -- the page posts lines it has ALREADY replayed the journal
+ *    onto, and this script then replayed it a second time. Adjustments and
+ *    priced requests were appended twice (the total went UP on every customer
+ *    re-save), while removals and edits could not find their targets and were
+ *    reported as "could NOT re-apply -- REVIEW", which is why that warning
+ *    could fire on quotes where nothing was actually wrong.
+ *
+ *    Rebuilding clean lines here means the journal is applied exactly once, by
+ *    this script, where the official copy lives.
+ *
+ * 2. DISAGREEMENT IS REPORTED, NOT BANKED. If the server's figure differs from
+ *    what the page saved, the save still completes with the server's number and
+ *    a drift note rides along on the service@ notification. A stale browser
+ *    tab, a hand-edited payload, or a future rule change that lands in one copy
+ *    of the engine and not the other all surface here instead of quietly
+ *    moving money.
+ *
+ * Fails open by design: a payload with no usable state -- an older quote, or
+ * anything that reaches doPost without the wizard state -- keeps exactly the
+ * behavior it had before.
+ */
+function serverPrice_(d) {
+  if (!d || !d.state) return { ok: false, reason: 'no wizard state in payload' };
+  let r;
+  try {
+    r = computeQuote(d.state);
+  } catch (err) {
+    return { ok: false, reason: 'engine threw: ' + (err && err.message ? err.message : err) };
+  }
+  if (!r || !r.lines) return { ok: false, reason: 'engine returned no lines' };
+  /* Normalise to the exact shape the page posts, so a stored payload does not
+     change shape depending on which side computed it. */
+  const lines = r.lines.map(function (l) {
+    return {
+      sec: l.sec, label: l.label, calc: l.calc || '',
+      amt: Number(l.amt || 0), desc: l.desc || ''
+    };
+  });
+  return { ok: true, lines: lines, rq: r.rq || [], need: r.need || [], flags: r.flags || [] };
+}
+
+function linesTotal_(lines) {
+  return (lines || []).reduce(function (a, l) { return a + Number(l.amt || 0); }, 0);
+}
+
+/* Replace the posted lines with the server's own. Call BEFORE applyManualOps_,
+ * so the journal replays onto clean lines exactly once. */
+function rebuildLinesFromState_(d) {
+  const posted = Number(d.total || 0);
+  const sp = serverPrice_(d);
+  if (!sp.ok) return { rebuilt: false, reason: sp.reason, postedTotal: posted };
+  d.lines = sp.lines;
+  d.quotesRequested = sp.rq.join('; ');
+  /* Engine flags (e.g. a beam over the Inside limit) are advisory: they are
+     recorded for staff, never acted on automatically. Relocating a customer's
+     boat is a conversation, not a side effect of a save. */
+  if (sp.flags.length) d._flags = sp.flags; else delete d._flags;
+  return { rebuilt: true, postedTotal: posted, serverRawTotal: linesTotal_(sp.lines) };
+}
+
+/* Compare AFTER the journal has been replayed: by then d.total is the server's
+ * official figure and cross.postedTotal is what the browser believed. */
+function driftNoteFor_(d, cross) {
+  if (!cross || !cross.rebuilt) return '';
+  const posted = Number(cross.postedTotal || 0);
+  const server = Number(d.total || 0);
+  const diff = server - posted;
+  if (Math.abs(diff) <= 0.005) return '';
+  return 'PRICE DRIFT — the quote page saved $' + posted.toFixed(2) +
+    ', this script priced the same selections at $' + server.toFixed(2) +
+    ' (' + (diff > 0 ? '+' : '') + diff.toFixed(2) + '). The server figure was stored. ' +
+    'Check the quote before sending anything to the customer. Usual causes: a browser tab ' +
+    'left open across a price change, or the page and backend running different engine versions.';
 }
 
 function paymentsTotal_(d) {
@@ -2534,13 +2633,19 @@ function quoteHtml_(d) {
 
 function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
   const signing = (d.status || '').indexOf('Signed') === 0;
-  const subject = (signing ? '💰 SIGN & PAY — ' : '📋 New winter quote — ') +
+  /* A price disagreement between the page and this script leads the subject.
+     It means a human should look at the quote before anything goes out. */
+  const subject = (d._driftNote ? '⚠️ PRICE DRIFT — ' : (signing ? '💰 SIGN & PAY — ' : '📋 New winter quote — ')) +
     (d.quoteNo || '') + ' · ' + (d.owner || 'Unknown') + ' · ' + (d.unit || '') +
     ' · $' + d.total;
 
   const lines = [
     'Status:      ' + d.status + (wasUpdate ? '  (updated existing quote)' : ''),
     (d._manualNote ? 'Manual:      ' + d._manualNote : null),
+    (d._driftNote ? 'DRIFT:       ' + d._driftNote : null),
+    (d._flags && d._flags.length
+      ? 'Flags:       ' + d._flags.map(function (f) { return f.msg; }).join(' | ')
+      : null),
     'Quote #:     ' + d.quoteNo,
     'Storage tab: ' + tabName,
     'Quote PDF:   ' + (pdfUrl || '(PDF generation failed — see Apps Script executions log)'),
@@ -2562,11 +2667,15 @@ function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
   if (d.notes) lines.push('', 'Customer notes: ' + d.notes);
   lines.push('', 'Spreadsheet: ' + SpreadsheetApp.getActiveSpreadsheet().getUrl());
 
+  /* Filter once, for both paths. Optional rows are pushed as null; the
+     MailApp fallback used to join them straight in, printing a literal
+     "null" line whenever a quote had no manual note. */
+  const body = lines.filter(function (x) { return x !== null; }).join('\n');
   if (FROM_ALIAS) {
-    GmailApp.sendEmail(NOTIFY_EMAIL, subject, lines.filter(function(x){return x!==null;}).join('\n'),
+    GmailApp.sendEmail(NOTIFY_EMAIL, subject, body,
       { from: FROM_ALIAS, name: 'Quest Winter Quotes' });
   } else {
-    MailApp.sendEmail(NOTIFY_EMAIL, subject, lines.join('\n'));
+    MailApp.sendEmail(NOTIFY_EMAIL, subject, body);
   }
 }
 

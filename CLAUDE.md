@@ -155,6 +155,23 @@ service that was discounted), it appends a `could NOT re-apply — REVIEW` note
 and emails `service@`. `originalLabelFor_()` chains renames so an edited line
 can still be matched later.
 
+**The server prices the quote; the browser does not.** On every customer save
+`rebuildLinesFromState_()` re-runs the shared engine over `d.state` and
+*replaces* the posted lines, then `applyManualOps_()` replays the journal onto
+those clean lines. Before this, the page posted lines it had already replayed
+the journal onto and the server replayed it a second time — adjustments and
+priced requests were appended twice (the total rose on every customer re-save)
+while removals and edits couldn't find their targets and reported a spurious
+`could NOT re-apply — REVIEW`. No real customer was affected: it needed a quote
+that already carried staff changes to be reloaded and re-saved, and only the
+test quote had a journal. Do not "optimise" this by trusting `d.lines` again.
+
+Anything the two engines disagree about becomes a **drift note**:
+`driftNoteFor_()` compares the browser's total with the server's, stores the
+warning in the payload as `_driftNote`, and leads the `service@` subject with
+⚠️ PRICE DRIFT. The server's figure is the one that gets stored. It fails open
+— a payload with no `state` (older quotes) keeps the old behavior exactly.
+
 **Any new staff-side mutation must journal itself**, or it will vanish on the
 next customer save. Mutations that already journal correctly: line edits,
 deletes, priced quote-requests, adjustments, late fees, and the season-done
@@ -427,10 +444,18 @@ extraction.** Same test quotes, same totals, to the cent. The refactor must be
 transparent — if any total moves, the extraction is wrong, not the old code.
 
 Sequenced plan (each step its own commit + verify):
-1. Extract config + engine into a shared, DOM-free module. No behavior change.
-2. Refactor `index.html` to call the shared engine; prove identical totals.
-3. Give the Apps Script the same engine; add a save-time cross-check that the
-   server's recomputed total matches the page's saved total (drift alarm).
+1. ~~Extract config + engine into a shared, DOM-free module.~~ **DONE** —
+   `pricing-engine.js`.
+2. ~~Refactor `index.html` to call the shared engine.~~ **DONE** — totals
+   identical; the baseline gate in `verify.sh` keeps them that way.
+3. ~~Give the Apps Script the same engine + drift alarm.~~ **DONE** — the
+   engine is embedded in the `.gs` between `ENGINE-START`/`ENGINE-END`.
+   **Never hand-edit that block**: edit `pricing-engine.js`, run
+   `node tools/sync-engine.js`, commit both. Two guards back it:
+   `sync-engine.js --check` diffs the copies, and
+   `check-embedded-engine.js` executes the block as bare top-level code (the
+   scope Apps Script gives it) and prices every fixture — because identical
+   text is not the same as working code.
 4. Dimension editor on the console: edit LOA/beam/len/width → server re-runs
    engine → **before/after line diff** → Chris confirms → dollars move. Plus:
    - **beam-oversize flag** (edited beam > storage limit → warn, do NOT auto-move)

@@ -375,6 +375,7 @@ function doPost(e) {
         const FNS = {
           auth:        function (a) { return adminAuth(a[0]); },
           lookup:      function (a) { return adminLookup(d.token, a[0]); },
+          quoteHtml:   function (a) { return adminQuoteHtml(d.token, a[0]); },
           pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
           adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
           sendEmail:   function (a) { return adminSendEmail(d.token, a[0], a[1], a[2]); },
@@ -1315,6 +1316,23 @@ function adminSearch(token, query) {
   return { ok: 1, hits: hits.slice(0, 25), truncated: hits.length > 25 };
 }
 
+/* Printable copy of the quote/invoice, for the console's Print button.
+ * Returns the SAME html savePdf_ renders, so what staff print is what the
+ * customer's PDF says -- one generator, no second layout to keep in step.
+ *
+ * Deliberately not a link to the filed Drive PDF. That file inherits the
+ * season folder's permissions, so a staff member holding a console PIN but not
+ * signed into the Quest Google account lands on "Request access" -- which is
+ * most of the yard, on their own phones. Rendering here needs nothing but the
+ * session they already have. Read-only, so it takes the same 'view' level as
+ * a lookup. */
+function adminQuoteHtml(token, qn) {
+  requireAuth_(token, 'view');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  return { ok: 1, quoteNo: ctx.d.quoteNo || qn, term: docTerm_(ctx.d), html: quoteHtml_(ctx.d) };
+}
+
 function adminLookup(token, qn) {
   const who = requireAuth_(token, 'view');
   const ctx = findQuoteCtx_(qn);
@@ -1323,6 +1341,9 @@ function adminLookup(token, qn) {
   const paid = paymentsTotal_(d);
   const bal = Number(d.total || 0) - paid;
   return { ok: 1, quoteNo: d.quoteNo, name: [d.firstName, d.lastName].filter(Boolean).join(' '),
+    /* Quote vs Invoice, so the console can follow the same terminology flip as
+       the page, the PDF and the emails once a payment exists. */
+    term: docTerm_(d),
     unit: d.unit, ymm: d.ymm || '', status: String(ctx.sh.getRange(ctx.rowNum, COL.STATUS).getValue() || ''),
     total: usd_(d.total), paid: usd_(paid), balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)),
     balNum: Math.round(bal * 100) / 100,
@@ -2219,7 +2240,7 @@ function customerEmailHtml_(o) {
     survey =
       '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:16px 18px;margin:4px 0 8px">' +
       '<div style="font-size:15px;font-weight:bold;color:#14293E;margin-bottom:4px">One quick question: when will you be done for the season?</div>' +
-      '<div style="font-size:13px;color:#5C7185;margin-bottom:12px">This helps us schedule your haul-out. Balances retrieved after Nov 15 include a late retrieval surcharge.</div>' +
+      '<div style="font-size:13px;color:#5C7185;margin-bottom:12px">' + surveyBlurb_(o) + '</div>' +
       '<div>' + buttonHtml_(su('now'), 'I\'m done now', '#14293E') +
       buttonHtml_(o.surveyBase + '&done=date', 'I\'ll be done on a set date', '#4A81A6') +
       buttonHtml_(su('call'), 'I\'ll call when I\'m done', '#C08A22') + '</div></div>';
@@ -2522,6 +2543,28 @@ function isLandUnit_(d) {
   return u.indexOf('golf') > -1 || u.indexOf('bike') > -1;
 }
 function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') > -1; }
+
+/* Sub-heading under the season-done survey.
+   Two things it has to get right:
+   - WHAT TRIGGERS THE FEE. The surcharge is not a blanket "anything after
+     Nov 15" charge. It applies when the customer asks us to retrieve the unit
+     after the cutoff, or leaves setting up winter services until after it.
+     Someone already in our queue before the date does not get charged because
+     our schedule ran long.
+   - UNIT WORDING (CLAUDE.md section 5). Golf carts and e-bikes are land units:
+     they get picked up, never hauled out.
+   The date comes from the quote's own season block, so it moves with the
+   season instead of being frozen in a string. */
+function surveyBlurb_(o) {
+  const land = isLandUnit_(o);
+  const unit = String(o.unit || '').toLowerCase() || 'unit';
+  const sched = land ? 'schedule your pickup' : 'schedule your haul-out';
+  const by = String(o.payBy || '').trim();
+  const when = by ? 'after ' + esc_(by) : 'after the cutoff date';
+  return 'This helps us ' + sched + '. The late retrieval surcharge applies only if you ask us to ' +
+    'retrieve your ' + esc_(unit) + ' ' + when + ', or wait until after that date to set up ' +
+    'winter services.';
+}
 
 function quoteHtml_(d) {
   const sn = d.season || {};

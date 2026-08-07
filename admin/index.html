@@ -231,6 +231,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
+            <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">🖨 Print quote</button></div>
             <div id="rqBlock" style="margin-top:8px"></div>
             <div id="seasonBlock" style="margin-top:8px"></div>
             <div class="ctr" id="contractRow">
@@ -370,6 +371,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 <script>
 const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
 let T=localStorage.getItem('qwtok')||'',ME=JSON.parse(localStorage.getItem('qwme')||'null'),QN='',PURL='';
+/* Quote or Invoice for the loaded quote — the same flip docTerm_ applies on
+   the page, the PDF and the emails once a payment exists. */
+let QTERM='Quote';
 const $=id=>document.getElementById(id);
 async function api(fn,args){
   const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -424,6 +428,41 @@ async function doSearch(){
 }
 function pickHit(qn){$('resultsCard').classList.add('hide');doLookup(qn);}
 function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg','');}
+/* Print the quote/invoice.
+   Renders server-side through the SAME quoteHtml_ the archived PDF is built
+   from, so what staff hand a customer matches the customer's copy exactly.
+
+   Not a link to the filed Drive PDF on purpose: that file inherits the season
+   folder's permissions, so anyone holding a console PIN but not signed into
+   the Quest Google account -- most of the yard, on their own phones -- would
+   get "Request access" instead of a quote. */
+function printBtnLabel_(){ return '🖨 Print '+String(QTERM||'Quote').toLowerCase(); }
+async function printQuote(){
+  if(!QN) return;
+  /* The window must be opened inside the click. Opening it after the fetch
+     resolves counts as an unrequested popup and mobile browsers block it. */
+  const w=window.open('','_blank');
+  if(!w){ toast('Allow pop-ups for this site to print.'); return; }
+  w.document.write('<!doctype html><title>Preparing…</title><body style="font:15px system-ui;padding:24px;color:#5C7185">Preparing your copy…</body>');
+  const btn=$('btnPrint'); if(btn){ btn.disabled=true; btn.textContent='Preparing…'; }
+  try{
+    const r=await api('quoteHtml',[QN]);
+    if(!r||!r.ok){ w.close(); toast((r&&r.error)||'Could not build a printable copy.'); return; }
+    w.document.open(); w.document.write(r.html); w.document.close();
+    try{ w.document.title=r.quoteNo+' '+r.term; }catch(e){}
+    /* Let the logo finish loading, or the print preview has a hole where the
+       header belongs. The tab stays open, so a re-print is always available. */
+    const go=function(){ try{ w.focus(); w.print(); }catch(e){} };
+    if(w.document.readyState==='complete') setTimeout(go,350);
+    else w.addEventListener('load',function(){ setTimeout(go,350); });
+  }catch(e){
+    try{ w.close(); }catch(_){}
+    toast('Print failed: '+(e&&e.message?e.message:e));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=printBtnLabel_(); }
+  }
+}
+
 function closeQuote(){$('quoteArea').classList.add('hide');QN='';setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
 async function doLookup(qn){
   QN=qn||$('qn').value.trim().toUpperCase();if(!QN)return;
@@ -435,6 +474,8 @@ async function doLookup(qn){
 }
 function renderQuote(r){
   $('quoteArea').classList.remove('hide');
+  QTERM=r.term||'Quote';
+  const pb=$('btnPrint'); if(pb) pb.textContent=printBtnLabel_();
   $('qName').textContent=r.quoteNo+' — '+r.name;
   $('qStatus').textContent=r.status||'—';$('qStatus').className='pill '+pillClass(r.status||'');
   const credit=r.balance.startsWith('CREDIT');

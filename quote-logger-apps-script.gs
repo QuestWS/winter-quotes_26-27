@@ -1466,9 +1466,92 @@ function allowedStorageFor_(unitKind) {
   return [];
 }
 
-function sanitizeMeasured_(changes, unitKind) {
+/* Motor counts a customer got wrong.
+ *
+ * Type, count and service level travel together because the engine rules bind
+ * them: a boat may have MULTIPLES of one type but never a mix (CLAUDE.md
+ * section 4), so setting a count necessarily zeroes the other types. Sending
+ * them as three loose fields would let a half-applied change leave a boat with
+ * two inboards AND an outboard, which is not a boat.
+ */
+function wholeCount_(v, what) {
+  const txt = (v === null || v === undefined) ? '' : String(v).trim();
+  if (txt === '') throw new Error('Enter the number of ' + what + ' (type 0 if there are none).');
+  const n = Number(txt);
+  if (!isFinite(n) || n < 0 || n > 8 || n !== Math.floor(n)) {
+    throw new Error('Enter a whole number of ' + what + '.');
+  }
+  return n;
+}
+
+function sanitizeEngines_(e, st) {
+  const kind = String((st && st.unit) || '');
+  const cur = (st && st.engines) || {};
+  const lvl = function (v, fallback) {
+    const x = String(v || fallback || 'basic');
+    if (x !== 'basic' && x !== 'full') throw new Error('Service level must be Basic or Full.');
+    return x;
+  };
+  const qty = function (v) {
+    /* Two traps here, both of which produce a plausible-looking wrong number:
+       - Stripping the sign first turns "-1" into a valid 1.
+       - Number('') and Number(null) are BOTH 0, so a field someone cleared
+         would read as "zero motors" and quietly delete the winterizing charge.
+         Zero has to be typed on purpose. */
+    const txt = (v === null || v === undefined) ? '' : String(v).trim();
+    if (txt === '') throw new Error('Enter the number of motors (type 0 if there are none).');
+    const n = Number(txt);
+    if (!isFinite(n) || n < 0 || n !== Math.floor(n)) {
+      throw new Error('Enter a whole number of motors (0 or more).');
+    }
+    if (n > 8) throw new Error(n + ' motors looks wrong. Check before saving.');
+    return n;
+  };
+
+  /* Start from what is there, so untouched levels survive. */
+  const out = {
+    inboard:  { qty: 0, level: (cur.inboard  || {}).level || 'basic' },
+    io:       { qty: 0, level: (cur.io       || {}).level || 'basic' },
+    outboard: { qty: 0, level: (cur.outboard || {}).level || 'basic' },
+    pwc:      { qty: Number((cur.pwc || {}).qty || 0), level: (cur.pwc || {}).level || 'basic' }
+  };
+
+  if (kind === 'jetski') {
+    out.pwc = { qty: qty(e.qty), level: lvl(e.level, out.pwc.level) };
+    out._clearTrans = true;
+    return out;
+  }
+  if (kind !== 'boat') throw new Error('This unit type has no motors to change.');
+
+  const t = String(e.type || '');
+  if (['inboard', 'io', 'outboard'].indexOf(t) < 0) throw new Error('Pick a motor type.');
+  out.pwc.qty = 0;                       // a boat is not a jet ski
+  out[t] = { qty: qty(e.qty), level: lvl(e.level, (cur[t] || {}).level) };
+  /* Outboards have no transmission or V-drive. Correcting a boat from inboard
+     to outboard has to clear that count too, or the quote keeps charging for
+     drive-train work on a boat that has none — and the console hides the field
+     for outboards, so staff cannot fix it in the same pass. */
+  out._clearTrans = (t === 'outboard');
+  return out;
+}
+
+function sanitizeMeasured_(changes, st) {
+  const unitKind = String((st && st.unit) || '');
   const out = {};
   changes = changes || {};
+  if (changes.engines) {
+    out.engines = sanitizeEngines_(changes.engines, st);
+    const clearTrans = out.engines._clearTrans;
+    delete out.engines._clearTrans;      // never let a marker reach the engine
+    if (clearTrans) out.dtTrans = 0;
+    /* Transmissions/V-drives are counted separately but track the motors in
+       practice, so staff can correct them in the same pass. */
+    if (changes.dtTrans !== undefined && String(changes.dtTrans) !== '') {
+      out.dtTrans = wholeCount_(changes.dtTrans, 'transmissions / V-drives');
+    }
+  } else if (changes.dtTrans !== undefined && String(changes.dtTrans) !== '') {
+    out.dtTrans = wholeCount_(changes.dtTrans, 'transmissions / V-drives');
+  }
   MEASURABLE_NUM_.forEach(function (k) {
     const raw = changes[k];
     if (raw === undefined || raw === null || String(raw).trim() === '') return;
@@ -1500,7 +1583,7 @@ function sanitizeMeasured_(changes, unitKind) {
 /* Price a hypothetical change without touching the sheet. Returns the before
  * and after pictures plus a line-by-line diff. */
 function dimsProposal_(d, changes) {
-  const clean = sanitizeMeasured_(changes, String((effectiveState_(d) || {}).unit || ''));
+  const clean = sanitizeMeasured_(changes, effectiveState_(d) || {});
   if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
 
   const beforeLines = (d.lines || []).map(function (l) { return { label: l.label, amt: Number(l.amt || 0) }; });
@@ -1581,7 +1664,7 @@ function adminDimsApply(token, qn, changes, note) {
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   let clean;
-  try { clean = sanitizeMeasured_(changes, String((effectiveState_(d) || {}).unit || '')); }
+  try { clean = sanitizeMeasured_(changes, effectiveState_(d) || {}); }
   catch (err) { return { ok: 0, error: String(err.message || err) }; }
   if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
 
@@ -1722,7 +1805,32 @@ function adminLookup(token, qn) {
         text: dimsString(st) || '',
         customerText: dimsString((d.manual && d.manual.customerState) || d.state || {}) || '',
         measured: (d.manual && d.manual.measured) || null,
-        measuredNote: (d.manual && d.manual.measuredNote) || ''
+        measuredNote: (d.manual && d.manual.measuredNote) || '',
+        /* Motors, so staff can fix a count the customer got wrong. Only one
+           boat type can be active at a time, so the current one is reported as
+           a single choice rather than four independent counts. */
+        motors: (function () {
+          const eng = st.engines || {};
+          if (kind === 'jetski') {
+            const g = eng.pwc || {};
+            return { editable: true, kind: 'jetski',
+                     types: [{ id: 'pwc', name: 'Jet ski / PWC' }],
+                     type: 'pwc', qty: Number(g.qty || 0), level: String(g.level || 'basic'),
+                     showTrans: false, dtTrans: 0 };
+          }
+          if (kind !== 'boat') return { editable: false };
+          const active = BOAT_ENGINES.filter(function (e) { return Number((eng[e.id] || {}).qty || 0) > 0; })[0];
+          const id = active ? active.id : '';
+          const g = id ? eng[id] : {};
+          return {
+            editable: true, kind: 'boat',
+            types: BOAT_ENGINES.map(function (e) { return { id: e.id, name: e.name }; }),
+            type: id, qty: Number(g.qty || 0), level: String(g.level || 'basic'),
+            /* Transmissions/V-drives only apply to shaft-drive and sterndrive. */
+            showTrans: id === 'inboard' || id === 'io',
+            dtTrans: Number(st.dtTrans || 0)
+          };
+        })()
       };
     })(),
     lines: (d.lines || []).map(function (l, i) { return (i + 1) + '. ' + l.label + ' — ' + (l.amt ? usd_(l.amt) : 'incl.'); }),
@@ -2508,9 +2616,17 @@ function buildEmailFor_(d, kind, extra, photos) {
        that costs you the customer's trust in the rest of the email. */
     const measuredDims = ['loa', 'beam', 'lwt', 'skiLen', 'skiWid', 'hasTrailer']
       .some(function (k) { return meas[k] !== undefined; });
+    const motorsFixed = meas.engines !== undefined || meas.dtTrans !== undefined;
     const unitTxt = esc_(d.unit || 'unit');
     let intro;
-    if (measuredDims && movedTo) {
+    if (motorsFixed && !measuredDims && !movedTo) {
+      /* A corrected motor count is not a measurement and not a move. Saying we
+         measured their boat when we counted its engines is the kind of small
+         wrongness that costs trust in the rest of the email. */
+      intro = 'We\'ve corrected the engine details on your ' + unitTxt + ' and updated your ' + term +
+        ' to match. Winterizing is priced per motor, so the figures below reflect what is actually on ' +
+        'the boat.';
+    } else if (measuredDims && movedTo) {
       intro = 'We measured your ' + unitTxt + ' here at the shop and moved it to <b>' + esc_(movedTo) +
         '</b>, and updated your ' + term + ' to match. Winter pricing depends on both size and where ' +
         'a unit is stored, so the figures below reflect those changes.';
@@ -2537,6 +2653,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     };
     const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:4px 0 10px">' +
       '<table cellpadding="0" cellspacing="0">' +
+      (motorsFixed ? row('Engines', esc_(engineSummary_(effectiveState_(d) || {}))) : '') +
       (measuredDims && wasDims && nowDims && wasDims !== nowDims
         ? row('Previously', esc_(wasDims)) + row('Now measured', esc_(nowDims))
         : (nowDims ? row('Measurements', esc_(nowDims)) : '')) +
@@ -2552,7 +2669,9 @@ function buildEmailFor_(d, kind, extra, photos) {
 
     return {
       subject: 'We\'ve updated your winter ' + term +
-        (measuredDims ? ' after measuring' : movedTo ? ' — storage change' : '') +
+        (measuredDims ? ' after measuring'
+          : movedTo ? ' \u2014 storage change'
+          : motorsFixed ? ' \u2014 engine details' : '') +
         ' \u00b7 ' + (d.quoteNo || ''),
       html: noticeHtml_(d, intro, box, true),
       status: 'Dimensions updated — customer notified',
@@ -3316,6 +3435,21 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
      they get picked up, never hauled out.
    The date comes from the quote's own season block, so it moves with the
    season instead of being frozen in a string. */
+/* "2 × Inboard, full service" — for the notice email, so a customer can check
+   the count at a glance instead of decoding line items. */
+function engineSummary_(st) {
+  const eng = (st && st.engines) || {};
+  const names = { inboard: 'Inboard', io: 'Inboard/Outboard', outboard: 'Outboard', pwc: 'Jet ski' };
+  const parts = [];
+  ['inboard', 'io', 'outboard', 'pwc'].forEach(function (k) {
+    const g = eng[k] || {};
+    const q = Number(g.qty || 0);
+    if (q > 0) parts.push(q + ' \u00d7 ' + names[k] + ', ' + (g.level === 'full' ? 'full service' : 'basic'));
+  });
+  if (Number(st && st.dtTrans) > 0) parts.push(st.dtTrans + ' \u00d7 transmission / V-drive');
+  return parts.join(' \u00b7 ') || 'none';
+}
+
 function surveyBlurb_(o) {
   const land = isLandUnit_(o);
   const sched = land ? 'schedule your pickup' : 'schedule your haul-out';

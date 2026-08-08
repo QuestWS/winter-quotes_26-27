@@ -37,7 +37,8 @@ if [ -f quote-logger-apps-script.gs ]; then
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
     "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml" \
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
-    "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess"
+    "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
+    "sanitizeEngines_" "engineSummary_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -68,7 +69,8 @@ if [ -f admin/index.html ]; then
     "storageView" "printStorage" "toggleNav" "cameraInput" "qclose" \
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
-    "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard"
+    "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
+    "renderMotors" "dimsMotors"
   # no raw prompt() in the console — all inputs are inline UI
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
@@ -157,6 +159,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
     echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
   else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # One motor type per boat, whole counts only. That is a property of the code,
+  # not of any string, so it is checked by running it.
+  if node tools/check-engine-rules.js > "$TMP/eng.txt" 2>&1; then
+    echo "  OK   gate: motor correction rules hold"
+  else
+    echo "  FAIL gate: motor correction rules broken"; sed 's/^/       /' "$TMP/eng.txt"; FAIL=1
+  fi
   # The quote-load endpoint must serve the EFFECTIVE state. Serving the raw
   # customer state means a re-measured or relocated quote renders at the old
   # dimensions and the old price on the customer's own page — they see a total

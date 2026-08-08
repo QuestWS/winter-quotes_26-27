@@ -513,10 +513,25 @@ that's a customer conversation. Flag it and let him move it manually.
 
 ### Re-measuring and relocating (console)
 
-`Dimensions & storage` card, gated on the `adjust` permission. Edit LOA / beam /
-LWT (or stored L×W for a jet ski), toggle the trailer, and/or pick a new storage
-location → **Preview the change** → server re-prices with the shared engine and
-returns a before/after line diff → **Apply**. Nothing is written until Apply.
+`Unit details & storage` card, gated on the `adjust` permission. Edit LOA /
+beam / LWT (or stored L×W for a jet ski), toggle the trailer, **correct the
+motor type / count / service level**, and/or pick a new storage location →
+**Preview the change** → server re-prices with the shared engine and returns a
+before/after line diff → **Apply**. Nothing is written until Apply.
+
+- **Motors travel as one control group** (`sanitizeEngines_`), because the rules
+  bind them: a boat may have multiples of ONE type but never a mix, so changing
+  the type has to zero the others. Three counts sent loose could leave a boat
+  with two inboards *and* an outboard. Switching to outboard also clears
+  `dtTrans` — outboards have no transmission or V-drive, and the console hides
+  that field for them, so staff couldn't fix it otherwise.
+  `tools/check-engine-rules.js` **executes** the rule over every type/count
+  combination rather than grepping for it; `verify.sh` runs it.
+- **A blank count is refused, not read as zero.** `Number('')` is 0, so an
+  emptied field would silently delete the winterizing charge. Zero has to be
+  typed on purpose. Same for `wholeCount_` on transmissions. (Related trap,
+  fixed twice now: never strip the sign before a range check — `-1` becomes a
+  perfectly valid `1`.)
 
 - **The new values are journalled, never written into `d.state`.**
   `d.manual.measured` holds what *Quest* measured; `d.state` stays what the

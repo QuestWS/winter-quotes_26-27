@@ -328,9 +328,10 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
           </div>
 
           <div class="card hide" id="dimsCard">
-            <h2>Dimensions &amp; storage</h2>
+            <h2>Unit details &amp; storage</h2>
             <div class="msg" id="dimsNow" style="margin:0 0 6px"></div>
             <div id="dimsFields"></div>
+            <div id="dimsMotors" class="hide" style="margin-top:10px"></div>
             <div id="dimsStorageWrap" class="hide" style="margin-top:8px">
               <label class="fld">Storage location</label>
               <select class="txt" id="dimsStorage"></select>
@@ -564,6 +565,7 @@ function renderDims(d){
     ? '<label class="chk" style="margin-top:6px"><input type="checkbox" id="dimsTrailer"'+(DIMS.hasTrailer?' checked':'')+'> Stored on its trailer</label>'
     : '';
   $('dimsFields').innerHTML=(rows?'<div class="row2">'+rows+'</div>':'')+trailer;
+  renderMotors();
   $('dimsStorageWrap').classList.toggle('hide',!DIMS.canMoveStorage);
   if(DIMS.canMoveStorage){
     /* Options come from the server, which knows what each unit type can
@@ -579,6 +581,42 @@ function renderDims(d){
 
 /* Only send what actually differs from what is already on file, so the journal
    records a measurement we changed rather than every field on the form. */
+/* Motors. Type, count and level are one control group because the engine
+   rules bind them: a boat can have several of ONE type, never a mix, so
+   changing the type has to zero whatever was there before. Sending them
+   together lets the server enforce that in one place. */
+function renderMotors(){
+  const box=$('dimsMotors');
+  const m=DIMS&&DIMS.motors;
+  if(!m||!m.editable){ box.classList.add('hide'); box.innerHTML=''; return; }
+  box.classList.remove('hide');
+  const typeSel = m.kind==='boat'
+    ? '<div><label class="fld">Motor type</label><select class="txt" id="mType">'+
+      (m.types||[]).map(t=>'<option value="'+esc(t.id)+'"'+(t.id===m.type?' selected':'')+'>'+esc(t.name)+'</option>').join('')+
+      '</select></div>'
+    : '';
+  box.innerHTML=
+    '<div class="fld" style="margin-bottom:4px">Motors</div>'+
+    '<div class="row2">'+typeSel+
+      '<div><label class="fld">'+(m.kind==='jetski'?'Number of jet skis':'Number of motors')+'</label>'+
+      '<input class="txt" id="mQty" inputmode="numeric" value="'+esc(String(m.qty))+'"></div>'+
+    '</div>'+
+    '<div class="row2" style="margin-top:8px">'+
+      '<div><label class="fld">Service level</label><select class="txt" id="mLevel">'+
+        '<option value="basic"'+(m.level==='basic'?' selected':'')+'>Basic</option>'+
+        '<option value="full"'+(m.level==='full'?' selected':'')+'>Full service</option>'+
+      '</select></div>'+
+      '<div id="mTransWrap"'+(m.showTrans?'':' class="hide"')+'><label class="fld">Transmissions / V-drives</label>'+
+      '<input class="txt" id="mTrans" inputmode="numeric" value="'+esc(String(m.dtTrans||0))+'"></div>'+
+    '</div>';
+  const t=$('mType');
+  if(t) t.addEventListener('change',()=>{
+    /* Transmissions only exist on shaft-drive and sterndrive boats. */
+    const show=t.value==='inboard'||t.value==='io';
+    $('mTransWrap').classList.toggle('hide',!show);
+  });
+}
+
 function collectDims(){
   const out={};
   document.querySelectorAll('#dimsFields .dimf').forEach(el=>{
@@ -590,13 +628,26 @@ function collectDims(){
   if(tr&&!!tr.checked!==!!DIMS.hasTrailer) out.hasTrailer=tr.checked?1:0;
   const st=$('dimsStorage');
   if(st&&st.value&&st.value!==DIMS.storage) out.storage=st.value;
+  const m=DIMS.motors;
+  if(m&&m.editable){
+    const type=$('mType')?$('mType').value:m.type;
+    const qty=$('mQty')?$('mQty').value.trim():String(m.qty);
+    const level=$('mLevel')?$('mLevel').value:m.level;
+    if(String(type)!==String(m.type)||String(qty)!==String(m.qty)||String(level)!==String(m.level)){
+      out.engines={type:type,qty:qty,level:level};
+    }
+    const tr=$('mTrans');
+    if(tr&&!$('mTransWrap').classList.contains('hide')&&String(tr.value.trim())!==String(m.dtTrans||0)){
+      out.dtTrans=tr.value.trim();
+    }
+  }
   return out;
 }
 
 async function previewDims(){
   if(!QN||!DIMS) return;
   const changes=collectDims();
-  if(!Object.keys(changes).length){ setMsg('dimsMsg','Change a dimension or the storage location first.',false); return; }
+  if(!Object.keys(changes).length){ setMsg('dimsMsg','Change a dimension, the motors, or the storage location first.',false); return; }
   const b=$('dimsPrevBtn'); b.disabled=true; b.textContent='Pricing…';
   setMsg('dimsMsg','');
   try{

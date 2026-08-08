@@ -243,7 +243,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
-            <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">🖨 Print quote</button></div>
+            <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">Print quote</button></div>
             <div id="rqBlock" style="margin-top:8px"></div>
             <div id="seasonBlock" style="margin-top:8px"></div>
             <div class="ctr" id="contractRow">
@@ -272,13 +272,13 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
           <div class="card hide" id="photoCard">
             <h2>Condition photos</h2>
             <div class="seg">
-              <button class="on" onclick="setSeason('winter',this)">❄ Winter</button>
-              <button onclick="setSeason('spring',this)">🌱 Spring</button>
+              <button class="on" onclick="setSeason('winter',this)">Winter</button>
+              <button onclick="setSeason('spring',this)">Spring</button>
             </div>
             <div class="drop" id="drop"><b>Tap to choose from your gallery</b><br>or drag &amp; drop here — multiple at once</div>
             <div class="row2" style="margin-top:8px">
-              <button class="btn ghost sm" onclick="$('cameraInput').click()">📷 Take photos now</button>
-              <button class="btn ghost sm" onclick="$('photoFiles').click()">🖼 Upload from gallery</button>
+              <button class="btn ghost sm" onclick="$('cameraInput').click()">Take photos now</button>
+              <button class="btn ghost sm" onclick="$('photoFiles').click()">Upload from gallery</button>
             </div>
             <input type="file" id="photoFiles" accept="image/*" multiple class="hide">
             <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hide">
@@ -344,16 +344,16 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
           <div class="card hide" id="emailCard">
             <h2>Customer emails</h2>
             <div class="emailbtns">
-              <button class="btn navy" id="em_stored" onclick="sendKind('stored')">📦 We have your unit</button>
-              <button class="btn navy" id="em_spring" onclick="sendKind('spring')">🌱 Spring alert</button>
-              <button class="btn navy" id="em_splash" onclick="sendKind('splash')">🌊 Back in / back home</button>
-              <button class="btn navy" id="em_dims" onclick="sendKind('dims')">📏 Dimensions updated</button>
-              <button class="btn gold" id="em_latewarn" onclick="sendKind('latewarn')">⏰ Late fee warning</button>
-              <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">📧 Re-send invoice</button>
+              <button class="btn navy" id="em_stored" onclick="sendKind('stored')">We have your unit</button>
+              <button class="btn navy" id="em_spring" onclick="sendKind('spring')">Spring alert</button>
+              <button class="btn navy" id="em_splash" onclick="sendKind('splash')">Back in / back home</button>
+              <button class="btn navy" id="em_dims" onclick="sendKind('dims')">Dimensions updated</button>
+              <button class="btn gold" id="em_latewarn" onclick="sendKind('latewarn')">Late fee warning</button>
+              <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">Re-send invoice</button>
             </div>
             <div class="row2" style="margin-top:10px">
               <div><label class="fld">Up next — when?</label><input class="txt" id="upnextWhen" placeholder="tomorrow / Thursday"></div>
-              <div style="display:flex;align-items:flex-end"><button class="btn gold" id="em_upnext" style="width:100%" onclick="sendUpNext()">🚤 Send "You're up next"</button></div>
+              <div style="display:flex;align-items:flex-end"><button class="btn gold" id="em_upnext" style="width:100%" onclick="sendUpNext()">Send "You're up next"</button></div>
             </div>
             <div class="msg" id="emailMsg"></div>
           </div>
@@ -373,7 +373,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Storage overview</h2>
         <div style="display:flex;gap:8px">
-          <button class="btn navy sm" onclick="printStorage()">🖨 Print yard sheets</button>
+          <button class="btn navy sm" onclick="printStorage()">Print yard sheets</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
       </div>
@@ -597,7 +597,7 @@ async function applyDims(){
   finally{ if(b){ b.disabled=false; b.textContent='Apply this change'; } }
 }
 
-function printBtnLabel_(){ return '🖨 Print '+String(QTERM||'Quote').toLowerCase(); }
+function printBtnLabel_(){ return 'Print '+String(QTERM||'Quote').toLowerCase(); }
 async function printQuote(){
   if(!QN) return;
   /* The window must be opened inside the click. Opening it after the fetch
@@ -887,9 +887,9 @@ async function queueFiles(fileList){
       const i=idx++;rows[i].textContent='uploading…';
       try{const b64=await fileToB64(files[i]);
         const r=await api('uploadPhoto',[QN,SEASON,files[i].name,b64,files[i].type]);
-        if(r.ok){rows[i].textContent='✓ done';}
-        else{rows[i].textContent='✗ '+r.error;failed++;}
-      }catch(e){rows[i].textContent='✗ '+e.message;failed++;}
+        if(r.ok){rows[i].textContent='done';}
+        else{rows[i].textContent='failed — '+r.error;failed++;}
+      }catch(e){rows[i].textContent='failed — '+e.message;failed++;}
       done++;setbar();
     }
   }
@@ -944,7 +944,7 @@ async function printStorage(){
         <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · winter services</div>
       </div>
       <table class="yard">
-        <tr><th style="width:22px">✓</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
+        <tr><th style="width:38px">Done</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
         ${g.rows.map(x=>`<tr>
           <td><span class="cb"></span></td>
           <td><span class="yn">${x.name}</span><br><span class="ysub">${x.qn}</span></td>
@@ -953,7 +953,7 @@ async function printStorage(){
           <td>${x.status}</td>
           <td class="ybal" style="text-align:right">${x.balance}</td></tr>`).join('')}
       </table>
-      <div class="pgFoot">Check ✓ as each unit is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
+      <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
     </div>`).join('');
   window.print();
 }

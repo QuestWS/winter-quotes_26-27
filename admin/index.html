@@ -79,6 +79,18 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 .inlineEd input,.inlineEd textarea{width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--disp)}
 .feewarn{display:none;background:#FBEEE2;border:1px solid #E4B48F;color:var(--red);border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:8px}
 .feewarn.show{display:block}
+/* Before/after diff for a re-measure. Money that moves has to be readable at
+   arm's length in the yard, so the amounts are monospaced and aligned and the
+   direction of the change is carried by colour AND by the +/- sign. */
+.dfrow{display:flex;gap:8px;align-items:baseline;padding:5px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
+.dfrow .dl{flex:1;min-width:0;overflow-wrap:anywhere}
+.dfrow .da{font-family:"IBM Plex Mono","Courier New",monospace;white-space:nowrap}
+.dfrow.add .da{color:var(--green)}
+.dfrow.rem .da{color:var(--red);text-decoration:line-through}
+.dftot{display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;
+  border-top:2px solid var(--navy);font-size:15px;font-weight:700;color:var(--navy)}
+.dfwarn{background:#FDF3E0;border:1.5px solid var(--gold);border-radius:9px;padding:10px 12px;
+  margin-top:9px;font-size:13px;color:#6B5A2A;line-height:1.45}
 .histrow{padding:6px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .histrow b{color:var(--navy)}.histrow .hm{color:var(--muted)}
 .modal{position:fixed;inset:0;background:rgba(20,41,62,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:14px}
@@ -291,6 +303,21 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="payMsg"></div>
           </div>
 
+          <div class="card hide" id="dimsCard">
+            <h2>Dimensions &amp; storage</h2>
+            <div class="msg" id="dimsNow" style="margin:0 0 6px"></div>
+            <div id="dimsFields"></div>
+            <div id="dimsStorageWrap" class="hide" style="margin-top:8px">
+              <label class="fld">Storage location</label>
+              <select class="txt" id="dimsStorage"></select>
+            </div>
+            <div style="margin-top:8px"><label class="fld">Note for the customer (optional)</label>
+              <input class="txt" id="dimsNote" placeholder="Re-measured at drop-off"></div>
+            <button class="btn navy" id="dimsPrevBtn" onclick="previewDims()">Preview the change</button>
+            <div id="dimsDiff" class="hide" style="margin-top:10px"></div>
+            <div class="msg" id="dimsMsg"></div>
+          </div>
+
           <div class="card hide" id="adjCard">
             <h2>Adjustment</h2>
             <div class="row2">
@@ -320,6 +347,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <button class="btn navy" id="em_stored" onclick="sendKind('stored')">📦 We have your unit</button>
               <button class="btn navy" id="em_spring" onclick="sendKind('spring')">🌱 Spring alert</button>
               <button class="btn navy" id="em_splash" onclick="sendKind('splash')">🌊 Back in / back home</button>
+              <button class="btn navy" id="em_dims" onclick="sendKind('dims')">📏 Dimensions updated</button>
               <button class="btn gold" id="em_latewarn" onclick="sendKind('latewarn')">⏰ Late fee warning</button>
               <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">📧 Re-send invoice</button>
             </div>
@@ -383,6 +411,12 @@ async function api(fn,args){
   if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
   return j;
 }
+/* Escape before interpolating anything into innerHTML. Dimensions, notes and
+   storage labels all originate with the customer or with staff typing on a
+   phone, so an apostrophe or a stray angle bracket must not be able to break
+   the markup it lands in. */
+function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function fmt$(n){return '$'+Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600);}
 function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
@@ -436,6 +470,133 @@ function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg
    folder's permissions, so anyone holding a console PIN but not signed into
    the Quest Google account -- most of the yard, on their own phones -- would
    get "Request access" instead of a quote. */
+/* ---------- Dimensions & storage ----------
+   Re-measure a unit or move it between storage locations, and let the server
+   re-price it with the shared engine.
+
+   Nothing is written until the before/after diff has been shown and confirmed.
+   These are dollars on a real customer's quote, and a mistyped beam is a very
+   easy thing to do on a phone in the yard. */
+let DIMS=null;
+
+function renderDims(d){
+  DIMS=d||null;
+  const card=$('dimsCard');
+  if(!DIMS||!DIMS.editable){
+    $('dimsFields').innerHTML='';
+    $('dimsNow').textContent=(DIMS&&DIMS.why)||'This quote cannot be re-priced automatically.';
+    $('dimsNow').className='msg';
+    $('dimsPrevBtn').classList.add('hide');
+    $('dimsStorageWrap').classList.add('hide');
+    return;
+  }
+  $('dimsPrevBtn').classList.remove('hide');
+  /* Say plainly when the figures on file are ours rather than the customer's —
+     it is the difference between "they told us 28ft" and "we measured 32ft",
+     and that is exactly what gets argued about later. */
+  const measured=DIMS.measured&&Object.keys(DIMS.measured).length;
+  $('dimsNow').innerHTML=measured
+    ? 'On file: <b>'+esc(DIMS.text||'—')+'</b><br>'+
+      '<span style="color:var(--muted)">Quest-measured. Customer originally gave: '+esc(DIMS.customerText||'—')+'</span>'
+    : 'On file: <b>'+esc(DIMS.text||'—')+'</b> <span style="color:var(--muted)">(as the customer entered it)</span>';
+  const rows=(DIMS.fields||[]).map(f=>
+    '<div><label class="fld">'+esc(f.label)+'</label>'+
+    '<input class="txt dimf" data-key="'+esc(f.key)+'" inputmode="decimal" value="'+esc(String(f.value))+'"></div>').join('');
+  const trailer=DIMS.unitKind==='boat'
+    ? '<label class="chk" style="margin-top:6px"><input type="checkbox" id="dimsTrailer"'+(DIMS.hasTrailer?' checked':'')+'> Stored on its trailer</label>'
+    : '';
+  $('dimsFields').innerHTML=(rows?'<div class="row2">'+rows+'</div>':'')+trailer;
+  $('dimsStorageWrap').classList.toggle('hide',!DIMS.canMoveStorage);
+  if(DIMS.canMoveStorage){
+    /* Options come from the server, which knows what each unit type can
+       actually occupy — a jet ski has no outside storage to be moved to. */
+    $('dimsStorage').innerHTML='<option value="">— leave as is —</option>'+
+      (DIMS.storageOptions||[]).map(o=>
+        '<option value="'+esc(o.value)+'"'+(o.value===DIMS.storage?' selected':'')+'>'+
+        esc(o.label)+(o.value===DIMS.storage?' (current)':'')+'</option>').join('');
+    $('dimsStorage').value='';
+  }
+  $('dimsDiff').classList.add('hide'); setMsg('dimsMsg','');
+}
+
+/* Only send what actually differs from what is already on file, so the journal
+   records a measurement we changed rather than every field on the form. */
+function collectDims(){
+  const out={};
+  document.querySelectorAll('#dimsFields .dimf').forEach(el=>{
+    const k=el.dataset.key, v=el.value.trim();
+    const was=(DIMS.fields.find(f=>f.key===k)||{}).value;
+    if(v!==''&&String(v)!==String(was)) out[k]=v;
+  });
+  const tr=$('dimsTrailer');
+  if(tr&&!!tr.checked!==!!DIMS.hasTrailer) out.hasTrailer=tr.checked?1:0;
+  const st=$('dimsStorage');
+  if(st&&st.value&&st.value!==DIMS.storage) out.storage=st.value;
+  return out;
+}
+
+async function previewDims(){
+  if(!QN||!DIMS) return;
+  const changes=collectDims();
+  if(!Object.keys(changes).length){ setMsg('dimsMsg','Change a dimension or the storage location first.',false); return; }
+  const b=$('dimsPrevBtn'); b.disabled=true; b.textContent='Pricing…';
+  setMsg('dimsMsg','');
+  try{
+    const r=await api('dimsPreview',[QN,changes]);
+    if(!r||!r.ok){ setMsg('dimsMsg',(r&&r.error)||'Could not price that.',false); $('dimsDiff').classList.add('hide'); return; }
+    renderDimsDiff(r,changes);
+  }catch(e){ setMsg('dimsMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Preview the change'; }
+}
+
+function renderDimsDiff(r,changes){
+  const rows=(r.diff||[]).map(x=>{
+    const cls=x.kind==='added'?'add':x.kind==='removed'?'rem':'';
+    const amt=x.kind==='changed'?(x.was+' → '+x.now):(x.kind==='added'?'+ '+x.now:'− '+x.was);
+    return '<div class="dfrow '+cls+'"><span class="dl">'+esc(x.label)+'</span><span class="da">'+esc(amt)+'</span></div>';
+  }).join('');
+  const moved=r.beforeTab!==r.afterTab
+    ? '<div class="dfrow"><span class="dl">Storage location</span><span class="da">'+esc(r.beforeTab)+' → '+esc(r.afterTab)+'</span></div>'
+    : '';
+  const dims=r.beforeDims!==r.afterDims
+    ? '<div class="dfrow"><span class="dl">Measurements</span><span class="da">'+esc(r.beforeDims)+' → '+esc(r.afterDims)+'</span></div>'
+    : '';
+  /* Engine flags are advice, never an action. A beam over the storage limit is
+     a conversation with the customer, so it is surfaced here and the quote is
+     left exactly where it is. */
+  const flags=(r.flags||[]).length
+    ? '<div class="dfwarn"><b>Heads up</b><br>'+r.flags.map(esc).join('<br>')+
+      '<br><br>Nothing has been moved. Change the storage location above yourself if that is what you and the customer decide.</div>'
+    : '';
+  $('dimsDiff').innerHTML=
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:4px">What will change</div>'+
+    dims+moved+(rows||'<div class="dfrow"><span class="dl">No line items change</span><span class="da"></span></div>')+
+    '<div class="dftot"><span>'+esc(r.beforeTotal)+' → '+esc(r.afterTotal)+'</span><span>'+esc(r.delta)+'</span></div>'+
+    '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">Paid '+esc(r.paid)+' · new balance '+esc(r.newBalance)+'</div>'+
+    flags+
+    '<div class="row2" style="margin-top:10px">'+
+      '<button class="btn navy sm" id="dimsApplyBtn" onclick="applyDims()">Apply this change</button>'+
+      '<button class="btn ghost sm" onclick="$(\'dimsDiff\').classList.add(\'hide\')">Cancel</button>'+
+    '</div>';
+  $('dimsDiff').classList.remove('hide');
+  window._dimsPending=changes;
+}
+
+async function applyDims(){
+  if(!QN||!window._dimsPending) return;
+  const b=$('dimsApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
+  try{
+    const r=await api('dimsApply',[QN,window._dimsPending,$('dimsNote').value.trim()]);
+    if(!r||!r.ok){ setMsg('dimsMsg',(r&&r.error)||'Could not apply that.',false); return; }
+    setMsg('dimsMsg',r.msg,true);
+    toast(r.movedTo?('Re-priced and moved to '+r.movedTo):'Re-priced');
+    $('dimsDiff').classList.add('hide');
+    window._dimsPending=null;
+    await doLookup(QN);            // reload: totals, tab and dimensions all moved
+  }catch(e){ setMsg('dimsMsg',e.message,false); }
+  finally{ if(b){ b.disabled=false; b.textContent='Apply this change'; } }
+}
+
 function printBtnLabel_(){ return '🖨 Print '+String(QTERM||'Quote').toLowerCase(); }
 async function printQuote(){
   if(!QN) return;
@@ -503,6 +664,10 @@ function renderQuote(r){
   renderContract(P);
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
+  /* Re-measuring moves money, so it sits behind the same permission as any
+     other adjustment. */
+  $('dimsCard').classList.toggle('hide',!P.adjust);
+  if(P.adjust) renderDims(r.dims);
   const owed=(r.balNum||0)>0.005;
   $('feeCard').classList.toggle('hide',!(P.adjust&&owed));
   if(P.adjust&&owed){

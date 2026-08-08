@@ -257,10 +257,49 @@ function computeQuote(s){
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
   return {lines:L, need, rq, flags:computeFlags_(s)};
 }
+
+/* Which spreadsheet tab a quote belongs on. Shared because BOTH sides decide
+   it now: the page on save, and the console when staff move a unit. Two copies
+   of this would put a quote on one tab and look for it on another. */
+function storageTabFor(s){
+  if(s.unit==='golf') return 'Golf Cart';
+  if(s.unit==='ebike') return 'E-Bike';
+  if(s.storage==='outside') return 'Outside';
+  if(s.storage==='inside') return 'Inside';
+  if(s.storage==='insidePrem') return 'Premium Inside';
+  return 'No Storage';
+}
+
+/* The human-readable dimension line shown in the sheet, the PDF and emails.
+   Shared for the same reason: the console can now change dimensions, so it has
+   to be able to rewrite this string exactly the way the page first wrote it. */
+function dimsString(s){
+  if(s.unit==='boat'){
+    return [ s.loa?('LOA '+s.loa+"'"):'', s.beam?('B '+s.beam+"'"):'',
+             (s.hasTrailer&&s.lwt)?('LWT '+s.lwt+"'"):'',
+             s.hasTrailer?'trailer':'no trailer' ].filter(Boolean).join(' · ');
+  }
+  if(s.unit==='jetski'){
+    return [ s.skiLen?('stored L '+s.skiLen+"'"):'',
+             s.skiWid?('stored W '+s.skiWid+"'"):'' ].filter(Boolean).join(' · ');
+  }
+  if(s.unit==='golf') return s.hhoAddr?('HHO: '+s.hhoAddr):'';
+  return '';
+}
+
+/* The dimension fields that actually drive price, per unit type. The console's
+   editor renders exactly these, so a new priced dimension shows up there by
+   adding it here rather than by remembering to touch the console too. */
+const DIM_FIELDS = {
+  boat:   [['loa','LOA (ft)'],['beam','Beam (ft)'],['lwt','Length with trailer (ft)']],
+  jetski: [['skiLen','Stored length (ft)'],['skiWid','Stored width (ft)']],
+  golf:   [],
+  ebike:  []
+};
 // ENGINE-END
 
-  const API = { SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
-                wrapAuto, computeQuote, fmtMoney_ };
+  const API = { SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
+                wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -359,6 +359,45 @@ function computeQuote(s){
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
   return {lines:L, need, rq, flags:computeFlags_(s)};
 }
+
+/* Which spreadsheet tab a quote belongs on. Shared because BOTH sides decide
+   it now: the page on save, and the console when staff move a unit. Two copies
+   of this would put a quote on one tab and look for it on another. */
+function storageTabFor(s){
+  if(s.unit==='golf') return 'Golf Cart';
+  if(s.unit==='ebike') return 'E-Bike';
+  if(s.storage==='outside') return 'Outside';
+  if(s.storage==='inside') return 'Inside';
+  if(s.storage==='insidePrem') return 'Premium Inside';
+  return 'No Storage';
+}
+
+/* The human-readable dimension line shown in the sheet, the PDF and emails.
+   Shared for the same reason: the console can now change dimensions, so it has
+   to be able to rewrite this string exactly the way the page first wrote it. */
+function dimsString(s){
+  if(s.unit==='boat'){
+    return [ s.loa?('LOA '+s.loa+"'"):'', s.beam?('B '+s.beam+"'"):'',
+             (s.hasTrailer&&s.lwt)?('LWT '+s.lwt+"'"):'',
+             s.hasTrailer?'trailer':'no trailer' ].filter(Boolean).join(' · ');
+  }
+  if(s.unit==='jetski'){
+    return [ s.skiLen?('stored L '+s.skiLen+"'"):'',
+             s.skiWid?('stored W '+s.skiWid+"'"):'' ].filter(Boolean).join(' · ');
+  }
+  if(s.unit==='golf') return s.hhoAddr?('HHO: '+s.hhoAddr):'';
+  return '';
+}
+
+/* The dimension fields that actually drive price, per unit type. The console's
+   editor renders exactly these, so a new priced dimension shows up there by
+   adding it here rather than by remembering to touch the console too. */
+const DIM_FIELDS = {
+  boat:   [['loa','LOA (ft)'],['beam','Beam (ft)'],['lwt','Length with trailer (ft)']],
+  jetski: [['skiLen','Stored length (ft)'],['skiWid','Stored width (ft)']],
+  golf:   [],
+  ebike:  []
+};
 // ENGINE-END
 
 function doPost(e) {
@@ -376,6 +415,8 @@ function doPost(e) {
           auth:        function (a) { return adminAuth(a[0]); },
           lookup:      function (a) { return adminLookup(d.token, a[0]); },
           quoteHtml:   function (a) { return adminQuoteHtml(d.token, a[0]); },
+          dimsPreview: function (a) { return adminDimsPreview(d.token, a[0], a[1]); },
+          dimsApply:   function (a) { return adminDimsApply(d.token, a[0], a[1], a[2]); },
           pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
           adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
           sendEmail:   function (a) { return adminSendEmail(d.token, a[0], a[1], a[2]); },
@@ -402,38 +443,37 @@ function doPost(e) {
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1) Find any prior copy of this quote first — its payload governs merging
-    //    and locking. Capture, then clear stale copies on other tabs.
+    /* 1) READ every prior copy of this quote. Its payload governs merging and
+       locking, and its reminder/photo cells carry over.
+
+       Nothing is deleted here. The destination tab is not settled until after
+       the merge below, because a staff relocation (manual.measured.storage)
+       can move the quote to a different tab than the one the browser posted.
+       Deleting against the posted tab and then writing to the rebuilt one
+       would leave the quote on two tabs at once. Deletion happens in step 3b,
+       once the final tab is known. */
     let carriedReminder = '';
     let oldPayloadJson = '';
     let oldPhotos = '';
-    const targetName = d.storageTab || 'No Storage';
-    let keptRowOnTarget = -1;
+    const postedTab = d.storageTab || 'No Storage';
+    const copies = [];   // {sheet, row} for every copy found, in scan order
     ss.getSheets().forEach(function (other) {
       if (other.getRange(1, 3).getValue() !== 'Quote #') return;
-      const onTarget = other.getName() === targetName;
       let r = findQuoteRow_(other, d.quoteNo);
       while (r > 0) {
-        // capture carry-over data from whichever copy we see first
         const remCell = String(other.getRange(r, COL.REM).getValue() || '');
         /* A lead's follow-up marker lives in the reminder column (the lead tab
            is skipped by dailyReminderCheck, so the column is free there). It
            must NOT ride along when the quote graduates to a real tab, or the
            genuine 10-day reminder would see a reminder already sent and stay
            silent forever. */
-        if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(targetName))) {
+        if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(postedTab))) {
           carriedReminder = carriedReminder || remCell;
         }
         oldPayloadJson = oldPayloadJson || String(other.getRange(r, COL.PAYLOAD).getValue() || '');
         oldPhotos = oldPhotos || String(other.getRange(r, COL.PHOTOS).getValue() || '');
-        if (onTarget && keptRowOnTarget < 0) {
-          // keep the FIRST copy on the destination tab, delete any further dupes
-          keptRowOnTarget = r;
-          r = findQuoteRowFrom_(other, d.quoteNo, r + 1);
-        } else {
-          other.deleteRow(r);
-          r = findQuoteRow_(other, d.quoteNo);
-        }
+        copies.push({ sheet: other, row: r });
+        r = findQuoteRowFrom_(other, d.quoteNo, r + 1);
       }
     });
 
@@ -484,6 +524,13 @@ function doPost(e) {
       sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
       sh.setFrozenRows(1);
     }
+
+    /* 3b) NOW clear the stale copies, with the destination finally settled.
+       Keep the first copy already sitting on the destination tab (step 5 will
+       overwrite it in place, preserving its position) and delete every other
+       copy anywhere. Deleting bottom-up within a sheet keeps the remaining row
+       numbers valid as we go. */
+    pruneQuoteCopies_(copies, tabName);
 
     // 4) PDF after merge/lock — always the official version.
     //    A started quote has no selections yet, so there is nothing to render:
@@ -913,11 +960,32 @@ function originalLabelFor_(m, current) {
  * anything that reaches doPost without the wizard state -- keeps exactly the
  * behavior it had before.
  */
+/* The state the quote is actually priced at.
+ *
+ * d.state is what the CUSTOMER selected. manual.measured is what QUEST
+ * measured or assigned afterwards -- a re-measured beam, a storage location we
+ * moved them to. The override lives in the journal, not in d.state, for the
+ * reason every other staff change does (CLAUDE.md section 4): the customer page
+ * posts its own state on the next save, and anything written into d.state would
+ * be replaced by whatever is still typed in their browser. Keeping the two
+ * apart also means we can always still see what they originally told us.
+ */
+function effectiveState_(d) {
+  const base = (d && d.state) || null;
+  if (!base) return null;
+  const meas = d.manual && d.manual.measured;
+  if (!meas) return base;
+  const s = JSON.parse(JSON.stringify(base));
+  Object.keys(meas).forEach(function (k) { s[k] = meas[k]; });
+  return s;
+}
+
 function serverPrice_(d) {
-  if (!d || !d.state) return { ok: false, reason: 'no wizard state in payload' };
+  const st = effectiveState_(d);
+  if (!st) return { ok: false, reason: 'no wizard state in payload' };
   let r;
   try {
-    r = computeQuote(d.state);
+    r = computeQuote(st);
   } catch (err) {
     return { ok: false, reason: 'engine threw: ' + (err && err.message ? err.message : err) };
   }
@@ -930,7 +998,25 @@ function serverPrice_(d) {
       amt: Number(l.amt || 0), desc: l.desc || ''
     };
   });
-  return { ok: true, lines: lines, rq: r.rq || [], need: r.need || [], flags: r.flags || [] };
+  return { ok: true, lines: lines, rq: r.rq || [], need: r.need || [], flags: r.flags || [], state: st };
+}
+
+/* Delete every copy of a quote except the first one already on `keepTab`.
+ *
+ * Row numbers are captured before any deletion, so they only stay valid if we
+ * delete from the bottom up. Sorting the whole list by row descending does
+ * that within each sheet (relative order inside a sheet is preserved), and
+ * deletions in one sheet cannot disturb another's numbering.
+ *
+ * Returns the deleted entries, which is what makes it testable. */
+function pruneQuoteCopies_(copies, keepTab) {
+  const onKeep = copies.filter(function (c) { return c.sheet.getName() === keepTab; });
+  const doomed = copies
+    .filter(function (c) { return c.sheet.getName() !== keepTab; })
+    .concat(onKeep.slice(1))
+    .sort(function (a, b) { return b.row - a.row; });
+  doomed.forEach(function (c) { c.sheet.deleteRow(c.row); });
+  return doomed;
 }
 
 function linesTotal_(lines) {
@@ -945,11 +1031,17 @@ function rebuildLinesFromState_(d) {
   if (!sp.ok) return { rebuilt: false, reason: sp.reason, postedTotal: posted };
   d.lines = sp.lines;
   d.quotesRequested = sp.rq.join('; ');
+  /* A staff re-measure or relocation changes what the sheet and PDF should
+     say, so refresh both from the state that actually set the price. */
+  d.dims = dimsString(sp.state);
+  d.storageTab = storageTabFor(sp.state);
   /* Engine flags (e.g. a beam over the Inside limit) are advisory: they are
      recorded for staff, never acted on automatically. Relocating a customer's
      boat is a conversation, not a side effect of a save. */
   if (sp.flags.length) d._flags = sp.flags; else delete d._flags;
-  return { rebuilt: true, postedTotal: posted, serverRawTotal: linesTotal_(sp.lines) };
+  /* Hand back the state that priced it: callers need it to describe what
+     changed (the audit log and the console diff both do). */
+  return { rebuilt: true, postedTotal: posted, serverRawTotal: linesTotal_(sp.lines), state: sp.state };
 }
 
 /* Compare AFTER the journal has been replayed: by then d.total is the server's
@@ -1326,6 +1418,229 @@ function adminSearch(token, query) {
  * most of the yard, on their own phones. Rendering here needs nothing but the
  * session they already have. Read-only, so it takes the same 'view' level as
  * a lookup. */
+/* ================= DIMENSIONS & STORAGE (console) =================
+ * Re-measure a unit, or move it to a different storage location, and let the
+ * shared engine re-price it. Nothing moves until staff confirm a before/after
+ * diff -- these are dollars on a real customer's quote.
+ *
+ * The new values go into manual.measured, NOT into d.state. d.state is what
+ * the customer selected; manual.measured is what Quest measured or assigned
+ * afterwards. Writing into d.state would work until the customer's next save,
+ * which posts the state still sitting in their browser and would silently undo
+ * the re-measure -- the same trap the manual journal exists to avoid
+ * (CLAUDE.md section 4). Keeping them apart also preserves what the customer
+ * originally told us, which is worth having when a measurement is disputed.
+ *
+ * Beam is FLAGGED, never auto-relocated. A boat outgrowing its storage class
+ * is a conversation with the customer, not a side effect of a save.
+ */
+function storageLabel_(v) {
+  return v === 'outside' ? 'Outside storage'
+    : v === 'inside' ? 'Inside storage'
+    : v === 'insidePrem' ? 'Premium inside storage'
+    : v === 'none' ? 'No storage with Quest'
+    : String(v || '');
+}
+
+const MEASURABLE_NUM_ = ['loa', 'beam', 'lwt', 'skiLen', 'skiWid'];
+const STORAGE_VALUES_ = ['none', 'outside', 'inside', 'insidePrem'];
+
+/* Which storage locations a unit type can actually occupy.
+   Jet skis are inside-or-nothing on the quote page, and outside storage prices
+   per foot of LOA -- a figure a jet ski quote does not carry. Allowing it here
+   would build a state the customer page cannot represent and the engine cannot
+   price. Golf carts and e-bikes have one tab each and no choice at all. */
+function allowedStorageFor_(unitKind) {
+  if (unitKind === 'jetski') return ['none', 'inside'];
+  if (unitKind === 'boat') return STORAGE_VALUES_.slice();
+  return [];
+}
+
+function sanitizeMeasured_(changes, unitKind) {
+  const out = {};
+  changes = changes || {};
+  MEASURABLE_NUM_.forEach(function (k) {
+    const raw = changes[k];
+    if (raw === undefined || raw === null || String(raw).trim() === '') return;
+    /* Strip only currency-ish noise, NOT the sign: removing "-" first would
+       turn -5 into a perfectly valid 5. */
+    const txt = String(raw).replace(/[,'"\s]|ft\.?$/gi, '').trim();
+    const v = Number(txt);
+    if (!isFinite(v) || v <= 0) throw new Error('Enter a positive number for every dimension you change.');
+    if (v > 200) throw new Error('That dimension looks wrong (' + v + " ft). Check it before saving.");
+    out[k] = v;
+  });
+  if (changes.hasTrailer !== undefined && String(changes.hasTrailer) !== '') {
+    out.hasTrailer = !!Number(changes.hasTrailer);
+  }
+  if (changes.storage !== undefined && String(changes.storage) !== '') {
+    const v = String(changes.storage);
+    if (STORAGE_VALUES_.indexOf(v) < 0) throw new Error('Unknown storage location.');
+    const allowed = allowedStorageFor_(unitKind);
+    if (!allowed.length) throw new Error('This unit type has only one storage location.');
+    if (allowed.indexOf(v) < 0) {
+      throw new Error('A ' + (unitKind === 'jetski' ? 'jet ski' : unitKind) +
+        ' can only be stored inside or not with us \u2014 ' + storageLabel_(v) + ' is not an option.');
+    }
+    out.storage = v;
+  }
+  return out;
+}
+
+/* Price a hypothetical change without touching the sheet. Returns the before
+ * and after pictures plus a line-by-line diff. */
+function dimsProposal_(d, changes) {
+  const clean = sanitizeMeasured_(changes, String((effectiveState_(d) || {}).unit || ''));
+  if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
+
+  const beforeLines = (d.lines || []).map(function (l) { return { label: l.label, amt: Number(l.amt || 0) }; });
+  const beforeTotal = Number(d.total || 0);
+  const beforeState = effectiveState_(d);
+  if (!beforeState) {
+    return { ok: 0, error: 'This quote has no stored selections, so it can\'t be re-priced automatically. Adjust the lines by hand instead.' };
+  }
+
+  const clone = JSON.parse(JSON.stringify(d));
+  const m = ensureManual_(clone);
+  m.measured = Object.assign({}, m.measured || {}, clean);
+  const cross = rebuildLinesFromState_(clone);
+  if (!cross.rebuilt) return { ok: 0, error: 'Could not re-price: ' + cross.reason };
+  applyManualOps_(clone);
+
+  const afterLines = (clone.lines || []).map(function (l) { return { label: l.label, amt: Number(l.amt || 0) }; });
+  const afterTotal = Number(clone.total || 0);
+  const paid = paymentsTotal_(d);
+
+  return {
+    ok: 1,
+    diff: lineDiff_(beforeLines, afterLines),
+    beforeTotal: usd_(beforeTotal), afterTotal: usd_(afterTotal),
+    delta: (afterTotal - beforeTotal >= 0 ? '+' : '\u2212') + usd_(Math.abs(afterTotal - beforeTotal)),
+    deltaNum: Math.round((afterTotal - beforeTotal) * 100) / 100,
+    beforeDims: dimsString(beforeState) || '\u2014',
+    afterDims: dimsString(cross.state || beforeState) || '\u2014',
+    beforeTab: storageTabFor(beforeState),
+    afterTab: clone.storageTab,
+    paid: usd_(paid),
+    newBalance: (function () {
+      const b = afterTotal - paid;
+      return b < -0.005 ? 'CREDIT ' + usd_(-b) : usd_(Math.max(0, b));
+    })(),
+    flags: (clone._flags || []).map(function (f) { return f.msg; })
+  };
+}
+
+/* Match lines by label. Labels are unique within a quote in practice; a repeat
+ * is treated as a second entry rather than silently collapsed. */
+function lineDiff_(before, after) {
+  const out = [];
+  const seen = {};
+  const idx = {};
+  before.forEach(function (l) { (idx[l.label] = idx[l.label] || []).push(l.amt); });
+  after.forEach(function (l) {
+    const bucket = idx[l.label];
+    seen[l.label] = true;
+    if (bucket && bucket.length) {
+      const wasAmt = bucket.shift();
+      if (Math.abs(wasAmt - l.amt) > 0.005) {
+        out.push({ kind: 'changed', label: l.label, was: usd_(wasAmt), now: usd_(l.amt) });
+      }
+    } else {
+      out.push({ kind: 'added', label: l.label, was: '', now: usd_(l.amt) });
+    }
+  });
+  Object.keys(idx).forEach(function (label) {
+    idx[label].forEach(function (amt) {
+      out.push({ kind: 'removed', label: label, was: usd_(amt), now: '' });
+    });
+  });
+  return out;
+}
+
+function adminDimsPreview(token, qn, changes) {
+  requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  try { return dimsProposal_(ctx.d, changes); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+}
+
+function adminDimsApply(token, qn, changes, note) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  let clean;
+  try { clean = sanitizeMeasured_(changes, String((effectiveState_(d) || {}).unit || '')); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+  if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
+
+  const fromTab = ctx.sh.getName();
+  const beforeTotal = Number(d.total || 0);
+  const beforeDims = dimsString(effectiveState_(d) || {});
+
+  const m = ensureManual_(d);
+  m.measured = Object.assign({}, m.measured || {}, clean);
+  if (note) m.measuredNote = String(note).slice(0, 400);
+
+  const cross = rebuildLinesFromState_(d);
+  if (!cross.rebuilt) {
+    return { ok: 0, error: 'Could not re-price: ' + cross.reason + '. Nothing was changed.' };
+  }
+  applyManualOps_(d);
+
+  const toTab = d.storageTab || fromTab;
+  let moved = '';
+  if (toTab !== fromTab && !isStartedTab_(fromTab)) {
+    moveQuoteRow_(ctx, toTab);
+    moved = ' Moved from ' + fromTab + ' to ' + toTab + '.';
+  }
+  saveQuoteRow_(ctx);
+
+  const afterTotal = Number(d.total || 0);
+  const delta = afterTotal - beforeTotal;
+  auditLog_(who.name, 'Dimensions/storage updated on ' + d.quoteNo + ': ' +
+    beforeDims + ' \u2192 ' + dimsString(cross.state || {}) +
+    ' · ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal) +
+    (moved ? ' ·' + moved : '') + (note ? ' · note: ' + note : ''));
+
+  const paid = paymentsTotal_(d);
+  const bal = afterTotal - paid;
+  return {
+    ok: 1,
+    msg: 'Re-priced: ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal) +
+      ' (' + (delta >= 0 ? '+' : '\u2212') + usd_(Math.abs(delta)) + ').' + moved +
+      ' No email sent yet.',
+    total: usd_(afterTotal),
+    balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)),
+    movedTo: moved ? toTab : '',
+    flags: (d._flags || []).map(function (f) { return f.msg; })
+  };
+}
+
+/* Physically relocate a quote's row to another storage tab, carrying every
+ * column with it (reminder marker, photos link, PDF link, payments) so nothing
+ * is lost in the move. */
+function moveQuoteRow_(ctx, newTab) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let dest = ss.getSheetByName(newTab);
+  if (!dest) {
+    dest = ss.insertSheet(newTab);
+    dest.appendRow(HEADERS);
+    dest.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+    dest.setFrozenRows(1);
+  }
+  const vals = ctx.sh.getRange(ctx.rowNum, 1, 1, HEADERS.length).getValues()[0];
+  const destRow = dest.getLastRow() + 1;
+  dest.getRange(destRow, 1, 1, HEADERS.length).setValues([vals]);
+  dest.getRange(destRow, COL.TOTAL, 1, 2).setNumberFormat('$#,##0.00');
+  dest.getRange(destRow, COL.ITEMS).setWrap(true);
+  ctx.sh.deleteRow(ctx.rowNum);
+  ctx.sh = dest;
+  ctx.rowNum = destRow;
+  return dest;
+}
+
 function adminQuoteHtml(token, qn) {
   requireAuth_(token, 'view');
   const ctx = findQuoteCtx_(qn);
@@ -1365,6 +1680,35 @@ function adminLookup(token, qn) {
       at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
     },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
+    /* Everything the dimension editor needs to render itself pre-filled. The
+       field list comes from the engine (DIM_FIELDS), so a newly priced
+       dimension appears on the console without touching the console. */
+    dims: (function () {
+      const st = effectiveState_(d);
+      if (!st) return { editable: false, why: 'This quote was saved before selections were stored, so it can\'t be re-priced automatically.' };
+      const kind = String(st.unit || '');
+      const fields = (DIM_FIELDS[kind] || []).map(function (f) {
+        return { key: f[0], label: f[1], value: (st[f[0]] === undefined || st[f[0]] === null) ? '' : st[f[0]] };
+      });
+      return {
+        editable: true, unitKind: kind, fields: fields,
+        hasTrailer: !!st.hasTrailer,
+        storage: String(st.storage || ''),
+        /* Golf carts and e-bikes have exactly one tab each — there is nowhere
+           to move them, so the console hides the control rather than offering
+           a choice that does nothing. */
+        canMoveStorage: allowedStorageFor_(kind).length > 1,
+        /* The console renders exactly these, so the choices staff see can
+           never include one the server would reject. */
+        storageOptions: allowedStorageFor_(kind).map(function (v) {
+          return { value: v, label: storageLabel_(v) };
+        }),
+        text: dimsString(st) || '',
+        customerText: dimsString(d.state || {}) || '',
+        measured: (d.manual && d.manual.measured) || null,
+        measuredNote: (d.manual && d.manual.measuredNote) || ''
+      };
+    })(),
     lines: (d.lines || []).map(function (l, i) { return (i + 1) + '. ' + l.label + ' — ' + (l.amt ? usd_(l.amt) : 'incl.'); }),
     linesRaw: (d.lines || []).map(function (l, i) { return { i: i, label: l.label, amt: Number(l.amt || 0), sec: l.sec }; }),
     emailLog: (d.emailLog || []).slice().reverse() };
@@ -1440,6 +1784,12 @@ function adminSendEmail(token, qn, kind, extra) {
     const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
     const logo = getLogoBlob_();
     if (logo) opts.inlineImages = { questlogo: logo };
+    /* Some notices carry the rebuilt quote/invoice — a re-measure is not much
+       use to the customer without the paperwork that matches it. */
+    if (built.attachPdf) {
+      const pdf = getPdfBlob_(d.quoteNo);
+      if (pdf) opts.attachments = [pdf];
+    }
     if (FROM_ALIAS) opts.from = FROM_ALIAS;
     GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
     ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
@@ -1802,6 +2152,76 @@ function buildEmailFor_(d, kind, extra, photos) {
       'if the button doesn\'t work for you.</div>';
     return { subject: 'Your winter quote is saved — finish it any time · ' + (d.quoteNo || ''),
       html: noticeHtml_(d, intro, btn, false), status: 'Lead follow-up sent' };
+  }
+  /* Sent after staff re-measure a unit or move it between storage locations.
+     Leads with what changed and what it costs, because that is the only thing
+     the customer actually needs from this email. Attaches the rebuilt
+     quote/invoice via attachPdf below. */
+  if (kind === 'dims') {
+    const cur = effectiveState_(d) || {};
+    const orig = d.state || {};
+    const term = docTerm_(d).toLowerCase();
+    const paid = paymentsTotal_(d);
+    const bal = Number(d.total || 0) - paid;
+    const wasDims = dimsString(orig), nowDims = dimsString(cur);
+    const meas = (d.manual && d.manual.measured) || {};
+    const movedTo = meas.storage ? storageLabel_(meas.storage) : '';
+
+    /* Say what actually happened. Telling someone we measured their boat when
+       all we did was move it between buildings is the kind of small wrongness
+       that costs you the customer's trust in the rest of the email. */
+    const measuredDims = ['loa', 'beam', 'lwt', 'skiLen', 'skiWid', 'hasTrailer']
+      .some(function (k) { return meas[k] !== undefined; });
+    const unitTxt = esc_(d.unit || 'unit');
+    let intro;
+    if (measuredDims && movedTo) {
+      intro = 'We measured your ' + unitTxt + ' here at the shop and moved it to <b>' + esc_(movedTo) +
+        '</b>, and updated your ' + term + ' to match. Winter pricing depends on both size and where ' +
+        'a unit is stored, so the figures below reflect those changes.';
+    } else if (measuredDims) {
+      intro = 'We measured your ' + unitTxt + ' here at the shop and updated your ' + term +
+        ' to match. Winter pricing is based on size, so the figures below reflect the measurements we took.';
+    } else if (movedTo) {
+      intro = 'We\'ve moved your ' + unitTxt + ' to <b>' + esc_(movedTo) + '</b> and updated your ' +
+        term + ' to match. Winter pricing depends on where a unit is stored, so the figures below ' +
+        'reflect the change.';
+    } else {
+      intro = 'We\'ve updated your ' + term + '. The figures below are current.';
+    }
+    if (d.manual && d.manual.measuredNote) {
+      intro += '<br><br><b>' + esc_(d.manual.measuredNote) + '</b>';
+    }
+    intro += '<br><br>If anything here looks off to you, call us at (815) 433-2200 — we\'d rather ' +
+      (measuredDims ? 're-check a measurement' : 'sort it out now') +
+      ' than have you wondering about it.';
+
+    const row = function (k, v) {
+      return '<tr><td style="padding:3px 12px 3px 0;font-size:14px;color:#5C7185">' + k +
+        '</td><td style="padding:3px 0;font-size:14px;color:#1D2B38"><b>' + v + '</b></td></tr>';
+    };
+    const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:4px 0 10px">' +
+      '<table cellpadding="0" cellspacing="0">' +
+      (measuredDims && wasDims && nowDims && wasDims !== nowDims
+        ? row('Previously', esc_(wasDims)) + row('Now measured', esc_(nowDims))
+        : (nowDims ? row('Measurements', esc_(nowDims)) : '')) +
+      (movedTo ? row('Storage', esc_(movedTo)) : '') +
+      row('Updated ' + term + ' total', usd_(d.total)) +
+      (paid > 0 ? row('Payments received', '\u2212' + usd_(paid)) : '') +
+      (paid > 0
+        ? (bal < -0.005
+            ? row('Credit due to you', usd_(-bal))
+            : row('Balance due', usd_(Math.max(0, bal))))
+        : '') +
+      '</table></div>';
+
+    return {
+      subject: 'We\'ve updated your winter ' + term +
+        (measuredDims ? ' after measuring' : movedTo ? ' — storage change' : '') +
+        ' \u00b7 ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, box, true),
+      status: 'Dimensions updated — customer notified',
+      attachPdf: true
+    };
   }
   if (kind === 'stored') {
     const land = isLandUnit_(d);

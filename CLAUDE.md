@@ -456,15 +456,44 @@ Sequenced plan (each step its own commit + verify):
    `check-embedded-engine.js` executes the block as bare top-level code (the
    scope Apps Script gives it) and prices every fixture — because identical
    text is not the same as working code.
-4. Dimension editor on the console: edit LOA/beam/len/width → server re-runs
-   engine → **before/after line diff** → Chris confirms → dollars move. Plus:
-   - **beam-oversize flag** (edited beam > storage limit → warn, do NOT auto-move)
-   - **move storage location** (dropdown reassigns tab; row physically moves)
-   - **"Your dimensions have been adjusted" email** (premade, previewable,
-     attaches updated quote/invoice — add it to `buildEmailFor_`)
+4. ~~Dimension editor + storage move on the console.~~ **DONE** — see below.
 
 Chris explicitly does NOT want auto-relocation of storage on a beam change —
 that's a customer conversation. Flag it and let him move it manually.
+
+### Re-measuring and relocating (console)
+
+`Dimensions & storage` card, gated on the `adjust` permission. Edit LOA / beam /
+LWT (or stored L×W for a jet ski), toggle the trailer, and/or pick a new storage
+location → **Preview the change** → server re-prices with the shared engine and
+returns a before/after line diff → **Apply**. Nothing is written until Apply.
+
+- **The new values are journalled, never written into `d.state`.**
+  `d.manual.measured` holds what *Quest* measured; `d.state` stays what the
+  *customer* selected. `effectiveState_()` overlays one on the other and is what
+  everything prices from. Writing into `d.state` would work right up until the
+  customer's next save, which posts the state still sitting in their browser and
+  would silently undo the re-measure. `verify.sh` fails if `adminDimsApply` ever
+  assigns into `d.state`.
+- **Beam over the limit is flagged, never acted on** (Chris's rule above). The
+  flag comes from `computeFlags_`, which must stay advisory — `verify.sh` fails
+  if it mutates the state it was handed.
+- **Storage choices are per unit type.** `allowedStorageFor_()`: a jet ski is
+  inside-or-nothing (outside storage prices per foot of LOA, which a jet ski
+  quote doesn't carry); golf carts and e-bikes have one tab each and no choice.
+  The console renders exactly what the server allows.
+- **Moving storage physically moves the row** (`moveQuoteRow_`), carrying every
+  column with it. Because a relocation changes the destination tab *after* the
+  browser posted one, `doPost` now **reads** all copies of a quote first and
+  **deletes** stale ones only once the final tab is known (`pruneQuoteCopies_`).
+  Deleting against the posted tab and writing to the rebuilt one would leave the
+  quote on two tabs at once.
+- **`dims` email kind** in `buildEmailFor_` — previewable like every other, and
+  the first notice kind to set `attachPdf`, so the customer gets the rebuilt
+  quote/invoice with it. Its wording follows what actually changed: a
+  storage-only move must not claim we measured anything.
+- `storageTabFor()` and `dimsString()` moved into the shared engine, because
+  both sides now decide them — the page on save, the console on a move.
 
 ---
 

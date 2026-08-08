@@ -845,20 +845,15 @@ function totals(){
    which appends/updates a row on the tab matching the storage location and
    emails service@questwatersports.com. Fire-and-forget; never blocks the UI.
 ========================================================================== */
-function storageTabName(){
-  if(S.unit==='golf') return 'Golf Cart';
-  if(S.unit==='ebike') return 'E-Bike';
-  if(S.storage==='outside') return 'Outside';
-  if(S.storage==='inside') return 'Inside';
-  if(S.storage==='insidePrem') return 'Premium Inside';
-  return 'No Storage';
-}
+/* Tab name and dimension string both come from the shared engine now: the
+   console can move a quote between tabs and change dimensions, so the two
+   sides must agree on both or a quote lands on one tab and is looked for on
+   another. */
+function storageTabName(){ return QuestPricing.storageTabFor(S); }
 function logQuote(status, extra){
   const {L,rq}=computeLines(); const t=totals();
   const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
-  const dims=S.unit==='boat' ? [S.loa?`LOA ${S.loa}'`:'',S.beam?`B ${S.beam}'`:'',(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:'',S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ')
-           : S.unit==='jetski' ? [S.skiLen?`stored L ${S.skiLen}'`:'',S.skiWid?`stored W ${S.skiWid}'`:''].filter(Boolean).join(' · ')
-           : S.unit==='golf' ? (S.hhoAddr?`HHO: ${S.hhoAddr}`:'') : '';
+  const dims=QuestPricing.dimsString(S);
   const payload={
     status, quoteNo:ensureQuoteNo(), ts:new Date().toISOString(),
     unit:unitName, storageTab:storageTabName(),

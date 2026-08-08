@@ -33,7 +33,9 @@ if [ -f quote-logger-apps-script.gs ]; then
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
-    "balanceReportCheck" "adminLateFee"
+    "balanceReportCheck" "adminLateFee" \
+    "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
+    "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -62,7 +64,8 @@ if [ -f admin/index.html ]; then
   sweep admin/index.html "console" \
     "API_URL" "previewSend" "renderLines" "editLine" "qHist" "uploadContract" \
     "storageView" "printStorage" "toggleNav" "cameraInput" "qclose" \
-    "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn"
+    "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
+    "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard"
   # no raw prompt() in the console — all inputs are inline UI
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
@@ -136,6 +139,37 @@ if [ -f pricing-engine.js ]; then
   fi
 else
   echo "  (pricing-engine.js not present yet — see docs/TASK-pricing-engine.md)"
+fi
+
+echo "== Dimensions, storage & re-pricing =="
+if [ -f quote-logger-apps-script.gs ]; then
+  # A staff re-measure must live in the journal, not in d.state. Writing it into
+  # d.state works until the customer's next save, which posts the state still
+  # sitting in their browser and would silently undo the measurement.
+  if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -qE '\bd\.state\.[A-Za-z]+ *='; then
+    echo "  FAIL trap: adminDimsApply writes into d.state — a customer re-save will erase the re-measure"; FAIL=1
+  else echo "  OK   trap: re-measure is journalled (manual.measured), not written into d.state"; fi
+  # Chris's rule: a beam over the limit is flagged for a conversation, never
+  # acted on. The console must not relocate storage off the back of a flag.
+  if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
+    echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
+  else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # Preview must be a dry run. If it ever calls a writer, staff lose the
+  # confirm step that stands between a mistyped beam and a customer's invoice.
+  if awk '/^function adminDimsPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'saveQuoteRow_|moveQuoteRow_|setValue'; then
+    echo "  FAIL trap: adminDimsPreview writes to the sheet — it must be a dry run"; FAIL=1
+  else echo "  OK   trap: dimension preview writes nothing"; fi
+fi
+if [ -f pricing-engine.js ]; then
+  # computeFlags_ advises; it must never mutate the state it was handed.
+  if awk '/^function computeFlags_/,/^}/' pricing-engine.js | grep -qE '\bs\.[A-Za-z]+ *=[^=]'; then
+    echo "  FAIL trap: computeFlags_ mutates state — flags must be advisory only"; FAIL=1
+  else echo "  OK   trap: computeFlags_ is advisory (no state mutation)"; fi
+fi
+if [ -f admin/index.html ]; then
+  # Customer-entered text reaches innerHTML in the console; it must be escaped.
+  if grep -q "^function esc(" "$TMP/admin.js"; then echo "  OK   console has an HTML escaper"
+  else echo "  FAIL console has no esc() helper — customer text reaches innerHTML raw"; FAIL=1; fi
 fi
 
 echo "== Terms, privacy & lead capture =="

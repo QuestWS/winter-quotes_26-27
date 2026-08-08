@@ -249,8 +249,13 @@ posting a `Quote started` status over a real (possibly paid) quote would
 overwrite it. `QUOTE_LOADED` guards both paths.
 
 ### Season-done survey
-The quote email carries a 3-option survey (done now / done on a date / will
-call). Answers post back via `?action=seasondone`. A stated date after Nov 15
+A 3-option survey (done now / done on a date / will call) rides on customer
+emails — but **only once a deposit or payment exists** (`o.paid > 0`, checked in
+`customerEmailHtml_`). Asking someone to book a haul-out before they've put
+money down is asking them to schedule work they haven't agreed to buy, and it
+puts a date in the yard plan that nothing backs up. A refund back to zero drops
+the question again; receipts never carry it. The console's Season timing block
+is staff-facing and stays available regardless, for phone calls. Answers post back via `?action=seasondone`. A stated date after Nov 15
 auto-applies the **late retrieval surcharge**, priced from the quote's own
 stored `d.season.lateRetrievalFee` (NOT a hardcoded number — the page writes
 the live price into the payload's season object so it stays correct

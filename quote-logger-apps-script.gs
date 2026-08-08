@@ -2977,9 +2977,14 @@ function customerEmailHtml_(o) {
   let buttons = '';
   if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E');
   if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
-  // season-done survey (not on receipts / paid-in-full)
+  /* Season-done survey. Only for customers who have actually committed --
+     a deposit or payment in full. Asking someone to book their haul-out
+     before they have put money down is asking them to schedule work they
+     have not agreed to buy, and it puts a date in our yard plan that nothing
+     backs up. A refund that takes them back to zero drops the question again.
+     Never on a receipt. */
   let survey = '';
-  if (!o.receipt && o.quoteNo && o.surveyBase) {
+  if (!o.receipt && o.quoteNo && o.surveyBase && Number(o.paid || 0) > 0) {
     const su = function (choice) { return o.surveyBase + '&done=' + choice; };
     survey =
       '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:16px 18px;margin:4px 0 8px">' +
@@ -3301,13 +3306,12 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
    season instead of being frozen in a string. */
 function surveyBlurb_(o) {
   const land = isLandUnit_(o);
-  const unit = String(o.unit || '').toLowerCase() || 'unit';
   const sched = land ? 'schedule your pickup' : 'schedule your haul-out';
   const by = String(o.payBy || '').trim();
   const when = by ? 'after ' + esc_(by) : 'after the cutoff date';
-  return 'This helps us ' + sched + '. The late retrieval surcharge applies only if you ask us to ' +
-    'retrieve your ' + esc_(unit) + ' ' + when + ', or wait until after that date to set up ' +
-    'winter services.';
+  const noun = land ? 'Pickups' : 'Haul-outs';
+  return 'This helps us ' + sched + '. ' + noun + ' scheduled ' + when +
+    ' are subject to a late retrieval surcharge.';
 }
 
 function quoteHtml_(d) {

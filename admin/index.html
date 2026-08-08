@@ -135,6 +135,25 @@ cursor:pointer;transition:background .15s}
 .stafftbl .prm button{border-radius:999px;padding:5px 13px;font-size:12px;font-weight:700;border:1.5px solid var(--line);
 background:#fff;color:var(--muted);cursor:pointer}
 .stafftbl .prm button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+/* Adding a person and restoring a backup are both consequential and both
+   admin-only, so they get their own framed block rather than sitting flush
+   with the list above them. */
+.addbox{margin-top:14px;padding:14px;border:1.5px solid var(--frost);border-radius:10px;background:#F4F9FC}
+.permpick{display:flex;flex-wrap:wrap;gap:2px 14px}
+.permpick .chk{margin:0}
+/* A PIN is shown exactly once. It has to be impossible to miss and easy to
+   read off a screen while writing it down. */
+.pinbox{margin-top:10px;padding:12px 14px;border:2px solid var(--gold);border-radius:10px;
+  background:#FDF3E0;color:#6B5A2A;font-size:14px;line-height:1.5}
+.pinbox .pin{display:block;font-family:"IBM Plex Mono","Courier New",monospace;
+  font-size:30px;font-weight:700;letter-spacing:.16em;color:var(--navy);margin:4px 0 2px}
+.staffrow .rm{float:right}
+.staffrow .rm button{border-color:#C0563F;color:#C0563F}
+.bkrow{display:flex;justify-content:space-between;gap:10px;padding:5px 4px;
+  border-bottom:1px dashed var(--ice);font-size:12.5px}
+.bkrow .q{font-family:"IBM Plex Mono","Courier New",monospace}
+.bkwarn{background:#FDF3E0;border:1.5px solid var(--gold);border-radius:9px;padding:10px 12px;
+  margin-top:9px;font-size:13px;color:#6B5A2A;line-height:1.45}
 .staffrow{padding:12px 0;border-bottom:1px solid var(--ice)}
 .staffrow .nm{font-weight:800;color:var(--navy);font-size:15px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;
@@ -211,13 +230,14 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div class="userchip">Signed in as <b id="userName"></b></div>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
+      <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn" onclick="navGo(logout)">Log out</button>
     </nav>
   </div>
 
   <div class="wrap">
     <div class="hero">
-      <input id="qn" placeholder="Quote # (QW-26-3477) or last name — partial OK, e.g. Kuj" autocapitalize="characters" autocomplete="off">
+      <input id="qn" placeholder="Quote # (QW-26-####) or last name — partial OK, e.g. Kuj" autocapitalize="characters" autocomplete="off">
       <button class="btn navy" onclick="doSearch()">Look up</button>
     </div>
     <div class="msg" id="lookupMsg"></div>
@@ -367,6 +387,40 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <button class="btn ghost sm" onclick="$('adminCard').classList.add('hide')">✕ Close</button>
       </div>
       <div class="stafftbl" id="staffList" style="margin-top:10px"></div>
+      <div class="addbox">
+        <div class="fld" style="margin-bottom:6px">Add someone</div>
+        <div class="row2">
+          <div><label class="fld">Name</label><input class="txt" id="newStaffName" placeholder="First name as they'll be known" autocomplete="off"></div>
+          <div><label class="fld">Permissions</label>
+            <div class="permpick">
+              <label class="chk"><input type="checkbox" id="np_pay"> Payments</label>
+              <label class="chk"><input type="checkbox" id="np_adjust"> Adjustments</label>
+              <label class="chk"><input type="checkbox" id="np_email"> Emails</label>
+              <label class="chk"><input type="checkbox" id="np_photos" checked> Photos</label>
+              <label class="chk"><input type="checkbox" id="np_admin"> Admin (full access)</label>
+            </div>
+          </div>
+        </div>
+        <button class="btn navy" id="addStaffBtn" onclick="addStaff()">Create account</button>
+        <div class="msg" id="staffMsg"></div>
+        <div id="newPinBox" class="pinbox hide"></div>
+      </div>
+    </div>
+
+    <div class="card hide" id="backupCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Restore from a backup</h2>
+        <button class="btn ghost sm" onclick="$('backupCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Upload one of the nightly backup attachments (the <b>.xlsx</b> file emailed each evening).
+        Nothing changes until you choose what to restore, and a snapshot of the sheet as it is now
+        is saved to Drive first.
+      </div>
+      <input type="file" id="backupFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hide">
+      <button class="btn navy" id="backupPickBtn" onclick="$('backupFile').click()">Choose a backup file</button>
+      <div class="msg" id="backupMsg"></div>
+      <div id="backupReport" class="hide" style="margin-top:10px"></div>
     </div>
 
     <div class="card hide" id="storageCard">
@@ -424,7 +478,7 @@ function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===
 function boot(){
   if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
     $('userName').textContent=ME.name;
-    if(ME.admin)$('adminOpen').classList.remove('hide');
+    if(ME.admin){$('adminOpen').classList.remove('hide');$('backupOpen').classList.remove('hide');}
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
 async function doLogin(){
@@ -957,25 +1011,155 @@ async function printStorage(){
     </div>`).join('');
   window.print();
 }
+/* Names are typed by admins now, so they can contain quotes and angle
+   brackets. Rows are addressed by INDEX into STAFF rather than by pasting the
+   name into an onclick — an apostrophe in a name would otherwise break the
+   handler, and worse. */
+let STAFF=[];
 async function loadStaff(){
   $('adminCard').classList.remove('hide');
   const r=await api('listStaff',[]);
   if(!r.ok){toast(r.error);return;}
+  STAFF=r.staff||[];
   const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',admin:'Admin'};
-  $('staffList').innerHTML=r.staff.map(st=>{
-    const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm('${st.name}','${p}',${on?0:1})">${names[p]}</button></span>`;
-    return `<div class="staffrow"><div class="nm">${st.name}${st.admin?' · admin':''}</div>
+  $('staffList').innerHTML=STAFF.map((st,i)=>{
+    const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm(${i},'${p}',${on?0:1})">${names[p]}</button></span>`;
+    const isMe=ME&&ME.name===st.name;
+    return `<div class="staffrow"><div class="nm">${esc(st.name)}${st.admin?' · admin':''}${isMe?' <span style="font-weight:400;color:var(--muted)">(you)</span>':''}
+      <span class="prm rm">${isMe?'':`<button onclick="removeStaff(${i})">Remove</button>`}</span></div>
       ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('admin',st.admin)}
-      <span class="prm"><button onclick="resetPin('${st.name}')">Reset PIN</button></span></div>`;
+      <span class="prm"><button onclick="resetPin(${i})">Reset PIN</button></span></div>`;
   }).join('');
 }
-async function togglePerm(n,p,v){const r=await api('setPerm',[n,p,v]);if(!r.ok){toast(r.error);return;}loadStaff();}
-async function resetPin(n){if(!confirm('Reset '+n+"'s PIN?"))return;
-  const r=await api('resetPin',[n]);if(!r.ok){toast(r.error);return;}
-  alert(n+"'s new PIN: "+r.pin+"\nWrite it down now — it will not be shown again.");}
+async function togglePerm(i,p,v){
+  const st=STAFF[i]; if(!st) return;
+  const r=await api('setPerm',[st.name,p,v]);
+  if(!r.ok){toast(r.error);return;}
+  loadStaff();
+}
+function showPin_(who,pin){
+  const b=$('newPinBox');
+  b.innerHTML='<b>'+esc(who)+"'s PIN</b><span class=\"pin\">"+esc(pin)+'</span>'+
+    'Write this down now — it is not shown again. If it is lost, use Reset PIN.';
+  b.classList.remove('hide');
+}
+async function resetPin(i){
+  const st=STAFF[i]; if(!st) return;
+  if(!confirm('Reset '+st.name+"'s PIN? Their current PIN stops working straight away."))return;
+  const r=await api('resetPin',[st.name]);
+  if(!r.ok){toast(r.error);return;}
+  $('adminCard').classList.remove('hide');
+  showPin_(st.name,r.pin);
+  setMsg('staffMsg','',null);
+}
+async function addStaff(){
+  const name=$('newStaffName').value.trim();
+  if(!name){setMsg('staffMsg','Enter a name first.',false);return;}
+  const perms={pay:$('np_pay').checked?1:0,adjust:$('np_adjust').checked?1:0,
+               email:$('np_email').checked?1:0,photos:$('np_photos').checked?1:0};
+  const isAdmin=$('np_admin').checked?1:0;
+  const b=$('addStaffBtn'); b.disabled=true; b.textContent='Creating…';
+  try{
+    const r=await api('addStaff',[name,perms,isAdmin]);
+    if(!r.ok){setMsg('staffMsg',r.error,false);return;}
+    setMsg('staffMsg','','');
+    showPin_(r.name,r.pin);
+    $('newStaffName').value='';
+    ['np_pay','np_adjust','np_email','np_admin'].forEach(id=>{$(id).checked=false;});
+    $('np_photos').checked=true;
+    toast(r.name+' added');
+    loadStaff();
+  }catch(e){ setMsg('staffMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Create account'; }
+}
+async function removeStaff(i){
+  const st=STAFF[i]; if(!st) return;
+  if(!confirm('Remove '+st.name+"'s account?\n\nTheir PIN stops working immediately and they are signed out everywhere. This cannot be undone from here."))return;
+  const r=await api('removeStaff',[st.name]);
+  if(!r.ok){setMsg('staffMsg',r.error,false);toast(r.error);return;}
+  setMsg('staffMsg',r.msg,true);
+  $('newPinBox').classList.add('hide');
+  loadStaff();
+}
+
+/* ---------- Restore from a nightly backup (admin only) ----------
+   Two steps on purpose. The upload only reads the file and reports what it
+   would change; the restore is a separate, explicit click. */
+let BACKUP=null;
+function toggleBackup(){
+  const c=$('backupCard');
+  c.classList.toggle('hide');
+  if(!c.classList.contains('hide')){
+    BACKUP=null; $('backupReport').classList.add('hide'); setMsg('backupMsg','');
+  }
+}
+async function readBackupFile(f){
+  if(!f) return;
+  setMsg('backupMsg','Reading '+f.name+'… this can take a moment for a full season.',null);
+  $('backupReport').classList.add('hide');
+  const b=$('backupPickBtn'); b.disabled=true;
+  try{
+    const b64=await fileToB64(f);
+    const r=await api('backupPreview',[f.name,b64]);
+    if(!r.ok){setMsg('backupMsg',r.error,false);return;}
+    BACKUP=r;
+    setMsg('backupMsg','',null);
+    renderBackupReport(r);
+  }catch(e){ setMsg('backupMsg',e.message,false); }
+  finally{ b.disabled=false; $('backupFile').value=''; }
+}
+function renderBackupReport(r){
+  const list=(title,arr,extra)=>arr.length
+    ? '<div style="font-size:13px;color:var(--muted);margin:8px 0 2px">'+title+'</div>'+
+      arr.slice(0,40).map(x=>'<div class="bkrow"><span class="q">'+esc(x.quoteNo)+'</span><span>'+extra(x)+'</span></div>').join('')+
+      (arr.length>40?'<div class="bkrow"><span>…and '+(arr.length-40)+' more</span><span></span></div>':'')
+    : '';
+  const missing=list('In the backup but MISSING from the sheet — these are what a restore puts back',
+    r.missing, x=>esc(x.tab)+' · '+fmt$(x.total));
+  const differ=list('In both, but different now',
+    r.differ, x=>'live '+fmt$(x.liveTotal)+(x.liveTab!==x.tab?' ('+esc(x.liveTab)+')':'')+' · backup '+fmt$(x.backupTotal)+(x.liveTab!==x.tab?' ('+esc(x.tab)+')':''));
+  const newer=list('On the sheet but not in this backup — never touched by a restore',
+    r.newer, x=>esc(x.tab)+' · '+fmt$(x.total));
+  $('backupReport').innerHTML=
+    '<div style="font-size:13.5px;color:var(--navy);font-weight:700">'+esc(r.fileName)+'</div>'+
+    '<div class="msg" style="margin:2px 0 6px">Backup holds '+r.backupCount+' quote(s); the sheet currently holds '+
+      r.liveCount+'. '+r.sameCount+' identical.</div>'+
+    missing+differ+newer+
+    '<div class="bkwarn"><b>Whatever you choose, nothing on the sheet is deleted.</b> Quotes taken since this '+
+      'backup stay exactly as they are, and a snapshot of the sheet as it is right now is saved to Drive before '+
+      'anything is written.</div>'+
+    '<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">'+
+      (r.missing.length
+        ? '<button class="btn navy" onclick="doRestore(\'missing\')">Put back the '+r.missing.length+' missing quote(s)</button>'
+        : '<div class="msg">Nothing is missing from the sheet.</div>')+
+      (r.differ.length
+        ? '<button class="btn gold" onclick="doRestore(\'all\')">Also overwrite the '+r.differ.length+' that differ — use the backup\'s version</button>'
+        : '')+
+    '</div>';
+  $('backupReport').classList.remove('hide');
+}
+async function doRestore(mode){
+  if(!BACKUP||!BACKUP.fileId){setMsg('backupMsg','Upload the backup again.',false);return;}
+  const n=mode==='all'?(BACKUP.missing.length+BACKUP.differ.length):BACKUP.missing.length;
+  if(!confirm('Restore '+n+' quote(s) from '+BACKUP.fileName+'?\n\n'+
+    (mode==='all'?'Quotes that differ will be replaced by the backup\'s version.\n\n':'')+
+    'A snapshot of the sheet as it is now will be saved to Drive first.'))return;
+  setMsg('backupMsg','Restoring…',null);
+  try{
+    const r=await api('backupRestore',[BACKUP.fileId,mode,[]]);
+    if(!r.ok){setMsg('backupMsg',r.error,false);return;}
+    setMsg('backupMsg',r.msg,true);
+    $('backupReport').innerHTML='<div class="bkwarn"><b>Restored '+r.restored+' quote(s).</b><br>'+
+      'The sheet as it was a moment ago is saved here: <a href="'+esc(r.snapshotUrl)+'" target="_blank" rel="noopener">pre-restore snapshot</a>.</div>';
+    BACKUP=null;
+    toast('Restored '+r.restored+' quote(s)');
+  }catch(e){ setMsg('backupMsg',e.message,false); }
+}
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
   $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  $('newStaffName').addEventListener('keydown',e=>{if(e.key==='Enter')addStaff();});
+  $('backupFile').addEventListener('change',e=>{readBackupFile(e.target.files[0]);});
 });
 </script>
 </body>

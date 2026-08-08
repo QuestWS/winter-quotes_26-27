@@ -291,6 +291,39 @@ Roster in Script Properties `STAFF`. Perms: `pay`, `adjust`, `email`,
 endpoint; sessions are 12h tokens; 10 failed PINs → 15-minute lockout + alert
 email. Every console action writes to the **Activity Log** sheet tab.
 
+Admins can **create and remove accounts** from the console (`adminAddStaff` /
+`adminRemoveStaff`). Three rules the console enforces because none of them can
+be undone from inside it:
+- **PINs are minted by `freshPin_()`, never `Math.random()` alone.** `adminAuth`
+  looks a person up *by* their PIN, so a duplicate would silently sign the
+  second person in as the first. `verify.sh` fails if any path mints one
+  without the collision check.
+- **The last admin can't be removed or demoted**, and nobody can remove their
+  own account. `adminCount_()` guards both; `verify.sh` asserts it.
+- **Removal revokes sessions** (`revokeSessions_`). `requireAuth_` already
+  rejects a session whose roster entry is gone, so this is belt-and-braces plus
+  property hygiene.
+
+Names are typed by admins now, so the console addresses staff rows **by index,
+not by pasting the name into an `onclick`** — an apostrophe in a name would
+otherwise break the handler.
+
+### Restoring from a backup
+Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
+a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
+- **A restore never deletes a live quote.** It only writes rows the backup
+  knows about, so work taken since the backup survives either mode.
+- **`snapshotBeforeRestore_()` runs first, every time** — the restore is itself
+  undoable, and `verify.sh` fails if that call is removed.
+- **Preview writes nothing.** Upload reads and reports; writing needs a second,
+  explicit click.
+- Reading an `.xlsx` needs Drive to convert it, so this is the one feature that
+  uses **new OAuth scopes** (`SpreadsheetApp.openById` + the Drive upload API).
+  `checkRestoreAccess()` exists to trigger that approval from the editor
+  *before* deploying — this web app is `ANYONE_ANONYMOUS` / `USER_DEPLOYING`,
+  so a scope waiting on approval can take the **customer page** down, not just
+  the console. Push-only first, run it, then deploy (§2.3).
+
 Current roster intent: Chris & Jeff admin (full); John, Rex, Jess →
 pay+email+photos; Marina → photos only.
 

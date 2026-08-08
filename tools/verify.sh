@@ -35,7 +35,9 @@ if [ -f quote-logger-apps-script.gs ]; then
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
-    "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml"
+    "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml" \
+    "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
+    "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -65,7 +67,8 @@ if [ -f admin/index.html ]; then
     "API_URL" "previewSend" "renderLines" "editLine" "qHist" "uploadContract" \
     "storageView" "printStorage" "toggleNav" "cameraInput" "qclose" \
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
-    "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard"
+    "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
+    "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard"
   # no raw prompt() in the console — all inputs are inline UI
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
@@ -170,6 +173,39 @@ if [ -f admin/index.html ]; then
   # Customer-entered text reaches innerHTML in the console; it must be escaped.
   if grep -q "^function esc(" "$TMP/admin.js"; then echo "  OK   console has an HTML escaper"
   else echo "  FAIL console has no esc() helper — customer text reaches innerHTML raw"; FAIL=1; fi
+fi
+
+echo "== Staff accounts & backup restore =="
+if [ -f quote-logger-apps-script.gs ]; then
+  # A PIN is the only credential, and adminAuth looks people up BY pin — two
+  # matching PINs would sign the second person in as the first.
+  if awk '/^function adminAddStaff/,/^}/' quote-logger-apps-script.gs | grep -q 'freshPin_' \
+     && awk '/^function adminResetPin/,/^}/' quote-logger-apps-script.gs | grep -q 'freshPin_'; then
+    echo "  OK   trap: PINs are minted through freshPin_ (collision-checked)"
+  else
+    echo "  FAIL trap: a PIN is generated without checking it is unused"; FAIL=1
+  fi
+  # Locking every admin out cannot be undone from the console.
+  if awk '/^function adminRemoveStaff/,/^}/' quote-logger-apps-script.gs | grep -q 'adminCount_'; then
+    echo "  OK   trap: last admin cannot be removed"
+  else echo "  FAIL trap: adminRemoveStaff can strand the roster with no admin"; FAIL=1; fi
+  if awk '/^function adminSetPerm/,/^}/' quote-logger-apps-script.gs | grep -q 'adminCount_'; then
+    echo "  OK   trap: last admin cannot be demoted"
+  else echo "  FAIL trap: adminSetPerm can strand the roster with no admin"; FAIL=1; fi
+  # A restore must never delete live work, and must be undoable.
+  if awk '/^function adminBackupRestore/,/^}/' quote-logger-apps-script.gs | grep -q 'snapshotBeforeRestore_'; then
+    echo "  OK   trap: restore snapshots the sheet first"
+  else echo "  FAIL trap: restore runs without saving a snapshot — it would be irreversible"; FAIL=1; fi
+  # Preview reads and reports; it must not write to the live sheet.
+  if awk '/^function adminBackupPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'setValues|deleteRow|saveQuoteRow_'; then
+    echo "  FAIL trap: adminBackupPreview writes to the sheet — it must only report"; FAIL=1
+  else echo "  OK   trap: backup preview writes nothing"; fi
+  # Both admin-only endpoints must actually check for admin.
+  for f in adminAddStaff adminRemoveStaff adminBackupPreview adminBackupRestore; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'who.admin'; then
+      echo "  OK   trap: $f is admin-gated"
+    else echo "  FAIL trap: $f does not check who.admin"; FAIL=1; fi
+  done
 fi
 
 echo "== Terms, privacy & lead capture =="

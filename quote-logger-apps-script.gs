@@ -432,7 +432,11 @@ function doPost(e) {
           setSeasonDone:function (a) { return adminSetSeasonDone(d.token, a[0], a[1], a[2], a[3]); },
           listStaff:   function (a) { return adminListStaff(d.token); },
           setPerm:     function (a) { return adminSetPerm(d.token, a[0], a[1], a[2]); },
-          resetPin:    function (a) { return adminResetPin(d.token, a[0]); }
+          resetPin:    function (a) { return adminResetPin(d.token, a[0]); },
+          addStaff:    function (a) { return adminAddStaff(d.token, a[0], a[1], a[2]); },
+          removeStaff: function (a) { return adminRemoveStaff(d.token, a[0]); },
+          backupPreview: function (a) { return adminBackupPreview(d.token, a[0], a[1]); },
+          backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); }
         };
         if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
         return json(FNS[d.fn](d.args || []));
@@ -2061,18 +2065,338 @@ function adminSetPerm(token, name, perm, value) {
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
   const roster = getStaff_();
   if (!roster[name]) return { ok: 0, error: 'No such person.' };
-  if (perm === 'admin') roster[name].admin = !!value;
+  if (perm === 'admin') {
+    /* Same lockout hazard as removal: the console cannot recover a roster with
+       no admins left in it. */
+    if (!value && roster[name].admin && adminCount_(roster, name) === 0) {
+      return { ok: 0, error: 'That is the last admin account. Make someone else an admin first.' };
+    }
+    roster[name].admin = !!value;
+  }
   else { roster[name].perms = roster[name].perms || {}; roster[name].perms[perm] = value ? 1 : 0; }
   saveStaff_(roster);
   auditLog_(who.name, 'Permission "' + perm + '" for ' + name + ' set to ' + (value ? 'ON' : 'OFF'));
   return { ok: 1 };
 }
+/* A PIN is the ONLY credential on this console -- adminAuth looks the person
+ * up BY pin, so two people sharing one would silently sign the second one in
+ * as the first. Always mint through here. */
+function freshPin_(roster) {
+  const taken = {};
+  Object.keys(roster).forEach(function (n) { taken[String(roster[n].pin)] = 1; });
+  for (let i = 0; i < 500; i++) {
+    const pin = String(Math.floor(1000 + Math.random() * 9000));
+    if (!taken[pin]) return pin;
+  }
+  throw new Error('Could not find an unused PIN — the roster is implausibly large.');
+}
+
+/* How many admins would remain if `excluding` were removed or demoted. Guards
+ * against the one mistake that cannot be undone from the console: leaving the
+ * roster with nobody who can administer it. */
+function adminCount_(roster, excluding) {
+  return Object.keys(roster).filter(function (n) {
+    return n !== excluding && roster[n].admin;
+  }).length;
+}
+
+/* Drop every live session belonging to a person. requireAuth_ already refuses
+ * a session whose roster entry is gone ("Account removed."), so this is belt
+ * and braces -- but it also stops dead SESS_ properties accumulating. */
+function revokeSessions_(name) {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  let n = 0;
+  Object.keys(all).forEach(function (k) {
+    if (k.indexOf('SESS_') !== 0) return;
+    try {
+      if (JSON.parse(all[k]).name === name) { props.deleteProperty(k); n++; }
+    } catch (e) {}
+  });
+  return n;
+}
+
+/* ================= RESTORE FROM A DAILY BACKUP =================
+ * dailyBackup() emails a full .xlsx of this spreadsheet every evening. This is
+ * the way back in when something goes wrong: upload one of those files and put
+ * quotes back.
+ *
+ * Admin only, and deliberately a two-step: upload shows you a comparison and
+ * writes nothing, then you choose what to restore. The rules that keep it from
+ * making a bad day worse:
+ *
+ *  - A LIVE QUOTE IS NEVER DELETED. Restoring only ever writes rows the backup
+ *    knows about. A quote taken since the backup stays exactly where it is,
+ *    whichever mode you pick, so a restore can never lose newer work.
+ *  - A SNAPSHOT OF THE CURRENT SHEET IS SAVED FIRST, to Drive, every time. The
+ *    restore is itself undoable.
+ *  - The default mode only fills in quotes that are MISSING. Overwriting rows
+ *    that still exist is a separate, explicit choice.
+ */
+const BACKUP_TMP_PREFIX_ = 'Quest restore source — ';
+
+/* ONE-TIME, run from the Apps Script editor after the restore feature is
+ * pushed and BEFORE it is deployed. See docs/BACKUP-RESTORE.md.
+ *
+ * Reading an uploaded backup needs two things this script had never done:
+ * open a spreadsheet by id (rather than the bound one), and upload to the
+ * Drive API. Both widen the OAuth scopes Apps Script infers, and this web app
+ * runs as the deploying user with anonymous access -- so a scope waiting on
+ * approval can take the CUSTOMER page down, not just this feature. Running
+ * this once triggers the approval prompt while nothing is live yet.
+ *
+ * Touches nothing: it reopens this same spreadsheet read-only and asks Drive
+ * who we are. */
+function checkRestoreAccess() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const again = SpreadsheetApp.openById(ss.getId());
+  console.log('1/2 Sheets: reopened "' + again.getName() + '" by id — OK.');
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/about?fields=user', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() !== 200) {
+    console.log('2/2 Drive API returned ' + res.getResponseCode() + ' — NOT ready. ' + res.getContentText().slice(0, 200));
+    return;
+  }
+  console.log('2/2 Drive API: OK.');
+  console.log('Both permissions are granted. The backup restore will work — safe to deploy.');
+}
+
+/* Upload bytes to Drive and let Drive convert them into a Sheet on the way in.
+ * Apps Script cannot read .xlsx directly; this is the conversion step. Uses the
+ * same OAuth token and Drive access the daily backup already relies on, so it
+ * introduces no new Google permission. */
+function uploadAsSheet_(blob, name) {
+  const boundary = 'quest' + Utilities.getUuid();
+  const meta = { name: name, mimeType: 'application/vnd.google-apps.spreadsheet' };
+  const head = '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Type: ' + (blob.getContentType() || 'application/octet-stream') + '\r\n\r\n';
+  const tail = '\r\n--' + boundary + '--\r\n';
+  const bytes = Utilities.newBlob(head).getBytes()
+    .concat(blob.getBytes())
+    .concat(Utilities.newBlob(tail).getBytes());
+  const res = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+      method: 'post',
+      contentType: 'multipart/related; boundary=' + boundary,
+      payload: Utilities.newBlob(bytes).getBytes(),
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Drive could not read that file (' + res.getResponseCode() + '). ' +
+      'Make sure it is one of the .xlsx backups from the nightly email, not a PDF or a screenshot.');
+  }
+  return JSON.parse(res.getContentText()).id;
+}
+
+/* Every quote row in a spreadsheet, keyed by quote number. Works on the live
+ * sheet and on a converted backup alike -- same shape, same column order. */
+function readQuoteRows_(ss) {
+  const out = {};
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    const vals = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
+    vals.forEach(function (row, i) {
+      const qn = String(row[COL.QN - 1] || '').trim();
+      if (!qn) return;
+      out[qn] = { tab: sh.getName(), row: row, rowNum: i + 2 };
+    });
+  });
+  return out;
+}
+
+function backupSummaryFor_(liveRows, backRows) {
+  const missing = [], differ = [], same = [], newer = [];
+  Object.keys(backRows).forEach(function (qn) {
+    const b = backRows[qn], l = liveRows[qn];
+    if (!l) { missing.push({ quoteNo: qn, tab: b.tab, total: Number(b.row[COL.TOTAL - 1] || 0) }); return; }
+    const bp = String(b.row[COL.PAYLOAD - 1] || ''), lp = String(l.row[COL.PAYLOAD - 1] || '');
+    if (bp === lp && b.tab === l.tab) { same.push(qn); return; }
+    differ.push({
+      quoteNo: qn, tab: b.tab, liveTab: l.tab,
+      backupTotal: Number(b.row[COL.TOTAL - 1] || 0),
+      liveTotal: Number(l.row[COL.TOTAL - 1] || 0)
+    });
+  });
+  Object.keys(liveRows).forEach(function (qn) {
+    if (!backRows[qn]) newer.push({ quoteNo: qn, tab: liveRows[qn].tab, total: Number(liveRows[qn].row[COL.TOTAL - 1] || 0) });
+  });
+  return { missing: missing, differ: differ, same: same, newer: newer };
+}
+
+function adminBackupPreview(token, fileName, base64Data) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  if (!base64Data) return { ok: 0, error: 'No file received.' };
+  let fileId;
+  try {
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      String(fileName || 'backup.xlsx'));
+    fileId = uploadAsSheet_(blob, BACKUP_TMP_PREFIX_ + new Date().toISOString());
+  } catch (err) {
+    return { ok: 0, error: String(err.message || err) };
+  }
+  try {
+    const backSs = SpreadsheetApp.openById(fileId);
+    const backRows = readQuoteRows_(backSs);
+    if (!Object.keys(backRows).length) {
+      DriveApp.getFileById(fileId).setTrashed(true);
+      return { ok: 0, error: 'That file has no quote tabs in it. Is it one of the nightly backup attachments?' };
+    }
+    const liveRows = readQuoteRows_(SpreadsheetApp.getActiveSpreadsheet());
+    const sum = backupSummaryFor_(liveRows, backRows);
+    auditLog_(who.name, 'Backup inspected: ' + fileName + ' — ' + Object.keys(backRows).length +
+      ' quote(s); ' + sum.missing.length + ' missing live, ' + sum.differ.length + ' differing');
+    return {
+      ok: 1, fileId: fileId, fileName: String(fileName || ''),
+      backupCount: Object.keys(backRows).length,
+      liveCount: Object.keys(liveRows).length,
+      missing: sum.missing, differ: sum.differ, newer: sum.newer, sameCount: sum.same.length
+    };
+  } catch (err) {
+    try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+    return { ok: 0, error: 'Could not read that backup: ' + String(err.message || err) };
+  }
+}
+
+/* Save the CURRENT sheet to Drive before touching anything, so the restore can
+ * itself be undone. Same export the nightly backup uses. */
+function snapshotBeforeRestore_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx';
+  const blob = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } })
+    .getBlob().setName(ss.getName() + ' — before restore ' +
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH-mm') + '.xlsx');
+  return getFolder_().createFile(blob);
+}
+
+function adminBackupRestore(token, fileId, mode, quoteNos) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  if (!fileId) return { ok: 0, error: 'Upload the backup again — the reference expired.' };
+
+  let backSs;
+  try { backSs = SpreadsheetApp.openById(fileId); }
+  catch (err) { return { ok: 0, error: 'Upload the backup again — the reference expired.' }; }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const backRows = readQuoteRows_(backSs);
+  const liveRows = readQuoteRows_(ss);
+  const sum = backupSummaryFor_(liveRows, backRows);
+
+  let wanted;
+  if (mode === 'all') {
+    wanted = sum.missing.map(function (m) { return m.quoteNo; })
+      .concat(sum.differ.map(function (m) { return m.quoteNo; }));
+  } else if (mode === 'selected') {
+    wanted = (quoteNos || []).map(function (q) { return String(q).trim().toUpperCase(); })
+      .filter(function (q) { return backRows[q]; });
+  } else {
+    wanted = sum.missing.map(function (m) { return m.quoteNo; });
+  }
+  if (!wanted.length) return { ok: 0, error: 'Nothing to restore for that choice.' };
+
+  const snap = snapshotBeforeRestore_();
+
+  let restored = 0;
+  wanted.forEach(function (qn) {
+    const b = backRows[qn];
+    if (!b) return;
+    /* Clear any live copy wherever it sits, then write the backup's row onto
+       the tab the backup had it on. Quotes absent from the backup are never
+       touched. */
+    ss.getSheets().forEach(function (sh) {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+      let r = findQuoteRow_(sh, qn);
+      while (r > 0) { sh.deleteRow(r); r = findQuoteRow_(sh, qn); }
+    });
+    let dest = ss.getSheetByName(b.tab);
+    if (!dest) {
+      dest = ss.insertSheet(b.tab);
+      dest.appendRow(HEADERS);
+      dest.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+      dest.setFrozenRows(1);
+    }
+    const rowNum = dest.getLastRow() + 1;
+    dest.getRange(rowNum, 1, 1, HEADERS.length).setValues([b.row]);
+    dest.getRange(rowNum, COL.TOTAL, 1, 2).setNumberFormat('$#,##0.00');
+    dest.getRange(rowNum, COL.PAID, 1, 1).setNumberFormat('$#,##0.00');
+    dest.getRange(rowNum, COL.BAL, 1, 1).setNumberFormat('$#,##0.00');
+    dest.getRange(rowNum, COL.ITEMS).setWrap(true);
+    restored++;
+  });
+
+  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+  auditLog_(who.name, 'RESTORED ' + restored + ' quote(s) from backup (mode: ' + mode +
+    '). Pre-restore snapshot: ' + snap.getUrl());
+  return {
+    ok: 1,
+    msg: 'Restored ' + restored + ' quote(s). Nothing else was touched, and a snapshot of the sheet ' +
+         'as it was a moment ago is saved in Drive.',
+    restored: restored,
+    snapshotUrl: snap.getUrl()
+  };
+}
+
+function adminAddStaff(token, name, perms, isAdmin) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const clean = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return { ok: 0, error: 'Enter a name.' };
+  if (clean.length > 40) return { ok: 0, error: 'That name is too long.' };
+  const roster = getStaff_();
+  /* Case-insensitive, because "chris" and "Chris" would be two roster entries
+     that look like one person on screen. */
+  const clash = Object.keys(roster).find(function (n) {
+    return n.toLowerCase() === clean.toLowerCase();
+  });
+  if (clash) return { ok: 0, error: '"' + clash + '" is already on the roster.' };
+
+  const p = perms || {};
+  const pin = freshPin_(roster);
+  roster[clean] = {
+    pin: pin,
+    admin: !!isAdmin,
+    perms: { pay: p.pay ? 1 : 0, adjust: p.adjust ? 1 : 0, email: p.email ? 1 : 0, photos: p.photos ? 1 : 0 }
+  };
+  saveStaff_(roster);
+  auditLog_(who.name, 'Added staff account "' + clean + '"' + (isAdmin ? ' (admin)' : '') +
+    ' with ' + (Object.keys(roster[clean].perms).filter(function (k) { return roster[clean].perms[k]; }).join(', ') || 'no permissions'));
+  return { ok: 1, name: clean, pin: pin };
+}
+
+function adminRemoveStaff(token, name) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const roster = getStaff_();
+  if (!roster[name]) return { ok: 0, error: 'No such person.' };
+  /* Removing yourself would end your own session mid-action, and removing the
+     last admin would leave the roster unmanageable from the console -- there
+     is no way back from either without editing Script Properties by hand. */
+  if (name === who.name) return { ok: 0, error: 'You can\'t remove your own account — ask the other admin.' };
+  if (roster[name].admin && adminCount_(roster, name) === 0) {
+    return { ok: 0, error: 'That is the last admin account. Make someone else an admin first.' };
+  }
+  delete roster[name];
+  saveStaff_(roster);
+  const killed = revokeSessions_(name);
+  auditLog_(who.name, 'Removed staff account "' + name + '"' + (killed ? ' (' + killed + ' session(s) ended)' : ''));
+  return { ok: 1, msg: '"' + name + '" removed.' + (killed ? ' Signed them out of ' + killed + ' device(s).' : '') };
+}
+
 function adminResetPin(token, name) {
   const who = requireAuth_(token, 'view');
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
   const roster = getStaff_();
   if (!roster[name]) return { ok: 0, error: 'No such person.' };
-  const pin = String(Math.floor(1000 + Math.random() * 9000));
+  const pin = freshPin_(roster);
   roster[name].pin = pin;
   saveStaff_(roster);
   auditLog_(who.name, 'PIN reset for ' + name);
@@ -3169,7 +3493,7 @@ function adminPage_() {
   '<button onclick="doLogin()">Log in</button><div id="loginMsg" class="muted"></div></div>' +
 
   '<div class="card hide" id="lookupCard"><h1>Find a quote</h1>' +
-  '<input id="qn" placeholder="Quote # e.g. QW-26-3477" autocapitalize="characters">' +
+  '<input id="qn" placeholder="Quote # e.g. QW-26-####" autocapitalize="characters">' +
   '<button onclick="doLookup()">Look up</button><div id="lookupMsg" class="muted"></div></div>' +
 
   '<div class="hide" id="quoteArea">' +

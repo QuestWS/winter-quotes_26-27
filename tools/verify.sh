@@ -257,6 +257,39 @@ if [ -f admin/index.html ]; then
   sweep admin/index.html "console terms" "termsText" "Terms accepted"
 fi
 
+echo "== Favicon on every page =="
+# Chris: use the Quest mark on any page we make. One file at the repo root,
+# linked by every page. The failure that actually happens is a relative path
+# that is right for the root but wrong from /admin/, so resolve each link
+# against the page that carries it and check the file is really there.
+python3 - <<'PY'
+import os, re, sys
+fail = 0
+pages = []
+for dirpath, dirnames, filenames in os.walk('.'):
+    # .snapshots holds dated archive copies of past versions, not pages we ship.
+    dirnames[:] = [d for d in dirnames if d not in
+                   ('.git', 'node_modules', 'docs', 'tools', '.github', '.snapshots')]
+    for fn in filenames:
+        if fn.endswith('.html'):
+            pages.append(os.path.join(dirpath, fn))
+for page in sorted(pages):
+    html = open(page, encoding='utf-8').read()
+    m = re.search(r'<link[^>]*rel="icon"[^>]*href="([^"]+)"', html)
+    if not m:
+        print('  FAIL %s has no favicon — every page gets the Quest mark' % page[2:]); fail = 1; continue
+    href = m.group(1)
+    if href.startswith('data:'):
+        print('  OK   %s carries an inline icon' % page[2:]); continue
+    target = os.path.normpath(os.path.join(os.path.dirname(page), href))
+    if os.path.exists(target):
+        print('  OK   %s -> %s' % (page[2:], href))
+    else:
+        print('  FAIL %s -> %s does not resolve (looked for %s)' % (page[2:], href, target)); fail = 1
+sys.exit(fail)
+PY
+[ $? -eq 0 ] || FAIL=1
+
 echo "== Apps Script deploy workflow =="
 WF=.github/workflows/deploy-apps-script.yml
 if [ -f "$WF" ]; then

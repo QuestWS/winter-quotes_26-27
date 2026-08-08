@@ -23,6 +23,7 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
 | `terms-config.js` | GitHub Pages root | **`TERMS_VERSION`, single source of truth** — read by the page *and* both legal pages |
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
+| `favicon.png` | GitHub Pages root | **The Quest mark — every page links this one file** |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
@@ -31,6 +32,17 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 - **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`
+
+**Every page we make carries the Quest favicon.** One file, `favicon.png` at
+the repo root, linked by all of them — `href="favicon.png"` from the root,
+`href="../favicon.png"` from `/admin/`. Not inlined per page: four copies of a
+20KB data URI can drift apart, and one shared file is downloaded once for the
+whole site. `verify.sh` walks every `.html` (excluding `.snapshots/`), fails a
+page with no icon, and **resolves each href against the page that carries it**
+— the failure that actually happens is a path that is right from the root and
+404s from `/admin/`. The legacy `?page=admin` console is served by Apps Script
+from `script.google.com`, so it cannot reference a repo file and shows Google's
+icon; that one is outside the rule.
 
 ### The one URL everything shares
 

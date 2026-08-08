@@ -764,7 +764,13 @@ function doGet(e) {
       const d = JSON.parse(payloadJson);
       if (!d.state) return out({ ok: 0, error: 'This quote can\'t be reloaded — call (815) 433-2200 and we\'ll pull it up.' });
       if (reconcileManual_(d)) sh.getRange(rowNum, COL.PAYLOAD).setValue(JSON.stringify(d)); // persist migration
-      return out({ ok: 1, state: d.state, manual: d.manual || null, payments: d.payments || [],
+      /* Hand back the EFFECTIVE state, not the raw customer one. If Quest has
+         re-measured the unit or moved it to another storage location, that is
+         what the quote is priced at and what the customer must see when they
+         reload — otherwise their page renders their original selections, shows
+         a total that no longer matches their invoice, and posts a state that
+         disagrees with the server on the next save. */
+      return out({ ok: 1, state: effectiveState_(d) || d.state, manual: d.manual || null, payments: d.payments || [],
                    official: { total: d.total, deposit: d.deposit } });
     }
     return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
@@ -1584,6 +1590,12 @@ function adminDimsApply(token, qn, changes, note) {
   const beforeDims = dimsString(effectiveState_(d) || {});
 
   const m = ensureManual_(d);
+  /* Keep what the customer originally told us. The page is now handed the
+     effective state on reload, so their next save would otherwise overwrite
+     d.state with our measurements and the original would be gone -- and "what
+     did they tell us" is exactly the question asked when a measurement is
+     disputed. Snapshot once, on the first re-measure only. */
+  if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
   m.measured = Object.assign({}, m.measured || {}, clean);
   if (note) m.measuredNote = String(note).slice(0, 400);
 
@@ -1708,7 +1720,7 @@ function adminLookup(token, qn) {
           return { value: v, label: storageLabel_(v) };
         }),
         text: dimsString(st) || '',
-        customerText: dimsString(d.state || {}) || '',
+        customerText: dimsString((d.manual && d.manual.customerState) || d.state || {}) || '',
         measured: (d.manual && d.manual.measured) || null,
         measuredNote: (d.manual && d.manual.measuredNote) || ''
       };

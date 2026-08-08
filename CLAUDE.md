@@ -509,7 +509,15 @@ returns a before/after line diff → **Apply**. Nothing is written until Apply.
 - **The new values are journalled, never written into `d.state`.**
   `d.manual.measured` holds what *Quest* measured; `d.state` stays what the
   *customer* selected. `effectiveState_()` overlays one on the other and is what
-  everything prices from. Writing into `d.state` would work right up until the
+  everything prices from — **including `?action=load`**, which must serve
+  `effectiveState_(d)` and not raw `d.state`. Serving the raw state shipped once
+  and meant a relocated quote rendered on the customer's own page at its old
+  storage and old price (an $820 gap on the test quote), then posted a state
+  that disagreed with the server and tripped the drift alarm on every save.
+  `verify.sh` asserts the load endpoint. Because the page now round-trips the
+  effective state, `adminDimsApply` snapshots the customer's original into
+  `manual.customerState` the first time it measures, so "what did they tell us"
+  survives their next save. Writing into `d.state` would work right up until the
   customer's next save, which posts the state still sitting in their browser and
   would silently undo the re-measure. `verify.sh` fails if `adminDimsApply` ever
   assigns into `d.state`.

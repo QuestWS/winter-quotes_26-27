@@ -157,6 +157,15 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
     echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
   else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # The quote-load endpoint must serve the EFFECTIVE state. Serving the raw
+  # customer state means a re-measured or relocated quote renders at the old
+  # dimensions and the old price on the customer's own page — they see a total
+  # that no longer matches their invoice.
+  if grep -q 'state: effectiveState_(d)' quote-logger-apps-script.gs; then
+    echo "  OK   trap: quote load serves the effective (re-measured) state"
+  else
+    echo "  FAIL trap: quote load serves raw d.state — customers will see pre-measure pricing"; FAIL=1
+  fi
   # Preview must be a dry run. If it ever calls a writer, staff lose the
   # confirm step that stands between a mistyped beam and a customer's invoice.
   if awk '/^function adminDimsPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'saveQuoteRow_|moveQuoteRow_|setValue'; then

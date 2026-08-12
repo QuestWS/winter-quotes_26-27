@@ -2685,6 +2685,66 @@ function buildEmailFor_(d, kind, extra, photos) {
     return { subject: 'We have your ' + d.unit + ' — Quest Watersports',
       html: noticeHtml_(d, intro, btn, true), status: 'Stored — customer notified' };
   }
+  /* END-OF-SEASON NOTE. The autumn counterpart to the spring alert: a gentle
+     nudge that the season is closing, a last opening to add detailing or other
+     winter work, and the haul-out timing question.
+
+     It only offers a detail quote to someone who has NOT already asked for one.
+     Being sold something you already requested reads as nobody having looked at
+     your file -- which is exactly the impression a service business cannot
+     afford. hasDetailing_ checks the priced lines, the outstanding requests and
+     the staff-priced journal, so all three count as "already asked". */
+  if (kind === 'fall') {
+    const land = isLandUnit_(d);
+    const unitTxt = esc_(d.unit || 'unit');
+    const outPhrase = land ? 'picked up for the winter' : 'out of the water';
+    const base = surveyBase_(d);
+
+    let intro = 'It always comes around quicker than it should — the season is winding down. ' +
+      'There is usually a little good weather left, so there is no rush, but when you are ready ' +
+      'we will take it from there and look after your ' + unitTxt + ' over the winter.';
+
+    if (!hasDetailing_(d)) {
+      /* Only shown when they have not already asked. */
+      const awkwardLater = land
+        ? 'and for the jobs that are easier done before it goes away for the winter'
+        : 'and for the jobs that are awkward once a boat is wrapped or up on stands';
+      intro += '<br><br><b>Anything you would like done while we have it?</b> Autumn is the easy ' +
+        'time for detailing, ' + awkwardLater + '. If you would like a price for detailing or any ' +
+        'other work, just reply to this email or call us on (815) 433-2200 and we will add it to ' +
+        'your ' + docTerm_(d).toLowerCase() + '.';
+    } else {
+      intro += '<br><br>We already have your detailing request on file, so that is in hand. If ' +
+        'there is anything else you would like done while we have it, reply to this email or call ' +
+        'us on (815) 433-2200.';
+    }
+
+    const askQ = land
+      ? '<b>When would you like us to collect it?</b>'
+      : '<b>When would you like to be ' + outPhrase + '?</b>';
+    intro += '<br><br>' + askQ + ' Tap whichever fits below — it helps us plan the yard, and ' +
+      'you can change it later by calling us.';
+
+    let buttons = '';
+    if (base) {
+      buttons = '<div style="margin:6px 0 10px">' +
+        buttonHtml_(base + '&done=now', land ? 'I\'m ready now' : 'I\'m ready to come out now', '#14293E') +
+        buttonHtml_(base + '&done=date', 'I have a date in mind', '#4A81A6') +
+        buttonHtml_(base + '&done=call', 'I\'ll call to arrange it', '#C08A22') +
+        '</div>' +
+        '<div style="font-size:13px;color:#5C7185;margin-bottom:4px">' +
+        (land ? 'Collections' : 'Haul-outs') + ' scheduled after ' +
+        esc_((d.season && d.season.payByShort) || 'the cutoff date') +
+        ' are subject to a late retrieval surcharge.</div>';
+    }
+
+    return {
+      subject: 'The season is winding down — let\'s plan your ' +
+        (land ? 'pick-up' : 'haul-out') + ' · ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, buttons, true),
+      status: 'End-of-season note sent'
+    };
+  }
   if (kind === 'spring') {
     const land = isLandUnit_(d);
     const base = WEB_APP_URL;
@@ -3356,6 +3416,11 @@ function dailyReminderCheck() {
         sh.getRange(i + 2, COL.REM).setValue('Reminder sent ' + new Date().toLocaleDateString());
         try { const dl = JSON.parse(sh.getRange(i + 2, COL.PAYLOAD).getValue() || '{}');
           if (dl.quoteNo) { dl.email = email; recordEmail_(sh, i + 2, dl, 'auto-reminder', 'System'); } } catch (e4) {}
+        /* The Activity Log is where staff look to answer "did we contact this
+           customer, and when?". An email nobody clicked send on still has to
+           appear there, or the log quietly under-reports what we sent. */
+        auditLog_('System (automatic)', 'Auto-reminder emailed for ' + quoteNo +
+          ' (' + REMINDER_AFTER_DAYS + ' days, no signature or payment)');
       } catch (err) { console.error('Reminder failed for ' + quoteNo + ': ' + err); }
     });
   });
@@ -3413,6 +3478,8 @@ function leadFollowUpCheck() {
         'Pick your Quest Watersports winter quote back up: ' + quoteNo + '. Call (815) 433-2200 with questions.', opts);
       sh.getRange(rowNum, COL.REM).setValue(LEAD_FOLLOWUP_MARK + new Date().toLocaleDateString());
       recordEmail_(sh, rowNum, d, 'finish-quote', 'System');
+      auditLog_('System (automatic)', 'Lead follow-up emailed for ' + quoteNo +
+        ' (started a quote, did not finish)');
     } catch (err) { console.error('Lead follow-up failed for ' + quoteNo + ': ' + err); }
   });
 }
@@ -3437,6 +3504,24 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
    season instead of being frozen in a string. */
 /* "2 × Inboard, full service" — for the notice email, so a customer can check
    the count at a glance instead of decoding line items. */
+/* Has this customer already asked us about detailing?
+ * Three places count, because a request can be in any of them:
+ *   - a priced line on the quote (we quoted it),
+ *   - the outstanding "quotes requested" list (they asked, we have not priced it),
+ *   - the staff journal of priced requests (we priced it by hand).
+ * Missing any one of these would mean offering a detail quote to somebody who
+ * already has one on file. */
+function hasDetailing_(d) {
+  const looksLikeDetail = function (t) {
+    return /detail|wash\s*&\s*wax|wipe-?down/i.test(String(t || ''));
+  };
+  if ((d.lines || []).some(function (l) { return looksLikeDetail(l.label); })) return true;
+  if (looksLikeDetail(d.quotesRequested)) return true;
+  const pr = (d.manual && d.manual.priced) || [];
+  if (pr.some(function (p) { return looksLikeDetail(p.label) || looksLikeDetail(p.rqLabel); })) return true;
+  return false;
+}
+
 function engineSummary_(st) {
   const eng = (st && st.engines) || {};
   const names = { inboard: 'Inboard', io: 'Inboard/Outboard', outboard: 'Outboard', pwc: 'Jet ski' };

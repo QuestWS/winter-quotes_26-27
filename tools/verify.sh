@@ -166,6 +166,23 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: motor correction rules broken"; sed 's/^/       /' "$TMP/eng.txt"; FAIL=1
   fi
+  # "We have your unit" must never ask when they want to come out of the water —
+  # we already have the boat. The season-done survey lives in customerEmailHtml_
+  # (quotes and invoices); notice emails use noticeHtml_, which has none. This
+  # asserts the two stay apart.
+  if awk '/^function noticeHtml_/,/^}/' quote-logger-apps-script.gs | grep -qE 'surveyBase|done=now'; then
+    echo "  FAIL trap: noticeHtml_ carries the season-done survey — 'we have your unit' would ask for a haul-out date"; FAIL=1
+  else echo "  OK   trap: arrival/notice emails never ask for haul-out timing"; fi
+  # The end-of-season note must not pitch detailing to someone who already asked.
+  if awk "/if \(kind === 'fall'\)/,/^  }/" quote-logger-apps-script.gs | grep -q 'hasDetailing_'; then
+    echo "  OK   trap: end-of-season note checks for an existing detail request"
+  else echo "  FAIL trap: fall email offers detailing without checking whether they already asked"; FAIL=1; fi
+  # Automatic emails must reach the Activity Log; they are the ones nobody saw sent.
+  for f in dailyReminderCheck leadFollowUpCheck; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'auditLog_'; then
+      echo "  OK   trap: $f writes to the Activity Log"
+    else echo "  FAIL trap: $f sends email without logging it"; FAIL=1; fi
+  done
   # The quote-load endpoint must serve the EFFECTIVE state. Serving the raw
   # customer state means a re-measured or relocated quote renders at the old
   # dimensions and the old price on the customer's own page — they see a total

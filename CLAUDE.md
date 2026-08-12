@@ -395,6 +395,21 @@ any test window. Nothing else is automatic (§5).
   a reminder already sent and stay silent forever.
   Late-fee warnings, fee application, receipts, seasonal emails — all require
   a human click and confirmation. The 1st/15th reports go to Chris only.
+  **Both automatic sends write to the Activity Log** as `System (automatic)`.
+  Staff read that log to answer "did we contact this customer?", so an email
+  nobody clicked send on must still appear there; `verify.sh` asserts it.
+- **Arrival and notice emails never ask when a customer wants to come out of
+  the water.** We already have the boat. The season-done survey lives in
+  `customerEmailHtml_` (quotes and invoices); notice kinds use `noticeHtml_`,
+  which has none. `verify.sh` fails if the survey ever reaches `noticeHtml_`.
+- **The `fall` email is the autumn counterpart to `spring`** — season winding
+  down, a last opening for detailing or other winter work, and the haul-out
+  timing poll (the same three buttons, so answers land in the existing
+  season-done flow and the late-retrieval surcharge still applies).
+  `hasDetailing_()` checks priced lines, outstanding requests *and* the
+  staff-priced journal, so somebody who has already asked is told it is in hand
+  rather than sold it again. Land units get "collect it", never "out of the
+  water". There is deliberately **no send-to-all** version yet.
 - **Unit-appropriate wording.** Golf carts and e-bikes are *land units*
   (`isLandUnit_`, `isBike_`). They come "back home" / are "ready to ride" —
   never "back in the water," never "relaunch," never "splash." This shipped

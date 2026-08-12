@@ -217,7 +217,8 @@ def doc1():
         'quote by number or partial last name; recording payments, deposits and refunds; editing '
         'or removing line items; pricing a service the customer asked about; applying late fees; '
         'correcting dimensions, motor counts and storage location; uploading condition photos and '
-        'signed contracts; previewing and sending customer emails; printing yard sheets; managing '
+        'signed contracts; previewing and sending customer emails, individually or to '
+        'everyone; printing yard sheets and the haul-out list; managing '
         'staff accounts; and restoring from a backup.')]
 
     g.story += [note('Staff changes are never lost when a customer edits their quote',
@@ -272,9 +273,26 @@ def doc1():
           'paying moves them off it.']],
         [1.25 * inch, 2.55 * inch, 2.8 * inch])]
     g.story += [P(
-        'Everything else — receipts, "we have your unit", spring alerts, "you\'re up next", late-fee '
-        'warnings, dimension-change notices — requires a staff member to click, preview and '
-        'confirm. The 1st and 15th balance reports go to Chris only, never to customers.')]
+        'Everything else — receipts, "we have your unit", the seasonal notes, "you\'re up next", '
+        'late-fee warnings, dimension-change notices — requires a staff member to click, preview '
+        'and confirm. The 1st and 15th balance reports go to Chris only, never to customers. Both '
+        'automatic emails are written to the Activity Log as well, so "did we contact this '
+        'customer?" has one answer no matter who sent it.')]
+
+    g.story += [P('The two seasonal announcements', H2)]
+    g.story += [P(
+        'These are the only emails that have a send-to-all version, and they bracket the season. '
+        'The <b>end-of-season note</b> goes out in the autumn: the season is winding down, here is '
+        'a last chance at detailing or winter work, and when would you like to come out? It will '
+        'not offer a detail quote to somebody who has already asked for one. The <b>spring '
+        'relaunch alert</b> is its counterpart in the other direction — anything you want done '
+        'before it goes back, and when would you like it? Both put the customer\'s answer into the '
+        'same haul-out timing record, so the late retrieval surcharge applies from either.')]
+    g.story += [P(
+        'Alongside them, <b>"you\'re up next"</b> comes in two directions. In autumn it means we '
+        'are about to take the unit out; in spring, about to put it back. They are separate '
+        'emails rather than one with the words flipped, because the useful thing to say differs: '
+        'in autumn the last easy moment to add work is now, while we have it.')]
 
     g.story += [P('The season-done question', H2)]
     g.story += [P(
@@ -284,6 +302,21 @@ def doc1():
         'agreed to buy. A date after Nov 15 automatically applies the late retrieval surcharge, '
         'priced from that quote\'s own stored figure so it stays right year to year. Staff can '
         'record the same answer from the console for anyone who phones in.')]
+
+    g.story += [P('Sending to everyone', H2)]
+    g.story += [P(
+        'A send-to-all is the one action in the system that cannot be undone or narrowed after the '
+        'fact, so it is built to be checked first. Choosing the email does not send it: the '
+        'console reads the sheet and reports who would receive it, broken down by storage area, '
+        'plus how many quotes have no email address and whether the number is large enough to hit '
+        'Google\'s daily sending limit. It also renders the real email for the first person on the '
+        'list. Sending is a second, separate, confirmed click.')]
+    g.story += [P(
+        'People who started a quote and walked away are never on that list. They are leads, not '
+        'customers, and a "your boat" email to a stranger — possibly a competitor — is the failure '
+        'the exclusion exists to prevent. It is enforced in one shared piece of code used by both '
+        'the console and the spreadsheet menu, and there is an automated test that builds a '
+        'spreadsheet with a lead on it and checks the lead is not in the result.')]
 
     g.story += [P('Photos and contracts', H1)]
     g.story += [P(
@@ -460,6 +493,9 @@ def doc2():
     g.story += [table(
         ['Button', 'What it sends'],
         [['We have your unit', 'Confirms arrival, links the arrival photos if there are any.'],
+         ['End of season note', 'The autumn one. Says the season is winding down, offers a last '
+          'chance at detailing or winter work — but only if they have not already asked — and '
+          'polls when they want to be hauled out.'],
          ['Spring alert', 'Asks when they would like their unit back and offers early / any time / '
           'late. Their answer sets their place in the queue.'],
          ['Back in / back home', 'Confirms the unit is back. Wording changes for golf carts and '
@@ -468,18 +504,61 @@ def doc2():
           'attaches the rebuilt quote or invoice. The wording follows what actually changed.'],
          ['Late fee warning', 'Warns before a fee is applied. You write the wording.'],
          ['Re-send invoice', 'Sends the current quote or invoice again.'],
-         ['You\'re up next', 'Type when you expect to do the work, then send.']],
+         ['You\'re up next', 'Pick the direction first — <b>haul-out / pick-up</b> in the autumn '
+          'or <b>relaunch / return</b> in the spring — then type when you expect to do the work. '
+          'The two read differently on purpose: in autumn it is the last easy moment to add work, '
+          'in spring it is the last moment before the unit goes back.']],
         [1.5 * inch, 5.1 * inch])]
 
-    g.story += [P('The menu (☰)', H1)]
+    g.story += [P('The menu — the three-line button, top right', H1)]
     g.story += [table(
         ['Menu item', 'Permission', 'What it does'],
         [['Storage view', perm('view'), 'Every unit grouped by storage area, with keys and '
-          'balances. "Print yard sheets" gives one page per area for use in the yard.'],
+          'balances. "Print yard sheets" gives one page per area for use in the yard; '
+          '"Print haul-out list" gives one sheet for the whole yard, in the order customers '
+          'asked to come out.'],
+         ['Send to all', perm('email'), 'See below. Works without a quote pulled up.'],
          ['Staff &amp; permissions', perm('admin'), 'See below.'],
          ['Restore from backup', perm('admin'), 'See below and Document 4.'],
          ['Log out', '—', 'Ends your session on this device.']],
         [1.45 * inch, 0.95 * inch, 4.2 * inch])]
+
+    g.story += [P('Send to all — needs email', H1)]
+    g.story += [P(
+        'The two seasonal announcements can go to every customer at once. Open it from the menu; '
+        'you do not need a quote pulled up. There are only two, and nothing else can be sent this '
+        'way — a receipt or a late-fee warning is about one person and has no send-to-all version.')]
+    g.story += [table(
+        ['Step', 'What happens'],
+        [['Pick which one', '<b>End of season note</b> (autumn) or <b>Spring relaunch alert</b>.'],
+         ['See who this goes to', 'Reads the sheet and reports back. <b>Nothing is sent.</b> You '
+          'get the total, a count per storage area, how many quotes have no email address on them, '
+          'and a warning if the number is large enough to run into Google\'s daily limit.'],
+         ['Preview the email', 'Opens the real email for the first person on the list — not a '
+          'description of it.'],
+         ['Send to all N', 'Asks you to confirm, then sends. Each one is recorded on that '
+          'customer\'s quote and in the Activity Log.']],
+        [1.6 * inch, 5.0 * inch])]
+    g.story += [note('Who never receives one',
+        'Anyone who started a quote and walked away without finishing it. They are on the Quote '
+        'Started tab, they are not customers, and no seasonal email will ever reach them. Quotes '
+        'with no email address on them are skipped and counted for you. The spring alert also '
+        'skips No Storage customers — there is nothing to relaunch for a unit we never had. The '
+        'end-of-season note does go to them, because they still have to get the unit to us.')]
+    g.story += [P('Both are also on the spreadsheet menu, and both go to the same people either '
+                  'way.', SMALL)]
+
+    g.story += [P('Printing for the yard', H1)]
+    g.story += [table(
+        ['Sheet', 'What it is for'],
+        [['Yard sheets', 'One page per storage area. For walking a building and checking units '
+          'off — what is in here, whose it is, where the keys are.'],
+         ['Haul-out list', 'One page for the whole yard, ordered by when each customer asked to '
+          'come out: ready now first, then stated dates soonest first, then "will call", then '
+          'anyone who has not answered. Shows the customer, the unit and its dimensions, storage '
+          'area, whether it is on a trailer, the slip number, where the keys are, and any note '
+          'they left. This is the planning sheet.']],
+        [1.35 * inch, 5.25 * inch])]
 
     g.story += [P('Staff &amp; permissions — admin only', H1)]
     g.story += [table(

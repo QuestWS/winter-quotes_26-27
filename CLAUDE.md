@@ -409,14 +409,58 @@ any test window. Nothing else is automatic (§5).
   `hasDetailing_()` checks priced lines, outstanding requests *and* the
   staff-priced journal, so somebody who has already asked is told it is in hand
   rather than sold it again. Land units get "collect it", never "out of the
-  water". There is deliberately **no send-to-all** version yet.
+  water".
+- **"You're up next" points both ways.** `upnextfall` is the autumn twin of
+  `upnext`: we are about to touch the unit, speak now — but taking it *out*.
+  They are deliberately two kinds rather than one with the verbs flipped,
+  because the last-minute request that matters in spring ("anything before it
+  goes in?") is not the one that matters in autumn ("anything while we have
+  it?"). The console picks direction from a dropdown, the menu asks. Bikes get
+  no "leave the keys" line — they have none.
 - **Unit-appropriate wording.** Golf carts and e-bikes are *land units*
   (`isLandUnit_`, `isBike_`). They come "back home" / are "ready to ride" —
   never "back in the water," never "relaunch," never "splash." This shipped
   broken once; a golf cart was congratulated on being back in the water.
 - **Menu ↔ console parity.** Anything staff can do in the spreadsheet menu
   should exist in the console, and vice versa. Line editing was console-missing
-  for a while; that gap is the kind of thing to actively check.
+  for a while; that gap is the kind of thing to actively check. Every menu email
+  now goes through `menuSendKind_` → `buildEmailFor_`, the same builder the
+  console previews from, so the two cannot say different things. The old
+  `springAlertFor_` was a second hand-written copy of the spring wording and is
+  gone.
+
+### Send to all
+
+Two kinds and only two — `BULK_KINDS_` is the whole allow-list: `spring` (skips
+`No Storage`; nothing to relaunch for a unit we never stored) and `fall` (skips
+nothing; a No Storage customer still has to get the unit to us). Reachable from
+the console with **no quote loaded**, gated on `email`, and from the sheet menu.
+
+- **One recipient list, `bulkTargets_`.** Console and menu share it, and both
+  send through `bulkSendKind_`. A menu item that walks the sheets itself is a
+  second copy of the lead-exclusion rule, and the second copy is the one that
+  gets it wrong — `verify.sh` fails if `sendSpringAlertAll` or `sendFallNoteAll`
+  grows its own sweep.
+- **Leads are never in it.** `tools/check-bulk-targets.js` stands up a fake
+  spreadsheet *with a lead row on it*, runs the real `bulkTargets_`, and reads
+  the answer. A grep for `isStartedTab_` passes even when the condition is
+  inverted; this doesn't. It also pins the per-kind tab rules, the missing-email
+  reporting, and the header probe that separates a customer tab from a log.
+- **Preview sends nothing.** It reports the count per tab, who has no email
+  address, a Gmail-quota warning past 400, and renders one real email for the
+  first recipient — what staff approve is the actual email, not a description.
+- Every bulk send is audited (`SEND TO ALL "…" — n of m`) and lands in each
+  quote's Email History.
+
+### Haul-out list
+
+`printHaulOut()` on the storage card — one yard-wide sheet, not one per
+building, because haul-out order is a yard-wide question. Sorted ready-now →
+stated dates ascending → will call → not answered, and it carries what the crew
+needs standing in the yard: customer, unit + dims, storage, trailer or not,
+slip, key location, requested timing and any note. Sorting uses the stored ISO
+date; printing uses `haulDate_()`, which passes anything non-ISO through rather
+than printing "Invalid Date" on a sheet somebody is holding.
 - **Money and customer email are menu/console-only.** Never hand-edit cells —
   it desyncs the payload, PDF, and totals.
 - **Key location & HHO address:** required for boat/jetski/golf (keys) and

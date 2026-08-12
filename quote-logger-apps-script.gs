@@ -436,7 +436,9 @@ function doPost(e) {
           addStaff:    function (a) { return adminAddStaff(d.token, a[0], a[1], a[2]); },
           removeStaff: function (a) { return adminRemoveStaff(d.token, a[0]); },
           backupPreview: function (a) { return adminBackupPreview(d.token, a[0], a[1]); },
-          backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); }
+          backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); },
+          bulkPreview: function (a) { return adminBulkPreview(d.token, a[0]); },
+          bulkSend:    function (a) { return adminBulkSend(d.token, a[0]); }
         };
         if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
         return json(FNS[d.fn](d.args || []));
@@ -855,6 +857,8 @@ function onOpen() {
     .addSeparator()
     .addItem('Create / open photo folder…', 'photoFolder')
     .addItem('Send "We have your unit" email…', 'sendStoredEmail')
+    .addItem('Send end-of-season note (this quote)…', 'sendFallNote')
+    .addItem('Send end-of-season note to ALL…', 'sendFallNoteAll')
     .addItem('Send spring relaunch alert (this quote)…', 'sendSpringAlert')
     .addItem('Send spring relaunch alert to ALL stored…', 'sendSpringAlertAll')
     .addItem('Send "You\'re up next" email…', 'sendUpNextEmail')
@@ -2032,6 +2036,135 @@ function adminLateFee(token, qn, amt, label, emailNow) {
   return { ok: 1, msg: 'Fee applied — new balance ' + usd_(newBal) + '. ' + mailMsg };
 }
 
+/* ================= SEND TO ALL =================
+ * Some emails are seasonal announcements rather than replies to one customer:
+ * the spring relaunch alert and the autumn end-of-season note. Those get a
+ * send-to-all, reachable without pulling up a quote first.
+ *
+ * Everything about this is built to make an accidental mass send hard:
+ *   - only the kinds that are genuinely announcements can be sent this way,
+ *   - preview reads and reports, and sends nothing,
+ *   - the preview shows the count PER TAB, so "who is this actually going to"
+ *     is answerable before pressing send rather than after,
+ *   - leads are excluded, always. Someone who poked at the pricing and left is
+ *     not a customer and must never receive a seasonal email.
+ * Each send is recorded on the quote and in the Activity Log, like any other.
+ */
+const BULK_KINDS_ = {
+  spring: {
+    label: 'Spring relaunch alert',
+    /* Nothing to relaunch for a customer whose unit we never stored. */
+    skipTabs: ['No Storage'],
+    status: 'Spring alert sent'
+  },
+  fall: {
+    label: 'End of season note',
+    /* Kept for No Storage on purpose: we are not storing their unit, but they
+       still have to get it to us for winterizing, so the timing question and
+       the last call for extra work both still apply. */
+    skipTabs: [],
+    status: 'End-of-season note sent'
+  }
+};
+
+function bulkTargets_(kind) {
+  const cfg = BULK_KINDS_[kind];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const targets = [], byTab = {}, noEmail = [];
+  ss.getSheets().forEach(function (sh) {
+    const tab = sh.getName();
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    if (isStartedTab_(tab)) return;                      // leads are never emailed
+    if (cfg.skipTabs.indexOf(tab) > -1) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
+      const qn = String(r[COL.QN - 1] || '');
+      if (!qn) return;
+      const email = String(r[COL.EMAIL - 1] || '').trim();
+      if (!email) { noEmail.push(qn); return; }
+      let d2 = null;
+      try { d2 = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
+      if (!d2) { noEmail.push(qn); return; }
+      d2.email = d2.email || email;
+      targets.push({ d: d2, sh: sh, row: i + 2, tab: tab });
+      byTab[tab] = (byTab[tab] || 0) + 1;
+    });
+  });
+  return { targets: targets, byTab: byTab, noEmail: noEmail };
+}
+
+function adminBulkPreview(token, kind) {
+  requireAuth_(token, 'email');
+  const cfg = BULK_KINDS_[kind];
+  if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
+  const t = bulkTargets_(kind);
+  if (!t.targets.length) return { ok: 0, error: 'Nobody to send to — no quotes with an email address.' };
+  /* Render the real thing for the first recipient, so what staff approve is a
+     real email rather than a description of one. */
+  let sample = null;
+  try {
+    const built = buildEmailFor_(t.targets[0].d, kind, '', '');
+    if (built) sample = { subject: built.subject, html: built.html, to: t.targets[0].d.email };
+  } catch (e) {}
+  return {
+    ok: 1, kind: kind, label: cfg.label,
+    count: t.targets.length,
+    byTab: Object.keys(t.byTab).sort().map(function (k) { return { tab: k, n: t.byTab[k] }; }),
+    noEmail: t.noEmail.length,
+    skipped: cfg.skipTabs,
+    /* Free Gmail allows roughly 500 recipients a day. Worth knowing BEFORE a
+       send stops halfway through a season's customers. */
+    quotaWarning: t.targets.length > 400,
+    sample: sample
+  };
+}
+
+/* The send itself, with no notion of who asked for it — so the console and the
+   spreadsheet menu reach the same customers with the same email rather than
+   each keeping its own copy of "who gets a seasonal note". Always audited: a
+   mass send is the one action nobody should have to guess about later. */
+function bulkSendKind_(kind, by) {
+  const cfg = BULK_KINDS_[kind];
+  const t = bulkTargets_(kind);
+  let sent = 0;
+  const failed = [];
+  t.targets.forEach(function (x) {
+    try {
+      const built = buildEmailFor_(x.d, kind, '', '');
+      if (!built) throw new Error('could not build the email');
+      const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
+      const logo = getLogoBlob_();
+      if (logo) opts.inlineImages = { questlogo: logo };
+      if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+      if (FROM_ALIAS) opts.from = FROM_ALIAS;
+      GmailApp.sendEmail(x.d.email, built.subject, built.subject, opts);
+      x.sh.getRange(x.row, COL.STATUS).setValue(built.status || cfg.status);
+      recordEmail_(x.sh, x.row, x.d, kind, by);
+      sent++;
+    } catch (e) {
+      failed.push(x.d.quoteNo || '(unknown)');
+      console.error('Bulk ' + kind + ' failed for ' + x.d.quoteNo + ': ' + e);
+    }
+  });
+  auditLog_(by, 'SEND TO ALL "' + cfg.label + '" — ' + sent + ' of ' + t.targets.length +
+    ' sent' + (failed.length ? '; failed: ' + failed.join(', ') : ''));
+  return { sent: sent, total: t.targets.length, failed: failed };
+}
+
+function adminBulkSend(token, kind) {
+  const who = requireAuth_(token, 'email');
+  const cfg = BULK_KINDS_[kind];
+  if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
+  if (!bulkTargets_(kind).targets.length) return { ok: 0, error: 'Nobody to send to.' };
+  const r = bulkSendKind_(kind, who.name);
+  return {
+    ok: 1, sent: r.sent, total: r.total, failed: r.failed.length,
+    msg: 'Sent to ' + r.sent + ' of ' + r.total + ' customer(s).' +
+      (r.failed.length ? ' ' + r.failed.length + ' failed — see the Activity Log.' : '')
+  };
+}
+
 function adminStorageView(token) {
   requireAuth_(token, 'view');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2044,12 +2177,23 @@ function adminStorageView(token) {
       sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
-        let keys = '';
-        try { const pd = JSON.parse(r[COL.PAYLOAD - 1] || '{}'); keys = pd.keyLoc || ''; } catch (e) {}
+        let keys = '', slip = '', trailer = null, done = null;
+        try {
+          const pd = JSON.parse(r[COL.PAYLOAD - 1] || '{}');
+          keys = pd.keyLoc || '';
+          slip = pd.slipNo || '';
+          /* The haul-out sheet needs what the customer actually has, so read
+             the EFFECTIVE state — a boat we re-measured or relocated must
+             appear on the sheet as it is now, not as they first described it. */
+          const st = effectiveState_(pd) || pd.state || null;
+          if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
+          done = pd.seasonDone || null;
+        } catch (e) {}
         rows.push({ qn: r[COL.QN - 1],
           name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
           unit: r[COL.UNIT - 1] || '', ymm: r[COL.YMM - 1] || '', dims: r[COL.DIMS - 1] || '',
           status: r[COL.STATUS - 1] || '', keys: keys,
+          slip: slip, trailer: trailer, seasonDone: done,
           balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
       });
     }
@@ -2761,6 +2905,37 @@ function buildEmailFor_(d, kind, extra, photos) {
     return { subject: 'It\'s almost spring — let\'s plan your ' + (land ? esc_(d.unit).toLowerCase() + '\'s return' : 'relaunch') + ' · ' + d.quoteNo,
       html: noticeHtml_(d, intro, buttons, true), status: 'Spring alert sent' };
   }
+  /* The autumn counterpart of "you're up next". Same purpose — we are about to
+     touch your unit, speak now — but pointing the other way: we are taking the
+     boat OUT, not putting it in. Sharing one kind and flipping the verbs was
+     tempting and would have been wrong: the last-minute request that matters in
+     spring ("anything before it goes in?") is not the one that matters in
+     autumn ("anything to do while we have it?"). */
+  if (kind === 'upnextfall') {
+    const land = isLandUnit_(d);
+    const whenTxt = String(extra || 'in the next few days');
+    const verb = land
+      ? 'collect your ' + esc_(d.unit)
+      : 'haul out your ' + esc_(d.unit);
+    /* Keys are a boat / jet ski / golf cart thing — an e-bike has none, and
+       telling somebody to leave keys for one reads as a form letter. */
+    const prep = isBike_(d)
+      ? 'Worth doing before then: take off anything you want to keep over the winter, ' +
+        'and let us know if the battery needs collecting with it.'
+      : 'Two things worth checking before then: make sure we know where the keys will be, and ' +
+        'take anything off you want to keep over the winter.';
+    const intro = 'You\'re up next — we expect to ' + verb + ' <b>' + esc_(whenTxt) + '</b>. ' +
+      'Weather or a surprise on a unit ahead of you can shift things slightly; we\'ll let you ' +
+      'know if anything changes.<br><br>' +
+      prep + ' If there is any work you would like ' +
+      'done while we have it, now is the easiest time to add it — just call us on ' +
+      '(815) 433-2200.';
+    return {
+      subject: 'You\'re up next — ' + (land ? 'pick-up ' : 'haul-out ') + whenTxt + ' · ' + d.quoteNo,
+      html: noticeHtml_(d, intro, '', true),
+      status: 'Up next (haul-out) — customer notified'
+    };
+  }
   if (kind === 'upnext') {
     const land = isLandUnit_(d);
     const whenTxt = String(extra || 'in the next few days');
@@ -2849,86 +3024,91 @@ function sendStoredEmail() {
   ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
+/* Every menu email goes out through buildEmailFor_, the same builder the console
+   previews and sends from. A menu item that hand-builds its own body is how the
+   two consoles drift, and drift here means a customer gets wording nobody has
+   looked at since it was written. */
+function menuSendKind_(ctx, kind, extra) {
+  const d = ctx.d;
+  if (!d.email) { ctx.ui.alert('No customer email on this quote.'); return false; }
+  const photos = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
+  const built = buildEmailFor_(d, kind, extra || '', photos);
+  if (!built) { ctx.ui.alert('That email could not be built for this quote.'); return false; }
+  const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
+  const logo = getLogoBlob_();
+  if (logo) opts.inlineImages = { questlogo: logo };
+  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+  if (FROM_ALIAS) opts.from = FROM_ALIAS;
+  GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
+  if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
+  recordEmail_(ctx.sh, ctx.rowNum, d, kind, 'Sheet menu');
+  return true;
+}
+
 function sendSpringAlert() {
   const ctx = getSelectedQuoteRow_();
   if (!ctx) return;
   if (!ctx.d.email) { ctx.ui.alert('No customer email on this quote.'); return; }
   const conf = ctx.ui.alert('Send the "It\'s almost spring" relaunch alert to ' + ctx.d.email + '?', '', ctx.ui.ButtonSet.YES_NO);
   if (conf !== ctx.ui.Button.YES) return;
-  springAlertFor_(ctx.d);
-  ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Spring alert sent');
-  recordEmail_(ctx.sh, ctx.rowNum, ctx.d, 'spring', 'Sheet menu');
-  ctx.ui.alert('Sent.');
+  if (menuSendKind_(ctx, 'spring', '')) ctx.ui.alert('Sent.');
 }
 
-function springAlertFor_(d) {
-  const base = WEB_APP_URL;
-  const mk = function (pref, label, bg) {
-    const u = base + '?action=launchpref&quote=' + encodeURIComponent(d.quoteNo) +
-      '&ln=' + encodeURIComponent(d.lastName || '') + '&pref=' + pref;
-    return buttonHtml_(u, label, bg);
-  };
-  const land = isLandUnit_(d);
-  const backPhrase = land ? 'heads back out' : 'goes back in the water';
-  const whenQ = land ? 'When would you like it back?' : 'When would you like to launch?';
-  const intro = 'It\'s almost spring — ' + (land ? 'time to plan your ' + esc_(d.unit) + '\'s return!' : 'relaunch season is coming up!') + ' Two quick things:<br><br>' +
-    '<b>1. Any last-minute work?</b> If there\'s anything you want done before your ' + esc_(d.unit) +
-    ' ' + backPhrase + ' — service, detail, accessories — reply to this email or call us now, while it\'s still easy to get to.<br><br>' +
-    '<b>2. ' + whenQ + '</b> Tap one below. We can\'t commit to exact dates — weather and the occasional mechanical surprise on units ahead of you can shift the schedule — but your preference sets where you land in the line, and we\'ll email you when you\'re up next.';
-  const buttons = '<div style="margin:6px 0 10px">' +
-    mk('early', 'As early as possible', '#14293E') +
-    mk('any', 'Any time works', '#4A81A6') +
-    mk('late', 'As late as possible', '#C08A22') + '</div>';
-  sendCustomerNotice_(d, 'It\'s almost spring — let\'s plan your ' + (isLandUnit_(d) ? esc_(d.unit).toLowerCase() + '\'s return' : 'relaunch') + ' · ' + d.quoteNo, intro, buttons, true);
+function sendFallNote() {
+  const ctx = getSelectedQuoteRow_();
+  if (!ctx) return;
+  if (!ctx.d.email) { ctx.ui.alert('No customer email on this quote.'); return; }
+  const conf = ctx.ui.alert('Send the end-of-season note to ' + ctx.d.email + '?',
+    'Season winding down, a last chance to add detailing or winter work, and the haul-out timing question.',
+    ctx.ui.ButtonSet.YES_NO);
+  if (conf !== ctx.ui.Button.YES) return;
+  if (menuSendKind_(ctx, 'fall', '')) ctx.ui.alert('Sent.');
+}
+
+/* Both send-to-all menu items are thin wrappers now: the recipient list and the
+   sending live in bulkSendKind_, shared with the console. */
+function menuBulkSend_(kind, blurb) {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = BULK_KINDS_[kind];
+  const t = bulkTargets_(kind);
+  if (!t.targets.length) { ui.alert('No quotes with email addresses found.'); return; }
+  const conf = ui.alert('Send the ' + cfg.label.toLowerCase() + ' to ' + t.targets.length + ' customer(s)?',
+    blurb + ' This cannot be un-sent.', ui.ButtonSet.YES_NO);
+  if (conf !== ui.Button.YES) return;
+  const r = bulkSendKind_(kind, 'Sheet menu');
+  ui.alert(cfg.label + ' sent to ' + r.sent + ' of ' + r.total + '.');
 }
 
 function sendSpringAlertAll() {
-  const ui = SpreadsheetApp.getUi();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targets = [];
-  ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (sh.getName() === 'No Storage') return;
-    if (isStartedTab_(sh.getName())) return;  // leads are never emailed
-    const last = sh.getLastRow();
-    if (last < 2) return;
-    sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
-      const email = r[COL.EMAIL - 1];
-      if (!email) return;
-      let d2 = null;
-      try { d2 = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
-      if (d2) targets.push({ d: d2, sh: sh, row: i + 2 });
-    });
-  });
-  if (!targets.length) { ui.alert('No stored quotes with email addresses found.'); return; }
-  const conf = ui.alert('Send the spring relaunch alert to ' + targets.length + ' customer(s)?',
-    'One branded email each, with launch-window buttons. This cannot be un-sent.', ui.ButtonSet.YES_NO);
-  if (conf !== ui.Button.YES) return;
-  let sent = 0;
-  targets.forEach(function (t2) {
-    try { springAlertFor_(t2.d); t2.sh.getRange(t2.row, COL.STATUS).setValue('Spring alert sent'); recordEmail_(t2.sh, t2.row, t2.d, 'spring', 'Sheet menu'); sent++; }
-    catch (e) { console.error('Spring alert failed for ' + t2.d.quoteNo + ': ' + e); }
-  });
-  ui.alert('Spring alert sent to ' + sent + ' of ' + targets.length + '.');
+  menuBulkSend_('spring', 'One branded email each, with launch-window buttons.');
 }
 
+function sendFallNoteAll() {
+  menuBulkSend_('fall', 'One branded email each, with the haul-out timing buttons.');
+}
+
+/* Which way the unit is moving decides the whole email, so it is asked before
+   the date rather than guessed from the month — a boat hauled out in March
+   after a repair is still a haul-out. */
 function sendUpNextEmail() {
   const ctx = getSelectedQuoteRow_();
   if (!ctx) return;
   const d = ctx.d;
   if (!d.email) { ctx.ui.alert('No customer email on this quote.'); return; }
   const land = isLandUnit_(d);
-  const when = ctx.ui.prompt(land ? 'When is the return delivery?' : 'When is the launch?', 'e.g. "tomorrow", "Thursday", "in the next 2–3 days"', ctx.ui.ButtonSet.OK_CANCEL);
+  const dir = ctx.ui.alert('Which way is this one going?',
+    'YES = we are ' + (land ? 'collecting it for the winter' : 'hauling it out') + '.\n' +
+    'NO = we are ' + (land ? 'bringing it back' : 'launching it') + '.',
+    ctx.ui.ButtonSet.YES_NO_CANCEL);
+  if (dir === ctx.ui.Button.CANCEL) return;
+  const kind = dir === ctx.ui.Button.YES ? 'upnextfall' : 'upnext';
+  const q = kind === 'upnextfall'
+    ? (land ? 'When are we collecting it?' : 'When is the haul-out?')
+    : (land ? 'When is the return delivery?' : 'When is the launch?');
+  const when = ctx.ui.prompt(q, 'e.g. "tomorrow", "Thursday", "in the next 2–3 days"', ctx.ui.ButtonSet.OK_CANCEL);
   if (when.getSelectedButton() !== ctx.ui.Button.OK) return;
   const whenTxt = String(when.getResponseText()).trim() || 'in the next few days';
-  const verb = land ? 'bring your ' + esc_(d.unit) + ' back' : 'launch your ' + esc_(d.unit);
-  const intro = 'You\'re up next! We expect to ' + verb + ' <b>' + esc_(whenTxt) + '</b>. ' +
-    'As always, weather or a surprise on a unit ahead of you can shift things slightly — we\'ll let you know if anything changes. ' +
-    'If you have any last-minute requests, now is the moment to call.';
-  sendCustomerNotice_(d, 'You\'re up next — ' + (land ? 'return delivery ' : 'relaunch ') + whenTxt + ' · ' + d.quoteNo, intro, '', true);
-  ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Up next — customer notified');
-  recordEmail_(ctx.sh, ctx.rowNum, d, 'upnext', 'Sheet menu');
-  ctx.ui.alert('Sent to ' + d.email + '.');
+  if (menuSendKind_(ctx, kind, whenTxt)) ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
 function sendSplashEmail() {

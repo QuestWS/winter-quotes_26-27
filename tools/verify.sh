@@ -38,7 +38,8 @@ if [ -f quote-logger-apps-script.gs ]; then
     "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml" \
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
-    "sanitizeEngines_" "engineSummary_"
+    "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
+    "BULK_KINDS_" "upnextfall"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -70,7 +71,7 @@ if [ -f admin/index.html ]; then
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
-    "renderMotors" "dimsMotors"
+    "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard"
   # no raw prompt() in the console — all inputs are inline UI
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
@@ -183,6 +184,24 @@ if [ -f quote-logger-apps-script.gs ]; then
       echo "  OK   trap: $f writes to the Activity Log"
     else echo "  FAIL trap: $f sends email without logging it"; FAIL=1; fi
   done
+  # A send-to-all must never reach the lead tab. This is the highest-blast-radius
+  # path in the system: one click, every customer, no way to un-send — so the
+  # recipient list is BUILT against a fake sheet with a lead on it and read back,
+  # rather than grepped for the name of the check.
+  if node tools/check-bulk-targets.js > "$TMP/bulk.txt" 2>&1; then
+    echo "  OK   gate: send-to-all recipient rules hold"
+    sed 's/^/     /' "$TMP/bulk.txt" | grep -E '\->' || true
+  else
+    echo "  FAIL gate: send-to-all recipient rules broken"; sed 's/^/       /' "$TMP/bulk.txt"; FAIL=1
+  fi
+  # Only genuine announcements can be blasted; BULK_KINDS_ is the whole allow-list.
+  if awk '/^function adminBulkSend/,/^}/' quote-logger-apps-script.gs | grep -q 'BULK_KINDS_'; then
+    echo "  OK   trap: send-to-all restricted to the announcement kinds"
+  else echo "  FAIL trap: send-to-all accepts any email kind"; FAIL=1; fi
+  # Preview reads and reports; it must not send.
+  if awk '/^function adminBulkPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp'; then
+    echo "  FAIL trap: adminBulkPreview sends email — it must only report"; FAIL=1
+  else echo "  OK   trap: send-to-all preview sends nothing"; fi
   # The quote-load endpoint must serve the EFFECTIVE state. Serving the raw
   # customer state means a re-measured or relocated quote renders at the old
   # dimensions and the old price on the customer's own page — they see a total
@@ -275,9 +294,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/function dailyReminderCheck/,/^}/' quote-logger-apps-script.gs | grep -q "isStartedTab_"; then
     echo "  OK   trap: daily reminder skips the lead tab"
   else echo "  FAIL trap: dailyReminderCheck no longer skips STARTED_TAB — it will email leads"; FAIL=1; fi
-  if awk '/function sendSpringAlertAll/,/^}/' quote-logger-apps-script.gs | grep -q "isStartedTab_"; then
-    echo "  OK   trap: spring alert skips the lead tab"
-  else echo "  FAIL trap: sendSpringAlertAll no longer skips STARTED_TAB"; FAIL=1; fi
+  # Every mass send now shares ONE recipient list, so there is one place the lead
+  # exclusion has to hold. A menu item that walks the sheets itself is a second
+  # copy of that rule, and the second copy is the one that gets it wrong.
+  for f in sendSpringAlertAll sendFallNoteAll; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -qE 'getSheets|getLastRow'; then
+      echo "  FAIL trap: $f builds its own recipient list instead of using bulkTargets_"; FAIL=1
+    else echo "  OK   trap: $f goes through the shared recipient list"; fi
+  done
 fi
 if [ -f admin/index.html ]; then
   sweep admin/index.html "console terms" "termsText" "Terms accepted"

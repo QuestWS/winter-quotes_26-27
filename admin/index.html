@@ -233,6 +233,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
     <nav class="navlinks" id="navlinks">
       <div class="userchip">Signed in as <b id="userName"></b></div>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
+      <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn" onclick="navGo(logout)">Log out</button>
@@ -378,9 +379,14 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">Re-send invoice</button>
             </div>
             <div class="row2" style="margin-top:10px">
-              <div><label class="fld">Up next — when?</label><input class="txt" id="upnextWhen" placeholder="tomorrow / Thursday"></div>
-              <div style="display:flex;align-items:flex-end"><button class="btn gold" id="em_upnext" style="width:100%" onclick="sendUpNext()">Send "You're up next"</button></div>
+              <div><label class="fld">Up next — which way?</label>
+                <select class="txt" id="upnextDir">
+                  <option value="upnextfall">Haul-out / pick-up (autumn)</option>
+                  <option value="upnext">Relaunch / return (spring)</option>
+                </select></div>
+              <div><label class="fld">When?</label><input class="txt" id="upnextWhen" placeholder="tomorrow / Thursday"></div>
             </div>
+            <button class="btn gold" id="em_upnext" onclick="sendUpNext()">Send "You're up next"</button>
             <div class="msg" id="emailMsg"></div>
           </div>
         </div>
@@ -413,6 +419,25 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       </div>
     </div>
 
+    <div class="card hide" id="bulkCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Send to all</h2>
+        <button class="btn ghost sm" onclick="$('bulkCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Seasonal announcements that go to every customer at once. No quote needs to be open.
+        Nothing sends until you have seen who it is going to and confirmed.
+      </div>
+      <label class="fld" style="margin-top:8px">Which email</label>
+      <select class="txt" id="bulkKind">
+        <option value="fall">End of season note — winding down, last call for work, haul-out timing</option>
+        <option value="spring">Spring relaunch alert — launch timing and last-minute work</option>
+      </select>
+      <button class="btn navy" id="bulkPrevBtn" onclick="previewBulk()">See who this goes to</button>
+      <div class="msg" id="bulkMsg"></div>
+      <div id="bulkReport" class="hide" style="margin-top:10px"></div>
+    </div>
+
     <div class="card hide" id="backupCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Restore from a backup</h2>
@@ -434,6 +459,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <h2 style="margin:0">Storage overview</h2>
         <div style="display:flex;gap:8px">
           <button class="btn navy sm" onclick="printStorage()">Print yard sheets</button>
+          <button class="btn gold sm" onclick="printHaulOut()">Print haul-out list</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
       </div>
@@ -485,6 +511,9 @@ function boot(){
   if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
     $('userName').textContent=ME.name;
     if(ME.admin){$('adminOpen').classList.remove('hide');$('backupOpen').classList.remove('hide');}
+    /* Send-to-all is reachable without a quote open, so it is gated here rather
+       than by a card on the quote screen. Same permission as any other email. */
+    if(ME.admin||((ME.perms||{}).email)) $('bulkOpen').classList.remove('hide');
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
 async function doLogin(){
@@ -927,6 +956,9 @@ async function delLine(i){
 let PV={kind:'',extra:''};
 async function previewSend(kind,extra){
   PV={kind,extra:extra||''};
+  /* The bulk sample reuses this modal and hides its send button. Restore it,
+     or the next single-quote preview silently loses the way to send. */
+  $('pvSend').classList.remove('hide');
   setMsg('emailMsg','Building preview…');
   try{const r=await api('emailPreview',[QN,kind,PV.extra]);
     if(!r.ok){setMsg('emailMsg',r.error,false);return;}
@@ -956,7 +988,7 @@ const doPay=()=>act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod')
 const doAdjust=()=>act('adjBtn','adjMsg','adjust',[QN,$('adjAmt').value,$('adjDesc').value,$('adjEmail').checked]);
 const sendKind=k=>previewSend(k,'');
 const doFee=()=>act('feeBtn','feeMsg','lateFee',[QN,$('feeAmt').value,$('feeLabel').value,$('feeEmail').checked]);
-const sendUpNext=()=>previewSend('upnext',$('upnextWhen').value);
+const sendUpNext=()=>previewSend($('upnextDir').value,$('upnextWhen').value);
 
 /* ---------- photos: drag-drop, multi, PARALLEL upload ---------- */
 let SEASON='winter';
@@ -1072,6 +1104,146 @@ async function printStorage(){
    name into an onclick — an apostrophe in a name would otherwise break the
    handler, and worse. */
 let STAFF=[];
+/* ---------- Send to all ----------
+   Two steps, deliberately. The first only asks the server who would receive
+   this and renders one real example; the second sends. A mass email cannot be
+   recalled, so "who is this going to" has to be answerable before, not after. */
+let BULK=null;
+function toggleBulk(){
+  const c=$('bulkCard');
+  c.classList.toggle('hide');
+  if(!c.classList.contains('hide')){ BULK=null; $('bulkReport').classList.add('hide'); setMsg('bulkMsg',''); }
+}
+async function previewBulk(){
+  const kind=$('bulkKind').value;
+  const b=$('bulkPrevBtn'); b.disabled=true; b.textContent='Checking…';
+  setMsg('bulkMsg','');
+  try{
+    const r=await api('bulkPreview',[kind]);
+    if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Could not work that out.',false);
+      $('bulkReport').classList.add('hide'); return; }
+    BULK=r; renderBulk(r);
+  }catch(e){ setMsg('bulkMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='See who this goes to'; }
+}
+function renderBulk(r){
+  const tabs=(r.byTab||[]).map(t=>
+    '<div class="bkrow"><span>'+esc(t.tab)+'</span><span class="q">'+t.n+'</span></div>').join('');
+  const skipped=(r.skipped||[]).length
+    ? '<div class="msg" style="margin-top:6px">Not included: '+r.skipped.map(esc).join(', ')+
+      ' — nothing to relaunch for units we never stored.</div>' : '';
+  const noEmail=r.noEmail
+    ? '<div class="msg" style="margin-top:4px">'+r.noEmail+' quote(s) have no email address and will be skipped.</div>' : '';
+  const quota=r.quotaWarning
+    ? '<div class="bkwarn"><b>That is a lot of email for one day.</b> This account can send roughly '+
+      '500 a day before Google stops it. If the send stops part way through, wait until tomorrow '+
+      'and run it again — customers who already received it will get a second copy, so check the '+
+      'Activity Log first.</div>' : '';
+  $('bulkReport').innerHTML=
+    '<div style="font-size:13.5px;color:var(--navy);font-weight:700">'+esc(r.label)+'</div>'+
+    '<div class="msg" style="margin:2px 0 6px">Goes to <b>'+r.count+'</b> customer(s). Leads who never '+
+      'finished a quote are always excluded.</div>'+
+    tabs+skipped+noEmail+quota+
+    (r.sample?'<div style="margin-top:10px"><button class="btn ghost sm" onclick="showBulkSample()">Preview the email</button></div>':'')+
+    '<button class="btn gold" id="bulkSendBtn" style="margin-top:10px" onclick="doBulkSend()">Send to all '+r.count+'</button>';
+  $('bulkReport').classList.remove('hide');
+}
+function showBulkSample(){
+  if(!BULK||!BULK.sample) return;
+  /* Reuse the same preview window every other email uses. */
+  PV={kind:BULK.kind,extra:''};
+  $('pvSub').textContent=BULK.sample.subject;
+  $('pvTo').textContent='example — '+BULK.sample.to;
+  $('pvFrame').srcdoc=BULK.sample.html;
+  $('pvModal').classList.remove('hide');
+  /* This preview is illustrative only; sending happens from the card. */
+  $('pvSend').classList.add('hide');
+}
+async function doBulkSend(){
+  if(!BULK) return;
+  if(!confirm('Send "'+BULK.label+'" to '+BULK.count+' customer(s)?\n\nThis cannot be un-sent.'))return;
+  const b=$('bulkSendBtn'); if(b){ b.disabled=true; b.textContent='Sending…'; }
+  setMsg('bulkMsg','Sending — this can take a minute.',null);
+  try{
+    const r=await api('bulkSend',[BULK.kind]);
+    if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Send failed.',false); return; }
+    setMsg('bulkMsg',r.msg,true);
+    $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>Recorded in the Activity Log '+
+      'and on each quote\'s email history.</div>';
+    BULK=null;
+    toast('Sent to '+r.sent);
+  }catch(e){ setMsg('bulkMsg',e.message,false); }
+  finally{ if(b){ b.disabled=false; b.textContent='Send to all'; } }
+}
+
+/* ---------- Haul-out list ----------
+   A different sheet from the yard sheet: that one is for walking the rows and
+   checking units off, this one is for planning the order units come out in.
+   Sorted by what the customer asked for, soonest first, because that is the
+   question being answered. */
+function haulOrder_(x){
+  const sd=x.seasonDone||null;
+  if(!sd||!sd.choice) return {rank:3,label:'Not answered',key:''};
+  if(sd.choice==='now')  return {rank:0,label:'Ready now',key:''};
+  if(sd.choice==='date') return {rank:1,label:haulDate_(sd.date),key:String(sd.date||'')};
+  return {rank:2,label:'Will call',key:''};
+}
+/* Sort on the stored ISO string, print something a person reads at a glance.
+   Anything that isn't a plain date goes through untouched rather than
+   becoming "Invalid Date" on a sheet somebody is standing in the yard with. */
+function haulDate_(v){
+  const s=String(v||'');
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return s||'Date given';
+  const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  if(isNaN(d)) return s;
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+async function printHaulOut(){
+  if(!window._sg){await loadStorage();}
+  if(!window._sg){return;}
+  const today=new Date().toLocaleDateString();
+  /* One list across every storage area — haul-out order is a yard-wide
+     question, not a per-building one. */
+  const all=[];
+  window._sg.forEach(g=>(g.rows||[]).forEach(x=>all.push(Object.assign({tab:g.tab},x))));
+  if(!all.length){ toast('Nothing to print.'); return; }
+  all.sort((a,b)=>{
+    const A=haulOrder_(a),B2=haulOrder_(b);
+    if(A.rank!==B2.rank) return A.rank-B2.rank;
+    if(A.key&&B2.key) return A.key.localeCompare(B2.key);
+    return String(a.name).localeCompare(String(b.name));
+  });
+  const rows=all.map(x=>{
+    const o=haulOrder_(x);
+    const trailer=x.trailer===true?'On trailer':x.trailer===false?'No trailer':'—';
+    const note=(x.seasonDone&&x.seasonDone.note)?'<br><span class="ysub">'+esc(x.seasonDone.note)+'</span>':'';
+    return `<tr>
+      <td><span class="cb"></span></td>
+      <td><span class="yn">${esc(x.name)}</span><br><span class="ysub">${esc(x.qn)}</span></td>
+      <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
+      <td>${esc(x.tab)}</td>
+      <td>${trailer}</td>
+      <td>${x.slip?esc(x.slip):'—'}</td>
+      <td>${x.keys?esc(x.keys):'—'}</td>
+      <td><b>${esc(o.label)}</b>${note}</td></tr>`;
+  }).join('');
+  $('printArea').innerHTML=`
+    <div class="pg">
+      <div class="pgHead">
+        <h1>QUEST WATERSPORTS — HAUL-OUT LIST</h1>
+        <div class="meta">Printed ${today}<br>${all.length} unit${all.length===1?'':'s'} · ordered by requested timing</div>
+      </div>
+      <table class="yard">
+        <tr><th style="width:38px">Done</th><th>Customer</th><th>Unit / dims</th><th>Storage</th>
+            <th>Trailer</th><th>Slip</th><th>Keys</th><th>Requested timing</th></tr>
+        ${rows}
+      </table>
+      <div class="pgFoot">Ordered by what the customer asked for: ready now, then stated dates, then will call, then no answer yet. Quest Watersports · (815) 433-2200</div>
+    </div>`;
+  window.print();
+}
+
 async function loadStaff(){
   $('adminCard').classList.remove('hide');
   const r=await api('listStaff',[]);

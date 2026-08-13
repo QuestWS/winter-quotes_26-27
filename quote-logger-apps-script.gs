@@ -417,6 +417,7 @@ function doPost(e) {
           quoteHtml:   function (a) { return adminQuoteHtml(d.token, a[0]); },
           dimsPreview: function (a) { return adminDimsPreview(d.token, a[0], a[1]); },
           dimsApply:   function (a) { return adminDimsApply(d.token, a[0], a[1], a[2]); },
+          keysApply:   function (a) { return adminKeysApply(d.token, a[0], a[1]); },
           pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
           adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
           sendEmail:   function (a) { return adminSendEmail(d.token, a[0], a[1], a[2]); },
@@ -1049,6 +1050,21 @@ function rebuildLinesFromState_(d) {
      say, so refresh both from the state that actually set the price. */
   d.dims = dimsString(sp.state);
   d.storageTab = storageTabFor(sp.state);
+  /* Key location and slip number live at the top level of the payload, which
+     is where the sheet, the yard sheets and the emails read them — but the
+     customer's browser also holds its own copy and posts it on every save. Take
+     them from the state that priced this quote so a staff correction survives
+     the customer's next save, exactly as a re-measure does.
+
+     Only ever UPGRADE here. An empty value in the state must not wipe a
+     top-level one: older payloads carry a key location at the top level that
+     never made it into `state`, and blanking those would quietly lose the only
+     record of where the keys are. Deliberate clearing is the staff path's job
+     (adminKeysApply), where blanking is what was actually asked for. */
+  KEYFIELDS_.forEach(function (k) {
+    const v = sp.state[k];
+    if (v !== undefined && String(v).trim() !== '') d[k] = v;
+  });
   /* Engine flags (e.g. a beam over the Inside limit) are advisory: they are
      recorded for staff, never acted on automatically. Relocating a customer's
      boat is a conversation, not a side effect of a save. */
@@ -1539,6 +1555,31 @@ function sanitizeEngines_(e, st) {
   return out;
 }
 
+/* Key location and slip number: the two things the haul-out crew needs and the
+   two the customer most often leaves blank or gets wrong. They ride in the same
+   journal as the measurements (`manual.measured`) rather than being written
+   into d.state, for exactly the same reason — the customer's browser still
+   holds their own copy and would post it back over ours on their next save.
+   effectiveState_ overlays them, so the sheet, the yard sheets, the haul-out
+   list and the emails all read the corrected value.
+
+   A blank field REMOVES the override rather than storing an empty string, so
+   clearing a mistake falls back to whatever the customer told us instead of
+   permanently blanking it. */
+const KEYFIELDS_ = ['keyLoc', 'slipNo'];
+function sanitizeKeys_(changes) {
+  const out = {}, clear = [];
+  changes = changes || {};
+  KEYFIELDS_.forEach(function (k) {
+    if (changes[k] === undefined || changes[k] === null) return;   // not offered — leave alone
+    const v = String(changes[k]).replace(/\s+/g, ' ').trim();
+    if (v === '') { clear.push(k); return; }
+    if (v.length > 120) throw new Error('Keep the ' + (k === 'slipNo' ? 'slip number' : 'key location') + ' under 120 characters.');
+    out[k] = v;
+  });
+  return { set: out, clear: clear };
+}
+
 function sanitizeMeasured_(changes, st) {
   const unitKind = String((st && st.unit) || '');
   const out = {};
@@ -1662,6 +1703,66 @@ function adminDimsPreview(token, qn, changes) {
   catch (err) { return { ok: 0, error: String(err.message || err) }; }
 }
 
+/* Record where the keys are and which slip the unit is in. Separate from the
+   dimension editor because it is not a re-price and does not want a
+   before/after diff — but it still runs the rebuild, because the slip number
+   appears in the Heritage Harbor discount line and that label has to follow. */
+function adminKeysApply(token, qn, changes) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  let clean;
+  try { clean = sanitizeKeys_(changes); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+  if (!Object.keys(clean.set).length && !clean.clear.length) {
+    return { ok: 0, error: 'Nothing changed.' };
+  }
+
+  const before = effectiveState_(d) || {};
+  const beforeKey = String(before.keyLoc || ''), beforeSlip = String(before.slipNo || '');
+
+  const m = ensureManual_(d);
+  if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
+  m.measured = Object.assign({}, m.measured || {}, clean.set);
+  clean.clear.forEach(function (k) { delete m.measured[k]; });
+
+  /* Re-run the engine so the slip number in the Heritage Harbor line, and the
+     top-level copies the sheet and emails read, all follow. A quote with no
+     stored selections cannot be rebuilt; write the top-level fields directly so
+     older quotes still benefit. */
+  const cross = rebuildLinesFromState_(d);
+  if (cross.rebuilt) applyManualOps_(d);
+  /* Write the top-level copies from what staff actually asked for. The rebuild
+     only ever upgrades them — it will not blank one — but clearing a box here
+     is a deliberate instruction, so it has to land. A cleared field falls back
+     to whatever the customer told us, which may itself be empty. */
+  const eff = effectiveState_(d) || {};
+  KEYFIELDS_.forEach(function (k) {
+    if (clean.set[k] !== undefined) d[k] = clean.set[k];
+    else if (clean.clear.indexOf(k) > -1) d[k] = String(eff[k] || '');
+  });
+  saveQuoteRow_(ctx);
+
+  const after = effectiveState_(d) || d;
+  const bits = [];
+  if (String(after.keyLoc || '') !== beforeKey) {
+    bits.push('keys: ' + (beforeKey || '(blank)') + ' → ' + (String(after.keyLoc || '') || '(blank)'));
+  }
+  if (String(after.slipNo || '') !== beforeSlip) {
+    bits.push('slip: ' + (beforeSlip || '(blank)') + ' → ' + (String(after.slipNo || '') || '(blank)'));
+  }
+  auditLog_(who.name, 'Keys/slip updated on ' + d.quoteNo + (bits.length ? ': ' + bits.join(' · ') : ''));
+
+  return {
+    ok: 1,
+    msg: bits.length ? 'Saved — ' + bits.join('; ') + '.' : 'Saved.',
+    keyLoc: String(after.keyLoc || ''),
+    slipNo: String(after.slipNo || ''),
+    missing: missingHaulInfo_(d)
+  };
+}
+
 function adminDimsApply(token, qn, changes, note) {
   const who = requireAuth_(token, 'adjust');
   const ctx = findQuoteCtx_(qn);
@@ -1783,6 +1884,20 @@ function adminLookup(token, qn) {
       at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
     },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
+    /* Keys and slip, editable on the console. Read through the effective state
+       so a staff correction shows rather than the customer's original, and
+       report what is still missing so the console can say so out loud — it is
+       the same list the haul-out "up next" email asks for. */
+    keys: (function () {
+      const st = effectiveState_(d) || d.state || {};
+      return {
+        keyLoc: String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || ''),
+        slipNo: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || ''),
+        needsKeys: !isBike_(d),
+        needsSlip: !isLandUnit_(d) && !(st.hasTrailer === undefined ? d.hasTrailer : st.hasTrailer),
+        missing: missingHaulInfo_(d)
+      };
+    })(),
     /* Everything the dimension editor needs to render itself pre-filled. The
        field list comes from the engine (DIM_FIELDS), so a newly priced
        dimension appears on the console without touching the console. */
@@ -2180,12 +2295,15 @@ function adminStorageView(token) {
         let keys = '', slip = '', trailer = null, done = null;
         try {
           const pd = JSON.parse(r[COL.PAYLOAD - 1] || '{}');
-          keys = pd.keyLoc || '';
-          slip = pd.slipNo || '';
           /* The haul-out sheet needs what the customer actually has, so read
              the EFFECTIVE state — a boat we re-measured or relocated must
-             appear on the sheet as it is now, not as they first described it. */
+             appear on the sheet as it is now, not as they first described it.
+             Same for keys and slip: a staff correction has to reach the sheet
+             the crew is holding, with the top-level copy as the fallback for
+             quotes saved before selections were stored. */
           const st = effectiveState_(pd) || pd.state || null;
+          keys = String((st && st.keyLoc !== undefined ? st.keyLoc : pd.keyLoc) || '');
+          slip = String((st && st.slipNo !== undefined ? st.slipNo : pd.slipNo) || '');
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
         } catch (e) {}
@@ -2917,22 +3035,62 @@ function buildEmailFor_(d, kind, extra, photos) {
     const verb = land
       ? 'collect your ' + esc_(d.unit)
       : 'haul out your ' + esc_(d.unit);
+    /* What we do and don't already know. If a crew turns up without a key
+       location or a slip number, the trip is wasted — so this is the one email
+       where asking for it is worth the space. */
+    const stF = effectiveState_(d) || d.state || d || {};
+    const keyLoc = String((stF.keyLoc !== undefined ? stF.keyLoc : d.keyLoc) || '').trim();
+    const slipNo = String((stF.slipNo !== undefined ? stF.slipNo : d.slipNo) || '').trim();
+    const need = missingHaulInfo_(d);
+
     /* Keys are a boat / jet ski / golf cart thing — an e-bike has none, and
        telling somebody to leave keys for one reads as a form letter. */
     const prep = isBike_(d)
       ? 'Worth doing before then: take off anything you want to keep over the winter, ' +
         'and let us know if the battery needs collecting with it.'
-      : 'Two things worth checking before then: make sure we know where the keys will be, and ' +
-        'take anything off you want to keep over the winter.';
+      : 'Worth doing before then: take anything off you want to keep over the winter.';
     const intro = 'You\'re up next — we expect to ' + verb + ' <b>' + esc_(whenTxt) + '</b>. ' +
       'Weather or a surprise on a unit ahead of you can shift things slightly; we\'ll let you ' +
       'know if anything changes.<br><br>' +
       prep + ' If there is any work you would like ' +
       'done while we have it, now is the easiest time to add it — just call us on ' +
       '(815) 433-2200.';
+
+    let ask = '';
+    if (need.length) {
+      const items = [];
+      if (need.indexOf('keys') > -1) {
+        items.push('<b>Where will the keys be?</b> On the ' + esc_(String(d.unit || 'unit')).toLowerCase() +
+          ', at the front desk, with a neighbour — anywhere we can find them without you being there.');
+      }
+      if (need.indexOf('slip') > -1) {
+        items.push('<b>Which slip is it in?</b> So the crew goes straight to it.');
+      }
+      ask =
+        '<div style="background:#FDFCF7;border:1px solid #C08A22;border-radius:8px;padding:16px 18px;margin:4px 0 8px">' +
+        '<div style="font-size:15px;font-weight:bold;color:#14293E;margin-bottom:6px">' +
+        (items.length > 1 ? 'Two things we still need from you' : 'One thing we still need from you') +
+        '</div>' +
+        '<div style="font-size:13.5px;color:#14293E;line-height:1.55">' +
+        items.map(function (x) { return '&bull; ' + x; }).join('<br>') + '</div>' +
+        '<div style="font-size:13px;color:#5C7185;margin-top:10px">Just reply to this email or call us ' +
+        'on (815) 433-2200. Without ' + (items.length > 1 ? 'them' : 'it') +
+        ' we may not be able to ' + (land ? 'collect' : 'haul') +
+        ' on the day.</div></div>';
+    } else {
+      /* We think we know. Say it back, because a key location six months old is
+         the kind of thing that quietly stops being true. */
+      const have = [];
+      if (keyLoc) have.push('your keys as <b>' + esc_(keyLoc) + '</b>');
+      if (slipNo) have.push('your slip as <b>' + esc_(slipNo) + '</b>');
+      if (have.length) {
+        ask = '<div style="font-size:13px;color:#5C7185;margin:4px 0 8px">We have ' +
+          have.join(' and ') + '. If that has changed, reply and let us know.</div>';
+      }
+    }
     return {
       subject: 'You\'re up next — ' + (land ? 'pick-up ' : 'haul-out ') + whenTxt + ' · ' + d.quoteNo,
-      html: noticeHtml_(d, intro, '', true),
+      html: noticeHtml_(d, intro, ask, true),
       status: 'Up next (haul-out) — customer notified'
     };
   }
@@ -3670,6 +3828,22 @@ function isLandUnit_(d) {
   return u.indexOf('golf') > -1 || u.indexOf('bike') > -1;
 }
 function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') > -1; }
+
+/* What the haul-out crew still doesn't know about this unit.
+   Only ever asks for what actually applies:
+   - Keys: every unit we drive or tow except an e-bike, which has none.
+   - Slip: only a water unit that is NOT on a trailer. A boat sitting on its
+     trailer is not in a slip, and asking for one reads as a form letter. */
+function missingHaulInfo_(d) {
+  const st = effectiveState_(d) || d.state || d || {};
+  const need = [];
+  const keyLoc = String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || '').trim();
+  const slipNo = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim();
+  if (!isBike_(d) && !keyLoc) need.push('keys');
+  const onTrailer = !!(st.hasTrailer === undefined ? d.hasTrailer : st.hasTrailer);
+  if (!isLandUnit_(d) && !onTrailer && !slipNo) need.push('slip');
+  return need;
+}
 
 /* Sub-heading under the season-done survey.
    Two things it has to get right:

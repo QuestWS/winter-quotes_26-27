@@ -344,6 +344,19 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="dimsMsg"></div>
           </div>
 
+          <div class="card hide" id="keysCard">
+            <h2>Keys &amp; slip</h2>
+            <div class="msg" id="keysNeed" style="margin:0 0 6px"></div>
+            <div id="keysKeyWrap"><label class="fld">Where will the keys be?</label>
+              <input class="txt" id="keysKeyLoc" placeholder="e.g. in the glove box / at the front desk"></div>
+            <div id="keysSlipWrap" style="margin-top:8px"><label class="fld">Slip number</label>
+              <input class="txt" id="keysSlipNo" placeholder="e.g. B-14"></div>
+            <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
+              told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
+            <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
+            <div class="msg" id="keysMsg"></div>
+          </div>
+
           <div class="card hide" id="adjCard">
             <h2>Adjustment</h2>
             <div class="row2">
@@ -674,6 +687,51 @@ function collectDims(){
   return out;
 }
 
+/* ---------- Keys & slip ----------
+   Not part of the dimension editor: nothing here changes a price, so there is
+   no before/after to preview — it saves in one press. The server still re-runs
+   the engine, because the slip number shows up in the Heritage Harbor line. */
+let KEYS=null;
+function renderKeys(k){
+  KEYS=k||null;
+  const c=$('keysCard');
+  if(!k){ c.classList.add('hide'); return; }
+  $('keysKeyWrap').classList.toggle('hide',!k.needsKeys);
+  $('keysSlipWrap').classList.toggle('hide',!k.needsSlip);
+  /* An e-bike has no keys and a trailered boat has no slip — with neither
+     field to show there is nothing to edit, so don't show an empty card. */
+  if(!k.needsKeys&&!k.needsSlip){ c.classList.add('hide'); return; }
+  c.classList.remove('hide');
+  $('keysKeyLoc').value=k.keyLoc||'';
+  $('keysSlipNo').value=k.slipNo||'';
+  const miss=(k.missing||[]);
+  if(miss.length){
+    const words=miss.map(m=>m==='keys'?'a key location':'a slip number');
+    setMsg('keysNeed','Still missing: '+words.join(' and ')+
+      '. The haul-out "you\'re up next" email will ask the customer for '+
+      (miss.length>1?'them':'it')+'.',false);
+  }else{
+    setMsg('keysNeed','We have everything the haul-out crew needs.',true);
+  }
+  setMsg('keysMsg','');
+}
+async function saveKeys(){
+  if(!QN||!KEYS) return;
+  const changes={};
+  if(KEYS.needsKeys) changes.keyLoc=$('keysKeyLoc').value;
+  if(KEYS.needsSlip) changes.slipNo=$('keysSlipNo').value;
+  const b=$('keysBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('keysMsg','');
+  try{
+    const r=await api('keysApply',[QN,changes]);
+    if(!r||!r.ok){ setMsg('keysMsg',(r&&r.error)||'Could not save that.',false); return; }
+    renderKeys(Object.assign({},KEYS,{keyLoc:r.keyLoc,slipNo:r.slipNo,missing:r.missing||[]}));
+    setMsg('keysMsg',r.msg,true);
+    toast('Saved');
+  }catch(e){ setMsg('keysMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save keys & slip'; }
+}
+
 async function previewDims(){
   if(!QN||!DIMS) return;
   const changes=collectDims();
@@ -807,6 +865,10 @@ function renderQuote(r){
      other adjustment. */
   $('dimsCard').classList.toggle('hide',!P.adjust);
   if(P.adjust) renderDims(r.dims);
+  /* Keys and slip write into the same journal and re-run the engine (the slip
+     number appears in the Heritage Harbor line), so same permission. */
+  $('keysCard').classList.toggle('hide',!P.adjust);
+  if(P.adjust) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
   $('feeCard').classList.toggle('hide',!(P.adjust&&owed));
   if(P.adjust&&owed){

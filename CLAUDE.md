@@ -466,6 +466,32 @@ than printing "Invalid Date" on a sheet somebody is holding.
 - **Key location & HHO address:** required for boat/jetski/golf (keys) and
   golf (HHO street address). $500 tow/start fee warning for boats/jetskis;
   golf carts **cannot be picked up without keys at all**.
+
+### Keys & slip (console) and the missing-info chase
+
+`Keys & slip` card, gated on `adjust` (it writes the payload and re-runs the
+engine — the slip number appears in the Heritage Harbor discount line).
+
+- **Journalled like a re-measure, never written into `d.state`.** Both fields
+  exist in the customer's browser too and are re-posted on every save, so a
+  staff correction written into `d.state` would survive right up until their
+  next save. They go into `manual.measured`; `effectiveState_` overlays them.
+  `verify.sh` fails if `adminKeysApply` assigns into `d.state`.
+- **A blank box removes the override**, falling back to what the customer told
+  us, rather than storing an empty string that hides it forever.
+- **The top-level copies are only ever upgraded on a customer save.**
+  `rebuildLinesFromState_` syncs `keyLoc`/`slipNo` from the effective state but
+  **will not blank a non-empty one** — older payloads carry a key location at
+  the top level that never reached `state`, and copying the empty state over it
+  would lose the only record of where the keys are. Deliberate clearing is
+  `adminKeysApply`'s job, where blanking is what was actually asked for. This
+  regression was caught by the save-path fixture and is pinned permanently.
+- **The haul-out "up next" email asks for whatever is missing**, and only for
+  what applies: `missingHaulInfo_` never asks an e-bike for keys (it has none)
+  or a boat on its own trailer for a slip (it isn't in one). When both are
+  known the email says them back, because a key location six months old quietly
+  stops being true. `tools/check-haul-info.js` runs the rule over every
+  combination rather than grepping for it; `verify.sh` runs it.
 - **Every close control closes.** Panels (storage, staff, matches, quote) each
   need a working ✕. Users noticed when one didn't.
 - **No duplicate top-level function names in the console.** `admin/index.html`

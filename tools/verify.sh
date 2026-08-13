@@ -160,6 +160,19 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
     echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
   else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # Key location and slip number must not be written into d.state: the customer's
+  # browser holds its own copy and would post it back over ours on their next
+  # save, silently undoing the correction. Same trap the dimension editor avoids.
+  if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'd\.state\s*(\.|\[)?[A-Za-z"'"'"']*\s*='; then
+    echo "  FAIL trap: adminKeysApply writes into d.state — the customer's next save would undo it"; FAIL=1
+  else echo "  OK   trap: keys/slip journalled, never written into d.state"; fi
+  # Who gets asked for what, and whether a staff entry survives a customer save.
+  # Both are properties of the code, so they are checked by running it.
+  if node tools/check-haul-info.js > "$TMP/haul.txt" 2>&1; then
+    echo "  OK   gate: key-location / slip rules hold"
+  else
+    echo "  FAIL gate: key-location / slip rules broken"; sed 's/^/       /' "$TMP/haul.txt"; FAIL=1
+  fi
   # One motor type per boat, whole counts only. That is a property of the code,
   # not of any string, so it is checked by running it.
   if node tools/check-engine-rules.js > "$TMP/eng.txt" 2>&1; then

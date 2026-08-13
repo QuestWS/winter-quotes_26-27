@@ -1787,6 +1787,11 @@ function adminKeysApply(token, qn, changes) {
 
   const before = effectiveState_(d) || {};
   const beforeKey = String(before.keyLoc || ''), beforeSlip = String(before.slipNo || '');
+  /* This re-runs the engine, which prices at whatever rates are live NOW. In a
+     season where the rates have moved, recording a key location would otherwise
+     change what a customer owes with nothing in the log saying why. Capture the
+     total so any movement is reported and audited as a price change. */
+  const beforeTotal = Number(d.total || 0);
 
   const m = ensureManual_(d);
   if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
@@ -1818,11 +1823,21 @@ function adminKeysApply(token, qn, changes) {
   if (String(after.slipNo || '') !== beforeSlip) {
     bits.push('slip: ' + (beforeSlip || '(blank)') + ' → ' + (String(after.slipNo || '') || '(blank)'));
   }
-  auditLog_(who.name, 'Keys/slip updated on ' + d.quoteNo + (bits.length ? ': ' + bits.join(' · ') : ''));
+  const afterTotal = Number(d.total || 0);
+  const moved = Math.abs(afterTotal - beforeTotal) > 0.005;
+  const priceNote = moved
+    ? ' · RE-PRICED at current rates: ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal)
+    : '';
+  auditLog_(who.name, 'Keys/slip updated on ' + d.quoteNo +
+    (bits.length ? ': ' + bits.join(' · ') : '') + priceNote);
 
   return {
     ok: 1,
-    msg: bits.length ? 'Saved — ' + bits.join('; ') + '.' : 'Saved.',
+    msg: (bits.length ? 'Saved — ' + bits.join('; ') + '.' : 'Saved.') +
+      (moved ? ' Note: this quote re-priced at current rates, ' +
+        usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal) + '.' : ''),
+    total: usd_(afterTotal),
+    repriced: moved ? 1 : 0,
     keyLoc: String(after.keyLoc || ''),
     slipNo: String(after.slipNo || ''),
     missing: missingHaulInfo_(d)

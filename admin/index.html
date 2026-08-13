@@ -101,7 +101,10 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 .mbox{background:#fff;border-radius:14px;max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
 .mhead{padding:14px 18px;border-bottom:1px solid var(--line)}
 .mhead .msub{font-size:13px;color:var(--muted)}.mhead b{color:var(--navy)}
-.mbody{flex:1;min-height:280px}.mbody iframe{width:100%;height:100%;min-height:340px;border:0}
+.mbody{flex:1;min-height:280px;position:relative}
+.mbody iframe{width:100%;height:100%;min-height:340px;border:0}
+.pvfail{position:absolute;inset:0;overflow:auto;padding:16px;background:#fff;
+  font-size:13.5px;line-height:1.5;color:var(--navy);white-space:pre-wrap}
 .mfoot{display:flex;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
 .mfoot .btn{flex:1}
 .pill{display:inline-block;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
@@ -530,7 +533,12 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 <div class="modal hide" id="pvModal">
   <div class="mbox">
     <div class="mhead"><b id="pvSub"></b><div class="msub">To: <span id="pvTo"></span> — review, then send or cancel</div></div>
-    <div class="mbody"><iframe id="pvFrame" sandbox=""></iframe></div>
+    <!-- allow-same-origin lets us write the email into the frame directly, which
+     is the only method that renders reliably on iOS Safari. Scripts stay
+     blocked: allow-scripts is deliberately NOT in this list, so the email
+     is inert however it got here. -->
+    <div class="mbody"><iframe id="pvFrame" sandbox="allow-same-origin"></iframe>
+      <div class="pvfail hide" id="pvFail"></div></div>
     <div class="mfoot">
       <button class="btn ghost" onclick="pvCancel()">Cancel</button>
       <button class="btn gold" id="pvSend" onclick="pvConfirm()">Send it</button>
@@ -1084,9 +1092,45 @@ async function previewSend(kind,extra){
     if(!r.ok){setMsg('emailMsg',r.error,false);return;}
     setMsg('emailMsg','');
     $('pvSub').textContent=r.subject;$('pvTo').textContent=r.to;
-    $('pvFrame').srcdoc=r.html;
     $('pvModal').classList.remove('hide');
+    pvRender(r.html);
   }catch(e){setMsg('emailMsg',e.message,false);}
+}
+/* Put an email into the preview frame.
+   ---------------------------------------------------------------------------
+   `srcdoc` on a fully-sandboxed iframe renders in Chrome but comes up BLANK on
+   iOS Safari — which is what Chris uses in the yard, so the preview looked
+   broken for exactly the person who needs it. Writing into the document works
+   everywhere, and needs allow-same-origin (granted) but NOT allow-scripts
+   (withheld), so the email still cannot execute anything.
+
+   If both routes somehow render nothing, say so and show the text. A preview
+   that is silently empty is worse than one that admits it failed: the whole
+   point is to see what the customer will get before it goes. */
+function pvRender(html){
+  const f=$('pvFrame'), fail=$('pvFail');
+  fail.classList.add('hide'); fail.textContent='';
+  const body=String(html||'');
+  if(!body.trim()){
+    f.removeAttribute('srcdoc');
+    fail.textContent='The server did not return an email body for this one. Nothing has been sent. '+
+      'Try again, and if it keeps happening tell Claude which quote and which email.';
+    fail.classList.remove('hide');
+    return false;
+  }
+  let ok=false;
+  try{
+    const doc=f.contentDocument||(f.contentWindow&&f.contentWindow.document);
+    if(doc){ doc.open(); doc.write(body); doc.close();
+      ok=!!(doc.body&&doc.body.innerHTML.length); }
+  }catch(e){ ok=false; }
+  if(!ok){ try{ f.srcdoc=body; ok=true; }catch(e){ ok=false; } }
+  if(!ok){
+    /* Last resort: show it as text so staff can still read what would go out. */
+    fail.textContent=body.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    fail.classList.remove('hide');
+  }
+  return ok;
 }
 function pvCancel(){$('pvModal').classList.add('hide');}
 async function pvConfirm(){
@@ -1391,8 +1435,8 @@ function showBulkSample(){
   PV={kind:BULK.kind,extra:''};
   $('pvSub').textContent=BULK.sample.subject;
   $('pvTo').textContent='example — '+BULK.sample.to;
-  $('pvFrame').srcdoc=BULK.sample.html;
   $('pvModal').classList.remove('hide');
+  pvRender(BULK.sample.html);
   /* This preview is illustrative only; sending happens from the card. */
   $('pvSend').classList.add('hide');
 }

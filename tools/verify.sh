@@ -72,6 +72,21 @@ if [ -f admin/index.html ]; then
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard"
+  # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
+  # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
+  # preview was broken for the person who most needs it. It needs
+  # allow-same-origin to be written into, and must NEVER get allow-scripts, or a
+  # rendered email could execute.
+  if grep -q 'id="pvFrame" sandbox="allow-same-origin"' admin/index.html; then
+    echo "  OK   trap: preview frame is same-origin (renders on Safari)"
+  else echo "  FAIL trap: preview frame sandbox changed — it will render blank on iOS"; FAIL=1; fi
+  if grep -q 'id="pvFrame"[^>]*allow-scripts' admin/index.html; then
+    echo "  FAIL trap: preview frame allows scripts — a rendered email could execute"; FAIL=1
+  else echo "  OK   trap: preview frame cannot run scripts"; fi
+  # A blank preview must announce itself rather than look like an empty email.
+  if grep -q 'function pvRender' admin/index.html; then
+    echo "  OK   trap: preview reports a failure instead of showing a blank box"
+  else echo "  FAIL trap: pvRender missing — a failed preview would render blank"; FAIL=1; fi
   # no raw prompt() in the console — all inputs are inline UI
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
@@ -160,6 +175,15 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
     echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
   else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # Staff must be able to re-measure AFTER a deposit: the real workflow is
+  # quote -> deposit -> boat pulled -> measured -> re-billed. The payment lock
+  # belongs to the CUSTOMER save path only (a stale browser tab must not
+  # overwrite a paid invoice); it must never spread to the console.
+  for f in adminDimsApply adminDimsPreview; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -qE 'lockedByPayment|payments.*length.*return|return.*already paid'; then
+      echo "  FAIL trap: $f refuses paid quotes — staff must be able to re-bill after a deposit"; FAIL=1
+    else echo "  OK   trap: $f still works after a deposit"; fi
+  done
   # Keys/slip is yard work and has its own permission — it must NOT be back on
   # `adjust`, or the crew who find out where the keys are cannot record it.
   if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'keys')"; then

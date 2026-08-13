@@ -177,9 +177,17 @@ background:#fff;color:var(--muted);cursor:pointer}
 .rcp input{width:19px;height:19px;margin:1px 0 0;flex:none;accent-color:var(--navy)}
 .rcp .who{flex:1;min-width:0;font-size:13px;color:var(--navy);line-height:1.35}
 .rcp .who b{display:block;font-weight:700}
-.rcp .who span{font-size:11.5px;color:var(--muted);word-break:break-all}
+/* anywhere, not break-all: long email addresses still wrap, but ordinary
+   words are not chopped in half ("de posit"). */
+.rcp .who span{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
 .rcp .qn{font-family:"IBM Plex Mono","Courier New",monospace;font-size:11px;color:var(--muted);flex:none}
 .rcp.off{opacity:.45}
+.rcp .money{flex:none;text-align:right;font-size:12px;line-height:1.35;white-space:nowrap}
+.rcp .money b{display:block;font-weight:700}
+.rcp .up{color:#9A3B24}.rcp .down{color:#2C6E49}.rcp .same{color:var(--muted)}
+.rpskip{font-size:12.5px;color:var(--muted);padding:5px 2px;border-bottom:1px dashed var(--ice)}
+.rpsum{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;font-size:13px}
+.rpsum b{color:var(--navy)}
 .rcpBar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;
   font-size:13px;font-weight:700;color:var(--navy)}
 .rcpBar button{font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;
@@ -263,6 +271,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
+      <button class="linkbtn hide" id="repriceOpen" onclick="navGo(toggleReprice)">Re-price at current rates</button>
       <button class="linkbtn" onclick="navGo(logout)">Log out</button>
     </nav>
   </div>
@@ -479,6 +488,20 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div class="msg" id="pauseMsg"></div>
     </div>
 
+    <div class="card hide" id="repriceCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Re-price at current rates</h2>
+        <button class="btn ghost sm" onclick="$('repriceCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Existing quotes keep the price they were saved at. This shows what each one
+        becomes at today's rates, and lets you write the ones you choose. Deposits are
+        left alone — the balance moves. <b>No customer is emailed.</b></div>
+      <button class="btn navy" id="rpPrevBtn" onclick="previewReprice()">See what would change</button>
+      <div class="msg" id="rpMsg"></div>
+      <div class="hide" id="rpReport"></div>
+    </div>
+
     <div class="card hide" id="bulkCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Send to all</h2>
@@ -580,7 +603,9 @@ function permsOf(me){
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
   return p;
 }
-function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
+/* Tolerant of a missing target: some of these live inside panels that get
+   re-rendered, so the element a caller is writing to may already be gone. */
+function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
 
 function boot(){
   if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
@@ -590,6 +615,7 @@ function boot(){
        than by a card on the quote screen. Same permission as any other email. */
     if(ME.admin||((ME.perms||{}).email)) $('bulkOpen').classList.remove('hide');
     if(ME.admin) $('pauseOpen').classList.remove('hide');
+    if(ME.admin||((ME.perms||{}).adjust)) $('repriceOpen').classList.remove('hide');
     refreshPause();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
@@ -1268,6 +1294,119 @@ async function printStorage(){
    name into an onclick — an apostrophe in a name would otherwise break the
    handler, and worse. */
 let STAFF=[];
+/* ---------- Re-price at current rates ----------
+   Once a season's rates change, nothing already on the sheet follows on its
+   own. This shows the whole season's movement before a penny is written, then
+   applies it in batches — a quote PDF takes seconds to regenerate and Apps
+   Script stops a call at six minutes, so a season in one request would time
+   out part way through with no record of where it stopped. */
+let RP=null;
+const RP_BATCH=15;
+function toggleReprice(){
+  const c=$('repriceCard');
+  c.classList.toggle('hide');
+  if(!c.classList.contains('hide')){ RP=null; $('rpReport').classList.add('hide'); setMsg('rpMsg',''); }
+}
+async function previewReprice(){
+  const b=$('rpPrevBtn'); b.disabled=true; b.textContent='Pricing every quote…';
+  setMsg('rpMsg','This reads every quote and prices it. Nothing is written.',null);
+  try{
+    const r=await api('repricePreview',[]);
+    if(!r||!r.ok){ setMsg('rpMsg',(r&&r.error)||'Could not work that out.',false);
+      $('rpReport').classList.add('hide'); return; }
+    RP=r; renderReprice(r); setMsg('rpMsg','');
+  }catch(e){ setMsg('rpMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='See what would change'; }
+}
+function renderReprice(r){
+  const rows=r.rows||[];
+  const movers=rows.filter(x=>!x.skip&&!x.wouldMove&&x.changed);
+  const same=rows.filter(x=>!x.skip&&!x.wouldMove&&!x.changed);
+  const cant=rows.filter(x=>x.skip||x.wouldMove);
+
+  /* Only the quotes that actually move are tickable. Offering a checkbox
+     against a quote whose price is identical just invites a pointless write. */
+  const line=(x)=>{
+    const dir=x.deltaNum>0?'up':x.deltaNum<0?'down':'same';
+    return '<label class="rcp">'+
+      '<input type="checkbox" class="rpick" data-qn="'+esc(x.qn)+'" checked onchange="syncRpCount()">'+
+      '<span class="who"><b>'+esc(x.name||'(no name)')+'</b>'+
+        '<span>'+esc(x.qn)+' · '+esc(x.tab)+(x.locked?' · deposit '+esc(x.paid):'')+'</span></span>'+
+      '<span class="money"><b class="'+dir+'">'+esc(x.delta)+'</b>'+
+        esc(x.before)+' → '+esc(x.after)+
+        (x.locked?'<br>bal '+esc(x.newBalance):'')+'</span></label>';
+  };
+  const cantRows=cant.map(x=>'<div class="rpskip"><b>'+esc(x.qn)+'</b> '+esc(x.name||'')+' — '+
+    esc(x.wouldMove?('storage would move to '+x.wouldMove+' — do this one by hand'):x.skip)+'</div>').join('');
+
+  $('rpReport').innerHTML=
+    '<div class="rpsum"><span>Quotes read</span><b>'+r.total+'</b></div>'+
+    '<div class="rpsum"><span>Price would change</span><b>'+r.changed+'</b></div>'+
+    '<div class="rpsum"><span>Already at current rates</span><b>'+r.unchanged+'</b></div>'+
+    (cant.length?'<div class="rpsum"><span>Cannot be done here</span><b>'+cant.length+'</b></div>':'')+
+    '<div class="rpsum"><span>Net movement across the season</span><b>'+esc(r.net)+'</b></div>'+
+    (r.lockedChanged?'<div class="bkwarn"><b>'+r.lockedChanged+' of these have a deposit on file.</b> '+
+      'Their deposit is untouched; the balance moves with the new total. They are ticked because '+
+      'last year\'s numbers were ball-park and are not honoured on the strength of a deposit — '+
+      'untick any you would rather leave alone.</div>':'')+
+    (movers.length
+      ? '<div class="rcpBar"><span id="rpCount"></span>'+
+        '<span><button type="button" onclick="pickRp(1)">Select all</button> '+
+        '<button type="button" onclick="pickRp(0)">Select none</button></span></div>'+
+        '<div class="rcpBox">'+movers.map(line).join('')+'</div>'
+      : '<div class="msg" style="margin-top:8px">Nothing would change — every quote is already at current rates.</div>')+
+    (cantRows?'<div style="margin-top:10px"><div class="msg"><b>Not included</b></div>'+cantRows+'</div>':'')+
+    (movers.length?'<button class="btn gold" id="rpApplyBtn" style="margin-top:10px" onclick="doReprice()"></button>':'')+
+    '<div class="msg" id="rpProgress" style="margin-top:6px"></div>';
+  $('rpReport').classList.remove('hide');
+  syncRpCount();
+}
+function rpInputs(){ return [...document.querySelectorAll('#rpReport .rpick')]; }
+function rpSelected(){ return rpInputs().filter(i=>i.checked).map(i=>i.dataset.qn); }
+function pickRp(on){ rpInputs().forEach(i=>{i.checked=!!on;}); syncRpCount(); }
+function syncRpCount(){
+  const all=rpInputs(), n=all.filter(i=>i.checked).length;
+  all.forEach(i=>i.closest('.rcp').classList.toggle('off',!i.checked));
+  const c=$('rpCount'); if(c) c.textContent=n+' of '+all.length+' selected';
+  const b=$('rpApplyBtn');
+  if(b){ b.textContent='Re-price '+n+' quote'+(n===1?'':'s'); b.disabled=!n; }
+}
+async function doReprice(){
+  const only=rpSelected();
+  if(!only.length){ setMsg('rpMsg','Nothing is ticked.',false); return; }
+  if(!confirm('Re-price '+only.length+' quote(s) at current rates?\n\n'+
+    'This rewrites their totals and regenerates their PDFs. A backup of the whole '+
+    'spreadsheet is saved to Drive first.\n\nNo customer is emailed.')) return;
+  const b=$('rpApplyBtn'); b.disabled=true;
+  let done=0, failed=[], refused=[], snap='';
+  try{
+    /* Batched so a long season cannot hit the six-minute limit mid-write. */
+    for(let i=0;i<only.length;i+=RP_BATCH){
+      const chunk=only.slice(i,i+RP_BATCH);
+      b.textContent='Re-pricing '+(i+1)+'–'+Math.min(i+chunk.length,only.length)+' of '+only.length+'…';
+      setMsg('rpProgress','Working. Leave this open until it finishes.',null);
+      const r=await api('repriceApply',[chunk,i===0?1:0]);
+      if(!r||!r.ok){ setMsg('rpMsg',(r&&r.error)||'Re-price failed.',false); return; }
+      done+=r.done||0;
+      failed=failed.concat(r.failed||[]);
+      refused=refused.concat(r.refused||[]);
+      if(r.snapshotUrl) snap=r.snapshotUrl;
+    }
+    setMsg('rpMsg','Re-priced '+done+' quote(s).'+
+      (refused.length?' '+refused.length+' skipped.':'')+
+      (failed.length?' '+failed.length+' failed — see the Activity Log.':''),true);
+    $('rpReport').innerHTML='<div class="bkwarn"><b>Re-priced '+done+' quote(s).</b><br>'+
+      'Every change is in the Activity Log.'+
+      (snap?'<br><a href="'+esc(snap)+'" target="_blank" rel="noopener">Backup taken before this ran</a>':'')+
+      (failed.length?'<br><br><b>Failed:</b><br>'+failed.map(esc).join('<br>'):'')+
+      (refused.length?'<br><br><b>Skipped:</b><br>'+refused.map(esc).join('<br>'):'')+
+      '<br><br>No customer has been emailed.</div>';
+    RP=null;
+    toast('Re-priced '+done);
+  }catch(e){ setMsg('rpMsg',e.message,false); }
+  finally{ setMsg('rpProgress',''); }
+}
+
 /* ---------- The automatic-email pause ----------
    Only two emails in this system send without somebody pressing a button, and
    both carry money to a real customer. This is the switch that stops them —

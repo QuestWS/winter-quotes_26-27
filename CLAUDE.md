@@ -325,6 +325,36 @@ Names are typed by admins now, so the console addresses staff rows **by index,
 not by pasting the name into an `onclick`** — an apostrophe in a name would
 otherwise break the handler.
 
+### Re-pricing a season (console)
+
+`Re-price at current rates`, menu, gated on `adjust`. Existing quotes do **not**
+follow a rate change on their own: a quote only re-prices when the customer
+reloads and re-saves, and a quote with a payment never re-prices at all (the
+customer save path is locked). That leaves the sheet holding a mix of old and
+new prices with no way to tell which is which. This is the staff-side answer.
+
+Quest's position, from Chris: last year's numbers were given as ball-park and
+are **not** honoured on the strength of a deposit. So paid quotes are in scope.
+
+- **Preview writes nothing.** `repriceScan_` prices deep copies and reports
+  before → after → delta per quote, plus the net movement across the season.
+  `verify.sh` fails if the preview path gains a write or a send.
+- **The staff journal replays.** Without `applyManualOps_` a re-price would
+  silently erase every discount — the most expensive possible failure here, so
+  `check-reprice.js` asserts a discounted quote stays exactly its discount below
+  an identical undiscounted one.
+- **Deposits are untouched**; payments are append-only, so the balance simply
+  moves. The preview says how many ticked quotes have money on them.
+- **A quote whose storage tab would move is reported, never moved.** Relocating
+  somebody is a conversation (§8), and a bulk job is the wrong place for it.
+- **Snapshot first, every time.** A season-wide re-price cannot be undone from
+  the console, so `snapshotBeforeRestore_()` runs before the first write and the
+  link is shown with the result. `verify.sh` fails if that call is removed.
+- **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **Applied in batches of 15** from the console. Regenerating a quote PDF takes
+  seconds and Apps Script stops a call at six minutes; a whole season in one
+  request would time out mid-write with no record of where it stopped.
+
 ### Restoring from a backup
 Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
 a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
@@ -496,6 +526,18 @@ needs standing in the yard: customer, unit + dims, storage, trailer or not,
 slip, key location, requested timing and any note. Sorting uses the stored ISO
 date; printing uses `haulDate_()`, which passes anything non-ISO through rather
 than printing "Invalid Date" on a sheet somebody is holding.
+- **Email previews render by writing into the frame, not `srcdoc`.** The frame
+  is `sandbox="allow-same-origin"` and deliberately **not** `allow-scripts`, so
+  a rendered email stays inert. `srcdoc` under a fully-restrictive sandbox works
+  in Chrome and comes up **blank on iOS Safari** — which is what the yard uses,
+  so every email preview was broken for the person who most needs it while every
+  desktop test passed. `pvRender()` is the single path for both the per-quote
+  preview and the send-to-all sample, and it reports a failure rather than
+  showing an empty box. `verify.sh` pins the sandbox value both ways.
+- **Staff can re-measure after a deposit.** The workflow is quote → deposit →
+  boat pulled → measured → re-billed. The payment lock belongs to the *customer*
+  save path only, where it stops a stale browser tab overwriting a paid invoice;
+  `verify.sh` fails if it spreads to `adminDimsApply` / `adminDimsPreview`.
 - **Money and customer email are menu/console-only.** Never hand-edit cells —
   it desyncs the payload, PDF, and totals.
 - **Key location & HHO address:** required for boat/jetski/golf (keys) and

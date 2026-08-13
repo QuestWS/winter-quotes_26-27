@@ -39,7 +39,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall"
+    "BULK_KINDS_" "upnextfall" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -71,7 +71,8 @@ if [ -f admin/index.html ]; then
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
-    "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard"
+    "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
+    "previewReprice" "doReprice" "repriceCard" "pvRender"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
   # preview was broken for the person who most needs it. It needs
@@ -237,6 +238,29 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminSetAutoPause/,/^}/' quote-logger-apps-script.gs | grep -q 'who.admin'; then
     echo "  OK   trap: only admins can pause or resume automatic emails"
   else echo "  FAIL trap: adminSetAutoPause is not admin-gated"; FAIL=1; fi
+  # RE-PRICE. This rewrites what customers owe across a whole season, so the
+  # rules are executed against a fake sheet with the rates actually moved.
+  if node tools/check-reprice.js > "$TMP/rp.txt" 2>&1; then
+    echo "  OK   gate: re-price rules hold"
+  else
+    echo "  FAIL gate: re-price rules broken"; sed 's/^/       /' "$TMP/rp.txt"; FAIL=1
+  fi
+  # Preview must read and report. If it ever writes, "see what would change"
+  # becomes "change everything", which is the opposite of the point.
+  for f in adminRepricePreview repriceScan_; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -qE 'saveQuoteRow_|setValue|GmailApp|MailApp'; then
+      echo "  FAIL trap: $f writes or sends — preview must only report"; FAIL=1
+    else echo "  OK   trap: $f only reads"; fi
+  done
+  # A season-wide re-price is not undoable from inside the console. It must take
+  # a spreadsheet snapshot to Drive before the first write, every time.
+  if awk '/^function adminRepriceApply/,/^}/' quote-logger-apps-script.gs | grep -q 'snapshotBeforeRestore_'; then
+    echo "  OK   trap: re-price snapshots the sheet before writing"
+  else echo "  FAIL trap: re-price would rewrite the season with no way back"; FAIL=1; fi
+  # It must not email anyone. Who gets told is a separate, human decision.
+  if awk '/^function adminRepriceApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
+    echo "  FAIL trap: re-price emails customers — that must stay a separate decision"; FAIL=1
+  else echo "  OK   trap: re-price emails nobody"; fi
   # Who can actually record a key location today, and which way a broken pause
   # fails. Both are properties of the code, so they are checked by running it.
   if node tools/check-perms-pause.js > "$TMP/perm.txt" 2>&1; then

@@ -478,7 +478,9 @@ function doPost(e) {
           backupPreview: function (a) { return adminBackupPreview(d.token, a[0], a[1]); },
           backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); },
           bulkPreview: function (a) { return adminBulkPreview(d.token, a[0]); },
-          bulkSend:    function (a) { return adminBulkSend(d.token, a[0], a[1]); }
+          bulkSend:    function (a) { return adminBulkSend(d.token, a[0], a[1]); },
+          repricePreview: function (a) { return adminRepricePreview(d.token); },
+          repriceApply:   function (a) { return adminRepriceApply(d.token, a[0], a[1]); }
         };
         if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
         return json(FNS[d.fn](d.args || []));
@@ -2402,6 +2404,176 @@ function adminBulkSend(token, kind, only) {
     msg: 'Sent to ' + r.sent + ' of ' + r.total + ' customer(s).' +
       (r.skipped ? ' ' + r.skipped + ' deselected.' : '') +
       (r.failed.length ? ' ' + r.failed.length + ' failed — see the Activity Log.' : '')
+  };
+}
+
+/* ================= RE-PRICE AT CURRENT RATES =================
+ * When the season rates change, existing quotes do NOT follow on their own.
+ * A quote only re-prices when the customer reloads and re-saves it, and a
+ * quote with a payment on it never re-prices at all — the customer save path
+ * is locked so a stale browser tab cannot overwrite a paid invoice.
+ *
+ * That leaves the sheet holding a mix of old and new prices with no way to
+ * tell which is which. This is the staff-side answer: show what every quote
+ * would become at today's rates, then write the ones you choose.
+ *
+ * Rules this obeys:
+ *   - Preview writes NOTHING. It prices deep copies and reports.
+ *   - The staff journal is replayed, so discounts and priced requests survive.
+ *   - Deposits are untouched. Payments are an append-only ledger; the balance
+ *     simply moves. Quest's stated position is that last year's numbers were
+ *     ball-park and are not honoured on the strength of a deposit.
+ *   - A quote whose storage tab would MOVE is reported, never moved. Relocating
+ *     somebody is a conversation, and a bulk job is the wrong place for it.
+ *   - No customer is emailed. Who gets told, and when, is a separate decision.
+ */
+function repriceScan_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const out = [];
+  ss.getSheets().forEach(function (sh) {
+    const tab = sh.getName();
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    if (isStartedTab_(tab)) return;               // leads have no pricing at all
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
+      const qn = String(r[COL.QN - 1] || '');
+      if (!qn) return;
+      let d = null;
+      try { d = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
+      const row = {
+        qn: qn, tab: tab, row: i + 2,
+        name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
+        unit: String(r[COL.UNIT - 1] || '')
+      };
+      if (!d) { row.skip = 'no stored quote data'; out.push(row); return; }
+      row.d = d;
+      const paid = paymentsTotal_(d);
+      row.paidNum = paid;
+      row.locked = !!(d.payments && d.payments.length);
+      const beforeNum = Number(d.total || 0);
+      row.beforeNum = beforeNum;
+      if (!d.state) {
+        row.skip = 'saved before selections were stored — re-price by hand';
+        out.push(row); return;
+      }
+      /* Price a COPY. Nothing here may touch the sheet or the live payload. */
+      let copy;
+      try { copy = JSON.parse(JSON.stringify(d)); }
+      catch (e) { row.skip = 'unreadable payload'; out.push(row); return; }
+      try {
+        const cross = rebuildLinesFromState_(copy);
+        if (!cross.rebuilt) { row.skip = cross.reason || 'could not be priced'; out.push(row); return; }
+        applyManualOps_(copy);
+      } catch (e) { row.skip = 'pricing failed: ' + (e.message || e); out.push(row); return; }
+      const afterNum = Number(copy.total || 0);
+      row.afterNum = afterNum;
+      row.deltaNum = afterNum - beforeNum;
+      row.newBalanceNum = afterNum - paid;
+      const toTab = copy.storageTab || tab;
+      if (toTab !== tab) row.wouldMove = toTab;    // reported, never acted on
+      out.push(row);
+    });
+  });
+  return out;
+}
+
+function repriceRowOut_(x) {
+  const o = {
+    qn: x.qn, tab: x.tab, name: x.name, unit: x.unit,
+    locked: !!x.locked, paid: usd_(x.paidNum || 0),
+    before: usd_(x.beforeNum || 0)
+  };
+  if (x.skip) { o.skip = x.skip; return o; }
+  if (x.wouldMove) o.wouldMove = x.wouldMove;
+  o.after = usd_(x.afterNum || 0);
+  o.deltaNum = Number((x.deltaNum || 0).toFixed(2));
+  o.delta = (x.deltaNum >= 0 ? '+' : '−') + usd_(Math.abs(x.deltaNum || 0));
+  o.newBalance = (x.newBalanceNum < -0.005)
+    ? 'CREDIT ' + usd_(-x.newBalanceNum) : usd_(Math.max(0, x.newBalanceNum || 0));
+  o.changed = Math.abs(x.deltaNum || 0) > 0.005;
+  return o;
+}
+
+function adminRepricePreview(token) {
+  requireAuth_(token, 'adjust');
+  const scan = repriceScan_();
+  const rows = scan.map(repriceRowOut_);
+  const eligible = scan.filter(function (x) { return !x.skip && !x.wouldMove; });
+  const changed = eligible.filter(function (x) { return Math.abs(x.deltaNum || 0) > 0.005; });
+  const net = changed.reduce(function (a, x) { return a + x.deltaNum; }, 0);
+  return {
+    ok: 1,
+    rows: rows,
+    total: scan.length,
+    eligible: eligible.length,
+    changed: changed.length,
+    unchanged: eligible.length - changed.length,
+    skipped: scan.filter(function (x) { return !!x.skip; }).length,
+    moving: scan.filter(function (x) { return !!x.wouldMove; }).length,
+    lockedChanged: changed.filter(function (x) { return x.locked; }).length,
+    netNum: Number(net.toFixed(2)),
+    net: (net >= 0 ? '+' : '−') + usd_(Math.abs(net)),
+    season: (typeof SEASON !== 'undefined' && SEASON.seasonLabel) ? SEASON.seasonLabel : ''
+  };
+}
+
+/* Applied in batches. Regenerating a quote PDF takes seconds, and Apps Script
+   stops a call at six minutes — a whole season in one request would time out
+   part way through with no record of where it stopped. The console sends the
+   quote numbers in chunks and shows progress; `first` triggers the one-time
+   spreadsheet snapshot so the whole job can be undone from Drive. */
+function adminRepriceApply(token, only, first) {
+  const who = requireAuth_(token, 'adjust');
+  if (!Array.isArray(only) || !only.length) {
+    return { ok: 0, error: 'Nothing selected — tick at least one quote.' };
+  }
+  let snapshotUrl = '';
+  if (first) {
+    try { snapshotUrl = snapshotBeforeRestore_().getUrl(); }
+    catch (e) { return { ok: 0, error: 'Could not save a backup first, so nothing was changed: ' + (e.message || e) }; }
+    auditLog_(who.name, 'RE-PRICE started — snapshot saved: ' + snapshotUrl);
+  }
+
+  const scan = repriceScan_();
+  const chosen = bulkFilterTargets_(scan.map(function (x) {
+    return { d: { quoteNo: x.qn }, x: x };
+  }), only).map(function (w) { return w.x; });
+
+  const done = [], failed = [], refused = [];
+  chosen.forEach(function (x) {
+    if (x.skip) { refused.push(x.qn + ' (' + x.skip + ')'); return; }
+    if (x.wouldMove) { refused.push(x.qn + ' (would move to ' + x.wouldMove + ')'); return; }
+    try {
+      const ctx = findQuoteCtx_(x.qn);
+      if (!ctx) throw new Error('row not found');
+      const d = ctx.d;
+      const beforeNum = Number(d.total || 0);
+      const cross = rebuildLinesFromState_(d);
+      if (!cross.rebuilt) throw new Error(cross.reason || 'could not be priced');
+      applyManualOps_(d);
+      /* If the tab moved between preview and now, stop rather than write a
+         quote onto the wrong sheet. */
+      if ((d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
+        throw new Error('storage location changed — re-price this one by hand');
+      }
+      saveQuoteRow_(ctx, 'Re-priced at current rates — not yet sent');
+      const afterNum = Number(d.total || 0);
+      auditLog_(who.name, 'RE-PRICED ' + x.qn + ': ' + usd_(beforeNum) + ' → ' + usd_(afterNum) +
+        (x.locked ? ' (deposit on file, balance follows)' : ''));
+      done.push(x.qn);
+    } catch (e) {
+      failed.push(x.qn + ' — ' + (e.message || e));
+      console.error('Re-price failed for ' + x.qn + ': ' + e);
+    }
+  });
+
+  return {
+    ok: 1, done: done.length, failed: failed, refused: refused,
+    snapshotUrl: snapshotUrl,
+    msg: 'Re-priced ' + done.length + ' quote(s).' +
+      (refused.length ? ' ' + refused.length + ' skipped.' : '') +
+      (failed.length ? ' ' + failed.length + ' failed — see the Activity Log.' : '')
   };
 }
 

@@ -304,7 +304,7 @@ Email History.
 
 ### Permissions
 Roster in Script Properties `STAFF`. Perms: `pay`, `adjust`, `email`,
-`photos`, plus `admin`. `requireAuth_(token, perm)` gates every console
+`photos`, `keys`, plus `admin`. `requireAuth_(token, perm)` gates every console
 endpoint; sessions are 12h tokens; 10 failed PINs → 15-minute lockout + alert
 email. Every console action writes to the **Activity Log** sheet tab.
 
@@ -378,6 +378,31 @@ any test window. Nothing else is automatic (§5).
 ---
 
 ## 5. Product rules that are easy to break
+
+### The automatic-email pause
+
+`AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,
+☰ → Automatic emails). It stops the **only two emails that send without a
+human**: the 10-day reminder and the lead follow-up.
+
+- **Why it exists:** both carry money and both invite the customer to reload a
+  quote, which re-prices against whatever rates are live. That is the wrong
+  thing to have running across a season rollover, or any window where the prices
+  on the page are not the prices we mean.
+- **A property, not a constant.** `REMINDER_ENABLED` / `LEAD_FOLLOWUP_ENABLED`
+  are the permanent code-level switches and still work; this is the operational
+  one, flippable from a phone in the yard without a deploy. Either being off
+  stops a send.
+- **A corrupt setting reads as PAUSED.** An unparseable property must fail
+  towards sending nothing — the other way turns a broken value into an
+  unannounced mailshot. `verify.sh` asserts it, and `check-perms-pause.js`
+  executes it.
+- **It does not gag the console.** Staff still send invoices and receipts by
+  hand, each previewed and clicked; pausing those would stop Quest doing
+  business. Send-to-all is likewise still allowed — it is a human click — so the
+  standing banner is the thing that stops somebody blasting old prices.
+- **The banner shows for everyone, not just admins.** A pause nobody can see is
+  a pause somebody forgets to lift. Toggling it is audited and emails `NOTIFY`.
 
 - **Two customer-facing emails are automatic; everything else needs a click.**
   (1) the 10-day reminder on real quotes, and (2) the **lead follow-up**
@@ -479,8 +504,18 @@ than printing "Invalid Date" on a sheet somebody is holding.
 
 ### Keys & slip (console) and the missing-info chase
 
-`Keys & slip` card, gated on `adjust` (it writes the payload and re-runs the
-engine — the slip number appears in the Heritage Harbor discount line).
+`Keys & slip` card, gated on its **own `keys` permission** — recording where the
+keys are is yard work, and the crew who find that out have no business changing
+what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
+
+- **Roster entries written before the permission existed have no `keys` field.**
+  `canKeys_()` falls back to "already trusted with payments or adjustments",
+  which is exactly the yard staff and the admins, so nobody had to run a
+  migration. An explicit setting always wins, including turning it OFF.
+  `permsOf()` mirrors that fallback in the console, because `ME` is cached in
+  localStorage and a session opened before the deploy would otherwise lose the
+  card on an action the server still accepts.
+  `tools/check-perms-pause.js` runs the real roster through it.
 
 - **Journalled like a re-measure, never written into `d.state`.** Both fields
   exist in the customer's browser too and are re-posted on every save, so a

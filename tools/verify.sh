@@ -160,6 +160,11 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
     echo "  FAIL trap: apply changes storage from an engine flag — must stay staff-driven"; FAIL=1
   else echo "  OK   trap: beam flag never auto-relocates storage"; fi
+  # Keys/slip is yard work and has its own permission — it must NOT be back on
+  # `adjust`, or the crew who find out where the keys are cannot record it.
+  if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'keys')"; then
+    echo "  OK   trap: keys/slip uses its own permission"
+  else echo "  FAIL trap: adminKeysApply is not gated on the 'keys' permission"; FAIL=1; fi
   # Key location and slip number must not be written into d.state: the customer's
   # browser holds its own copy and would post it back over ours on their next
   # save, silently undoing the correction. Same trap the dimension editor avoids.
@@ -191,6 +196,30 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk "/if \(kind === 'fall'\)/,/^  }/" quote-logger-apps-script.gs | grep -q 'hasDetailing_'; then
     echo "  OK   trap: end-of-season note checks for an existing detail request"
   else echo "  FAIL trap: fall email offers detailing without checking whether they already asked"; FAIL=1; fi
+  # THE PAUSE. Exactly two emails send without a human pressing anything, and
+  # both go to real customers with money in them. If either sweep stops checking
+  # the pause, turning it on stops meaning anything — and the person who turned
+  # it on will not find out until a customer replies to an email nobody sent.
+  for f in dailyReminderCheck leadFollowUpCheck; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'autoEmailsPaused_'; then
+      echo "  OK   trap: $f honours the automatic-email pause"
+    else echo "  FAIL trap: $f ignores the pause — turning it on would do nothing"; FAIL=1; fi
+  done
+  # An unreadable pause setting must stop sending, not start it.
+  if awk '/^function autoPauseState_/,/^}/' quote-logger-apps-script.gs | grep -q 'on: true'; then
+    echo "  OK   trap: a corrupt pause setting fails towards sending nothing"
+  else echo "  FAIL trap: a corrupt pause setting would let the automatic sends run"; FAIL=1; fi
+  # Only an admin may change whether the system talks to customers at all.
+  if awk '/^function adminSetAutoPause/,/^}/' quote-logger-apps-script.gs | grep -q 'who.admin'; then
+    echo "  OK   trap: only admins can pause or resume automatic emails"
+  else echo "  FAIL trap: adminSetAutoPause is not admin-gated"; FAIL=1; fi
+  # Who can actually record a key location today, and which way a broken pause
+  # fails. Both are properties of the code, so they are checked by running it.
+  if node tools/check-perms-pause.js > "$TMP/perm.txt" 2>&1; then
+    echo "  OK   gate: keys permission and pause behave"
+  else
+    echo "  FAIL gate: keys permission / pause broken"; sed 's/^/       /' "$TMP/perm.txt"; FAIL=1
+  fi
   # Automatic emails must reach the Activity Log; they are the ones nobody saw sent.
   for f in dailyReminderCheck leadFollowUpCheck; do
     if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'auditLog_'; then

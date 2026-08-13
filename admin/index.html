@@ -158,6 +158,9 @@ background:#fff;color:var(--muted);cursor:pointer}
 .bkrow .q{font-family:"IBM Plex Mono","Courier New",monospace}
 .bkwarn{background:#FDF3E0;border:1.5px solid var(--gold);border-radius:9px;padding:10px 12px;
   margin-top:9px;font-size:13px;color:#6B5A2A;line-height:1.45}
+.pausebar{background:#FBE9E4;border:1.5px solid #C0563F;border-radius:10px;padding:11px 13px;
+  margin-bottom:12px;font-size:13px;color:#7A3527;line-height:1.45}
+.pausebar b{display:block;font-size:14px;margin-bottom:2px}
 /* Recipient picker. Capped height with its own scroll: a full season is 500+
    names and the Send button has to stay reachable without scrolling past them. */
 .rcpBox{max-height:46vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;
@@ -256,11 +259,16 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
+      <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
       <button class="linkbtn" onclick="navGo(logout)">Log out</button>
     </nav>
   </div>
 
   <div class="wrap">
+    <!-- Standing reminder that the two automatic sends are off. Deliberately
+         the first thing on the page and shown to everyone, not just admins:
+         a pause nobody can see is a pause somebody forgets to lift. -->
+    <div class="pausebar hide" id="pauseBar"></div>
     <div class="hero">
       <input id="qn" placeholder="Quote # (QW-26-####) or last name — partial OK, e.g. Kuj" autocapitalize="characters" autocomplete="off">
       <button class="btn navy" onclick="doSearch()">Look up</button>
@@ -442,6 +450,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <label class="chk"><input type="checkbox" id="np_adjust"> Adjustments</label>
               <label class="chk"><input type="checkbox" id="np_email"> Emails</label>
               <label class="chk"><input type="checkbox" id="np_photos" checked> Photos</label>
+              <label class="chk"><input type="checkbox" id="np_keys" checked> Keys &amp; slip</label>
               <label class="chk"><input type="checkbox" id="np_admin"> Admin (full access)</label>
             </div>
           </div>
@@ -450,6 +459,21 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <div class="msg" id="staffMsg"></div>
         <div id="newPinBox" class="pinbox hide"></div>
       </div>
+    </div>
+
+    <div class="card hide" id="pauseCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Automatic customer emails</h2>
+        <button class="btn ghost sm" onclick="$('pauseCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">Two emails send on their own: the
+        <b>10-day quote reminder</b> and the <b>24-hour lead follow-up</b>. Pausing stops both.
+        Everything staff send by hand from this console keeps working.</div>
+      <div class="msg" id="pauseState" style="margin:8px 0"></div>
+      <div id="pauseWhy"><label class="fld">Why (shown in the Activity Log)</label>
+        <input class="txt" id="pauseReason" placeholder="e.g. holding until 2026-2027 pricing is in"></div>
+      <button class="btn navy" id="pauseBtn" onclick="toggleAutoPause()">Pause automatic emails</button>
+      <div class="msg" id="pauseMsg"></div>
     </div>
 
     <div class="card hide" id="bulkCard">
@@ -538,6 +562,16 @@ function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function fmt$(n){return '$'+Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2600);}
+/* The server resolves `keys` for us on every login. But ME is cached in
+   localStorage, so somebody already signed in when this shipped is carrying a
+   permission set from before the permission existed — and would watch the card
+   vanish until their session ran out, on an action the server would happily
+   accept. Mirror the server's fallback (canKeys_) so the two never disagree. */
+function permsOf(me){
+  const p=Object.assign({},(me&&me.perms)||{});
+  if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
+  return p;
+}
 function setMsg(id,t,ok){const m=$(id);m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
 
 function boot(){
@@ -547,6 +581,8 @@ function boot(){
     /* Send-to-all is reachable without a quote open, so it is gated here rather
        than by a card on the quote screen. Same permission as any other email. */
     if(ME.admin||((ME.perms||{}).email)) $('bulkOpen').classList.remove('hide');
+    if(ME.admin) $('pauseOpen').classList.remove('hide');
+    refreshPause();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
 async function doLogin(){
@@ -876,7 +912,7 @@ function renderQuote(r){
   $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
     `<div class="histrow"><b>${e.kind}</b> → ${e.to} <span class="hm">· ${e.ts} · by ${e.by}</span></div>`).join('')
     :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
-  const P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});
+  const P=ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1}:permsOf(ME);
   window._contract=r.contractUrl||'';
   renderContract(P);
   $('payCard').classList.toggle('hide',!P.pay);
@@ -887,8 +923,10 @@ function renderQuote(r){
   if(P.adjust) renderDims(r.dims);
   /* Keys and slip write into the same journal and re-run the engine (the slip
      number appears in the Heritage Harbor line), so same permission. */
-  $('keysCard').classList.toggle('hide',!P.adjust);
-  if(P.adjust) renderKeys(r.keys);
+  /* Keys and slip are yard work, not a price change — own permission, so the
+     crew who actually find out where the keys are can record it. */
+  $('keysCard').classList.toggle('hide',!P.keys);
+  if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
   $('feeCard').classList.toggle('hide',!(P.adjust&&owed));
   if(P.adjust&&owed){
@@ -1186,6 +1224,65 @@ async function printStorage(){
    name into an onclick — an apostrophe in a name would otherwise break the
    handler, and worse. */
 let STAFF=[];
+/* ---------- The automatic-email pause ----------
+   Only two emails in this system send without somebody pressing a button, and
+   both carry money to a real customer. This is the switch that stops them —
+   readable by everyone so the banner shows, writable by admins only. */
+let PAUSE=null;
+async function refreshPause(){
+  try{
+    const r=await api('autoPause',[]);
+    if(!r||!r.ok) return;
+    PAUSE=r; renderPause();
+  }catch(e){ /* never block the console on this */ }
+}
+function renderPause(){
+  const bar=$('pauseBar');
+  if(bar){
+    if(PAUSE&&PAUSE.on){
+      bar.innerHTML='<b>Automatic customer emails are PAUSED</b>'+
+        'The 10-day reminder and the lead follow-up are not going out.'+
+        (PAUSE.reason?' '+esc(PAUSE.reason)+'.':'')+
+        (PAUSE.by?' Paused by '+esc(PAUSE.by)+(PAUSE.at?' on '+esc(PAUSE.at):'')+'.':'')+
+        ' You can still send emails by hand.';
+      bar.classList.remove('hide');
+    } else bar.classList.add('hide');
+  }
+  const st=$('pauseState'), b=$('pauseBtn'), why=$('pauseWhy');
+  if(!st||!b||!PAUSE) return;
+  if(PAUSE.on){
+    setMsg('pauseState','Currently PAUSED'+(PAUSE.by?' by '+PAUSE.by:'')+(PAUSE.at?' on '+PAUSE.at:'')+
+      (PAUSE.reason?' — '+PAUSE.reason:'')+'.',false);
+    b.textContent='Resume automatic emails'; b.className='btn gold';
+    why.classList.add('hide');
+  }else{
+    setMsg('pauseState','Currently running normally.',true);
+    b.textContent='Pause automatic emails'; b.className='btn navy';
+    why.classList.remove('hide');
+  }
+}
+function togglePause(){
+  $('pauseCard').classList.toggle('hide');
+  if(!$('pauseCard').classList.contains('hide')){ setMsg('pauseMsg',''); refreshPause(); }
+}
+async function toggleAutoPause(){
+  if(!PAUSE) return;
+  const turningOn=!PAUSE.on;
+  const msg=turningOn
+    ? 'Pause the two automatic customer emails?\n\nThe 10-day reminder and the lead follow-up will stop until you turn this back on.'
+    : 'Resume automatic customer emails?\n\nThe 10-day reminder and the lead follow-up start going out again — including to anyone who became due while it was paused.';
+  if(!confirm(msg)) return;
+  const b=$('pauseBtn'); b.disabled=true; b.textContent='Saving…';
+  try{
+    const r=await api('setAutoPause',[turningOn?1:0,turningOn?$('pauseReason').value:'']);
+    if(!r||!r.ok){ setMsg('pauseMsg',(r&&r.error)||'Could not change that.',false); return; }
+    PAUSE=r; renderPause();
+    setMsg('pauseMsg',turningOn?'Paused. Nothing sends on its own now.':'Running again.',true);
+    toast(turningOn?'Automatic emails paused':'Automatic emails resumed');
+  }catch(e){ setMsg('pauseMsg',e.message,false); }
+  finally{ b.disabled=false; renderPause(); }
+}
+
 /* ---------- Send to all ----------
    Two steps, deliberately. The first only asks the server who would receive
    this and renders one real example; the second sends. A mass email cannot be
@@ -1398,13 +1495,13 @@ async function loadStaff(){
   const r=await api('listStaff',[]);
   if(!r.ok){toast(r.error);return;}
   STAFF=r.staff||[];
-  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',admin:'Admin'};
+  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',keys:'Keys & slip',admin:'Admin'};
   $('staffList').innerHTML=STAFF.map((st,i)=>{
     const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm(${i},'${p}',${on?0:1})">${names[p]}</button></span>`;
     const isMe=ME&&ME.name===st.name;
     return `<div class="staffrow"><div class="nm">${esc(st.name)}${st.admin?' · admin':''}${isMe?' <span style="font-weight:400;color:var(--muted)">(you)</span>':''}
       <span class="prm rm">${isMe?'':`<button onclick="removeStaff(${i})">Remove</button>`}</span></div>
-      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('admin',st.admin)}
+      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('keys',st.perms.keys)}${btn('admin',st.admin)}
       <span class="prm"><button onclick="resetPin(${i})">Reset PIN</button></span></div>`;
   }).join('');
 }
@@ -1433,7 +1530,8 @@ async function addStaff(){
   const name=$('newStaffName').value.trim();
   if(!name){setMsg('staffMsg','Enter a name first.',false);return;}
   const perms={pay:$('np_pay').checked?1:0,adjust:$('np_adjust').checked?1:0,
-               email:$('np_email').checked?1:0,photos:$('np_photos').checked?1:0};
+               email:$('np_email').checked?1:0,photos:$('np_photos').checked?1:0,
+               keys:$('np_keys').checked?1:0};
   const isAdmin=$('np_admin').checked?1:0;
   const b=$('addStaffBtn'); b.disabled=true; b.textContent='Creating…';
   try{
@@ -1443,7 +1541,7 @@ async function addStaff(){
     showPin_(r.name,r.pin);
     $('newStaffName').value='';
     ['np_pay','np_adjust','np_email','np_admin'].forEach(id=>{$(id).checked=false;});
-    $('np_photos').checked=true;
+    $('np_photos').checked=true; $('np_keys').checked=true;
     toast(r.name+' added');
     loadStaff();
   }catch(e){ setMsg('staffMsg',e.message,false); }

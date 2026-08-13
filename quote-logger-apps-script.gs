@@ -62,6 +62,43 @@ const LOGO_URL = 'https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/
 // before the customer gets one follow-up email. Run setupReminderTrigger() once
 // from the editor to activate the daily check. Set REMINDER_ENABLED=false to pause.
 const REMINDER_ENABLED = true;
+
+/* ---------------------------------------------------------------------------
+   THE AUTOMATIC-EMAIL PAUSE
+   ---------------------------------------------------------------------------
+   Exactly two emails in this system send without a human pressing anything:
+   the 10-day quote reminder and the 24h lead follow-up. Both go to real
+   customers, both carry money, and both invite the customer to reload a quote
+   — which re-prices against whatever rates are live at that moment.
+
+   That makes them the wrong thing to have running across a season rollover, or
+   any window where the prices on the page are not the prices we mean. This is
+   the switch that stops them.
+
+   It lives in Script Properties, NOT in a constant, so it can be flipped from
+   the console in the yard without a deploy — the moment you need it is not the
+   moment to be pasting code. REMINDER_ENABLED / LEAD_FOLLOWUP_ENABLED above
+   still work and are the permanent, code-level off switches; this one is the
+   operational one, and either being off is enough to stop a send.
+
+   It deliberately does NOT gag the console. Staff still send invoices,
+   receipts and replies by hand, each previewed and clicked — pausing those
+   would stop Quest doing business. The console shows a standing banner while
+   the pause is on so nobody forgets it is there. */
+const AUTO_PAUSE_KEY_ = 'AUTO_EMAIL_PAUSED';
+function autoPauseState_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(AUTO_PAUSE_KEY_);
+  if (!raw) return { on: false, reason: '', by: '', at: '' };
+  try {
+    const p = JSON.parse(raw);
+    return { on: !!p.on, reason: String(p.reason || ''), by: String(p.by || ''), at: String(p.at || '') };
+  } catch (e) {
+    /* Anything unparseable is treated as PAUSED. A corrupt flag must fail
+       towards sending nothing, never towards emailing five hundred people. */
+    return { on: true, reason: 'unreadable pause setting — treating as paused', by: '', at: '' };
+  }
+}
+function autoEmailsPaused_() { return autoPauseState_().on; }
 const REMINDER_AFTER_DAYS = 10;
 // Daily backup: full spreadsheet emailed as an Excel file. Run
 // setupBackupTrigger() once from the editor to activate (6pm daily).
@@ -432,6 +469,8 @@ function doPost(e) {
           priceRequest:function (a) { return adminPriceRequest(d.token, a[0], a[1], a[2], a[3]); },
           setSeasonDone:function (a) { return adminSetSeasonDone(d.token, a[0], a[1], a[2], a[3]); },
           listStaff:   function (a) { return adminListStaff(d.token); },
+          autoPause:   function (a) { return adminAutoPause(d.token); },
+          setAutoPause:function (a) { return adminSetAutoPause(d.token, a[0], a[1]); },
           setPerm:     function (a) { return adminSetPerm(d.token, a[0], a[1], a[2]); },
           resetPin:    function (a) { return adminResetPin(d.token, a[0]); },
           addStaff:    function (a) { return adminAddStaff(d.token, a[0], a[1], a[2]); },
@@ -1322,12 +1361,12 @@ function initStaff() {
   if (props.getProperty('STAFF')) { console.log('STAFF already exists — use the console Admin screen to manage. Delete the STAFF property first if you truly want to re-seed.'); return; }
   const mkpin = function () { return String(Math.floor(1000 + Math.random() * 9000)); };
   const roster = {
-    'Chris':  { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1 } },
-    'Jeff':   { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1 } },
-    'John':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1 } },
-    'Rex':    { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1 } },
-    'Jess':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1 } },
-    'Marina': { pin: mkpin(), admin: false, perms: { pay: 0, adjust: 0, email: 0, photos: 1 } }
+    'Chris':  { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1 } },
+    'Jeff':   { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1 } },
+    'John':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
+    'Rex':    { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
+    'Jess':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
+    'Marina': { pin: mkpin(), admin: false, perms: { pay: 0, adjust: 0, email: 0, photos: 1, keys: 0 } }
   };
   props.setProperty('STAFF', JSON.stringify(roster));
   Object.keys(roster).forEach(function (n) { console.log(n + ' — PIN: ' + roster[n].pin); });
@@ -1360,7 +1399,33 @@ function adminAuth(pin) {
   const sess = { name: name, exp: Date.now() + SESSION_HOURS * 3600 * 1000 };
   PropertiesService.getScriptProperties().setProperty('SESS_' + token, JSON.stringify(sess));
   const st = roster[name];
-  return { ok: 1, token: token, name: name, admin: !!st.admin, perms: st.perms || {} };
+  return { ok: 1, token: token, name: name, admin: !!st.admin, perms: resolvedPerms_(st) };
+}
+
+/* Recording where the keys are and which slip a boat is in is yard work, not a
+   price change — the people who actually find that out are the crew, who have
+   no business changing what a customer owes. So it gets its own permission
+   rather than riding on `adjust`.
+
+   Roster entries written before this permission existed carry no `keys` field.
+   For those, fall back to "anyone already trusted with payments or
+   adjustments", which is the yard staff and the admins, and not the
+   photos-only account. Once an admin sets it explicitly the stored value wins,
+   including turning it OFF. */
+function canKeys_(st) {
+  if (!st) return false;
+  if (st.admin) return true;
+  const p = st.perms || {};
+  if (p.keys !== undefined && p.keys !== null && p.keys !== '') return !!Number(p.keys);
+  return !!(p.adjust || p.pay);
+}
+/* The resolved permission set, so the console never has to re-implement the
+   fallback above and then disagree with the server about it. */
+function resolvedPerms_(st) {
+  const p = {};
+  Object.keys((st && st.perms) || {}).forEach(function (k) { p[k] = st.perms[k]; });
+  p.keys = canKeys_(st) ? 1 : 0;
+  return p;
 }
 
 function requireAuth_(token, perm) {
@@ -1374,10 +1439,11 @@ function requireAuth_(token, perm) {
   const roster = getStaff_();
   const st = roster[sess.name];
   if (!st) throw new Error('Account removed.');
-  if (perm && perm !== 'view' && !st.admin && !(st.perms && st.perms[perm])) {
-    throw new Error('Your account doesn\'t have permission for that — ask Chris or Jeff.');
+  if (perm && perm !== 'view' && !st.admin) {
+    const ok = (perm === 'keys') ? canKeys_(st) : !!(st.perms && st.perms[perm]);
+    if (!ok) throw new Error('Your account doesn\'t have permission for that — ask Chris or Jeff.');
   }
-  return { name: sess.name, admin: !!st.admin, perms: st.perms || {} };
+  return { name: sess.name, admin: !!st.admin, perms: resolvedPerms_(st) };
 }
 
 function auditLog_(who, action) {
@@ -1708,7 +1774,7 @@ function adminDimsPreview(token, qn, changes) {
    before/after diff — but it still runs the rebuild, because the slip number
    appears in the Heritage Harbor discount line and that label has to follow. */
 function adminKeysApply(token, qn, changes) {
-  const who = requireAuth_(token, 'adjust');
+  const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
@@ -2478,12 +2544,46 @@ function adminEditLine(token, qn, idx, action, newAmt, newLabel) {
 }
 
 /* ---- admin-only: roster management ---- */
+/* Anyone signed in can SEE the pause — the banner has to show for everyone or
+   it does not do its job. Only an admin can change it. */
+function adminAutoPause(token) {
+  requireAuth_(token, 'view');
+  return Object.assign({ ok: 1 }, autoPauseState_());
+}
+function adminSetAutoPause(token, on, reason) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const state = {
+    on: !!on,
+    reason: String(reason || '').slice(0, 200),
+    by: who.name,
+    at: new Date().toLocaleString()
+  };
+  PropertiesService.getScriptProperties().setProperty(AUTO_PAUSE_KEY_, JSON.stringify(state));
+  auditLog_(who.name, 'AUTOMATIC EMAILS ' + (state.on ? 'PAUSED' : 'RESUMED') +
+    (state.reason ? ' — ' + state.reason : ''));
+  /* Worth an alert: this is a change to whether the system talks to customers
+     at all, and the person who needs to know is not always the person who did
+     it. Internal only — never near a customer address. */
+  try {
+    MailApp.sendEmail(NOTIFY,
+      'Winter quotes: automatic customer emails ' + (state.on ? 'PAUSED' : 'resumed'),
+      (state.on
+        ? 'The 10-day quote reminder and the 24h lead follow-up are now PAUSED.\n\n'
+        : 'The 10-day quote reminder and the 24h lead follow-up are running again.\n\n') +
+      'By: ' + state.by + '\nWhen: ' + state.at +
+      (state.reason ? '\nReason: ' + state.reason : '') +
+      '\n\nStaff can still send emails by hand from the console; this only affects the two automatic sends.');
+  } catch (e) { console.error('Pause notice failed: ' + e); }
+  return Object.assign({ ok: 1 }, state);
+}
+
 function adminListStaff(token) {
   const who = requireAuth_(token, 'view');
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
   const roster = getStaff_();
   return { ok: 1, staff: Object.keys(roster).map(function (n) {
-    return { name: n, admin: !!roster[n].admin, perms: roster[n].perms || {} };
+    return { name: n, admin: !!roster[n].admin, perms: resolvedPerms_(roster[n]) };
   }) };
 }
 function adminSetPerm(token, name, perm, value) {
@@ -2790,7 +2890,8 @@ function adminAddStaff(token, name, perms, isAdmin) {
   roster[clean] = {
     pin: pin,
     admin: !!isAdmin,
-    perms: { pay: p.pay ? 1 : 0, adjust: p.adjust ? 1 : 0, email: p.email ? 1 : 0, photos: p.photos ? 1 : 0 }
+    perms: { pay: p.pay ? 1 : 0, adjust: p.adjust ? 1 : 0, email: p.email ? 1 : 0,
+             photos: p.photos ? 1 : 0, keys: p.keys ? 1 : 0 }
   };
   saveStaff_(roster);
   auditLog_(who.name, 'Added staff account "' + clean + '"' + (isAdmin ? ' (admin)' : '') +
@@ -3761,6 +3862,7 @@ function setupReminderTrigger() {
 
 function dailyReminderCheck() {
   if (!REMINDER_ENABLED) return;
+  if (autoEmailsPaused_()) { console.log('Automatic emails are paused — no 10-day reminders sent.'); return; }
   const cutoff = Date.now() - REMINDER_AFTER_DAYS * 24 * 60 * 60 * 1000;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(function (sh) {
@@ -3829,6 +3931,7 @@ function isLeadFollowUpMark_(v) { return String(v || '').indexOf(LEAD_FOLLOWUP_M
 
 function leadFollowUpCheck() {
   if (!LEAD_FOLLOWUP_ENABLED) return;
+  if (autoEmailsPaused_()) { console.log('Automatic emails are paused — no lead follow-ups sent.'); return; }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(STARTED_TAB);
   if (!sh) return;

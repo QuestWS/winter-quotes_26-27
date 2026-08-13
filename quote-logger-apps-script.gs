@@ -439,7 +439,7 @@ function doPost(e) {
           backupPreview: function (a) { return adminBackupPreview(d.token, a[0], a[1]); },
           backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); },
           bulkPreview: function (a) { return adminBulkPreview(d.token, a[0]); },
-          bulkSend:    function (a) { return adminBulkSend(d.token, a[0]); }
+          bulkSend:    function (a) { return adminBulkSend(d.token, a[0], a[1]); }
         };
         if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
         return json(FNS[d.fn](d.args || []));
@@ -1894,7 +1894,9 @@ function adminLookup(token, qn) {
         keyLoc: String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || ''),
         slipNo: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || ''),
         needsKeys: !isBike_(d),
-        needsSlip: !isLandUnit_(d) && !(st.hasTrailer === undefined ? d.hasTrailer : st.hasTrailer),
+        /* Owning a trailer does not mean the boat is on it — see
+           missingHaulInfo_. Every water unit gets a slip field. */
+        needsSlip: !isLandUnit_(d),
         missing: missingHaulInfo_(d)
       };
     })(),
@@ -2209,6 +2211,29 @@ function bulkTargets_(kind) {
   return { targets: targets, byTab: byTab, noEmail: noEmail };
 }
 
+/* Narrow a computed recipient list to the ones staff ticked.
+   ---------------------------------------------------------------------------
+   This is a FILTER and must never be anything else. The list of who may receive
+   a seasonal email is decided by bulkTargets_, which is where the lead
+   exclusion and the per-kind tab rules live; the selection can only ever remove
+   from that list. A quote number the console sends that is not already a target
+   is ignored, not looked up and added — otherwise the checkbox list would
+   become a way to email anyone on the sheet, leads included.
+
+   `only` absent (null/undefined) means everyone, which is what the spreadsheet
+   menu passes and what preview counts. An EMPTY array means nobody, and must
+   not be mistaken for "everyone" — that is the difference between sending zero
+   emails and sending five hundred. */
+function bulkFilterTargets_(targets, only) {
+  if (only === null || only === undefined) return targets.slice();
+  if (!Array.isArray(only)) return [];
+  const want = {};
+  only.forEach(function (q) { want[String(q).trim().toUpperCase()] = 1; });
+  return targets.filter(function (t) {
+    return want[String((t.d && t.d.quoteNo) || '').trim().toUpperCase()] === 1;
+  });
+}
+
 function adminBulkPreview(token, kind) {
   requireAuth_(token, 'email');
   const cfg = BULK_KINDS_[kind];
@@ -2225,6 +2250,13 @@ function adminBulkPreview(token, kind) {
   return {
     ok: 1, kind: kind, label: cfg.label,
     count: t.targets.length,
+    /* The actual roster, so staff can untick the handful who should not get it
+       rather than sending to everyone else one at a time. */
+    recipients: t.targets.map(function (x) {
+      return { qn: String(x.d.quoteNo || ''), tab: x.tab,
+        name: [x.d.lastName, x.d.firstName].filter(Boolean).join(', ') || String(x.d.owner || ''),
+        email: String(x.d.email || '') };
+    }),
     byTab: Object.keys(t.byTab).sort().map(function (k) { return { tab: k, n: t.byTab[k] }; }),
     noEmail: t.noEmail.length,
     skipped: cfg.skipTabs,
@@ -2239,12 +2271,16 @@ function adminBulkPreview(token, kind) {
    spreadsheet menu reach the same customers with the same email rather than
    each keeping its own copy of "who gets a seasonal note". Always audited: a
    mass send is the one action nobody should have to guess about later. */
-function bulkSendKind_(kind, by) {
+function bulkSendKind_(kind, by, only) {
   const cfg = BULK_KINDS_[kind];
   const t = bulkTargets_(kind);
+  /* Everyone who COULD receive it, then narrowed to who staff ticked. The
+     narrowing can only remove — see bulkFilterTargets_. */
+  const chosen = bulkFilterTargets_(t.targets, only);
+  const skipped = t.targets.length - chosen.length;
   let sent = 0;
   const failed = [];
-  t.targets.forEach(function (x) {
+  chosen.forEach(function (x) {
     try {
       const built = buildEmailFor_(x.d, kind, '', '');
       if (!built) throw new Error('could not build the email');
@@ -2262,20 +2298,28 @@ function bulkSendKind_(kind, by) {
       console.error('Bulk ' + kind + ' failed for ' + x.d.quoteNo + ': ' + e);
     }
   });
-  auditLog_(by, 'SEND TO ALL "' + cfg.label + '" — ' + sent + ' of ' + t.targets.length +
-    ' sent' + (failed.length ? '; failed: ' + failed.join(', ') : ''));
-  return { sent: sent, total: t.targets.length, failed: failed };
+  auditLog_(by, 'SEND TO ALL "' + cfg.label + '" — ' + sent + ' of ' + chosen.length +
+    ' sent' + (skipped ? ' (' + skipped + ' deselected of ' + t.targets.length + ' eligible)' : '') +
+    (failed.length ? '; failed: ' + failed.join(', ') : ''));
+  return { sent: sent, total: chosen.length, eligible: t.targets.length, skipped: skipped, failed: failed };
 }
 
-function adminBulkSend(token, kind) {
+function adminBulkSend(token, kind, only) {
   const who = requireAuth_(token, 'email');
   const cfg = BULK_KINDS_[kind];
   if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
   if (!bulkTargets_(kind).targets.length) return { ok: 0, error: 'Nobody to send to.' };
-  const r = bulkSendKind_(kind, who.name);
+  /* An empty selection is a real answer, not a missing one: say so rather than
+     falling through to "everyone". */
+  if (Array.isArray(only) && !only.length) {
+    return { ok: 0, error: 'Nobody is ticked — select at least one customer.' };
+  }
+  const r = bulkSendKind_(kind, who.name, only);
+  if (!r.total) return { ok: 0, error: 'None of the selected quotes are eligible for this email.' };
   return {
-    ok: 1, sent: r.sent, total: r.total, failed: r.failed.length,
+    ok: 1, sent: r.sent, total: r.total, skipped: r.skipped, failed: r.failed.length,
     msg: 'Sent to ' + r.sent + ' of ' + r.total + ' customer(s).' +
+      (r.skipped ? ' ' + r.skipped + ' deselected.' : '') +
       (r.failed.length ? ' ' + r.failed.length + ' failed — see the Activity Log.' : '')
   };
 }
@@ -3064,7 +3108,8 @@ function buildEmailFor_(d, kind, extra, photos) {
           ', at the front desk, with a neighbour — anywhere we can find them without you being there.');
       }
       if (need.indexOf('slip') > -1) {
-        items.push('<b>Which slip is it in?</b> So the crew goes straight to it.');
+        items.push('<b>Which slip is it in?</b> So the crew goes straight to it — or if it ' +
+          'is not in the water, tell us where to find it.');
       }
       ask =
         '<div style="background:#FDFCF7;border:1px solid #C08A22;border-radius:8px;padding:16px 18px;margin:4px 0 8px">' +
@@ -3233,7 +3278,7 @@ function menuBulkSend_(kind, blurb) {
   const conf = ui.alert('Send the ' + cfg.label.toLowerCase() + ' to ' + t.targets.length + ' customer(s)?',
     blurb + ' This cannot be un-sent.', ui.ButtonSet.YES_NO);
   if (conf !== ui.Button.YES) return;
-  const r = bulkSendKind_(kind, 'Sheet menu');
+  const r = bulkSendKind_(kind, 'Sheet menu', null);   // the menu has no picker: everyone
   ui.alert(cfg.label + ' sent to ' + r.sent + ' of ' + r.total + '.');
 }
 
@@ -3832,16 +3877,22 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
 /* What the haul-out crew still doesn't know about this unit.
    Only ever asks for what actually applies:
    - Keys: every unit we drive or tow except an e-bike, which has none.
-   - Slip: only a water unit that is NOT on a trailer. A boat sitting on its
-     trailer is not in a slip, and asking for one reads as a form letter. */
+   - Slip: every water unit without one recorded.
+
+   Owning a trailer does NOT mean the boat is on it. Plenty of Heritage Harbor
+   customers store the trailer with us and keep the boat in a slip all season,
+   so `hasTrailer` says nothing about where the boat actually is — and if we are
+   emailing about a haul-out at all, it is in the water. Gating the question on
+   the trailer flag hid it from exactly the customers most likely to have a
+   slip. The wording covers the other case instead, by letting them tell us
+   where it is if it isn't in one. */
 function missingHaulInfo_(d) {
   const st = effectiveState_(d) || d.state || d || {};
   const need = [];
   const keyLoc = String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || '').trim();
   const slipNo = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim();
   if (!isBike_(d) && !keyLoc) need.push('keys');
-  const onTrailer = !!(st.hasTrailer === undefined ? d.hasTrailer : st.hasTrailer);
-  if (!isLandUnit_(d) && !onTrailer && !slipNo) need.push('slip');
+  if (!isLandUnit_(d) && !slipNo) need.push('slip');
   return need;
 }
 

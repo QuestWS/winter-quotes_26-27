@@ -317,6 +317,25 @@ def doc1():
         'the exclusion exists to prevent. It is enforced in one shared piece of code used by both '
         'the console and the spreadsheet menu, and there is an automated test that builds a '
         'spreadsheet with a lead on it and checks the lead is not in the result.')]
+    g.story += [P(
+        'The list is also a picker. Everyone arrives ticked — it is a send-to-all, and the point '
+        'is to drop the occasional customer, not to build a list from scratch — and you untick '
+        'whoever should not get it, individually or a whole storage area at a time. Whatever you '
+        'send back can only make that list <i>shorter</i>: the recipients are decided on the '
+        'server before your selection is applied, so a ticked box cannot add somebody the rules '
+        'already excluded.')]
+
+    g.story += [P('Keys, slips, and chasing what we do not know', H2)]
+    g.story += [P(
+        'A haul-out needs two things the customer often has not given us: where the keys will be, '
+        'and which slip the boat is in. Both are editable on the console, and both are stored '
+        'separately from what the customer selected, so their next save cannot undo a correction.')]
+    g.story += [P(
+        'If either is missing, the haul-out "you\'re up next" email asks for it directly. It only '
+        'asks for what applies — an e-bike has no keys — but a trailer is <b>not</b> taken to mean '
+        'the boat is out of the water, because plenty of customers store the trailer with us and '
+        'keep the boat in a slip all season. When we have both, the email says them back so a '
+        'stale key location gets corrected before a truck goes out.')]
 
     g.story += [P('Photos and contracts', H1)]
     g.story += [P(
@@ -536,9 +555,14 @@ def doc2():
           'and a warning if the number is large enough to run into Google\'s daily limit.'],
          ['Preview the email', 'Opens the real email for the first person on the list — not a '
           'description of it.'],
-         ['Send to all N', 'Asks you to confirm, then sends. Each one is recorded on that '
-          'customer\'s quote and in the Activity Log.']],
+         ['Untick anyone', 'The full list appears with everyone ticked. Untick the few who should '
+          'not get it — per person, or All / None for a whole storage area. The count and the '
+          'send button follow as you go.'],
+         ['Send to N', 'Asks you to confirm, tells you how many you unticked, then sends. Each '
+          'one is recorded on that customer\'s quote and in the Activity Log.']],
         [1.6 * inch, 5.0 * inch])]
+    g.story += [P('Unticking everybody does not send to everybody — it refuses. The list you see '
+                  'is the only list it can send to; it can be made shorter, never longer.', SMALL)]
     g.story += [note('Who never receives one',
         'Anyone who started a quote and walked away without finishing it. They are on the Quote '
         'Started tab, they are not customers, and no seasonal email will ever reach them. Quotes '
@@ -547,6 +571,23 @@ def doc2():
         'end-of-season note does go to them, because they still have to get the unit to us.')]
     g.story += [P('Both are also on the spreadsheet menu, and both go to the same people either '
                   'way.', SMALL)]
+
+    g.story += [P('Keys &amp; slip', H1)]
+    g.story += [P('Needs <b>adjust</b>. Sits under Unit details &amp; storage on a loaded quote.')]
+    g.story += [table(
+        ['Field', 'Notes'],
+        [['Where will the keys be?', 'Shown for everything except e-bikes, which have none.'],
+         ['Slip number', 'Shown for boats and jet skis. Owning a trailer does not mean the boat is '
+          'on it, so this is asked either way.'],
+         ['Clearing a box', 'Falls back to whatever the customer originally told us, rather than '
+          'blanking it.']],
+        [1.6 * inch, 5.0 * inch])]
+    g.story += [note('This is what the yard actually reads',
+        'What you type here is what appears on the yard sheets, on the haul-out list, and in the '
+        '"you\'re up next" email. A line at the top of the card tells you what is still missing — '
+        'and if anything is, the haul-out email asks the customer for it directly. Once we have '
+        'both, that email says them back instead, so a key location recorded in April gets '
+        'checked before somebody drives out in October.')]
 
     g.story += [P('Printing for the yard', H1)]
     g.story += [table(

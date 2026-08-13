@@ -158,6 +158,26 @@ background:#fff;color:var(--muted);cursor:pointer}
 .bkrow .q{font-family:"IBM Plex Mono","Courier New",monospace}
 .bkwarn{background:#FDF3E0;border:1.5px solid var(--gold);border-radius:9px;padding:10px 12px;
   margin-top:9px;font-size:13px;color:#6B5A2A;line-height:1.45}
+/* Recipient picker. Capped height with its own scroll: a full season is 500+
+   names and the Send button has to stay reachable without scrolling past them. */
+.rcpBox{max-height:46vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;
+  padding:4px 8px;margin-top:8px;background:#fff}
+.rcpTab{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  position:sticky;top:0;background:#fff;padding:8px 2px 5px;border-bottom:1px solid var(--ice);
+  font-size:12px;font-weight:800;color:var(--navy);text-transform:uppercase;letter-spacing:.4px}
+.rcpTab button{font-size:11px;font-weight:700;border:1px solid var(--line);background:#fff;
+  color:var(--frost);border-radius:999px;padding:3px 9px;cursor:pointer;white-space:nowrap}
+.rcp{display:flex;align-items:flex-start;gap:9px;padding:7px 2px;border-bottom:1px dashed var(--ice)}
+.rcp input{width:19px;height:19px;margin:1px 0 0;flex:none;accent-color:var(--navy)}
+.rcp .who{flex:1;min-width:0;font-size:13px;color:var(--navy);line-height:1.35}
+.rcp .who b{display:block;font-weight:700}
+.rcp .who span{font-size:11.5px;color:var(--muted);word-break:break-all}
+.rcp .qn{font-family:"IBM Plex Mono","Courier New",monospace;font-size:11px;color:var(--muted);flex:none}
+.rcp.off{opacity:.45}
+.rcpBar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;
+  font-size:13px;font-weight:700;color:var(--navy)}
+.rcpBar button{font-size:12px;font-weight:700;border:1px solid var(--line);background:#fff;
+  color:var(--frost);border-radius:999px;padding:5px 11px;cursor:pointer}
 .staffrow{padding:12px 0;border-bottom:1px solid var(--ice)}
 .staffrow .nm{font-weight:800;color:var(--navy);font-size:15px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;
@@ -1207,8 +1227,66 @@ function renderBulk(r){
       'finished a quote are always excluded.</div>'+
     tabs+skipped+noEmail+quota+
     (r.sample?'<div style="margin-top:10px"><button class="btn ghost sm" onclick="showBulkSample()">Preview the email</button></div>':'')+
-    '<button class="btn gold" id="bulkSendBtn" style="margin-top:10px" onclick="doBulkSend()">Send to all '+r.count+'</button>';
+    renderRecipients(r)+
+    '<button class="btn gold" id="bulkSendBtn" style="margin-top:10px" onclick="doBulkSend()"></button>';
   $('bulkReport').classList.remove('hide');
+  syncBulkCount();
+}
+/* Everyone is ticked to begin with — this is a send-to-all, and the picker is
+   there to drop the occasional customer who should not get it, not to build a
+   list from scratch. Unticking is the deliberate act. */
+function renderRecipients(r){
+  const list=r.recipients||[];
+  if(!list.length) return '';
+  const byTab={};
+  list.forEach(x=>{ (byTab[x.tab]=byTab[x.tab]||[]).push(x); });
+  /* Follow the order the summary above already used — storage areas first, No
+     Storage last. Sorting alphabetically here would put No Storage in the
+     middle and the two lists would disagree about the same tabs. */
+  const order=(r.byTab||[]).map(t=>t.tab);
+  const tabsSorted=Object.keys(byTab).sort((a,b)=>{
+    const i=order.indexOf(a), j=order.indexOf(b);
+    if(i<0&&j<0) return a.localeCompare(b);
+    if(i<0) return 1;
+    if(j<0) return -1;
+    return i-j;
+  });
+  const body=tabsSorted.map(tab=>{
+    const safe=tab.replace(/[^A-Za-z0-9]/g,'_');
+    return '<div class="rcpTab"><span>'+esc(tab)+' ('+byTab[tab].length+')</span>'+
+      '<span><button type="button" onclick="pickTab('+JSON.stringify(tab).replace(/"/g,'&quot;')+',1)">All</button> '+
+      '<button type="button" onclick="pickTab('+JSON.stringify(tab).replace(/"/g,'&quot;')+',0)">None</button></span></div>'+
+      byTab[tab].map(x=>
+        '<label class="rcp" data-tab="'+esc(tab)+'">'+
+        '<input type="checkbox" class="rcpBox_'+safe+'" data-qn="'+esc(x.qn)+'" checked onchange="syncBulkCount()">'+
+        '<span class="who"><b>'+esc(x.name||'(no name)')+'</b><span>'+esc(x.email||'')+'</span></span>'+
+        '<span class="qn">'+esc(x.qn)+'</span></label>').join('');
+  }).join('');
+  return '<div class="rcpBar"><span id="rcpCount"></span>'+
+    '<span><button type="button" onclick="pickAll(1)">Select all</button> '+
+    '<button type="button" onclick="pickAll(0)">Select none</button></span></div>'+
+    '<div class="rcpBox">'+body+'</div>';
+}
+function rcpInputs(){ return [...document.querySelectorAll('#bulkReport .rcp input')]; }
+function bulkSelected(){ return rcpInputs().filter(i=>i.checked).map(i=>i.dataset.qn); }
+function pickAll(on){ rcpInputs().forEach(i=>{i.checked=!!on;}); syncBulkCount(); }
+function pickTab(tab,on){
+  rcpInputs().forEach(i=>{ if(i.closest('.rcp').dataset.tab===tab) i.checked=!!on; });
+  syncBulkCount();
+}
+function syncBulkCount(){
+  const all=rcpInputs(), n=all.filter(i=>i.checked).length;
+  all.forEach(i=>i.closest('.rcp').classList.toggle('off',!i.checked));
+  const c=$('rcpCount');
+  if(c) c.textContent=n+' of '+all.length+' selected';
+  const b=$('bulkSendBtn');
+  if(b){
+    /* With no picker rendered (older server, no roster) fall back to the count
+       the preview reported, so the button still means something. */
+    const count=all.length?n:((BULK&&BULK.count)||0);
+    b.textContent='Send to '+count;
+    b.disabled=!count;
+  }
 }
 function showBulkSample(){
   if(!BULK||!BULK.sample) return;
@@ -1223,11 +1301,20 @@ function showBulkSample(){
 }
 async function doBulkSend(){
   if(!BULK) return;
-  if(!confirm('Send "'+BULK.label+'" to '+BULK.count+' customer(s)?\n\nThis cannot be un-sent.'))return;
+  const hasPicker=rcpInputs().length>0;
+  /* No picker rendered means the server did not send a roster; passing null
+     keeps the old behaviour (everyone) rather than silently sending to nobody. */
+  const only=hasPicker?bulkSelected():null;
+  const n=hasPicker?only.length:BULK.count;
+  if(!n){ setMsg('bulkMsg','Nobody is ticked.',false); return; }
+  const dropped=hasPicker?(BULK.count-n):0;
+  if(!confirm('Send "'+BULK.label+'" to '+n+' customer(s)?'+
+      (dropped?'\n\n'+dropped+' unticked and will NOT receive it.':'')+
+      '\n\nThis cannot be un-sent.'))return;
   const b=$('bulkSendBtn'); if(b){ b.disabled=true; b.textContent='Sending…'; }
   setMsg('bulkMsg','Sending — this can take a minute.',null);
   try{
-    const r=await api('bulkSend',[BULK.kind]);
+    const r=await api('bulkSend',[BULK.kind,only]);
     if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Send failed.',false); return; }
     setMsg('bulkMsg',r.msg,true);
     $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>Recorded in the Activity Log '+

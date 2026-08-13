@@ -123,15 +123,24 @@ console.log('\n=== 3b. an empty state value must never wipe a top-level one ==='
 }
 
 console.log('\n=== 4. what counts as missing ===');
+/* Owning a trailer says NOTHING about where the boat is: Heritage Harbor
+   customers routinely store the trailer with us and keep the boat in a slip all
+   season. Gating the slip question on hasTrailer hid it from exactly the people
+   most likely to have one, so the trailer flag must not change the answer —
+   these cases are paired on/off to hold that. */
 const cases=[
-  ['boat in a slip, nothing known',       {unit:'Boat'},      {hasTrailer:false,keyLoc:'',slipNo:''},   ['keys','slip']],
-  ['boat on a trailer, no keys',          {unit:'Boat'},      {hasTrailer:true,keyLoc:'',slipNo:''},    ['keys']],
-  ['boat in a slip, keys known',          {unit:'Boat'},      {hasTrailer:false,keyLoc:'desk',slipNo:''},['slip']],
+  ['boat, nothing known, no trailer',     {unit:'Boat'},      {hasTrailer:false,keyLoc:'',slipNo:''},   ['keys','slip']],
+  ['boat, nothing known, HAS a trailer',  {unit:'Boat'},      {hasTrailer:true,keyLoc:'',slipNo:''},    ['keys','slip']],
+  ['boat, keys known, no trailer',        {unit:'Boat'},      {hasTrailer:false,keyLoc:'desk',slipNo:''},['slip']],
+  ['boat, keys known, HAS a trailer',     {unit:'Boat'},      {hasTrailer:true,keyLoc:'desk',slipNo:''}, ['slip']],
   ['boat fully known',                    {unit:'Boat'},      {hasTrailer:false,keyLoc:'desk',slipNo:'B-1'},[]],
+  ['boat fully known, HAS a trailer',     {unit:'Boat'},      {hasTrailer:true,keyLoc:'desk',slipNo:'B-1'},[]],
   ['jet ski in the water',                {unit:'Jet ski'},   {hasTrailer:false,keyLoc:'',slipNo:''},   ['keys','slip']],
-  ['golf cart (land, needs keys)',        {unit:'Golf cart'}, {hasTrailer:false,keyLoc:'',slipNo:''},   ['keys']],
+  ['jet ski with a trailer',              {unit:'Jet ski'},   {hasTrailer:true,keyLoc:'',slipNo:''},    ['keys','slip']],
+  ['golf cart (land: keys, never a slip)',{unit:'Golf cart'}, {hasTrailer:false,keyLoc:'',slipNo:''},   ['keys']],
   ['e-bike (no keys, no slip, ever)',     {unit:'E-bike'},    {hasTrailer:false,keyLoc:'',slipNo:''},   []],
-  ['whitespace is not a key location',    {unit:'Boat'},      {hasTrailer:true,keyLoc:'   ',slipNo:''}, ['keys']],
+  ['whitespace is not a key location',    {unit:'Boat'},      {hasTrailer:true,keyLoc:'   ',slipNo:'B-1'}, ['keys']],
+  ['whitespace is not a slip number',     {unit:'Boat'},      {hasTrailer:true,keyLoc:'desk',slipNo:'  '}, ['slip']],
 ];
 for(const [label,base,st,want] of cases){
   const d=Object.assign({state:Object.assign({unit:'boat'},st)},base);

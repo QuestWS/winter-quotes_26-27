@@ -449,6 +449,16 @@ the console with **no quote loaded**, gated on `email`, and from the sheet menu.
 - **Preview sends nothing.** It reports the count per tab, who has no email
   address, a Gmail-quota warning past 400, and renders one real email for the
   first recipient — what staff approve is the actual email, not a description.
+- **The recipient picker narrows and can never widen.** Preview returns the
+  roster; the console renders it as checkboxes, everyone ticked, so unticking is
+  the deliberate act. The posted selection is a **filter** applied by
+  `bulkFilterTargets_` to the list `bulkTargets_` already computed — a quote
+  number that is not already a target is ignored, never looked up and added.
+  Otherwise the checkbox list would become a way to email anyone on the sheet,
+  leads included. Two shapes matter and are both pinned: `null` (the sheet menu,
+  which has no picker) means everyone; an **empty array means nobody** and must
+  never fall through to everyone — that is the difference between zero emails
+  and five hundred. `check-bulk-targets.js` executes all of it.
 - Every bulk send is audited (`SEND TO ALL "…" — n of m`) and lands in each
   quote's Email History.
 
@@ -487,11 +497,19 @@ engine — the slip number appears in the Heritage Harbor discount line).
   `adminKeysApply`'s job, where blanking is what was actually asked for. This
   regression was caught by the save-path fixture and is pinned permanently.
 - **The haul-out "up next" email asks for whatever is missing**, and only for
-  what applies: `missingHaulInfo_` never asks an e-bike for keys (it has none)
-  or a boat on its own trailer for a slip (it isn't in one). When both are
-  known the email says them back, because a key location six months old quietly
-  stops being true. `tools/check-haul-info.js` runs the rule over every
-  combination rather than grepping for it; `verify.sh` runs it.
+  what applies: `missingHaulInfo_` never asks an e-bike for keys — it has none.
+  Every water unit gets the slip question. When both are known the email says
+  them back, because a key location six months old quietly stops being true.
+  `tools/check-haul-info.js` runs the rule over every combination rather than
+  grepping for it; `verify.sh` runs it.
+- **`hasTrailer` says nothing about where the boat is.** Owning a trailer does
+  not mean the boat is on it — Heritage Harbor customers routinely store the
+  trailer with Quest and keep the boat in a slip all season. Gating the slip
+  question on the trailer flag (which this did, briefly) hid it from exactly the
+  customers most likely to have a slip. The guard pairs every case on and off
+  the trailer flag so the answer cannot start depending on it again. The wording
+  covers the genuinely-not-in-the-water boat instead, by inviting them to say
+  where it is.
 - **Every close control closes.** Panels (storage, staff, matches, quote) each
   need a working ✕. Users noticed when one didn't.
 - **No duplicate top-level function names in the console.** `admin/index.html`

@@ -88,7 +88,8 @@ try {
     decl('COL'),
     decl('BULK_KINDS_'),
     fn('bulkTargets_'),
-    'return { bulkTargets_, BULK_KINDS_ };'
+    fn('bulkFilterTargets_'),
+    'return { bulkTargets_, BULK_KINDS_, bulkFilterTargets_ };'
   ].join('\n'))(SpreadsheetApp);
 } catch (err) {
   console.error('FAIL: the send-to-all target list does not execute standalone — ' + err.message);
@@ -155,6 +156,46 @@ for (const junk of ['', 'receipt', 'quote', 'latewarn']) {
   let threw = false, n = -1;
   try { n = B.bulkTargets_(junk).targets.length; } catch (e) { threw = true; }
   if (!threw && n > 0) fail('kind ' + JSON.stringify(junk) + ' produced ' + n + ' recipients — only announcements may be blasted');
+}
+
+/* The recipient picker narrows the list. It must never be able to WIDEN it:
+   the console posts a set of quote numbers, and if those were looked up and
+   added rather than intersected, a checkbox list would become a way to email
+   anyone on the sheet — leads included. */
+{
+  const t = B.bulkTargets_('spring');
+  const all = t.targets.map(x => x.d.quoteNo);
+
+  const none = B.bulkFilterTargets_(t.targets, []);
+  if (none.length) fail('an empty selection sent to ' + none.length + ' people — empty means nobody, not everybody');
+
+  const everyone = B.bulkFilterTargets_(t.targets, null);
+  if (everyone.length !== all.length) fail('no selection (the sheet menu) should mean everyone');
+
+  const one = B.bulkFilterTargets_(t.targets, [all[0]]);
+  if (one.length !== 1 || one[0].d.quoteNo !== all[0]) fail('a one-name selection did not resolve to that one name');
+
+  // The lead is never a target, so asking for it by name must change nothing.
+  const sneakLead = B.bulkFilterTargets_(t.targets, ['Q-LD-1']);
+  if (sneakLead.length) fail('naming a LEAD in the selection put it back on the list');
+
+  // Nor a quote the kind deliberately skips, nor one that does not exist.
+  const sneakSkipped = B.bulkFilterTargets_(t.targets, ['Q-NS-1']);
+  if (sneakSkipped.length) fail('naming a skipped-tab quote overrode the per-kind tab rule');
+  const sneakGhost = B.bulkFilterTargets_(t.targets, ['Q-DOES-NOT-EXIST', 'Q-LOG-1']);
+  if (sneakGhost.length) fail('naming quotes that are not targets added them');
+
+  // A mixed list keeps only the legitimate ones.
+  const mixed = B.bulkFilterTargets_(t.targets, [all[0], 'Q-LD-1', 'Q-NS-1', all[1]]);
+  if (mixed.length !== 2) fail('a mixed selection let something through: ' + mixed.map(x => x.d.quoteNo).join(','));
+
+  // Junk shapes must not be read as "everyone".
+  for (const junk of ['Q-IN-1', 0, 1, {}, true]) {
+    const r = B.bulkFilterTargets_(t.targets, junk);
+    if (r.length) fail('selection ' + JSON.stringify(junk) + ' was treated as ' + r.length + ' recipient(s)');
+  }
+  console.log('  picker  -> narrows only: empty=0, null=' + everyone.length + ', mixed=' + mixed.length +
+    ', lead/skipped/ghost all rejected');
 }
 
 if (bad) { console.error('FAIL: ' + bad + ' send-to-all violation(s)'); process.exit(1); }

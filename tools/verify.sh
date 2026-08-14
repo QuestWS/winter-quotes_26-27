@@ -39,7 +39,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
+    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -72,7 +72,7 @@ if [ -f admin/index.html ]; then
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
-    "previewReprice" "doReprice" "repriceCard" "pvRender"
+    "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
   # preview was broken for the person who most needs it. It needs
@@ -185,6 +185,22 @@ if [ -f quote-logger-apps-script.gs ]; then
       echo "  FAIL trap: $f refuses paid quotes — staff must be able to re-bill after a deposit"; FAIL=1
     else echo "  OK   trap: $f still works after a deposit"; fi
   done
+  # THE STAFF NOTE IS PRIVATE. Its entire value is that it is candid — why a
+  # discount was given, what was really agreed. If it ever reached the PDF, an
+  # email, or the customer's own page, that candour becomes a liability.
+  for f in quoteHtml_ customerEmailHtml_ noticeHtml_ buildEmailFor_; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
+      echo "  FAIL trap: $f can show the staff note to a customer"; FAIL=1
+    else echo "  OK   trap: $f cannot leak the staff note"; fi
+  done
+  # ...nor the endpoint the customer's own page reads.
+  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
+    echo "  FAIL trap: the load endpoint returns the staff note to the customer page"; FAIL=1
+  else echo "  OK   trap: staff note never reaches the customer page"; fi
+  # It exists only on this side, so a customer save must be made to carry it.
+  if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.staffNote'; then
+    echo "  OK   trap: staff note survives a customer save"
+  else echo "  FAIL trap: a customer save would wipe the staff note"; FAIL=1; fi
   # Keys/slip is yard work and has its own permission — it must NOT be back on
   # `adjust`, or the crew who find out where the keys are cannot record it.
   if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'keys')"; then

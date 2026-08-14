@@ -455,6 +455,7 @@ function doPost(e) {
           dimsPreview: function (a) { return adminDimsPreview(d.token, a[0], a[1]); },
           dimsApply:   function (a) { return adminDimsApply(d.token, a[0], a[1], a[2]); },
           keysApply:   function (a) { return adminKeysApply(d.token, a[0], a[1]); },
+          staffNote:   function (a) { return adminSetStaffNote(d.token, a[0], a[1]); },
           pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
           adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
           sendEmail:   function (a) { return adminSendEmail(d.token, a[0], a[1], a[2]); },
@@ -542,9 +543,16 @@ function doPost(e) {
       d.payMode = incomingPay || d.payMode;
       d.emailCustomer = wantsEmail;
       d.ts = new Date().toISOString();
+      /* (locked path already keeps the whole official payload, note included) */
       d._manualNote = 'LOCKED (payment on file): customer save kept the official quote; only status updated.';
     } else {
       if (oldD.payments && oldD.payments.length) d.payments = oldD.payments;
+      /* The staff note lives only on this side. The customer's browser has
+         never heard of it, so their posted payload does not carry one and the
+         note would be lost on every save if it were not carried across. */
+      if (oldD.staffNote) d.staffNote = oldD.staffNote;
+      if (oldD.staffNoteBy) d.staffNoteBy = oldD.staffNoteBy;
+      if (oldD.staffNoteAt) d.staffNoteAt = oldD.staffNoteAt;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1846,6 +1854,40 @@ function adminKeysApply(token, qn, changes) {
   };
 }
 
+/* Staff notes — why a quote is the way it is.
+   ---------------------------------------------------------------------------
+   Not the customer's notes (those are d.notes, typed on the quote page and
+   printed on the PDF). This is the other kind: why a discount was given, why
+   the dimensions look odd, what was agreed on the phone. Chris's reason for
+   asking: coming back in a year and not having to guess at his own logic.
+
+   It is NEVER shown to a customer. It is not in the quote PDF, not in any
+   email, and not returned by the customer-facing load endpoint. verify.sh
+   enforces that, because the whole value of a candid note is that it is
+   candid. */
+function adminSetStaffNote(token, qn, note) {
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const txt = String(note === null || note === undefined ? '' : note).slice(0, 4000);
+  const had = String(d.staffNote || '');
+  if (txt === had) return { ok: 0, error: 'Nothing changed.' };
+  if (txt) {
+    d.staffNote = txt;
+    d.staffNoteBy = who.name;
+    d.staffNoteAt = new Date().toLocaleString();
+  } else {
+    delete d.staffNote; delete d.staffNoteBy; delete d.staffNoteAt;
+  }
+  /* Write the payload without touching status, totals or the PDF — a note is
+     not a change to the quote. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Staff note ' + (txt ? (had ? 'updated' : 'added') : 'cleared') + ' on ' + d.quoteNo);
+  return { ok: 1, msg: txt ? 'Note saved.' : 'Note cleared.',
+           staffNote: txt, by: d.staffNoteBy || '', at: d.staffNoteAt || '' };
+}
+
 function adminDimsApply(token, qn, changes, note) {
   const who = requireAuth_(token, 'adjust');
   const ctx = findQuoteCtx_(qn);
@@ -1967,6 +2009,9 @@ function adminLookup(token, qn) {
       at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
     },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
+    /* Staff-only. Console reads it; no customer-facing path ever does. */
+    staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
+                 at: String(d.staffNoteAt || '') },
     /* Keys and slip, editable on the console. Read through the effective state
        so a staff correction shows rather than the customer's original, and
        report what is still missing so the console can say so out loud — it is

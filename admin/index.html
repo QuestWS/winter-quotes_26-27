@@ -384,6 +384,18 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="dimsMsg"></div>
           </div>
 
+          <div class="card hide" id="noteCard">
+            <h2>Staff notes</h2>
+            <div class="msg" style="margin:0 0 6px">Why this quote is the way it is — discounts,
+              odd dimensions, what was agreed on the phone. <b>The customer never sees this.</b>
+              It is not on the PDF and not in any email.</div>
+            <textarea class="txt" id="staffNote" rows="5"
+              placeholder="e.g. quoted inside and outside side by side, they took inside. $50 off because we were late pulling last year."></textarea>
+            <div class="msg" id="noteWho" style="margin:4px 0 0"></div>
+            <button class="btn navy" id="noteBtn" onclick="saveStaffNote()">Save note</button>
+            <div class="msg" id="noteMsg"></div>
+          </div>
+
           <div class="card hide" id="keysCard">
             <h2>Keys &amp; slip</h2>
             <div class="msg" id="keysNeed" style="margin:0 0 6px"></div>
@@ -777,6 +789,31 @@ function collectDims(){
   return out;
 }
 
+/* ---------- Staff notes ----------
+   Deliberately separate from the customer's own notes, which are typed on the
+   quote page and printed on the PDF. This one is ours: it never leaves the
+   console. */
+function renderStaffNote(n){
+  const v=(n&&n.text)||'';
+  $('staffNote').value=v;
+  const who=$('noteWho');
+  who.textContent=(n&&n.by)?('Last edited by '+n.by+(n.at?' on '+n.at:'')):'';
+  setMsg('noteMsg','');
+}
+async function saveStaffNote(){
+  if(!QN) return;
+  const b=$('noteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('noteMsg','');
+  try{
+    const r=await api('staffNote',[QN,$('staffNote').value]);
+    if(!r||!r.ok){ setMsg('noteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    renderStaffNote({text:r.staffNote,by:r.by,at:r.at});
+    setMsg('noteMsg',r.msg,true);
+    toast('Note saved');
+  }catch(e){ setMsg('noteMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save note'; }
+}
+
 /* ---------- Keys & slip ----------
    Not part of the dimension editor: nothing here changes a price, so there is
    no before/after to preview — it saves in one press. The server still re-runs
@@ -959,6 +996,10 @@ function renderQuote(r){
      number appears in the Heritage Harbor line), so same permission. */
   /* Keys and slip are yard work, not a price change — own permission, so the
      crew who actually find out where the keys are can record it. */
+  /* A note is not money and not a price change; the same trusted-staff bar as
+     keys and slip. */
+  $('noteCard').classList.toggle('hide',!P.keys);
+  if(P.keys) renderStaffNote(r.staffNote);
   $('keysCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;

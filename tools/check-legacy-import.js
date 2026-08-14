@@ -30,8 +30,10 @@ function fn(n){const o=gas.match(new RegExp('^function '+n+'\\b.*}\\s*$','m'));i
 const decl=(n)=>gas.match(new RegExp('^const '+n+'\\s*=[\\s\\S]*?^\\];','m'))[0];
 const B=new Function([decl('LEGACY_LEFT_'),decl('LEGACY_RIGHT_'),decl('LEGACY_ANCHORS_'),
   fn('legacyNum_'),fn('legacyText_'),fn('legacyFind_'),fn('legacyRowOf_'),fn('legacyAligned_'),
-  fn('parseLegacyGrid_'),
-  'return {parseLegacyGrid_,legacyAligned_};'].join('\n'))();
+  fn('parseLegacyGrid_'),fn('legacyToState_'),
+  'return {parseLegacyGrid_,legacyAligned_,legacyToState_};'].join('\n'))();
+const P=require(path.join(ROOT,'pricing-engine.js'));
+const money=(st)=>P.computeQuote(st).lines.reduce((a,l)=>a+Number(l.amt||0),0);
 
 /* Build a grid in the template's shape. left/right = [ [rowOffset, qty, price, amount] ] */
 function grid(hdr,left,right){
@@ -242,6 +244,75 @@ console.log('\n=== 13. a genuine jet-ski-only sheet is not "extra units" ===');
     [[7,1,230]],[[11,1,300]]);         // 1 x PWC full, inside storage, no boat motors
   const p=B.parseLegacyGrid_(g);
   check('one jet ski on its own is fine',!p.extraUnits,JSON.stringify(p.extraUnits));
+}
+
+console.log('\n=== 14. parse -> state -> priced by the LIVE engine ===');
+{
+  /* The readable comparison sheet, with staff saying they took inside. */
+  const g=grid({owner:'Mark Demo',phone:'815-555-0101',email:'m@example.com',
+      ymm:'Chaparral 29ft',loa:29,beam:8,lwt:'',labels:true,notes:'Slip P-08'},
+    [[5,2,1004]],
+    [[0,1,493],[3,1,522],[4,1,667],[6,1,174],[11,1,1459],[15,1,185]]);
+  const p=B.parseLegacyGrid_(g);
+  const m=B.legacyToState_(p,'insideNT');
+  const st=m.state;
+  console.log('   unit/dims  :',st.unit,'LOA',st.loa,'B',st.beam,'trailer',st.hasTrailer);
+  console.log('   motors     :','io x'+st.engines.io.qty+' ('+st.engines.io.level+')');
+  console.log('   storage    :',st.storage,' retrieval:',st.retrieval,' wrap:',st.wrap);
+  console.log('   priced now : $'+money(st).toFixed(2)+'   (2025-26 sheet said inside = $2,648)');
+  check('unit is a boat',st.unit==='boat');
+  check('2 x I/O full carried over',st.engines.io.qty===2&&st.engines.io.level==='full');
+  check('storage follows the staff pick',st.storage==='inside');
+  check('blocking on the sheet means NOT on a trailer',st.hasTrailer===false);
+  check('contact + notes carried',st.email==='m@example.com'&&/Slip P-08/.test(st.notes));
+  check('the live engine prices it',money(st)>0);
+  /* The imported total is HIGHER than the sheet's inside option by exactly the
+     shrinkwrap, which on a comparison sheet belonged to the outside option. */
+  check('the wrap-belongs-to-the-other-option warning fires',
+    /belongs with the OUTSIDE option/.test(m.notes.join(' ')),JSON.stringify(m.notes).slice(0,120));
+  const noWrap=JSON.parse(JSON.stringify(st)); noWrap.wrap=false;
+  console.log('   without the wrap: $'+money(noWrap).toFixed(2)+'   (sheet inside = $2,648)');
+  check('dropping the wrap lands within a few dollars of the sheet',
+    Math.abs(money(noWrap)-2648)<25,'got '+money(noWrap).toFixed(2));
+}
+
+console.log('\n=== 15. a comparison sheet with NO pick imports without storage ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[5,2,1004]],[[3,1,522],[11,1,1459]]);
+  const m=B.legacyToState_(B.parseLegacyGrid_(g),null);
+  check('storage left as none rather than guessed',m.state.storage==='none',m.state.storage);
+  check('the motors still came through',m.state.engines.io.qty===2);
+}
+
+console.log('\n=== 16. a boat with two motor types is flagged, not silently built ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[4,1,458],[5,1,502]],[[11,1,1459]]);   // 1 inboard full + 1 I/O full
+  const m=B.legacyToState_(B.parseLegacyGrid_(g),'insideNT');
+  check('both types survive so staff can choose',
+    m.state.engines.inboard.qty===1&&m.state.engines.io.qty===1);
+  check('and it says a boat cannot have both',/only have one type/.test(m.notes.join(' ')),
+    JSON.stringify(m.notes));
+}
+
+console.log('\n=== 17. a jet ski sheet becomes a jet ski quote ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'Yamaha',loa:12,beam:4,lwt:'',labels:true},
+    [[7,1,230]],[[11,1,300]]);
+  const m=B.legacyToState_(B.parseLegacyGrid_(g),'insideNT');
+  check('unit is a jet ski',m.state.unit==='jetski',m.state.unit);
+  check('its winterizing carried over',m.state.engines.pwc.qty===1&&m.state.engines.pwc.level==='full');
+}
+
+console.log('\n=== 18. things the new engine prices differently are named ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:19,beam:7,lwt:'',labels:true},
+    [[5,1,502]],[[7,1,325],[11,1,900]]);    // flat-rate wrap up to 20'
+  const m=B.legacyToState_(B.parseLegacyGrid_(g),'insideNT');
+  check('flat-rate wrap is called out',/flat-rate shrinkwrap/.test(m.unmapped.join(' ')),
+    JSON.stringify(m.unmapped));
+  check('wrap is still turned on',m.state.wrap===true);
 }
 
 console.log('');

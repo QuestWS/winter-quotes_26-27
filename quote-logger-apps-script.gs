@@ -2738,6 +2738,125 @@ function parseLegacyGrid_(rows, master) {
   return out;
 }
 
+/* Turn a parsed legacy sheet into engine state.
+   ---------------------------------------------------------------------------
+   The old menu and the new engine describe the same services, but the engine
+   works from what the customer CHOSE rather than from priced lines — which is
+   what lets a quote re-price years later. So this converts choices, not money:
+   the imported quote is priced fresh at today's rates, and the old total is
+   kept only to show alongside it.
+
+   `pick` is the storage key staff chose when the sheet priced several side by
+   side. Without it a comparison sheet imports with no storage at all, which is
+   correct — better an obviously incomplete quote than a confidently wrong one. */
+function legacyToState_(parsed, pick) {
+  const q = {};
+  (parsed.picked || []).forEach(function (x) { q[x.key] = (q[x.key] || 0) + x.qty; });
+  const notes = [];
+
+  /* Which storage did they take? */
+  const STORAGE_MAP_ = { outside: 'outside', insideNT: 'inside', insideT: 'inside',
+                         premInsideNT: 'insidePrem', premInsideT: 'insidePrem' };
+  let storageKey = null;
+  if (pick && q[pick]) storageKey = pick;
+  else {
+    const found = Object.keys(STORAGE_MAP_).filter(function (k) { return q[k]; });
+    if (found.length === 1) storageKey = found[0];
+  }
+
+  /* A boat sits on its trailer if the storage line says so, or if it was NOT
+     charged blocking — blocking is the "no trailer" line on the old menu, and
+     that is the most reliable signal the sheet gives. */
+  let hasTrailer = false;
+  if (storageKey === 'insideT' || storageKey === 'premInsideT') hasTrailer = true;
+  else if (q.rrTrailer) hasTrailer = true;
+  else if (storageKey && !q.blocking) hasTrailer = true;
+
+  /* Unit type: boat unless the sheet only ever mentions a jet ski or a cart. */
+  const boaty = q.inboardBasic || q.ioBasic || q.outboardBasic || q.inboardFull ||
+                q.ioFull || q.outboardFull || q.trans || q.transom;
+  const pwcQty = (q.pwcBasic || 0) + (q.pwcFull || 0);
+  let unit = 'boat';
+  if (!boaty && pwcQty) unit = 'jetski';
+  else if (!boaty && !pwcQty && q.golf) unit = 'golf';
+
+  const st = {
+    unit: unit,
+    firstName: '', lastName: '', phone: parsed.phone || '', email: parsed.email || '',
+    ymm: parsed.ymm || '', notes: parsed.notes || '',
+    loa: parsed.loa || 0, beam: parsed.beam || 0, lwt: parsed.lwt || 0,
+    skiLen: 0, skiWid: 0, skiDetail: 0,
+    hasTrailer: hasTrailer,
+    engines: { inboard: { qty: 0, level: 'basic' }, io: { qty: 0, level: 'basic' },
+               outboard: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' } },
+    dtTrans: q.trans || 0, dtTransom: q.transom || 0,
+    ballast: q.ballast || 0, addlHeads: q.addlHeads || 0,
+    waterCold: !!q.waterCold, waterHead: !!q.waterHead, pumpout: !!q.pumpout,
+    ac: !!q.ac, genBasic: !!q.genBasic, genFull: !!q.genOil,
+    storage: storageKey ? STORAGE_MAP_[storageKey] : 'none',
+    retrieval: 'none',
+    wrap: !!(q.wrapLabor || q.wrapUpto20 || q.wrapUpto24 || q.wrapMaterials),
+    inWater: !!q.wrapInWater,
+    powerwash: !!q.powerwash, acidWash: false, lateRetrieval: !!q.lateRetrieval,
+    hho: false, slipNo: '', hhoAddr: '', keyLoc: '',
+    bottomTouch: false, bottomStrip: false, propRefurb: false,
+    extDetail: false, washWax: false, intDetail: false, intWipe: false,
+    quoteNo: '', payMode: 'deposit'
+  };
+
+  /* Motors. A boat may have several of ONE type and never a mix (CLAUDE.md
+     section 4), so if the old sheet lists more than one type say so rather
+     than quietly building a boat that cannot exist. */
+  const setEngine = function (key, basic, full) {
+    const b = q[basic] || 0, f = q[full] || 0;
+    if (f) { st.engines[key] = { qty: f, level: 'full' }; if (b) notes.push('both basic and full ' + key + ' winterizing were on the sheet; kept full'); }
+    else if (b) st.engines[key] = { qty: b, level: 'basic' };
+  };
+  setEngine('inboard', 'inboardBasic', 'inboardFull');
+  setEngine('io', 'ioBasic', 'ioFull');
+  setEngine('outboard', 'outboardBasic', 'outboardFull');
+  if (unit === 'jetski') {
+    setEngine('pwc', 'pwcBasic', 'pwcFull');
+  }
+  const active = ['inboard', 'io', 'outboard'].filter(function (k) { return st.engines[k].qty > 0; });
+  if (active.length > 1) {
+    notes.push('the sheet lists ' + active.length + ' different motor types (' + active.join(', ') +
+      '); a boat can only have one type here, so check which is right');
+  }
+
+  /* Retrieval. Inside storage includes it; outside charges it separately. */
+  if (q.rsrUnder36 || q.rsrOver36) st.retrieval = 'quest';
+  else if (q.rrTrailer) st.retrieval = 'custTrailer';
+
+  /* On a COMPARISON sheet the companion lines belong to one option, not both.
+     Shrinkwrap and separately-charged retrieval go with OUTSIDE storage; inside
+     includes retrieval and rarely wants wrap. Carrying them onto an inside
+     import silently inflates it — on the real example by exactly $841, the
+     wrap labour and materials. So say so and let staff decide, rather than
+     either dropping a line they wanted or keeping one they did not. */
+  if (parsed.storageChoice && (st.storage === 'inside' || st.storage === 'insidePrem')) {
+    const companions = [];
+    if (st.wrap) companions.push('shrinkwrap');
+    if (q.rsrUnder36 || q.rsrOver36) companions.push('retrieve, set & relaunch');
+    if (companions.length) {
+      notes.push('this sheet priced storage options side by side, and ' + companions.join(' and ') +
+        ' normally belongs with the OUTSIDE option — inside storage already includes retrieval. ' +
+        'They have been carried over; take them off if they were part of the option not taken');
+    }
+  }
+
+  /* Things the old menu had that the new one prices differently or not at all. */
+  const unmapped = [];
+  if (q.wrapUpto20 || q.wrapUpto24) {
+    unmapped.push('a flat-rate shrinkwrap total — the new engine prices wrap per foot, so the ' +
+      'figure will differ');
+  }
+  if (q.golf && unit !== 'golf') unmapped.push('golf cart storage (needs its own quote)');
+  if (pwcQty && unit !== 'jetski') unmapped.push(pwcQty + ' jet ski winterization(s) (need their own quote)');
+
+  return { state: st, notes: notes, unmapped: unmapped, storageKey: storageKey };
+}
+
 /* ================= RE-PRICE AT CURRENT RATES =================
  * When the season rates change, existing quotes do NOT follow on their own.
  * A quote only re-prices when the customer reloads and re-saves it, and a

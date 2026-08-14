@@ -2540,7 +2540,8 @@ function legacyAligned_(rows, master) {
    master — which is exactly what makes those files recoverable. */
 function parseLegacyGrid_(rows, master) {
   const out = { owner: '', phone: '', email: '', ymm: '', loa: null, beam: null, lwt: null,
-                notes: '', picked: [], unreadable: 0, warnings: [], usedMaster: false };
+                notes: '', picked: [], unreadable: 0, warnings: [], usedMaster: false,
+                storageChoice: null, extraUnits: null, totalUnreliable: false };
   const M = (master && master.length) ? master : null;
   const aligned = M ? legacyAligned_(rows, M) : false;
   if (M && !aligned) {
@@ -2619,6 +2620,56 @@ function parseLegacyGrid_(rows, master) {
   };
   walk(LEGACY_LEFT_, 0, 1, 3);
   walk(LEGACY_RIGHT_, 5, 6, 10);
+
+  /* --- Two things these old sheets do that the new system deliberately cannot,
+         both of them Chris's own working habits rather than mistakes ---
+
+     1. SIDE-BY-SIDE STORAGE PRICING. To quote the difference between inside
+        and outside, both were ticked on one sheet. The sheet's total is then
+        the sum of BOTH and is not a number anybody was ever quoted — on the
+        real example it overstates the inside option by $1,856 and the outside
+        option by $1,459. So: never sum them, never pick one, and do not trust
+        the stated total. Staff say which one the customer took.
+
+     2. MORE THAN ONE UNIT ON A SHEET. Jet skis and golf carts got tagged onto
+        a boat's sheet, because in the old system fewer files was better. Here
+        the opposite is true: one quote per unit is what makes storage tabs,
+        haul-out lists and re-pricing work. So this reports the extras and the
+        import makes a separate quote for each. */
+  const STORAGE_KEYS_ = ['outside', 'insideNT', 'insideT', 'premInsideNT', 'premInsideT'];
+  const storages = out.picked.filter(function (x) { return STORAGE_KEYS_.indexOf(x.key) > -1; });
+  if (storages.length > 1) {
+    out.storageChoice = storages.map(function (x) { return { key: x.key, label: x.label, amount: x.amount }; });
+    out.totalUnreliable = true;
+    out.warnings.push('This sheet prices ' + storages.length + ' storage options side by side (' +
+      storages.map(function (x) { return x.label; }).join(' and ') + '), which is how the old ' +
+      'sheets quoted the difference. Its total is the sum of all of them and is not what the ' +
+      'customer was quoted. Choose the one they actually took.');
+  }
+
+  /* Extra units riding on a boat's sheet. */
+  const extras = [];
+  const pwc = out.picked.filter(function (x) { return x.key === 'pwcBasic' || x.key === 'pwcFull'; });
+  const boaty = out.picked.some(function (x) {
+    return ['inboardBasic','ioBasic','outboardBasic','inboardFull','ioFull','outboardFull',
+            'trans','transom'].indexOf(x.key) > -1;
+  });
+  const pwcQty = pwc.reduce(function (a, x) { return a + x.qty; }, 0);
+  if (pwcQty > 0 && boaty) {
+    extras.push(pwcQty + ' jet ski winterization' + (pwcQty === 1 ? '' : 's') + ' on a boat’s sheet');
+  } else if (pwcQty > 1) {
+    extras.push(pwcQty + ' jet skis on one sheet');
+  }
+  const golf = out.picked.filter(function (x) { return x.key === 'golf'; });
+  if (golf.length && (boaty || pwcQty > 0)) {
+    extras.push('golf cart storage on the same sheet as another unit');
+  }
+  if (extras.length) {
+    out.extraUnits = extras;
+    out.warnings.push('This sheet covers more than one unit — ' + extras.join(', ') + '. In the ' +
+      'old system fewer files was better; here one quote per unit is what makes the storage tabs, ' +
+      'the haul-out list and re-pricing work, so these need separating.');
+  }
 
   const total = LEGACY_LEFT_.length + LEGACY_RIGHT_.length;
   if (out.usedMaster) {

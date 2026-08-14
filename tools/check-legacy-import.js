@@ -185,6 +185,65 @@ console.log('\n=== 8. an intact file ignores the master entirely ===');
   check('not flagged as recovered',p.usedMaster===false&&p.picked.every(x=>!x.recovered));
 }
 
+console.log('\n=== 9. a SIDE-BY-SIDE storage comparison sheet ===');
+{
+  /* The real one: outside + R/S/R + wrap priced against inside, on one sheet,
+     to quote the customer the difference. Its stated total is the sum of both
+     and is not a number anybody was quoted. */
+  const g=grid({owner:'Mark Demo',phone:'',email:'',ymm:'Chaparral 29ft',loa:29,beam:8,lwt:'',labels:true},
+    [[5,2,1004]],
+    [[0,1,493],[3,1,522],[4,1,667],[6,1,174],[11,1,1459],[15,1,185]]);
+  const p=B.parseLegacyGrid_(g);
+  console.log('   options found:',(p.storageChoice||[]).map(x=>x.label+' '+x.amount).join('  |  '));
+  check('both storage options detected',p.storageChoice&&p.storageChoice.length===2);
+  check('neither is silently chosen',
+    !(p.storageChoice||[]).some(x=>x.chosen),'nothing marked chosen');
+  check('the stated total is marked unreliable',p.totalUnreliable===true);
+  check('it explains why',/not what the customer was quoted/.test(p.warnings.join(' ')));
+  check('it is NOT reported as multiple units',!p.extraUnits);
+}
+
+console.log('\n=== 10. a jet ski tagged onto a boat sheet ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[5,2,1004],[7,2,460]],            // 2 x I/O full  +  2 x PWC full
+    [[11,1,1459]]);
+  const p=B.parseLegacyGrid_(g);
+  console.log('   extras:',JSON.stringify(p.extraUnits));
+  check('extra units detected',!!p.extraUnits);
+  check('it counts the jet skis',/2 jet ski/.test((p.extraUnits||[]).join(' ')));
+  check('it says why separating matters',/one quote per unit/.test(p.warnings.join(' ')));
+  check('single storage is not flagged as a comparison',!p.storageChoice);
+}
+
+console.log('\n=== 11. a golf cart on the same sheet as a boat ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[5,1,502]],[[13,1,365]]);         // I/O full + golf cart storage
+  const p=B.parseLegacyGrid_(g);
+  check('golf cart on a boat sheet detected',/golf cart/.test((p.extraUnits||[]).join(' ')),
+    JSON.stringify(p.extraUnits));
+}
+
+console.log('\n=== 12. an ordinary single-unit sheet raises none of this ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[5,2,1004]],[[11,1,1459],[15,1,185]]);
+  const p=B.parseLegacyGrid_(g);
+  check('no storage comparison',!p.storageChoice);
+  check('no extra units',!p.extraUnits);
+  check('total is trusted',p.totalUnreliable===false);
+  check('no warnings at all',p.warnings.length===0,JSON.stringify(p.warnings));
+}
+
+console.log('\n=== 13. a genuine jet-ski-only sheet is not "extra units" ===');
+{
+  const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:12,beam:4,lwt:'',labels:true},
+    [[7,1,230]],[[11,1,300]]);         // 1 x PWC full, inside storage, no boat motors
+  const p=B.parseLegacyGrid_(g);
+  check('one jet ski on its own is fine',!p.extraUnits,JSON.stringify(p.extraUnits));
+}
+
 console.log('');
 console.log(fails?fails+' legacy-parse violation(s)':'legacy import holds: duplicate prices separated by order, broken files declared not guessed');
 process.exit(fails?1:0);

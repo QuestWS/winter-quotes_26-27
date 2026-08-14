@@ -238,6 +238,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminSetAutoPause/,/^}/' quote-logger-apps-script.gs | grep -q 'who.admin'; then
     echo "  OK   trap: only admins can pause or resume automatic emails"
   else echo "  FAIL trap: adminSetAutoPause is not admin-gated"; FAIL=1; fi
+  # The legacy-sheet parser. Two services share a price and are told apart only
+  # by their order in the template, and a file whose prices are #REF! must be
+  # declared broken rather than silently yielding a quote with nothing on it.
+  if node tools/check-legacy-import.js > "$TMP/leg.txt" 2>&1; then
+    echo "  OK   gate: legacy sheet parsing holds"
+  else
+    echo "  FAIL gate: legacy sheet parsing broken"; sed 's/^/       /' "$TMP/leg.txt"; FAIL=1
+  fi
   # RE-PRICE. This rewrites what customers owe across a whole season, so the
   # rules are executed against a fake sheet with the rates actually moved.
   if node tools/check-reprice.js > "$TMP/rp.txt" 2>&1; then

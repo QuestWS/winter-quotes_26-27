@@ -2407,6 +2407,167 @@ function adminBulkSend(token, kind, only) {
   };
 }
 
+/* ================= IMPORT A LEGACY WINTER-SERVICES SHEET =================
+ * Before this system existed, every quote was one spreadsheet per customer,
+ * built from the "Winter services menu master pricing" template. Those files
+ * live in the season folders on Drive, and staff still occasionally build a
+ * one-off that way. This reads one and turns it into a quote here.
+ *
+ * The template is a two-page form. Page 1 is the services menu in two blocks:
+ *
+ *   LEFT  (engine / drive train / water systems)   qty c0 | price c1 | label c2 | amount c3
+ *   RIGHT (retrieval / storage / wrap / misc)      qty c5 | price c6 | label c7 | amount c10
+ *
+ * THE LABELS CANNOT BE TRUSTED. In many of these files the label column was a
+ * live formula pointing at the master pricing workbook, and that link is
+ * broken — the labels read $0, or #REF!, depending on the file. What survives
+ * in those files is the UNIT PRICE, so that is what we match on: the template
+ * lists its services in a fixed order at fixed prices, and matching that
+ * sequence identifies a line without needing its name.
+ *
+ * Some files are broken beyond that: the prices are #REF! too. Those can only
+ * ever yield contact details, dimensions and notes. The importer says so
+ * plainly rather than handing back a quote with nothing on it.
+ */
+
+/* The template's services, in the order they appear, with the unit price that
+   identifies each one. Two entries deliberately share a price (inboard and
+   I/O basic are both $298; R/S/R over 36' and shrinkwrap labour are both $23)
+   — order is what separates them, which is why this is a list and not a map. */
+const LEGACY_LEFT_ = [
+  { key: 'inboardBasic',  price: 298,  label: 'Basic winterization — inboard' },
+  { key: 'ioBasic',       price: 298,  label: 'Basic winterization — I/O' },
+  { key: 'outboardBasic', price: 177,  label: 'Basic winterization — outboard' },
+  { key: 'pwcBasic',      price: 111,  label: 'Basic winterization — PWC' },
+  { key: 'inboardFull',   price: 458,  label: 'Full service — inboard' },
+  { key: 'ioFull',        price: 502,  label: 'Full service — I/O' },
+  { key: 'outboardFull',  price: 253,  label: 'Full service — outboard' },
+  { key: 'pwcFull',       price: 230,  label: 'Full service — PWC' },
+  { key: 'trans',         price: 144,  label: 'Transmission / V-drive' },
+  { key: 'transom',       price: 191,  label: 'I/O transom service' },
+  { key: 'ballast',       price: 80,   label: 'Ballast system' },
+  { key: 'waterCold',     price: 122,  label: 'Water system — cold only' },
+  { key: 'waterHead',     price: 252,  label: 'Water system including 1 head' },
+  { key: 'pumpout',       price: 88,   label: 'Pumpout service charge' },
+  { key: 'addlHeads',     price: 46,   label: 'Additional heads' },
+  { key: 'ac',            price: 116,  label: 'Air conditioning' },
+  { key: 'genBasic',      price: 101,  label: 'Generator — basic' },
+  { key: 'genOil',        price: 270,  label: 'Generator — including oil & filter' }
+];
+const LEGACY_RIGHT_ = [
+  { key: 'rsrUnder36',    price: 17,   label: 'Retrieve, set & relaunch (36′ and under)' },
+  { key: 'rsrOver36',     price: 23,   label: 'Retrieve, set & relaunch (over 36′)' },
+  { key: 'rrTrailer',     price: 198,  label: 'Retrieve & relaunch on customer trailer' },
+  { key: 'outside',       price: 18,   label: 'Outside storage' },
+  { key: 'wrapLabor',     price: 23,   label: 'Shrinkwrap labour' },
+  { key: 'wrapInWater',   price: 11,   label: 'Additional shrinkwrap labour (in water)' },
+  { key: 'wrapMaterials', price: 0.75, label: 'Shrinkwrap materials' },
+  { key: 'wrapUpto20',    price: 325,  label: 'Shrinkwrap total, up to 20′' },
+  { key: 'wrapUpto24',    price: 425,  label: 'Shrinkwrap total, up to 24′' },
+  { key: 'premInsideNT',  price: 8.29, label: 'Premium inside storage (not on trailer)' },
+  { key: 'premInsideT',   price: 7.29, label: 'Premium inside storage (on trailer)' },
+  { key: 'insideNT',      price: 6.29, label: 'Inside storage (not on trailer)' },
+  { key: 'insideT',       price: 5.29, label: 'Inside storage (on trailer)' },
+  { key: 'golf',          price: 365,  label: 'Golf cart storage' },
+  { key: 'powerwash',     price: 5.39, label: 'Powerwash hull' },
+  { key: 'blocking',      price: 185,  label: 'Blocking, stands & handling' },
+  { key: 'lateRetrieval', price: 225,  label: 'Late retrieval surcharge' }
+];
+
+function legacyNum_(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  const t = String(v).replace(/[$,\s]/g, '');
+  if (!t || /#REF|#VALUE|#N\/A|#DIV/i.test(String(v))) return null;
+  const n = Number(t);
+  return isFinite(n) ? n : null;
+}
+function legacyText_(v) {
+  const t = String(v === null || v === undefined ? '' : v).trim();
+  if (!t || /#REF|#VALUE|#N\/A/i.test(t) || t === '0') return '';
+  return t;
+}
+/* Find the row/col of a header caption, so the fields beside it can be read
+   without assuming the template never shifted a row. */
+function legacyFind_(rows, re) {
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) {
+      if (re.test(String(rows[r][c] || ''))) return { r: r, c: c };
+    }
+  }
+  return null;
+}
+
+function parseLegacyGrid_(rows) {
+  const out = { owner: '', phone: '', email: '', ymm: '', loa: null, beam: null, lwt: null,
+                notes: '', picked: [], unreadable: 0, warnings: [] };
+
+  const own = legacyFind_(rows, /^\s*Owner:/i);
+  if (own) out.owner = legacyText_(rows[own.r][own.c + 1]);
+  const ph = legacyFind_(rows, /Phone\s*&\s*email/i);
+  if (ph) {
+    out.phone = legacyText_(rows[ph.r][ph.c + 1]);
+    out.email = legacyText_(rows[ph.r][ph.c + 2]);
+  }
+  const ym = legacyFind_(rows, /Yr\s*\/\s*make\s*\/\s*mod/i);
+  if (ym) {
+    out.ymm = legacyText_(rows[ym.r][ym.c + 1]);
+    /* Dimensions sit in the two rows directly under the Yr/make/mod caption:
+       LOA and Beam on the first, length-with-trailer on the second. They are
+       plain typed numbers, so they survive even in the broken files. */
+    const d1 = rows[ym.r + 1] || [], d2 = rows[ym.r + 2] || [];
+    out.loa  = legacyNum_(d1[ym.c]);
+    out.beam = legacyNum_(d1[ym.c + 2]);
+    out.lwt  = legacyNum_(d2[ym.c]);
+  }
+  const nt = legacyFind_(rows, /^\s*Notes\/extras:/i);
+  if (nt) {
+    const same = String(rows[nt.r][nt.c] || '').replace(/^\s*Notes\/extras:\s*/i, '').trim();
+    out.notes = same || legacyText_(rows[nt.r][nt.c + 1]);
+  }
+
+  /* Walk each block in template order. For each service, scan downward for the
+     next row whose price cell holds that unit price, then read the quantity
+     beside it. Scanning forward (never back) is what keeps the two $298 rows
+     and the two $23 rows from being confused for one another. */
+  const walk = function (defs, qtyCol, priceCol, amtCol) {
+    let from = 0;
+    defs.forEach(function (def) {
+      for (let r = from; r < rows.length; r++) {
+        const p = legacyNum_((rows[r] || [])[priceCol]);
+        if (p === null || Math.abs(p - def.price) > 0.005) continue;
+        from = r + 1;
+        const qty = legacyNum_((rows[r] || [])[qtyCol]);
+        const amt = legacyNum_((rows[r] || [])[amtCol]);
+        if (qty !== null && qty > 0) {
+          out.picked.push({ key: def.key, label: def.label, qty: qty,
+                            unit: def.price, amount: amt === null ? 0 : amt });
+        }
+        return;
+      }
+      /* The price never appeared — this file's price column is broken. */
+      out.unreadable++;
+    });
+  };
+  walk(LEGACY_LEFT_, 0, 1, 3);
+  walk(LEGACY_RIGHT_, 5, 6, 10);
+
+  const total = LEGACY_LEFT_.length + LEGACY_RIGHT_.length;
+  if (out.unreadable >= total) {
+    out.warnings.push('This file’s prices are broken (#REF!), so no services could be read from ' +
+      'it — only the customer details, dimensions and notes. Open it in the old system with the ' +
+      'master pricing file to repair it, or add the services here by hand.');
+  } else if (out.unreadable > 0) {
+    out.warnings.push(out.unreadable + ' of the ' + total + ' menu lines could not be read in this ' +
+      'file. Check the imported quote against the original before sending it.');
+  }
+  if (!out.picked.length && out.unreadable < total) {
+    out.warnings.push('No services are ticked on this sheet — it looks like a quote that was ' +
+      'started and never filled in.');
+  }
+  return out;
+}
+
 /* ================= RE-PRICE AT CURRENT RATES =================
  * When the season rates change, existing quotes do NOT follow on their own.
  * A quote only re-prices when the customer reloads and re-saves it, and a

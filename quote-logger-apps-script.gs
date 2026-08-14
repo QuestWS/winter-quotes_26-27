@@ -2498,9 +2498,56 @@ function legacyFind_(rows, re) {
   return null;
 }
 
-function parseLegacyGrid_(rows) {
+/* The section captions are plain typed text in every one of these files,
+   broken or not. Lining them up is how we prove a customer sheet and a master
+   sheet are the same template generation before trusting one to explain the
+   other. Anything less and a shifted row would silently mis-price a quote. */
+const LEGACY_ANCHORS_ = [
+  /Basic engine winterization/i,
+  /Full service engine winterization/i,
+  /Drive train service/i,
+  /Water systems winterization/i,
+  /Blocking & washing/i,
+  /Misc\. & special requests/i
+];
+function legacyRowOf_(rows, re) {
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < (rows[r] || []).length; c++) {
+      if (re.test(String(rows[r][c] || ''))) return r;
+    }
+  }
+  return -1;
+}
+/* Do these two grids agree, row for row, about where the sections are? */
+function legacyAligned_(rows, master) {
+  let seen = 0;
+  for (let i = 0; i < LEGACY_ANCHORS_.length; i++) {
+    const a = legacyRowOf_(rows, LEGACY_ANCHORS_[i]);
+    const b = legacyRowOf_(master, LEGACY_ANCHORS_[i]);
+    if (a < 0 || b < 0) continue;
+    if (a !== b) return false;
+    seen++;
+  }
+  return seen >= 3;   // a couple of coincidences is not agreement
+}
+
+/* `master` is the grid of "Winter services menu master pricing". It is
+   optional, and only consulted where the customer file cannot answer for
+   itself: in the broken files the price and label columns were live links to
+   that workbook and now read #REF!, but the QUANTITIES the customer typed are
+   still there. Chris's original design was to swap the master year over year,
+   so a cell in a customer file means whatever the same cell means in the
+   master — which is exactly what makes those files recoverable. */
+function parseLegacyGrid_(rows, master) {
   const out = { owner: '', phone: '', email: '', ymm: '', loa: null, beam: null, lwt: null,
-                notes: '', picked: [], unreadable: 0, warnings: [] };
+                notes: '', picked: [], unreadable: 0, warnings: [], usedMaster: false };
+  const M = (master && master.length) ? master : null;
+  const aligned = M ? legacyAligned_(rows, M) : false;
+  if (M && !aligned) {
+    out.warnings.push('This sheet does not line up with the master pricing file — it looks like a ' +
+      'different version of the template. Anything it could not read for itself has been left out ' +
+      'rather than guessed.');
+  }
 
   const own = legacyFind_(rows, /^\s*Owner:/i);
   if (own) out.owner = legacyText_(rows[own.r][own.c + 1]);
@@ -2531,8 +2578,9 @@ function parseLegacyGrid_(rows) {
      beside it. Scanning forward (never back) is what keeps the two $298 rows
      and the two $23 rows from being confused for one another. */
   const walk = function (defs, qtyCol, priceCol, amtCol) {
-    let from = 0;
+    let from = 0, mFrom = 0;
     defs.forEach(function (def) {
+      /* First ask the customer's own sheet. */
       for (let r = from; r < rows.length; r++) {
         const p = legacyNum_((rows[r] || [])[priceCol]);
         if (p === null || Math.abs(p - def.price) > 0.005) continue;
@@ -2545,7 +2593,27 @@ function parseLegacyGrid_(rows) {
         }
         return;
       }
-      /* The price never appeared — this file's price column is broken. */
+      /* It could not answer. If we have an aligned master, the row this
+         service lives on there is the row it lives on here, so read the
+         quantity from that row of the customer's file. */
+      if (M && aligned) {
+        for (let r = mFrom; r < M.length; r++) {
+          const p = legacyNum_((M[r] || [])[priceCol]);
+          if (p === null || Math.abs(p - def.price) > 0.005) continue;
+          mFrom = r + 1;
+          const qty = legacyNum_((rows[r] || [])[qtyCol]);
+          if (qty !== null && qty > 0) {
+            out.usedMaster = true;
+            /* The extended amount was a formula too, so it is gone. Rebuild it
+               from the master's unit price and what they ticked, and mark it
+               as recovered so nobody mistakes it for what was on the original
+               piece of paper. */
+            out.picked.push({ key: def.key, label: def.label, qty: qty,
+                              unit: def.price, amount: null, recovered: true });
+          }
+          return;
+        }
+      }
       out.unreadable++;
     });
   };
@@ -2553,10 +2621,16 @@ function parseLegacyGrid_(rows) {
   walk(LEGACY_RIGHT_, 5, 6, 10);
 
   const total = LEGACY_LEFT_.length + LEGACY_RIGHT_.length;
+  if (out.usedMaster) {
+    out.warnings.push('This file’s prices were broken links (#REF!). What the customer ticked is ' +
+      'still in the sheet, so the services were recovered by reading the master pricing file at ' +
+      'the same positions. Line amounts are recalculated, not copied — check the total against ' +
+      'the original before treating it as what they were quoted.');
+  }
   if (out.unreadable >= total) {
-    out.warnings.push('This file’s prices are broken (#REF!), so no services could be read from ' +
-      'it — only the customer details, dimensions and notes. Open it in the old system with the ' +
-      'master pricing file to repair it, or add the services here by hand.');
+    out.warnings.push('This file’s prices are broken (#REF!) and the master pricing file could ' +
+      'not fill them in, so no services could be read — only the customer details, dimensions ' +
+      'and notes. Add the services here by hand.');
   } else if (out.unreadable > 0) {
     out.warnings.push(out.unreadable + ' of the ' + total + ' menu lines could not be read in this ' +
       'file. Check the imported quote against the original before sending it.');

@@ -28,9 +28,10 @@ const gas=fs.readFileSync(ROOT+'/quote-logger-apps-script.gs','utf8');
 function fn(n){const o=gas.match(new RegExp('^function '+n+'\\b.*}\\s*$','m'));if(o)return o[0];
   const m=gas.match(new RegExp('^function '+n+'\\b[\\s\\S]*?\\n}','m'));if(!m)throw new Error(n);return m[0];}
 const decl=(n)=>gas.match(new RegExp('^const '+n+'\\s*=[\\s\\S]*?^\\];','m'))[0];
-const B=new Function([decl('LEGACY_LEFT_'),decl('LEGACY_RIGHT_'),
-  fn('legacyNum_'),fn('legacyText_'),fn('legacyFind_'),fn('parseLegacyGrid_'),
-  'return {parseLegacyGrid_};'].join('\n'))();
+const B=new Function([decl('LEGACY_LEFT_'),decl('LEGACY_RIGHT_'),decl('LEGACY_ANCHORS_'),
+  fn('legacyNum_'),fn('legacyText_'),fn('legacyFind_'),fn('legacyRowOf_'),fn('legacyAligned_'),
+  fn('parseLegacyGrid_'),
+  'return {parseLegacyGrid_,legacyAligned_};'].join('\n'))();
 
 /* Build a grid in the template's shape. left/right = [ [rowOffset, qty, price, amount] ] */
 function grid(hdr,left,right){
@@ -41,6 +42,14 @@ function grid(hdr,left,right){
   g[4][6]=hdr.loa;  g[4][8]=hdr.beam;
   g[5][6]=hdr.lwt;
   g[30][5]='Notes/extras: '+(hdr.notes||'');
+  /* Section captions are plain text in every file, broken or not — they are
+     what proves two grids are the same template generation. */
+  g[7][0]='Basic engine winterization';
+  g[12][0]='Full service engine winterization';
+  g[17][0]='Drive train service';
+  g[21][0]='Water systems winterization';
+  g[24][5]='Blocking & washing';
+  g[27][5]='Misc. & special requests';
   const LEFT=[298,298,177,111,458,502,253,230,144,191,80,122,252,88,46,116,101,270];
   const RIGHT=[17,23,198,18,23,11,0.75,325,425,8.29,7.29,6.29,5.29,365,5.39,185,225];
   LEFT.forEach((p,i)=>{ const r=8+i; g[r][1]=hdr.broken?'#REF!':'$'+p;
@@ -131,5 +140,51 @@ console.log('\n=== 5. junk in the quantity column is ignored ===');
   check('zero qty ignored',!p.picked.some(x=>x.key==='outboardFull'));
   check('negative qty ignored',!p.picked.some(x=>x.key==='pwcFull'));
 }
+console.log('\n=== 6. a BROKEN file recovered from the master pricing grid ===');
+{
+  /* Chris's design: the customer sheet links to the master by cell location,
+     so what is missing here is answerable there. Quantities survive locally. */
+  const master=grid({owner:'',phone:'',email:'',ymm:'',loa:'',beam:'',lwt:'',labels:true},[],[]);
+  const broken=grid({owner:'Matt Demo',phone:'630-555-0103',email:'matt@example.com',
+      ymm:"25' Regency",loa:25,beam:8.5,lwt:29,broken:true,notes:'Slip P-08'},
+    [[5,2]],[[11,1],[15,1]]);
+  const p=B.parseLegacyGrid_(broken,master);
+  p.picked.forEach(x=>console.log('     '+String(x.qty).padStart(2)+' x '+x.label.padEnd(42)+
+    (x.recovered?'(recovered from master)':'')));
+  check('services recovered from a #REF! file',p.picked.length===3,'got '+p.picked.length);
+  check('the 2 x I/O full survived',p.picked.some(x=>x.key==='ioFull'&&x.qty===2));
+  check('inside storage recovered',p.picked.some(x=>x.key==='insideNT'));
+  check('blocking recovered',p.picked.some(x=>x.key==='blocking'));
+  check('every recovered line is marked as such',p.picked.every(x=>x.recovered===true));
+  check('amounts are NOT invented',p.picked.every(x=>x.amount===null));
+  check('it says the amounts were recalculated',
+    /recalculated, not copied/.test(p.warnings.join(' ')));
+  check('contact + dims still read',p.owner==='Matt Demo'&&p.loa===25&&p.lwt===29);
+}
+
+console.log('\n=== 7. a master from a DIFFERENT template generation is refused ===');
+{
+  const broken=grid({owner:'X',phone:'',email:'',ymm:'',loa:20,beam:8,lwt:'',broken:true},
+    [[5,2]],[[11,1]]);
+  const shifted=grid({owner:'',phone:'',email:'',ymm:'',loa:'',beam:'',lwt:'',labels:true},[],[]);
+  const moved=[]; for(let i=0;i<3;i++) moved.push(new Array(12).fill(''));
+  const master2=moved.concat(shifted);
+  check('misaligned grids are detected',B.legacyAligned_(broken,master2)===false);
+  const p=B.parseLegacyGrid_(broken,master2);
+  check('nothing recovered from a mismatched master',p.picked.length===0,'got '+p.picked.length);
+  check('and it says why',/different version of the template/.test(p.warnings.join(' ')));
+}
+
+console.log('\n=== 8. an intact file ignores the master entirely ===');
+{
+  const master=grid({owner:'',phone:'',email:'',ymm:'',loa:'',beam:'',lwt:'',labels:true},[],[]);
+  const good=grid({owner:'Mark Demo',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+    [[5,2,1004]],[[11,1,1459]]);
+  const p=B.parseLegacyGrid_(good,master);
+  check('real amounts kept, not recalculated',p.picked.some(x=>x.key==='ioFull'&&x.amount===1004));
+  check('not flagged as recovered',p.usedMaster===false&&p.picked.every(x=>!x.recovered));
+}
+
+console.log('');
 console.log(fails?fails+' legacy-parse violation(s)':'legacy import holds: duplicate prices separated by order, broken files declared not guessed');
 process.exit(fails?1:0);

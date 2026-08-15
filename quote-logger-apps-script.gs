@@ -2807,7 +2807,20 @@ function legacyMasterGrid_() {
   return LEGACY_MASTER_CACHE_;
 }
 
-/* Every customer sheet in the season folder, newest first. Skips the master,
+/* The customer's name, dug out of the filename. Every one of these files is
+   called some variation of "<name> - Winter Services.ods", so left as-is the
+   list is a column of identical boilerplate with the useful part buried in the
+   middle. Strip the extension and the "winter services" wording and what is
+   left is what staff are actually looking for. */
+function legacyLabel_(name) {
+  let t = String(name || '');
+  t = t.replace(/\.(ods|xlsx|xls)$/i, '');
+  t = t.replace(/[\s\-–_]*winter\s*services[\s\-–_]*/i, ' ');
+  t = t.replace(/\s{2,}/g, ' ').replace(/^[\s\-–_]+|[\s\-–_]+$/g, '').trim();
+  return t || String(name || '');
+}
+
+/* Every customer sheet in the season folder, sorted by name. Skips the master,
    the storage list, and LibreOffice's ~$ lock files. */
 function adminImportList(token) {
   requireAuth_(token, 'adjust');
@@ -2824,10 +2837,15 @@ function adminImportList(token) {
     if (n.indexOf('~$') === 0) continue;                 // LibreOffice lock file
     if (LEGACY_MASTER_RE_.test(n)) continue;             // the price list itself
     if (LEGACY_SHEET_MIMES_.indexOf(f.getMimeType()) < 0) continue;
-    files.push({ id: f.getId(), name: n, at: f.getLastUpdated().toISOString(),
-                 size: f.getSize() });
+    files.push({ id: f.getId(), name: n, label: legacyLabel_(n),
+                 at: f.getLastUpdated().toISOString(), size: f.getSize() });
   }
-  files.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  /* Alphabetical by the cleaned-up name. Newest-first is the wrong order when
+     you are looking for one person: you know the name, not the date. */
+  files.sort(function (a, b) {
+    return a.label.toLowerCase() < b.label.toLowerCase() ? -1
+         : a.label.toLowerCase() > b.label.toLowerCase() ? 1 : 0;
+  });
   return { ok: 1, folder: folder.getName(), files: files,
            hasMaster: legacyMasterGrid_().length > 0 };
 }

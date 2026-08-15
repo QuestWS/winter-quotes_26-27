@@ -511,7 +511,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         here, <b>priced at today's rates</b>. Nothing is written until you press Import, and
         <b>no customer is emailed</b>.</div>
       <label class="fld" style="margin-top:8px">From the season folder on Drive</label>
-      <select class="txt" id="impFile"></select>
+      <input class="txt" id="impSearch" placeholder="Type a name to narrow the list — e.g. ash"
+             autocapitalize="none" autocomplete="off" oninput="filterImportList()">
+      <select class="txt" id="impFile" style="margin-top:6px"></select>
       <div class="msg" id="impFolder" style="margin:4px 0 0"></div>
       <label class="fld" style="margin-top:10px">…or upload a one-off sheet</label>
       <input type="file" id="impUpload" accept=".ods,.xlsx,.xls" class="txt">
@@ -1360,7 +1362,20 @@ let STAFF=[];
    The old system was one spreadsheet per customer. This reads one and builds a
    quote from the customer's CHOICES, priced fresh — so an imported quote
    behaves like any other and re-prices with the rest. */
-let IMP=null, IMPFILE=null;
+let IMP=null, IMPFILE=null, IMPFILES=[];
+/* The folder holds fifty-odd sheets. Sorted by name they are findable; with a
+   filter they are findable in one go, which is what you want standing at a
+   counter with somebody waiting. Filtering keeps whatever is already selected
+   visible, so typing does not silently deselect the file you just picked. */
+function filterImportList(){
+  const q=String(($('impSearch')||{}).value||'').trim().toLowerCase();
+  const sel=$('impFile'), keep=sel.value;
+  const hit=IMPFILES.filter(f=>!q||String(f.label||f.name).toLowerCase().indexOf(q)>-1||f.id===keep);
+  sel.innerHTML='<option value="">'+
+    (hit.length?'— choose a sheet ('+hit.length+') —':'— nothing matches “'+esc(q)+'” —')+'</option>'+
+    hit.map(f=>'<option value="'+esc(f.id)+'"'+(f.id===keep?' selected':'')+'>'+
+      esc(f.label||f.name)+'</option>').join('');
+}
 function toggleImport(){
   const c=$('importCard');
   c.classList.toggle('hide');
@@ -1371,9 +1386,9 @@ async function loadImportList(){
   try{
     const r=await api('importList',[]);
     if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Could not list the folder.',false); return; }
-    $('impFile').innerHTML='<option value="">— choose a sheet —</option>'+
-      (r.files||[]).map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>').join('');
-    setMsg('impFolder','Reading from “'+r.folder+'” — '+(r.files||[]).length+' sheet(s).'+
+    IMPFILES=(r.files||[]);
+    filterImportList();
+    setMsg('impFolder','Reading from “'+r.folder+'” — '+IMPFILES.length+' sheet(s).'+
       (r.hasMaster?' Master pricing file found, so sheets with broken links can still be read.'
                   :' No master pricing file in that folder — sheets with broken links will lose their services.'),
       r.hasMaster?null:false);
@@ -1396,7 +1411,8 @@ async function previewImport(pick){
     const up=await impFileBase64();
     const id=$('impFile').value;
     if(!up&&!id){ setMsg('impMsg','Choose a sheet from the folder, or upload one.',false); return; }
-    const name=up?up.name:($('impFile').selectedOptions[0]||{}).textContent||'';
+    const chosen=IMPFILES.filter(f=>f.id===id)[0];
+    const name=up?up.name:((chosen&&chosen.name)||'');
     IMPFILE=name;
     const r=await api('importPreview',[up?'':id,name,up?up.b64:'',pick||'']);
     if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Could not read that sheet.',false);

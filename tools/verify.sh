@@ -104,6 +104,30 @@ if [ -f admin/index.html ]; then
     echo "  FAIL trap: duplicate function name(s) in console — later declaration shadows earlier:"
     echo "$DUPFN" | sed 's/^/         /'; FAIL=1
   else echo "  OK   trap: no duplicate function names in console"; fi
+  # Every console destination has two doors: the ☰ menu item (xxxOpen) and the
+  # home tile (xxxTile). They must be gated together — a tile that shows what a
+  # menu item hides is a permission enforced in one place and forgotten in the
+  # other. navGate() does both at once, so the guard is that nothing else
+  # un-hides one of them on its own.
+  OPENS=$(grep -oE 'id="[A-Za-z0-9_]+Open"' admin/index.html | sed 's/id="//;s/Open"//' | sort -u)
+  for d in $OPENS; do
+    if ! grep -q "id=\"${d}Tile\"" admin/index.html; then
+      echo "  FAIL trap: menu item ${d}Open has no home tile ${d}Tile"; FAIL=1
+    fi
+  done
+  if [ -n "$OPENS" ] && ! grep -q "function navGate" "$TMP/admin.js"; then
+    echo "  FAIL trap: navGate() is gone — menu and tiles are being gated separately"; FAIL=1
+  fi
+  SOLO=$(grep -oE "\\$\('[A-Za-z0-9_]+(Open|Tile)'\)\.classList\.(remove|toggle)\('hide'" "$TMP/admin.js" || true)
+  if [ -n "$SOLO" ]; then
+    echo "  FAIL trap: a menu item or tile is shown outside navGate():"
+    echo "$SOLO" | sed 's/^/         /'; FAIL=1
+  else echo "  OK   trap: menu items and home tiles are gated together"; fi
+  # The home tiles are the console's empty state. If nothing drives them they
+  # either never appear or never go away.
+  if ! grep -q "function syncHome" "$TMP/admin.js" || ! grep -q "MutationObserver(syncHome)" "$TMP/admin.js"; then
+    echo "  FAIL trap: syncHome()/its observer is missing — the home tiles will not track what is open"; FAIL=1
+  else echo "  OK   trap: home tiles track what is open"; fi
 else echo "  (admin/index.html not present)"; fi
 
 echo "== Pricing engine parity =="

@@ -21,29 +21,52 @@ body{font-family:var(--disp);background:linear-gradient(180deg,#E3ECF3 0%,var(--
 .topbar{background:var(--navy);color:#fff;display:flex;align-items:center;gap:14px;padding:10px 20px;
 box-shadow:0 2px 10px rgba(20,41,62,.25);position:sticky;top:0;z-index:50}
 .topbar img{height:38px;width:auto;background:#fff;border-radius:7px;padding:3px 7px}
-.topbar .ttl{font-weight:800;letter-spacing:.05em;font-size:15px}
+/* Everything in the bar has to survive a 320px phone and a long first name,
+   so the two variable-width pieces truncate rather than push the menu button
+   off the edge. */
+.topbar .ttl{font-weight:800;letter-spacing:.05em;font-size:15px;white-space:nowrap;
+min-width:0;overflow:hidden;text-overflow:ellipsis}
 .topbar .ttl small{display:block;font-weight:400;color:#9FC3DC;font-size:11px;letter-spacing:.08em}
 .spacer{flex:1}
-.userchip{background:var(--navy2);border:1px solid #2C4E73;border-radius:999px;padding:6px 14px;font-size:13px}
+.userchip{background:var(--navy2);border:1px solid #2C4E73;border-radius:999px;padding:6px 14px;font-size:13px;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34vw;flex:0 1 auto}
 .userchip b{color:#F4D9A6}
 .linkbtn{background:none;border:1px solid #2C4E73;color:#B9CDDD;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
 .linkbtn:hover{background:var(--navy2)}
-.navlinks{display:flex;align-items:center;gap:10px}
-.hamb{display:none;background:none;border:1px solid #2C4E73;color:#fff;font-size:20px;
-line-height:1;border-radius:9px;padding:8px 12px;cursor:pointer}
-@media(max-width:820px){
-  .hamb{display:block}
-  .navlinks{display:none;position:absolute;top:100%;right:10px;background:var(--navy);
-    border:1px solid #2C4E73;border-top:0;border-radius:0 0 12px 12px;padding:12px;
-    flex-direction:column;align-items:stretch;gap:8px;min-width:230px;
-    box-shadow:0 10px 24px rgba(20,41,62,.35)}
-  .navlinks.open{display:flex}
-  .navlinks .linkbtn{width:100%;text-align:left;padding:12px 14px;font-size:15px}
-  .navlinks .userchip{text-align:center}
-}
+/* The menu is a drawer at EVERY width, not just on a phone. Laid out inline
+   it was eight buttons across the top of an otherwise empty page, which read
+   as the console's main content instead of its plumbing. The destinations now
+   live on the home tiles below; this stays as the way to reach them with a
+   quote already open. */
+.navlinks{display:none;position:absolute;top:100%;right:10px;background:var(--navy);
+  border:1px solid #2C4E73;border-top:0;border-radius:0 0 12px 12px;padding:12px;
+  flex-direction:column;align-items:stretch;gap:8px;min-width:250px;
+  box-shadow:0 10px 24px rgba(20,41,62,.35)}
+.navlinks.open{display:flex}
+.navlinks .linkbtn{width:100%;text-align:left;padding:12px 14px;font-size:15px}
+.hamb{display:flex;align-items:center;gap:8px;background:none;border:1px solid #2C4E73;color:#fff;
+font-size:18px;line-height:1;border-radius:9px;padding:9px 14px;cursor:pointer;font-family:var(--disp)}
+.hamb:hover{background:var(--navy2)}
+.hamb .hlab{font-size:14px;font-weight:700;letter-spacing:.04em}
+@media(max-width:760px){.userchip .ucl{display:none}}
+/* On a phone the wordmark goes and the name stays whole: an elided name is
+   worse than no title, and the logo already says whose console this is. */
+@media(max-width:560px){.topbar{gap:10px;padding:10px 12px}.topbar .ttl{display:none}
+  .hamb .hlab{display:none}.userchip{max-width:none}}
+
+/* Home. The console's destinations as cards, so an empty console shows what it
+   can do rather than an empty page under a wall of buttons. Same handlers and
+   the same permission gating as the menu — a second door onto the same rooms,
+   never a way around a permission. */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:16px}
+.tile{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;cursor:pointer;font-family:var(--disp);box-shadow:0 1px 4px rgba(20,41,62,.06)}
+.tile:hover{border-color:var(--frost);box-shadow:0 3px 12px rgba(20,41,62,.14)}
+.tile b{display:block;font-size:15px;color:var(--navy);margin-bottom:5px}
+.tile span{display:block;font-size:13px;color:var(--muted);line-height:1.45}
 .wrap{max-width:1060px;margin:0 auto;padding:22px 16px 60px}
 .hero{display:flex;gap:10px;margin-bottom:20px}
-.hero input{flex:1;font-size:17px;padding:14px 16px;border:1.5px solid var(--line);border-radius:12px;font-family:var(--mono);letter-spacing:.04em}
+.hero input{flex:1;min-width:0;font-size:17px;padding:14px 16px;border:1.5px solid var(--line);border-radius:12px;font-family:var(--mono);letter-spacing:.04em}
 .hero input:focus{outline:2px solid var(--frost)}
 .btn{border:0;border-radius:12px;padding:14px 22px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--disp)}
 .btn.navy{background:var(--navy);color:#fff}.btn.navy:hover{background:var(--navy2)}
@@ -263,9 +286,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
     <img src="https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/refs/heads/main/Quest%20wet%20rect.png" alt="Quest">
     <div class="ttl">STAFF CONSOLE<small>WINTER SERVICES</small></div>
     <div class="spacer"></div>
-    <button class="hamb" id="hamb" onclick="toggleNav()" aria-label="Menu">☰</button>
+    <div class="userchip"><span class="ucl">Signed in as </span><b id="userName"></b></div>
+    <button class="hamb" id="hamb" onclick="toggleNav()" aria-label="Menu">☰ <span class="hlab">Menu</span></button>
     <nav class="navlinks" id="navlinks">
-      <div class="userchip">Signed in as <b id="userName"></b></div>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
@@ -294,6 +317,27 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <button class="btn ghost sm" onclick="closeResults()">✕ Close</button>
       </div>
       <div id="resultsList" style="margin-top:8px"></div>
+    </div>
+
+    <!-- The home page. Shown whenever nothing else is open, hidden the moment
+         anything is — see syncHome(). Every tile is the same handler the menu
+         calls, and carries the same permission gate, so the two can never
+         offer different things. -->
+    <div id="homeTiles" class="tiles hide">
+      <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
+        <span>Who is in each building, with the printable yard sheets and the haul-out list.</span></button>
+      <button class="tile hide" id="bulkTile" onclick="navGo(toggleBulk)"><b>Send to all</b>
+        <span>The spring relaunch alert or the end-of-season note, to every customer at once. Preview first — it sends nothing.</span></button>
+      <button class="tile hide" id="importTile" onclick="navGo(toggleImport)"><b>Load from an old sheet</b>
+        <span>Turn one of last season's spreadsheets into a quote here, priced at today's rates.</span></button>
+      <button class="tile hide" id="repriceTile" onclick="navGo(toggleReprice)"><b>Re-price at current rates</b>
+        <span>Move the season onto this year's prices. Nothing is written until you apply it.</span></button>
+      <button class="tile hide" id="pauseTile" onclick="navGo(togglePause)"><b>Automatic emails</b>
+        <span>Pause or resume the only two emails that send on their own — the 10-day reminder and the lead follow-up.</span></button>
+      <button class="tile hide" id="adminTile" onclick="navGo(toggleStaff)"><b>Staff &amp; permissions</b>
+        <span>Add or remove staff, and set what each person is allowed to do.</span></button>
+      <button class="tile hide" id="backupTile" onclick="navGo(toggleBackup)"><b>Restore from backup</b>
+        <span>Read a nightly backup, compare it against the sheet, and put back only what you choose.</span></button>
     </div>
 
     <div id="quoteArea" class="hide">
@@ -335,6 +379,17 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <div id="qHist" style="margin-top:6px"></div></details>
           </div>
 
+          <div class="card hide" id="payCard">
+            <h2>Record payment / deposit</h2>
+            <div class="row2">
+              <div><label class="fld">Amount (negative = refund)</label><input class="txt" id="payAmt" inputmode="decimal" placeholder="500"></div>
+              <div><label class="fld">Method</label><input class="txt" id="payMethod" placeholder="Cash / Check #1042 / Zelle"></div>
+            </div>
+            <label class="chk"><input type="checkbox" id="payReceipt" checked> Email receipt to customer</label>
+            <button class="btn gold" id="payBtn" onclick="doPay()">Record payment</button>
+            <div class="msg" id="payMsg"></div>
+          </div>
+
           <div class="card hide" id="photoCard">
             <h2>Condition photos</h2>
             <div class="seg">
@@ -355,20 +410,23 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <button class="btn ghost sm" onclick="openPhotos()">Open folder</button>
             </div>
           </div>
+
+          <div class="card hide" id="keysCard">
+            <h2>Keys &amp; slip</h2>
+            <div class="msg" id="keysNeed" style="margin:0 0 6px"></div>
+            <div id="keysKeyWrap"><label class="fld">Where will the keys be?</label>
+              <input class="txt" id="keysKeyLoc" placeholder="e.g. in the glove box / at the front desk"></div>
+            <div id="keysSlipWrap" style="margin-top:8px"><label class="fld">Slip number</label>
+              <input class="txt" id="keysSlipNo" placeholder="e.g. B-14"></div>
+            <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
+              told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
+            <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
+            <div class="msg" id="keysMsg"></div>
+          </div>
+
         </div>
 
         <div>
-          <div class="card hide" id="payCard">
-            <h2>Record payment / deposit</h2>
-            <div class="row2">
-              <div><label class="fld">Amount (negative = refund)</label><input class="txt" id="payAmt" inputmode="decimal" placeholder="500"></div>
-              <div><label class="fld">Method</label><input class="txt" id="payMethod" placeholder="Cash / Check #1042 / Zelle"></div>
-            </div>
-            <label class="chk"><input type="checkbox" id="payReceipt" checked> Email receipt to customer</label>
-            <button class="btn gold" id="payBtn" onclick="doPay()">Record payment</button>
-            <div class="msg" id="payMsg"></div>
-          </div>
-
           <div class="card hide" id="dimsCard">
             <h2>Unit details &amp; storage</h2>
             <div class="msg" id="dimsNow" style="margin:0 0 6px"></div>
@@ -395,19 +453,6 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="noteWho" style="margin:4px 0 0"></div>
             <button class="btn navy" id="noteBtn" onclick="saveStaffNote()">Save note</button>
             <div class="msg" id="noteMsg"></div>
-          </div>
-
-          <div class="card hide" id="keysCard">
-            <h2>Keys &amp; slip</h2>
-            <div class="msg" id="keysNeed" style="margin:0 0 6px"></div>
-            <div id="keysKeyWrap"><label class="fld">Where will the keys be?</label>
-              <input class="txt" id="keysKeyLoc" placeholder="e.g. in the glove box / at the front desk"></div>
-            <div id="keysSlipWrap" style="margin-top:8px"><label class="fld">Slip number</label>
-              <input class="txt" id="keysSlipNo" placeholder="e.g. B-14"></div>
-            <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
-              told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
-            <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
-            <div class="msg" id="keysMsg"></div>
           </div>
 
           <div class="card hide" id="adjCard">
@@ -641,18 +686,41 @@ function permsOf(me){
    re-rendered, so the element a caller is writing to may already be gone. */
 function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
 
+/* One gate for both doors. The menu button and the home tile for a
+   destination are shown or hidden together, so a permission can never be
+   enforced on one and forgotten on the other. */
+function navGate(base,allowed){
+  ['Open','Tile'].forEach(sfx=>{const e=$(base+sfx); if(e) e.classList.toggle('hide',!allowed);});
+}
 function boot(){
   if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
     $('userName').textContent=ME.name;
-    if(ME.admin){$('adminOpen').classList.remove('hide');$('backupOpen').classList.remove('hide');}
+    const P=ME.perms||{};
+    navGate('admin',  ME.admin);
+    navGate('backup', ME.admin);
     /* Send-to-all is reachable without a quote open, so it is gated here rather
        than by a card on the quote screen. Same permission as any other email. */
-    if(ME.admin||((ME.perms||{}).email)) $('bulkOpen').classList.remove('hide');
-    if(ME.admin) $('pauseOpen').classList.remove('hide');
-    if(ME.admin||((ME.perms||{}).adjust)) $('repriceOpen').classList.remove('hide');
-    if(ME.admin||((ME.perms||{}).adjust)) $('importOpen').classList.remove('hide');
+    navGate('bulk',   ME.admin||P.email);
+    navGate('pause',  ME.admin);
+    navGate('reprice',ME.admin||P.adjust);
+    navGate('import', ME.admin||P.adjust);
     refreshPause();
+    syncHome();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
+}
+
+/* The home tiles show when nothing else does. Driven by an observer rather
+   than by a call at every close button: every panel here closes itself with
+   an inline classList.add('hide'), and the one that forgets to tell us is the
+   one that leaves the console looking empty again. */
+const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','importCard',
+  'repriceCard','bulkCard','backupCard','storageCard'];
+function syncHome(){
+  const el=$('homeTiles'); if(!el||!T||!ME) return;
+  const busy=HOME_PANELS.some(id=>{const e=$(id); return e&&!e.classList.contains('hide');});
+  /* Only write when it actually changes — the observer watches this element
+     too, and an unconditional toggle would wake it on every pass. */
+  if(el.classList.contains('hide')!==busy) el.classList.toggle('hide',busy);
 }
 async function doLogin(){
   setMsg('loginMsg','Checking…');
@@ -1296,7 +1364,17 @@ async function queueFiles(fileList){
 
 /* ---------- admin ---------- */
 function toggleNav(){$('navlinks').classList.toggle('open');}
-function navGo(fn){$('navlinks').classList.remove('open');fn();}
+function navGo(fn){$('navlinks').classList.remove('open');fn();syncHome();}
+/* A menu that only closes by choosing something is fine on a phone and wrong
+   on a desktop, where it now covers the page. */
+document.addEventListener('click',function(e){
+  const n=$('navlinks'); if(!n||!n.classList.contains('open')) return;
+  if(n.contains(e.target)||(e.target.closest&&e.target.closest('#hamb'))) return;
+  n.classList.remove('open');
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape') $('navlinks').classList.remove('open');
+});
 function toggleStaff(){
   const c=$('adminCard');
   if(c.classList.contains('hide')){loadStaff();}else{c.classList.add('hide');}
@@ -1999,6 +2077,8 @@ async function doRestore(mode){
   }catch(e){ setMsg('backupMsg',e.message,false); }
 }
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
+  new MutationObserver(syncHome).observe(document.querySelector('#appView .wrap'),
+    {subtree:true,attributes:true,attributeFilter:['class']});
   $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   $('newStaffName').addEventListener('keydown',e=>{if(e.key==='Enter')addStaff();});

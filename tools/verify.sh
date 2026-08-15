@@ -128,6 +128,12 @@ if [ -f admin/index.html ]; then
   if ! grep -q "function syncHome" "$TMP/admin.js" || ! grep -q "MutationObserver(syncHome)" "$TMP/admin.js"; then
     echo "  FAIL trap: syncHome()/its observer is missing — the home tiles will not track what is open"; FAIL=1
   else echo "  OK   trap: home tiles track what is open"; fi
+  # A .txt textarea that the .txt rule does not name falls back to the browser
+  # default — roughly twenty monospace columns adrift in a full-width card.
+  if grep -q '<textarea class="txt"' admin/index.html && \
+     ! grep -q 'textarea\.txt{width:100%\|,textarea\.txt{' admin/index.html; then
+    echo "  FAIL trap: .txt textareas are not covered by the .txt width rule"; FAIL=1
+  else echo "  OK   trap: .txt textareas fill their card"; fi
 else echo "  (admin/index.html not present)"; fi
 
 echo "== Pricing engine parity =="

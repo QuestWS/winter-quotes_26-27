@@ -143,8 +143,12 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 .lines{font-family:var(--mono);font-size:12.5px;background:#FDFCF7;border:1px solid var(--line);
 border-radius:10px;padding:10px 14px;white-space:pre-wrap;max-height:220px;overflow:auto}
 label.fld{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}
-input.txt,select.txt{width:100%;padding:11px 13px;font-size:15px;border:1.5px solid var(--line);border-radius:10px;font-family:var(--disp)}
-input.txt:focus,select.txt:focus{outline:2px solid var(--frost)}
+/* textarea.txt was missing from this rule, so every .txt textarea fell back
+   to the browser default: about twenty monospace columns floating in a
+   card twice its width. */
+input.txt,select.txt,textarea.txt{width:100%;padding:11px 13px;font-size:15px;border:1.5px solid var(--line);border-radius:10px;font-family:var(--disp)}
+input.txt:focus,select.txt:focus,textarea.txt:focus{outline:2px solid var(--frost)}
+textarea.txt{display:block;line-height:1.5;resize:vertical}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .chk{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0}
 .msg{font-size:13.5px;margin-top:8px;min-height:18px}.msg.ok{color:var(--green);font-weight:700}.msg.err{color:var(--red);font-weight:700}
@@ -448,7 +452,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" style="margin:0 0 6px">Why this quote is the way it is — discounts,
               odd dimensions, what was agreed on the phone. <b>The customer never sees this.</b>
               It is not on the PDF and not in any email.</div>
-            <textarea class="txt" id="staffNote" rows="5"
+            <textarea class="txt" id="staffNote" rows="7"
               placeholder="e.g. quoted inside and outside side by side, they took inside. $50 off because we were late pulling last year."></textarea>
             <div class="msg" id="noteWho" style="margin:4px 0 0"></div>
             <button class="btn navy" id="noteBtn" onclick="saveStaffNote()">Save note</button>

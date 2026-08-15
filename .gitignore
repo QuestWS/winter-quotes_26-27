@@ -1,2 +1,9 @@
 .snapshots/
 .DS_Store
+
+# Test screenshots. Console captures show whatever quote was on screen, and
+# the console is where customer data lives — they belong in a scratch
+# directory outside the repo, never in a commit.
+*.png
+!favicon.png
+!Quest wet rect.png

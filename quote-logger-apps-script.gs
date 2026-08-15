@@ -481,7 +481,10 @@ function doPost(e) {
           bulkPreview: function (a) { return adminBulkPreview(d.token, a[0]); },
           bulkSend:    function (a) { return adminBulkSend(d.token, a[0], a[1]); },
           repricePreview: function (a) { return adminRepricePreview(d.token); },
-          repriceApply:   function (a) { return adminRepriceApply(d.token, a[0], a[1]); }
+          repriceApply:   function (a) { return adminRepriceApply(d.token, a[0], a[1]); },
+          importList:     function (a) { return adminImportList(d.token); },
+          importPreview:  function (a) { return adminImportPreview(d.token, a[0], a[1], a[2], a[3]); },
+          importApply:    function (a) { return adminImportApply(d.token, a[0], a[1]); }
         };
         if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
         return json(FNS[d.fn](d.args || []));
@@ -2736,6 +2739,235 @@ function parseLegacyGrid_(rows, master) {
       'started and never filled in.');
   }
   return out;
+}
+
+/* --- Getting one of these files off Drive and into a readable grid ---
+   Drive converts .ods and .xlsx to a Sheet on upload, which is the same trick
+   the backup restore uses, so the OAuth scopes are already approved. The
+   converted copy is a temporary and is always binned again. */
+const LEGACY_TMP_PREFIX_ = 'QW legacy import — ';
+const LEGACY_FOLDER_KEY_ = 'LEGACY_FOLDER_ID';
+const LEGACY_MASTER_RE_ = /master pricing/i;
+const LEGACY_SHEET_MIMES_ = [
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/vnd.google-apps.spreadsheet'
+];
+
+/* Which folder are we importing from? An admin can pin one in Script
+   Properties; otherwise we look for a folder whose name reads like a season. */
+function legacyFolder_() {
+  const pinned = PropertiesService.getScriptProperties().getProperty(LEGACY_FOLDER_KEY_);
+  if (pinned) { try { return DriveApp.getFolderById(pinned); } catch (e) {} }
+  const it = DriveApp.searchFolders('title contains "Storage" and trashed = false');
+  const found = [];
+  while (it.hasNext()) {
+    const f = it.next();
+    if (/storage\s*20\d\d\s*[-–]\s*20\d\d/i.test(f.getName())) found.push(f);
+  }
+  found.sort(function (a, b) { return a.getName() < b.getName() ? 1 : -1; });  // newest season first
+  return found.length ? found[0] : null;
+}
+
+function legacyReadGrid_(fileId, name) {
+  let tmpId = null, made = false;
+  try {
+    const file = DriveApp.getFileById(fileId);
+    if (file.getMimeType() === 'application/vnd.google-apps.spreadsheet') {
+      tmpId = fileId;
+    } else {
+      tmpId = uploadAsSheet_(file.getBlob(), LEGACY_TMP_PREFIX_ + (name || file.getName()));
+      made = true;
+    }
+    const sh = SpreadsheetApp.openById(tmpId).getSheets()[0];
+    const last = sh.getLastRow(), lastC = sh.getLastColumn();
+    if (!last || !lastC) return [];
+    return sh.getRange(1, 1, last, Math.max(lastC, 12)).getValues();
+  } finally {
+    if (made && tmpId) { try { DriveApp.getFileById(tmpId).setTrashed(true); } catch (e) {} }
+  }
+}
+
+/* The master pricing grid, read once per call and cached for the rest of it.
+   This is what makes the #REF! files recoverable. */
+let LEGACY_MASTER_CACHE_ = null;
+function legacyMasterGrid_() {
+  if (LEGACY_MASTER_CACHE_ !== null) return LEGACY_MASTER_CACHE_;
+  LEGACY_MASTER_CACHE_ = [];
+  const folder = legacyFolder_();
+  if (!folder) return LEGACY_MASTER_CACHE_;
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (!LEGACY_MASTER_RE_.test(f.getName())) continue;
+    try { LEGACY_MASTER_CACHE_ = legacyReadGrid_(f.getId(), f.getName()); } catch (e) {}
+    break;
+  }
+  return LEGACY_MASTER_CACHE_;
+}
+
+/* Every customer sheet in the season folder, newest first. Skips the master,
+   the storage list, and LibreOffice's ~$ lock files. */
+function adminImportList(token) {
+  requireAuth_(token, 'adjust');
+  const folder = legacyFolder_();
+  if (!folder) {
+    return { ok: 0, error: 'No season folder found on Drive. Expected a folder named like ' +
+      '"Storage 2025-2026". An admin can pin one by setting LEGACY_FOLDER_ID in Script Properties.' };
+  }
+  const files = [];
+  const it = folder.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    const n = f.getName();
+    if (n.indexOf('~$') === 0) continue;                 // LibreOffice lock file
+    if (LEGACY_MASTER_RE_.test(n)) continue;             // the price list itself
+    if (LEGACY_SHEET_MIMES_.indexOf(f.getMimeType()) < 0) continue;
+    files.push({ id: f.getId(), name: n, at: f.getLastUpdated().toISOString(),
+                 size: f.getSize() });
+  }
+  files.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  return { ok: 1, folder: folder.getName(), files: files,
+           hasMaster: legacyMasterGrid_().length > 0 };
+}
+
+function adminImportPreview(token, fileId, fileName, base64Data, pick) {
+  requireAuth_(token, 'adjust');
+  let rows;
+  try {
+    if (base64Data) {
+      /* A one-off someone built outside the season folder. */
+      const blob = Utilities.newBlob(Utilities.base64Decode(base64Data),
+        'application/octet-stream', String(fileName || 'sheet'));
+      const tmp = uploadAsSheet_(blob, LEGACY_TMP_PREFIX_ + new Date().toISOString());
+      try {
+        const sh = SpreadsheetApp.openById(tmp).getSheets()[0];
+        const last = sh.getLastRow(), lastC = sh.getLastColumn();
+        rows = (last && lastC) ? sh.getRange(1, 1, last, Math.max(lastC, 12)).getValues() : [];
+      } finally { try { DriveApp.getFileById(tmp).setTrashed(true); } catch (e) {} }
+    } else if (fileId) {
+      rows = legacyReadGrid_(fileId, fileName);
+    } else {
+      return { ok: 0, error: 'Pick a file or upload one.' };
+    }
+  } catch (err) {
+    return { ok: 0, error: 'Could not read that file: ' + (err.message || err) };
+  }
+  if (!rows || !rows.length) return { ok: 0, error: 'That file appears to be empty.' };
+
+  const parsed = parseLegacyGrid_(rows, legacyMasterGrid_());
+  const mapped = legacyToState_(parsed, pick || null);
+  let priced = null;
+  try {
+    const r = computeQuote(mapped.state);
+    priced = {
+      total: usd_(r.lines.reduce(function (a, l) { return a + Number(l.amt || 0); }, 0)),
+      lines: r.lines.map(function (l) {
+        return { sec: l.sec, label: l.label, calc: l.calc || '', amt: usd_(l.amt || 0) };
+      }),
+      needs: r.need || []
+    };
+  } catch (e) {
+    return { ok: 0, error: 'Read the sheet, but could not price it: ' + (e.message || e) };
+  }
+  return {
+    ok: 1,
+    file: String(fileName || ''),
+    owner: parsed.owner, phone: parsed.phone, email: parsed.email, ymm: parsed.ymm,
+    loa: parsed.loa, beam: parsed.beam, lwt: parsed.lwt, notes: parsed.notes,
+    picked: parsed.picked.map(function (x) {
+      return { label: x.label, qty: x.qty, was: x.amount === null ? '' : usd_(x.amount),
+               recovered: !!x.recovered };
+    }),
+    oldTotalUnreliable: !!parsed.totalUnreliable,
+    storageChoice: parsed.storageChoice || null,
+    chosenStorage: mapped.storageKey || '',
+    extraUnits: parsed.extraUnits || null,
+    warnings: (parsed.warnings || []).concat(mapped.notes || []),
+    unmapped: mapped.unmapped || [],
+    usedMaster: !!parsed.usedMaster,
+    priced: priced,
+    state: mapped.state
+  };
+}
+
+/* Writing it. The imported quote is an ordinary quote from here on: a fresh
+   number, priced at TODAY's rates by the shared engine, on the right storage
+   tab, with its own PDF. What it carries from the old sheet is the customer's
+   choices, not their old prices — that is what lets it re-price later like
+   everything else. No customer is emailed. */
+function adminImportApply(token, state, meta) {
+  const who = requireAuth_(token, 'adjust');
+  if (!state || !state.unit) return { ok: 0, error: 'Nothing to import — preview it first.' };
+  meta = meta || {};
+
+  const owner = String(meta.owner || '').trim();
+  const parts = owner.split(/\s+/);
+  const st = JSON.parse(JSON.stringify(state));
+  st.lastName = parts.length > 1 ? parts[parts.length - 1] : owner;
+  st.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+  st.quoteNo = '';
+
+  const yy = String(new Date().getFullYear()).slice(2);
+  const qn = 'QW-' + yy + '-' + String(Math.floor(1000 + Math.random() * 9000));
+
+  const d = {
+    status: 'Imported from ' + (meta.file || 'a previous sheet') + ' — not yet sent',
+    quoteNo: qn, ts: new Date().toISOString(),
+    unit: st.unit === 'jetski' ? 'Jet ski' : st.unit === 'golf' ? 'Golf cart' :
+          st.unit === 'ebike' ? 'E-bike' : 'Boat',
+    owner: owner, firstName: st.firstName, lastName: st.lastName,
+    phone: st.phone || '', email: st.email || '', ymm: st.ymm || '',
+    notes: st.notes || '',
+    slipNo: '', hhoAddr: '', keyLoc: '',
+    hasTrailer: st.hasTrailer ? 1 : 0,
+    depositBase: st.hasTrailer ? RULES.depositTrailer : RULES.depositNoTrailer,
+    payMode: 'deposit', payments: [], emailLog: [],
+    state: st, lines: [], total: '0.00',
+    /* Why this quote exists and what it came from, in the staff note — which
+       is exactly the "what was I thinking" record Chris asked for. */
+    staffNote: ('Imported from the old winter-services sheet' +
+      (meta.file ? ' "' + meta.file + '"' : '') + '.' +
+      (meta.oldTotal ? ' That sheet said ' + meta.oldTotal + '.' : '') +
+      (meta.oldTotalUnreliable ? ' Its total priced more than one storage option side by side, so it was not a quoted figure.' : '') +
+      (meta.note ? '\n' + meta.note : '')),
+    staffNoteBy: who.name,
+    staffNoteAt: new Date().toLocaleString()
+  };
+
+  const cross = rebuildLinesFromState_(d);
+  if (!cross.rebuilt) return { ok: 0, error: 'Could not price the imported quote: ' + cross.reason };
+  recomputeTotals_(d);
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tabName = d.storageTab || 'No Storage';
+  let sh = ss.getSheetByName(tabName);
+  if (!sh) {
+    sh = ss.insertSheet(tabName);
+    sh.appendRow(HEADERS);
+    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+  }
+  sh.appendRow(new Array(HEADERS.length).fill(''));
+  const ctx = { d: d, sh: sh, rowNum: sh.getLastRow() };
+  sh.getRange(ctx.rowNum, COL.LAST).setValue(d.lastName);
+  sh.getRange(ctx.rowNum, COL.FIRST).setValue(d.firstName);
+  sh.getRange(ctx.rowNum, COL.QN).setValue(qn);
+  sh.getRange(ctx.rowNum, COL.TS).setValue(new Date());
+  sh.getRange(ctx.rowNum, COL.UNIT).setValue(d.unit);
+  sh.getRange(ctx.rowNum, COL.PHONE).setValue(d.phone);
+  sh.getRange(ctx.rowNum, COL.EMAIL).setValue(d.email);
+  sh.getRange(ctx.rowNum, COL.YMM).setValue(d.ymm);
+  sh.getRange(ctx.rowNum, COL.DIMS).setValue(d.dims || '');
+  sh.getRange(ctx.rowNum, COL.NOTES).setValue(d.notes);
+  saveQuoteRow_(ctx, d.status);
+
+  auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
+    d.unit + ', ' + tabName + ', ' + usd_(Number(d.total || 0)) +
+    (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));
+
+  return { ok: 1, quoteNo: qn, tab: tabName, total: usd_(Number(d.total || 0)),
+           msg: 'Imported as ' + qn + ' on ' + tabName + '. No customer has been emailed.' };
 }
 
 /* Turn a parsed legacy sheet into engine state.

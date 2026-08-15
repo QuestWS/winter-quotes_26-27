@@ -325,6 +325,62 @@ Names are typed by admins now, so the console addresses staff rows **by index,
 not by pasting the name into an `onclick`** — an apostrophe in a name would
 otherwise break the handler.
 
+### Loading an old winter-services sheet (console)
+
+`Load from an old sheet`, menu, gated on `adjust`. The pre-system quotes were
+**one spreadsheet per customer**, built from the "Winter services menu master
+pricing" template. This reads one and makes a quote here.
+
+- **Three file states, and the third is the one that matters.** Intact with
+  labels; intact but with the label column dead (`$0`); and **broken**, where
+  prices *and* labels are `#REF!` because they were live links to the master
+  workbook. The broken ones are the biggest group.
+- **The broken ones are recoverable, and that is Chris's insight.** Those cells
+  reference the same positions in the master, because the design was to swap the
+  master yearly to re-price everything. The customer's quantities are still in
+  their own file, so `parseLegacyGrid_(rows, master)` reads the meaning from the
+  master at the same row/col. It proves the two grids are the same template
+  first — the six section captions are plain text in every file and must agree
+  row for row — and refuses outright if they don't.
+- **Match on unit price, never the label.** The price is the only thing that
+  reliably survives. Two services are $298 and two are $23, so the scan only
+  ever moves forward: order is what separates them.
+- **Recovered lines carry no amount.** Those were formulas and are gone. A
+  recovered line has its quantity and the master's unit price, is marked
+  recovered, and says the figure is recalculated rather than what was quoted.
+- **A sheet with two storage options is a COMPARISON, not a quote.** Chris
+  priced inside against outside on one page to quote the difference; its total
+  is the sum of both and is a number nobody was ever quoted — on the real
+  example it overstates the inside option by $1,856. Never sum, never pick;
+  staff say which was taken.
+- **The companion lines follow the option, not the sheet.** Shrinkwrap and
+  separately-charged retrieval belong to OUTSIDE (inside includes retrieval).
+  Carried over but flagged; dropping them on the real example lands on
+  $2,648.28 against the sheet's $2,648.
+- **Jet skis and golf carts got tagged onto boat sheets** because fewer files
+  was better then. Here one quote per unit is what makes the storage tabs, the
+  haul-out list and re-pricing work, so extras are reported for separating.
+- **Imports price at TODAY's rates** and carry choices, not old figures — an
+  imported quote must re-price like every other. Preview writes nothing; the
+  import emails nobody; `verify.sh` asserts all three.
+- `tools/check-legacy-import.js` executes eighteen groups over all three file
+  states, a mismatched master, comparison sheets, multi-unit sheets and the
+  live engine. Fixtures are invented names over the real layout — **no customer
+  data in this repo**.
+
+### Staff notes
+
+`d.staffNote`, own card, gated on `keys`. Why a quote is the way it is —
+discounts, odd dimensions, what was agreed on the phone. Chris's reason: not
+having to guess at his own logic a year later.
+
+- **Never customer-facing.** Not the PDF, not any email, not `?action=load`.
+  `verify.sh` checks all five paths; the value of a candid note is the candour.
+- **It must be carried across a customer save.** The note exists only on this
+  side, so a posted payload has no such field and would wipe it — preserved
+  explicitly like `payments`, and pinned by the save-path fixture.
+- Saving a note touches nothing else: no status, no re-price, no new PDF.
+
 ### Re-pricing a season (console)
 
 `Re-price at current rates`, menu, gated on `adjust`. Existing quotes do **not**

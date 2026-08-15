@@ -39,7 +39,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
+    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "legacyToState_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -72,7 +72,7 @@ if [ -f admin/index.html ]; then
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
-    "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard"
+    "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
   # preview was broken for the person who most needs it. It needs
@@ -254,6 +254,19 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminSetAutoPause/,/^}/' quote-logger-apps-script.gs | grep -q 'who.admin'; then
     echo "  OK   trap: only admins can pause or resume automatic emails"
   else echo "  FAIL trap: adminSetAutoPause is not admin-gated"; FAIL=1; fi
+  # An import must never email anybody, and must price at CURRENT rates rather
+  # than copying the old sheet's figures — an imported quote has to behave like
+  # every other quote or it cannot be re-priced later.
+  if awk '/^function adminImportApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_'; then
+    echo "  FAIL trap: importing a sheet emails the customer"; FAIL=1
+  else echo "  OK   trap: import emails nobody"; fi
+  if awk '/^function adminImportApply/,/^}/' quote-logger-apps-script.gs | grep -q 'rebuildLinesFromState_'; then
+    echo "  OK   trap: imported quotes are priced by the shared engine"
+  else echo "  FAIL trap: import does not re-price — it would carry stale figures"; FAIL=1; fi
+  # Preview reads and reports; it must not create a quote.
+  if awk '/^function adminImportPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'appendRow|saveQuoteRow_'; then
+    echo "  FAIL trap: import preview writes a quote — it must only report"; FAIL=1
+  else echo "  OK   trap: import preview writes nothing"; fi
   # The legacy-sheet parser. Two services share a price and are told apart only
   # by their order in the template, and a file whose prices are #REF! must be
   # declared broken rather than silently yielding a quote with nothing on it.

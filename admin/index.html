@@ -272,6 +272,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
       <button class="linkbtn hide" id="repriceOpen" onclick="navGo(toggleReprice)">Re-price at current rates</button>
+      <button class="linkbtn hide" id="importOpen" onclick="navGo(toggleImport)">Load from an old sheet</button>
       <button class="linkbtn" onclick="navGo(logout)">Log out</button>
     </nav>
   </div>
@@ -500,6 +501,25 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div class="msg" id="pauseMsg"></div>
     </div>
 
+    <div class="card hide" id="importCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Load from an old sheet</h2>
+        <button class="btn ghost sm" onclick="$('importCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Reads one of the old per-customer winter-services spreadsheets and turns it into a quote
+        here, <b>priced at today's rates</b>. Nothing is written until you press Import, and
+        <b>no customer is emailed</b>.</div>
+      <label class="fld" style="margin-top:8px">From the season folder on Drive</label>
+      <select class="txt" id="impFile"></select>
+      <div class="msg" id="impFolder" style="margin:4px 0 0"></div>
+      <label class="fld" style="margin-top:10px">…or upload a one-off sheet</label>
+      <input type="file" id="impUpload" accept=".ods,.xlsx,.xls" class="txt">
+      <button class="btn navy" id="impPrevBtn" style="margin-top:10px" onclick="previewImport()">Read it</button>
+      <div class="msg" id="impMsg"></div>
+      <div class="hide" id="impReport"></div>
+    </div>
+
     <div class="card hide" id="repriceCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Re-price at current rates</h2>
@@ -628,6 +648,7 @@ function boot(){
     if(ME.admin||((ME.perms||{}).email)) $('bulkOpen').classList.remove('hide');
     if(ME.admin) $('pauseOpen').classList.remove('hide');
     if(ME.admin||((ME.perms||{}).adjust)) $('repriceOpen').classList.remove('hide');
+    if(ME.admin||((ME.perms||{}).adjust)) $('importOpen').classList.remove('hide');
     refreshPause();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
@@ -1335,6 +1356,113 @@ async function printStorage(){
    name into an onclick — an apostrophe in a name would otherwise break the
    handler, and worse. */
 let STAFF=[];
+/* ---------- Load from an old sheet ----------
+   The old system was one spreadsheet per customer. This reads one and builds a
+   quote from the customer's CHOICES, priced fresh — so an imported quote
+   behaves like any other and re-prices with the rest. */
+let IMP=null, IMPFILE=null;
+function toggleImport(){
+  const c=$('importCard');
+  c.classList.toggle('hide');
+  if(!c.classList.contains('hide')){ IMP=null; $('impReport').classList.add('hide');
+    setMsg('impMsg',''); loadImportList(); }
+}
+async function loadImportList(){
+  try{
+    const r=await api('importList',[]);
+    if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Could not list the folder.',false); return; }
+    $('impFile').innerHTML='<option value="">— choose a sheet —</option>'+
+      (r.files||[]).map(f=>'<option value="'+esc(f.id)+'">'+esc(f.name)+'</option>').join('');
+    setMsg('impFolder','Reading from “'+r.folder+'” — '+(r.files||[]).length+' sheet(s).'+
+      (r.hasMaster?' Master pricing file found, so sheets with broken links can still be read.'
+                  :' No master pricing file in that folder — sheets with broken links will lose their services.'),
+      r.hasMaster?null:false);
+  }catch(e){ setMsg('impMsg',e.message,false); }
+}
+function impFileBase64(){
+  return new Promise((res)=>{
+    const f=$('impUpload').files&&$('impUpload').files[0];
+    if(!f) return res(null);
+    const rd=new FileReader();
+    rd.onload=()=>res({name:f.name,b64:String(rd.result).split(',')[1]});
+    rd.onerror=()=>res(null);
+    rd.readAsDataURL(f);
+  });
+}
+async function previewImport(pick){
+  const b=$('impPrevBtn'); b.disabled=true; b.textContent='Reading…';
+  setMsg('impMsg','');
+  try{
+    const up=await impFileBase64();
+    const id=$('impFile').value;
+    if(!up&&!id){ setMsg('impMsg','Choose a sheet from the folder, or upload one.',false); return; }
+    const name=up?up.name:($('impFile').selectedOptions[0]||{}).textContent||'';
+    IMPFILE=name;
+    const r=await api('importPreview',[up?'':id,name,up?up.b64:'',pick||'']);
+    if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Could not read that sheet.',false);
+      $('impReport').classList.add('hide'); return; }
+    IMP=r; renderImport(r);
+  }catch(e){ setMsg('impMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Read it'; }
+}
+function renderImport(r){
+  const warn=(r.warnings||[]).map(w=>'<div class="bkwarn">'+esc(w)+'</div>').join('');
+  const unmapped=(r.unmapped||[]).length
+    ? '<div class="bkwarn"><b>Priced differently here:</b><br>'+
+      r.unmapped.map(esc).join('<br>')+'</div>' : '';
+  /* A comparison sheet: make the choice, do not guess it. */
+  const choice=(r.storageChoice&&r.storageChoice.length)
+    ? '<div class="rpsum" style="margin-top:8px"><b>Which storage did they take?</b></div>'+
+      '<div>'+r.storageChoice.map(x=>
+        '<button type="button" class="btn '+(r.chosenStorage===x.key?'navy':'ghost')+' sm" '+
+        'style="margin:2px 4px 2px 0" onclick="previewImport('+JSON.stringify(x.key).replace(/"/g,'&quot;')+')">'+
+        esc(x.label)+'</button>').join('')+'</div>' : '';
+  const lines=(r.picked||[]).map(x=>
+    '<div class="bkrow"><span>'+String(x.qty)+' × '+esc(x.label)+
+    (x.recovered?' <span class="q">(recovered)</span>':'')+'</span><span class="q">'+esc(x.was||'—')+'</span></div>').join('');
+  const now=(r.priced&&r.priced.lines||[]).map(x=>
+    '<div class="bkrow"><span>'+esc(x.label)+'</span><span class="q">'+esc(x.amt)+'</span></div>').join('');
+  const needs=(r.priced&&r.priced.needs||[]).length
+    ? '<div class="bkwarn"><b>Still needs:</b> '+r.priced.needs.map(esc).join(', ')+'</div>' : '';
+
+  $('impReport').innerHTML=
+    '<div class="rpsum"><span>Customer</span><b>'+esc(r.owner||'(none on the sheet)')+'</b></div>'+
+    '<div class="rpsum"><span>Unit</span><b>'+esc(r.ymm||'—')+'</b></div>'+
+    /* Parenthesised deliberately: `a + b || c` binds as `(a+b) || c`, and the
+       truthy left side would silently swallow the whole rest of the report. */
+    '<div class="rpsum"><span>Dimensions</span><b>'+
+      ([r.loa?('LOA '+r.loa):'',r.beam?('B '+r.beam):'',r.lwt?('LWT '+r.lwt):'']
+        .filter(Boolean).join(' · ') || '—')+
+      '</b></div>'+
+    warn+choice+
+    (lines?'<div class="rpsum" style="margin-top:8px"><b>On the old sheet</b></div>'+lines:'')+
+    (r.oldTotalUnreliable?'<div class="msg">Its stated total covered more than one option, so it is not shown.</div>':'')+
+    '<div class="rpsum" style="margin-top:8px"><b>Priced at today’s rates</b><b>'+
+      esc((r.priced&&r.priced.total)||'—')+'</b></div>'+now+needs+unmapped+
+    '<label class="fld" style="margin-top:10px">Anything to remember about this one?</label>'+
+    '<textarea class="txt" id="impNote" rows="2" placeholder="e.g. they took inside; dropped the wrap"></textarea>'+
+    '<button class="btn gold" id="impApplyBtn" style="margin-top:10px" onclick="doImport()">Import as a new quote</button>';
+  $('impReport').classList.remove('hide');
+}
+async function doImport(){
+  if(!IMP) return;
+  if(!confirm('Create a new quote from “'+(IMPFILE||'this sheet')+'”?\n\n'+
+    'It will be priced at today’s rates, not the old sheet’s.\n\nNo customer is emailed.'))return;
+  const b=$('impApplyBtn'); b.disabled=true; b.textContent='Importing…';
+  try{
+    const r=await api('importApply',[IMP.state,{owner:IMP.owner,file:IMPFILE,
+      oldTotal:IMP.oldTotalUnreliable?'':((IMP.priced&&IMP.priced.total)||''),
+      oldTotalUnreliable:IMP.oldTotalUnreliable?1:0,
+      note:($('impNote')||{}).value||''}]);
+    if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Import failed.',false); return; }
+    setMsg('impMsg',r.msg,true);
+    $('impReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>'+
+      'Look it up as <b>'+esc(r.quoteNo)+'</b> to check it before sending anything.</div>';
+    IMP=null; toast('Imported '+r.quoteNo);
+  }catch(e){ setMsg('impMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Import as a new quote'; }
+}
+
 /* ---------- Re-price at current rates ----------
    Once a season's rates change, nothing already on the sheet follows on its
    own. This shows the whole season's movement before a penny is written, then

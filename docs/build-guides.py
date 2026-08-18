@@ -94,7 +94,7 @@ def table(headers, rows, widths, zebra=True):
     return t
 
 PERM_COLOR = {'view': FROST, 'pay': GREEN, 'adjust': GOLD, 'email': NAVY2,
-              'photos': MUTED, 'admin': RED}
+              'photos': MUTED, 'keys': FROST, 'admin': RED}
 
 def perm(p):
     c = PERM_COLOR.get(p, INK)
@@ -218,7 +218,9 @@ def doc1():
         'or removing line items; pricing a service the customer asked about; applying late fees; '
         'correcting dimensions, motor counts and storage location; uploading condition photos and '
         'signed contracts; previewing and sending customer emails, individually or to '
-        'everyone; printing yard sheets and the haul-out list; managing '
+        'everyone; printing yard sheets and the haul-out list; leaving a private note on a quote; '
+        're-pricing a whole season at current rates; loading a quote out of one of last season\'s '
+        'spreadsheets; pausing the automatic emails; managing '
         'staff accounts; and restoring from a backup.')]
 
     g.story += [note('Staff changes are never lost when a customer edits their quote',
@@ -278,6 +280,16 @@ def doc1():
         'and confirm. The 1st and 15th balance reports go to Chris only, never to customers. Both '
         'automatic emails are written to the Activity Log as well, so "did we contact this '
         'customer?" has one answer no matter who sent it.')]
+
+    g.story += [note('Both automatic emails can be switched off',
+        'Console &#8594; menu &#8594; <b>Automatic emails</b>, admin only. It stops the ten-day '
+        'reminder and the "finish my quote" follow-up, and nothing else — staff can still send '
+        'invoices, receipts and the seasonal notes by hand, because pausing those would stop Quest '
+        'doing business. It exists because both automatic emails invite a customer to reload their '
+        'quote, and a reloaded quote re-prices against whatever rates are live. Across a season '
+        'rollover, or any window where the prices on the page are not the prices we mean, that is '
+        'the wrong thing to have running unattended. While it is on, a banner says so at the top '
+        'of every console screen for every member of staff, not just admins.')]
 
     g.story += [P('The two seasonal announcements', H2)]
     g.story += [P(
@@ -353,6 +365,10 @@ def doc1():
          ['7:00am', 'Unpaid balance report — internal only, to Chris.']],
         [1.35 * inch, 5.25 * inch])]
     g.story += [P(
+        'The first two are the only ones that reach a customer, and they are the two the '
+        '<b>Automatic emails</b> switch pauses. The backup and the balance report come to Chris '
+        'and keep running either way.', SMALL)]
+    g.story += [P(
         'Google fires these within roughly a quarter-hour of the stated time; that cannot be '
         'tightened and does not matter for any of them.', SMALL)]
 
@@ -364,9 +380,9 @@ def doc1():
           'Everything else in the couch-to-paid path already works.'],
          ['BiT DMS work orders', 'On hold. No public API was found; the next step is asking BiT '
           'whether they offer one or accept a file import.'],
-         ['Import of last year\'s selections', 'Needs a sample workbook to map the columns. The '
-          'design already supports it, because quotes store the customer\'s selections rather '
-          'than just prices.'],
+         ['Splitting old sheets that carried more than one unit', 'The old-sheet importer makes '
+          'one quote per unit. Where a boat sheet also carried a jet ski or a golf cart, it '
+          'reports the extras and you make the second quote yourself.'],
          ['Text-message copies of emails', 'Blocked on carrier registration (roughly $20–65 once, '
           '$50–60 a year, about a month to approve).']],
         [1.6 * inch, 5.0 * inch])]
@@ -401,9 +417,9 @@ def doc2():
         'that is deliberate, and it is the reason a wrong PIN is worth reporting rather than '
         'retrying.')]
 
-    g.story += [P('The five permissions', H1)]
+    g.story += [P('The six permissions', H1)]
     g.story += [P(
-        'Each account carries any combination of four permissions, plus an optional admin flag. '
+        'Each account carries any combination of five permissions, plus an optional admin flag. '
         'You only see the controls you are allowed to use — if a card is missing from your '
         'console, that is why.')]
     g.story += [table(
@@ -416,11 +432,18 @@ def doc2():
            'timing.'],
          [perm('email'), 'Previewing and sending customer emails.'],
          [perm('photos'), 'Uploading and viewing condition photos.'],
+         [perm('keys'), 'Recording where the keys are and which slip a boat is in, and leaving a '
+           'staff note on a quote. Yard work — it changes nothing a customer owes, so the crew '
+           'who actually find these things out can record them.'],
          [perm('admin'), 'Everything above, plus staff accounts and backup restore. An admin '
            'bypasses the individual permissions entirely.']],
         [0.85 * inch, 5.75 * inch])]
     g.story += [P('Current intent for the team: Chris and Jeff are admins. John, Rex and Jess have '
-                  'pay, email and photos. Marina has photos only.', SMALL)]
+                  'pay, email, photos and keys. Marina has photos only.', SMALL)]
+    g.story += [P('Accounts created before the keys permission existed do not have the setting on '
+                  'them at all. Those fall back to "already trusted with payments or adjustments", '
+                  'which is the yard staff and the admins. Ticking or unticking the box on an '
+                  'account always wins over that fallback, including to turn it off.', SMALL)]
 
     g.story += [P('Finding a quote', H1)]
     g.story += [P(
@@ -496,6 +519,18 @@ def doc2():
         '"Nothing has been moved." Moving that customer is your decision and their conversation — '
         'use the storage dropdown yourself if that is what you agree.')]
 
+    g.story += [P('Staff notes', H2)]
+    g.story += [P(
+        'Needs <b>keys</b>. Why this quote is the way it is — the discount you agreed on the '
+        'phone, the odd dimensions, the thing you would otherwise have to reconstruct a year '
+        'later. Type it, press Save note. Saving a note changes nothing else: no status, no '
+        're-price, no new PDF.')]
+    g.story += [note('The customer never sees this',
+        'It is not on the quote PDF, not in any email, and not sent back to the quote page when a '
+        'customer reloads their quote. That is the whole value of it — a note you would hesitate '
+        'to write is not worth having. It also survives the customer editing and re-saving their '
+        'quote, which would otherwise wipe anything held only on our side.', tone='ice')]
+
     g.story += [P('Condition photos', H2)]
     g.story += [table(
         ['Option', 'Permission', 'What it does'],
@@ -529,15 +564,28 @@ def doc2():
           'in spring it is the last moment before the unit goes back.']],
         [1.5 * inch, 5.1 * inch])]
 
-    g.story += [P('The menu — the three-line button, top right', H1)]
+    g.story += [P('The home page, and the menu', H1)]
+    g.story += [P(
+        'With no quote pulled up, the console shows everything it can do as a set of cards, each '
+        'with a line saying what it is for. Tap one to open it. You only see the cards your '
+        'permissions allow, so what is on your home page is what you are able to do.')]
+    g.story += [P(
+        'The same list is behind the <b>Menu</b> button at the top right — three stacked lines — '
+        'which is how you reach any '
+        'of it <i>with</i> a quote already open — the cards give way to the quote once one is '
+        'loaded, and come back when you close it. The menu closes on Escape or a tap outside it.')]
     g.story += [table(
-        ['Menu item', 'Permission', 'What it does'],
+        ['Where it goes', 'Permission', 'What it does'],
         [['Storage view', perm('view'), 'Every unit grouped by storage area, with keys and '
           'balances. "Print yard sheets" gives one page per area for use in the yard; '
           '"Print haul-out list" gives one sheet for the whole yard, in the order customers '
           'asked to come out.'],
-         ['Send to all', perm('email'), 'See below. Works without a quote pulled up.'],
-         ['Staff &amp; permissions', perm('admin'), 'See below.'],
+         ['Send to all', perm('email'), 'The two seasonal announcements, to everyone at once.'],
+         ['Load from an old sheet', perm('adjust'), 'Turn one of last season\'s per-customer '
+          'spreadsheets into a quote here.'],
+         ['Re-price at current rates', perm('adjust'), 'Move quotes onto this season\'s prices.'],
+         ['Automatic emails', perm('admin'), 'Pause or resume the two emails that send unattended.'],
+         ['Staff &amp; permissions', perm('admin'), 'Add, remove and re-permission staff.'],
          ['Restore from backup', perm('admin'), 'See below and Document 4.'],
          ['Log out', '—', 'Ends your session on this device.']],
         [1.45 * inch, 0.95 * inch, 4.2 * inch])]
@@ -572,8 +620,85 @@ def doc2():
     g.story += [P('Both are also on the spreadsheet menu, and both go to the same people either '
                   'way.', SMALL)]
 
+    g.story += [P('Load from an old sheet — needs adjust', H1)]
+    g.story += [P(
+        'Before this system, every quote was its own spreadsheet built from the "Winter services '
+        'menu master pricing" template. This reads one of those and makes a quote here — for a '
+        'customer coming back after a few seasons, or for a one-off somebody still did the old '
+        'way.')]
+    g.story += [table(
+        ['Step', 'What happens'],
+        [['Pick the sheet', 'The season folder on Drive, listed alphabetically. Type in the search '
+          'box to narrow it. Or upload a one-off file from your phone or computer.'],
+         ['Read it', 'Shows you the customer, the unit, the dimensions it found, the lines it '
+          'recovered and what today\'s rates make of them. <b>Nothing is written and nobody is '
+          'emailed.</b>'],
+         ['Add a note', 'Optional — anything to remember about this one. It lands as the staff '
+          'note on the new quote.'],
+         ['Import as a new quote', 'Creates it here with a fresh quote number, on the right '
+          'storage tab, priced at current rates.']],
+        [1.6 * inch, 5.0 * inch])]
+    g.story += [note('Three things it will tell you rather than guess',
+        '<b>A sheet with two storage options is a comparison, not a quote.</b> Pricing inside '
+        'against outside on one page was how the difference got quoted, and that sheet\'s total is '
+        'a number nobody was ever given. It will not add them up or pick one — it asks you which '
+        'was taken, and the shrinkwrap and retrieval lines follow that choice. '
+        '<b>Broken files are readable.</b> Where the prices and labels came back as #REF! because '
+        'they were live links to the master workbook, the customer\'s own quantities are still in '
+        'their file and the master supplies the meaning at the same positions — but only after it '
+        'has proved the two grids really are the same template, and it refuses outright if they '
+        'are not. <b>Extra units are reported, not merged.</b> A jet ski or golf cart tagged onto '
+        'a boat sheet becomes a separate quote that you make.')]
+    g.story += [P('An imported quote carries the customer\'s choices, not their old figures, and '
+                  'prices like every other quote here. Old numbers are not honoured on the '
+                  'strength of having been written down.', SMALL)]
+
+    g.story += [P('Re-price at current rates — needs adjust', H1)]
+    g.story += [P(
+        'A quote only re-prices when the customer reloads and re-saves it, and a quote with a '
+        'payment on it never re-prices at all. After a rate change that leaves the sheet holding a '
+        'mix of old and new prices with no way to tell which is which. This is the staff-side '
+        'answer to that.')]
+    g.story += [table(
+        ['Step', 'What happens'],
+        [['Preview', 'Prices every quote on the sheet at current rates and reports before, after '
+          'and the difference for each one, plus the net movement across the season and how many '
+          'of them have money on them. <b>Nothing is written.</b>'],
+         ['Tick who moves', 'Everyone is ticked. Untick anyone who should stay as they are.'],
+         ['Apply', 'Writes them in batches of 15 and saves a snapshot of the whole sheet first. '
+          'Nobody is emailed.']],
+        [1.6 * inch, 5.0 * inch])]
+    g.story += [note('What it does and does not touch',
+        'Every staff change is replayed on top of the new prices, so a discounted quote stays '
+        'exactly its discount below an identical undiscounted one. Deposits are untouched — '
+        'payments are a ledger, so the balance simply moves. A quote whose storage tab would '
+        'change is reported and left where it is, because relocating somebody is a conversation. '
+        'And nobody is told: who hears about a price change, and when, is a separate decision '
+        'that stays yours.')]
+
+    g.story += [P('Automatic emails — admin only', H1)]
+    g.story += [P(
+        'Pauses the only two emails that send without anybody clicking: the ten-day quote reminder '
+        'and the "finish my quote" follow-up. Give a reason when you pause — it is shown in the '
+        'banner, so whoever reads it knows why and when it should lift.')]
+    for t in [
+        'It does <b>not</b> stop staff sending anything. Invoices, receipts, the seasonal notes '
+        'and send-to-all all still work, each one previewed and clicked by a person.',
+        'While it is on, every member of staff sees a banner at the top of the console, not just '
+        'admins — a pause nobody can see is a pause somebody forgets to lift.',
+        'Turning it on or off is recorded in the Activity Log and emailed out.',
+        'Resuming sends to everyone who became due while it was paused.',
+    ]:
+        g.story += [B(t)]
+    g.story += [note('Why this exists',
+        'Both automatic emails invite the customer to open their quote again, and a reloaded quote '
+        're-prices against whatever rates are live. Across a season rollover — or any stretch '
+        'where the prices on the page are not the prices we mean — that is the one thing you do '
+        'not want running unattended overnight.')]
+
     g.story += [P('Keys &amp; slip', H1)]
-    g.story += [P('Needs <b>adjust</b>. Sits under Unit details &amp; storage on a loaded quote.')]
+    g.story += [P('Needs <b>keys</b>. A card on a loaded quote, in the left-hand column under the '
+                  'condition photos.')]
     g.story += [table(
         ['Field', 'Notes'],
         [['Where will the keys be?', 'Shown for everything except e-bikes, which have none.'],
@@ -881,8 +1006,9 @@ def doc4():
           'Chris every evening at 6pm. Keep several.'],
          ['Google\'s own history', 'Accidental edits and deletions.', 'File → Version history in '
           'the spreadsheet, going back automatically.'],
-         ['Pre-restore snapshot', 'A restore that makes things worse.', 'Saved to Drive '
-          'automatically before any restore is written.'],
+         ['Pre-write snapshot', 'A bulk change that makes things worse.', 'The whole sheet is '
+          'saved to Drive automatically before a restore or a season re-price writes anything, '
+          'and the link comes back with the result.'],
          ['Backend version history', 'A bad software change.', 'Every deploy creates a numbered '
           'version. Rolling back takes about ten seconds.']],
         [1.25 * inch, 2.05 * inch, 3.3 * inch])]
@@ -944,6 +1070,12 @@ def doc4():
         'old quote can be re-priced against this year\'s rates on reload, a corrected measurement '
         'can flow through every affected line, and next season can start from what each customer '
         'had last season.')]
+
+    g.story += [note('One field on a quote is deliberately ours only',
+        'The staff note — why a quote is the way it is — is never sent to a customer. It is not on '
+        'the PDF, not in any email, and not returned when a customer reloads their quote on the '
+        'public page. Anyone with the console permission to read notes can read all of them, so '
+        'write them as working notes about the job rather than about the person.', tone='ice')]
 
     g.story += [P('How the software gets updated', H1)]
     g.story += [P(

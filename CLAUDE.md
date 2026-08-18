@@ -95,6 +95,7 @@ serves the cached old version and you'll debug a ghost.
 | `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
+| `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. |
 
 ---
 

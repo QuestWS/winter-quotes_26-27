@@ -4489,6 +4489,56 @@ function testLogo() {
   console.log('Logo fetch OK.');
 }
 
+/* ---------- Email the staff guides to Chris ----------
+   Run from the editor dropdown. The four PDFs live in the repo and are built
+   from docs/build-guides.py, so this fetches whatever is currently on main
+   rather than carrying a stale copy in the script. Goes to REPORT_EMAIL only,
+   which is Chris — never a customer address, and there is no path from the
+   console or a customer action that reaches it. */
+const GUIDES_BASE_ = 'https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/main/docs/pdf/';
+const GUIDE_FILES_ = [
+  '1 - Complete System Overview.pdf',
+  '2 - Using the Staff Console.pdf',
+  '3 - Making a New Quote.pdf',
+  '4 - Security, Redundancy and the Spreadsheet.pdf'
+];
+
+function emailGuides() {
+  const atts = [], missing = [];
+  GUIDE_FILES_.forEach(function (name) {
+    const url = GUIDES_BASE_ + encodeURIComponent(name);
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
+    if (resp.getResponseCode() !== 200) {
+      console.log('MISSING ' + name + ' - HTTP ' + resp.getResponseCode());
+      missing.push(name);
+      return;
+    }
+    const blob = resp.getBlob().setName(name).setContentType('application/pdf');
+    console.log('fetched ' + name + ' (' + blob.getBytes().length + ' bytes)');
+    atts.push(blob);
+  });
+  /* Sending three of four without saying so would look like the set. */
+  if (!atts.length) throw new Error('None of the guides could be fetched - nothing sent.');
+
+  const when = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy');
+  const list = GUIDE_FILES_.map(function (n) {
+    return '<li>' + n.replace(/\.pdf$/, '') + (missing.indexOf(n) > -1 ? ' <b>(could not be fetched)</b>' : '') + '</li>';
+  }).join('');
+  GmailApp.sendEmail(REPORT_EMAIL, 'Quest winter services - staff guides, ' + when,
+    'The current staff guides are attached.', {
+      name: 'Quest Watersports',
+      replyTo: REPLY_TO,
+      htmlBody: '<div style="font-family:Arial,sans-serif;font-size:14px;color:#1D2B38">' +
+        '<p>The current staff guides are attached, built from the repository as it stands today.</p>' +
+        '<ul>' + list + '</ul>' +
+        '<p style="color:#5C7185;font-size:13px">Internal - these describe staff tools and ' +
+        'permissions, so they are not for customers.</p></div>',
+      attachments: atts
+    });
+  console.log('Sent ' + atts.length + ' guide(s) to ' + REPORT_EMAIL +
+    (missing.length ? ' - could not fetch: ' + missing.join(', ') : ''));
+}
+
 function logoDataUri_() {
   const b = getLogoBlob_();
   if (!b) return '';

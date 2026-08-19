@@ -249,6 +249,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: key-location / slip rules broken"; sed 's/^/       /' "$TMP/haul.txt"; FAIL=1
   fi
+  # One phone format, (815) 555-0123, everywhere a number is shown — and
+  # nothing mangled that we cannot confidently read. Run, not grepped.
+  if node tools/check-phone-format.js > "$TMP/phone.txt" 2>&1; then
+    echo "  OK   gate: phone numbers formatted everywhere, nothing mangled"
+  else
+    echo "  FAIL gate: phone formatting broken"; sed 's/^/       /' "$TMP/phone.txt"; FAIL=1
+  fi
   # One motor type per boat, whole counts only. That is a property of the code,
   # not of any string, so it is checked by running it.
   if node tools/check-engine-rules.js > "$TMP/eng.txt" 2>&1; then

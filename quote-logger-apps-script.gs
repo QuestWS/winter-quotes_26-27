@@ -426,6 +426,41 @@ function dimsString(s){
   return '';
 }
 
+/* One phone format for the whole system: (815) 555-0123, everywhere a number
+   is shown. Shared for the same reason as dimsString — the page formats what
+   somebody types, the server formats what it writes to the sheet, prints on
+   the PDF and sends in an email, and the two must not disagree.
+
+   It only ever reformats a number it is sure of: ten digits, or eleven
+   starting with the country code. Anything else — an extension, an
+   international number, a half-typed one, or a note somebody put in the box —
+   comes back exactly as it went in. Mangling a number nobody can call is worse
+   than showing it unformatted. Formatting an already-formatted number returns
+   the same string, so it is safe to apply more than once. */
+function fmtPhone(v){
+  const raw = String(v == null ? '' : v).trim();
+  let d = raw.replace(/\D/g, '');
+  if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if(d.length !== 10) return raw;
+  return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+}
+
+/* The same rule applied while somebody is still typing, for the live mask on
+   the quote page. Partial input is formatted as far as it goes; anything that
+   is not a plain 10-digit US number is left alone so the field never fights
+   the person filling it in. */
+function fmtPhonePartial(v){
+  const raw = String(v == null ? '' : v);
+  if(/[a-zA-Z]/.test(raw)) return raw;         // "ext", "call after 5" — leave it
+  let d = raw.replace(/\D/g, '');
+  if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if(d.length > 10) return raw;                 // longer than a US number: not ours to format
+  if(d.length > 6) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+  if(d.length > 3) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+  if(d.length > 0) return '(' + d;
+  return '';
+}
+
 /* The dimension fields that actually drive price, per unit type. The console's
    editor renders exactly these, so a new priced dimension shows up there by
    adding it here rather than by remembering to touch the console too. */
@@ -608,7 +643,7 @@ function doPost(e) {
       new Date(d.ts || Date.now()),
       d.status || '',
       d.unit || '',
-      d.phone || '',
+      fmtPhone(d.phone || ''),
       d.email || '',
       d.ymm || '',
       d.dims || '',
@@ -1997,7 +2032,7 @@ function adminLookup(token, qn) {
     feeSuggest10: bal > 0 ? Math.round(bal * ADJ_LATE_PCT) / 100 : 0,
     feeSuggest2: bal > 0 ? Math.max(5, Math.round(bal * 2) / 100) : 0,
     payByShort: (d.season && d.season.payByShort) || 'Nov 15',
-    hasEmail: !!d.email, email: d.email || '', phone: d.phone || '',
+    hasEmail: !!d.email, email: d.email || '', phone: fmtPhone(d.phone || ''),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
     rq: String(d.quotesRequested || ''),
@@ -2892,7 +2927,7 @@ function adminImportPreview(token, fileId, fileName, base64Data, pick) {
   return {
     ok: 1,
     file: String(fileName || ''),
-    owner: parsed.owner, phone: parsed.phone, email: parsed.email, ymm: parsed.ymm,
+    owner: parsed.owner, phone: fmtPhone(parsed.phone), email: parsed.email, ymm: parsed.ymm,
     loa: parsed.loa, beam: parsed.beam, lwt: parsed.lwt, notes: parsed.notes,
     picked: parsed.picked.map(function (x) {
       return { label: x.label, qty: x.qty, was: x.amount === null ? '' : usd_(x.amount),
@@ -2973,7 +3008,7 @@ function adminImportApply(token, state, meta) {
   sh.getRange(ctx.rowNum, COL.QN).setValue(qn);
   sh.getRange(ctx.rowNum, COL.TS).setValue(new Date());
   sh.getRange(ctx.rowNum, COL.UNIT).setValue(d.unit);
-  sh.getRange(ctx.rowNum, COL.PHONE).setValue(d.phone);
+  sh.getRange(ctx.rowNum, COL.PHONE).setValue(fmtPhone(d.phone));
   sh.getRange(ctx.rowNum, COL.EMAIL).setValue(d.email);
   sh.getRange(ctx.rowNum, COL.YMM).setValue(d.ymm);
   sh.getRange(ctx.rowNum, COL.DIMS).setValue(d.dims || '');
@@ -3032,7 +3067,7 @@ function legacyToState_(parsed, pick) {
 
   const st = {
     unit: unit,
-    firstName: '', lastName: '', phone: parsed.phone || '', email: parsed.email || '',
+    firstName: '', lastName: '', phone: fmtPhone(parsed.phone || ''), email: parsed.email || '',
     ymm: parsed.ymm || '', notes: parsed.notes || '',
     loa: parsed.loa || 0, beam: parsed.beam || 0, lwt: parsed.lwt || 0,
     skiLen: 0, skiWid: 0, skiDetail: 0,
@@ -4747,7 +4782,7 @@ function balanceReportCheck() {
   const lines = rows.map(function (x) {
     return x.last + ', ' + x.first + ' · ' + x.qn + ' · ' + x.unit +
       ' · Balance ' + usd_(x.bal) + ' (paid ' + usd_(x.paid) + ' of ' + usd_(x.total) + ')' +
-      ' · ' + (x.phone || 'no phone') + ' · ' + (x.email || 'no email') + ' · ' + x.status;
+      ' · ' + (fmtPhone(x.phone) || 'no phone') + ' · ' + (x.email || 'no email') + ' · ' + x.status;
   });
   const totalOut = rows.reduce(function (a, x) { return a + x.bal; }, 0);
   const subject = (isFeeDay ? '💰 LATE FEE DAY — ' : '⏰ Heads up — ') + rows.length +
@@ -5041,7 +5076,7 @@ function quoteHtml_(d) {
     '<table class="meta"><tr>' +
       '<td><b>' + term + ' #</b><br>' + esc_(d.quoteNo) + '</td>' +
       '<td><b>Date</b><br>' + new Date(d.ts || Date.now()).toLocaleDateString('en-US') + '</td>' +
-      '<td><b>Owner</b><br>' + esc_(d.owner) + '<br>' + esc_(d.phone) + '<br>' + esc_(d.email) + '</td>' +
+      '<td><b>Owner</b><br>' + esc_(d.owner) + '<br>' + esc_(fmtPhone(d.phone)) + '<br>' + esc_(d.email) + '</td>' +
       '<td><b>Unit</b><br>' + esc_(d.unit) + (d.ymm ? '<br>' + esc_(d.ymm) : '') +
         (d.dims ? '<br>' + esc_(d.dims) : '') +
         (d.keyLoc ? '<br>Keys: ' + esc_(d.keyLoc) : '') + '</td>' +
@@ -5118,7 +5153,7 @@ function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
     'Quote PDF:   ' + (pdfUrl || '(PDF generation failed — see Apps Script executions log)'),
     '',
     'Owner:       ' + ((d.lastName || d.firstName) ? (d.lastName + ', ' + d.firstName) : d.owner),
-    'Phone:       ' + d.phone,
+    'Phone:       ' + fmtPhone(d.phone),
     'Email:       ' + d.email,
     'Unit:        ' + d.unit + (d.ymm ? '  (' + d.ymm + ')' : ''),
     'Dimensions:  ' + (d.dims || '—'),

@@ -28,11 +28,15 @@ const gas=fs.readFileSync(ROOT+'/quote-logger-apps-script.gs','utf8');
 function fn(n){const o=gas.match(new RegExp('^function '+n+'\\b.*}\\s*$','m'));if(o)return o[0];
   const m=gas.match(new RegExp('^function '+n+'\\b[\\s\\S]*?\\n}','m'));if(!m)throw new Error(n);return m[0];}
 const decl=(n)=>gas.match(new RegExp('^const '+n+'\\s*=[\\s\\S]*?^\\];','m'))[0];
-const B=new Function([decl('LEGACY_LEFT_'),decl('LEGACY_RIGHT_'),decl('LEGACY_ANCHORS_'),
+const P=require(path.join(ROOT,'pricing-engine.js'));
+const B=new Function('ENGINE',[decl('LEGACY_LEFT_'),decl('LEGACY_RIGHT_'),decl('LEGACY_ANCHORS_'),
   fn('legacyNum_'),fn('legacyText_'),fn('legacyFind_'),fn('legacyRowOf_'),fn('legacyAligned_'),
   fn('parseLegacyGrid_'),fn('legacyToState_'),
-  'return {parseLegacyGrid_,legacyAligned_,legacyToState_};'].join('\n'))();
-const P=require(path.join(ROOT,'pricing-engine.js'));
+  /* legacyToState_ formats the phone through the shared engine, which in the
+     real script is in scope as a top-level function. Give the sandbox the same
+     one rather than a stub, so a change to the formatter is exercised here too. */
+  'const fmtPhone = ENGINE.fmtPhone;',
+  'return {parseLegacyGrid_,legacyAligned_,legacyToState_};'].join('\n'))(P);
 const money=(st)=>P.computeQuote(st).lines.reduce((a,l)=>a+Number(l.amt||0),0);
 
 /* Build a grid in the template's shape. left/right = [ [rowOffset, qty, price, amount] ] */

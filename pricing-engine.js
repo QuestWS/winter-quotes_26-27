@@ -287,6 +287,41 @@ function dimsString(s){
   return '';
 }
 
+/* One phone format for the whole system: (815) 555-0123, everywhere a number
+   is shown. Shared for the same reason as dimsString — the page formats what
+   somebody types, the server formats what it writes to the sheet, prints on
+   the PDF and sends in an email, and the two must not disagree.
+
+   It only ever reformats a number it is sure of: ten digits, or eleven
+   starting with the country code. Anything else — an extension, an
+   international number, a half-typed one, or a note somebody put in the box —
+   comes back exactly as it went in. Mangling a number nobody can call is worse
+   than showing it unformatted. Formatting an already-formatted number returns
+   the same string, so it is safe to apply more than once. */
+function fmtPhone(v){
+  const raw = String(v == null ? '' : v).trim();
+  let d = raw.replace(/\D/g, '');
+  if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if(d.length !== 10) return raw;
+  return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+}
+
+/* The same rule applied while somebody is still typing, for the live mask on
+   the quote page. Partial input is formatted as far as it goes; anything that
+   is not a plain 10-digit US number is left alone so the field never fights
+   the person filling it in. */
+function fmtPhonePartial(v){
+  const raw = String(v == null ? '' : v);
+  if(/[a-zA-Z]/.test(raw)) return raw;         // "ext", "call after 5" — leave it
+  let d = raw.replace(/\D/g, '');
+  if(d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if(d.length > 10) return raw;                 // longer than a US number: not ours to format
+  if(d.length > 6) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+  if(d.length > 3) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+  if(d.length > 0) return '(' + d;
+  return '';
+}
+
 /* The dimension fields that actually drive price, per unit type. The console's
    editor renders exactly these, so a new priced dimension shows up there by
    adding it here rather than by remembering to touch the console too. */
@@ -299,7 +334,8 @@ const DIM_FIELDS = {
 // ENGINE-END
 
   const API = { SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
-                wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString };
+                wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
+                fmtPhone, fmtPhonePartial };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

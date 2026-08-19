@@ -582,7 +582,8 @@ if (typeof QuestPricing === 'undefined') {
 }
 /* Exposed under the same names this page has always used, so every existing
    call site is unchanged. */
-const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS} = QuestPricing;
+const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
+       fmtPhone, fmtPhonePartial} = QuestPricing;
 
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
@@ -970,6 +971,10 @@ function loadQuote(){
 }
 function hydrateFromState(state, qn){
   Object.assign(S, state);
+  /* Quotes saved before phones were formatted carry bare digits. Reloading is
+     the moment we can put that right, and re-saving then carries the tidy
+     value back to the sheet. */
+  S.phone=fmtPhone(S.phone||'');
   S.quoteNo=qn; // updates land on the same spreadsheet row / PDF
   setUnit(S.unit); // rebuilds units, start UI, storage, nav
   // text inputs
@@ -1039,7 +1044,7 @@ function buildAdobeParams(){
   set('quote_no', ensureQuoteNo());
   set('quote_date', new Date().toLocaleDateString('en-US'));
   set('unit', unitName);
-  set('owner', ownerName()); set('phone', S.phone); set('email', S.email); set('ymm', S.ymm);
+  set('owner', ownerName()); set('phone', fmtPhone(S.phone)); set('email', S.email); set('ymm', S.ymm);
   if(S.unit==='boat'){
     set('loa', S.loa||''); set('beam', S.beam||''); set('lwt', S.hasTrailer?(S.lwt||''):'');
     set('trailer', S.hasTrailer?'Yes':'No');
@@ -1198,7 +1203,7 @@ function refresh(){
     const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t;
     if(ownerName()) meta.push(ownerName());
     meta.push(unitName + (S.ymm?` — ${S.ymm}`:''));
-    if(S.phone||S.email) meta.push([S.phone,S.email].filter(Boolean).join(' · '));
+    if(S.phone||S.email) meta.push([fmtPhone(S.phone),S.email].filter(Boolean).join(' · '));
     let dims='';
     if(S.unit==='boat') dims=[S.loa?`LOA ${S.loa}'`:null,S.beam?`B ${S.beam}'`:null,(S.hasTrailer&&S.lwt)?`LWT ${S.lwt}'`:null,S.hasTrailer?'trailer':'no trailer'].filter(Boolean).join(' · ');
     if(S.unit==='jetski') dims=[S.skiLen?`stored L ${S.skiLen}'`:null,S.skiWid?`stored W ${S.skiWid}'`:null,'on trailer'].filter(Boolean).join(' · ');
@@ -1424,6 +1429,29 @@ function goPrev(){ const f=flow(), i=f.indexOf(cur); if(i>0) go(f[i-1]); }
 function init(){
   fillConfig();
   buildUnits(); buildEngines(); buildStorage(); buildSkiLevels(); buildSkiStorage(); buildNav();
+
+  /* Phone is shown as (815) 555-0123 everywhere in the system, including in
+     the box while it is being typed. The mask only runs when the caret is at
+     the end of the field — reformatting mid-string would move it, and fighting
+     someone correcting a digit is worse than an unformatted moment. Blur
+     formats unconditionally, so a paste or a mid-string edit still lands on
+     the house format, and the engine's fmtPhone leaves anything it cannot
+     confidently read exactly as typed. */
+  const phoneEl = $('#phone');
+  if(phoneEl){
+    phoneEl.addEventListener('input', e=>{
+      const el=e.target;
+      if(el.selectionStart !== el.value.length) return;
+      const out=fmtPhonePartial(el.value);
+      if(out!==el.value){ el.value=out; el.setSelectionRange(out.length,out.length); }
+      S.phone=el.value;
+    });
+    phoneEl.addEventListener('blur', e=>{
+      const out=fmtPhone(e.target.value);
+      if(out!==e.target.value) e.target.value=out;
+      S.phone=out; refresh();
+    });
+  }
 
   $$('input[data-k],textarea[data-k]').forEach(el=>el.addEventListener('input',e=>{
     const k=e.target.dataset.k;

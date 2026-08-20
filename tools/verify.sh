@@ -256,6 +256,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: phone formatting broken"; sed 's/^/       /' "$TMP/phone.txt"; FAIL=1
   fi
+  # The written rules are the only reason a later session knows why this code
+  # is shaped the way it is. Losing one costs more than losing a function.
+  if node tools/check-docs-coverage.js > "$TMP/docs.txt" 2>&1; then
+    echo "  OK   gate: every documented rule still written down somewhere"
+    grep -E 'CLAUDE.md is|entry points' "$TMP/docs.txt" | sed 's/^ */       /'
+  else
+    echo "  FAIL gate: a documented rule has gone missing"; sed 's/^/       /' "$TMP/docs.txt"; FAIL=1
+  fi
   # One motor type per boat, whole counts only. That is a property of the code,
   # not of any string, so it is checked by running it.
   if node tools/check-engine-rules.js > "$TMP/eng.txt" 2>&1; then

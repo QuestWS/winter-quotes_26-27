@@ -148,17 +148,22 @@ for(const [label,base,st,want] of cases){
   check(label, JSON.stringify(got)===JSON.stringify(want), 'got ['+got+'] want ['+want+']');
 }
 
-console.log('\n=== 5. the slip number reaches the Heritage Harbor line ===');
+console.log('\n=== 5. the slip number reaches the Heritage Harbor discount ===');
 {
+  /* The slipholder discount is no longer a $0 line on the quote: it is an open
+     request reading TBD, priced by staff from the finished total. The property
+     that matters is unchanged though — whatever slip we hold has to travel with
+     it, so whoever prices it knows which slipholder they are crediting. */
   const d=quoteFrom('boat-twin-inboard-full');
   d.state.hho=true; d.state.slipNo='';
   B.rebuildLinesFromState_(d);
-  const before=(d.lines.find(l=>/Heritage Harbor/i.test(l.label))||{}).label||'(no hho line)';
+  const before=d.quotesRequested||'(none)';
   B.ensureManual_(d).measured={slipNo:'B-14'};
   B.rebuildLinesFromState_(d);
-  const after=(d.lines.find(l=>/Heritage Harbor/i.test(l.label))||{}).label||'(no hho line)';
+  const after=d.quotesRequested||'(none)';
   console.log('    '+before+'\n    '+after);
-  check('label picks up the slip', /B-14/.test(after));
+  check('the request picks up the slip', /B-14/.test(after));
+  check('and it is never a priced line', !d.lines.some(l=>/Heritage Harbor/i.test(l.label)));
 }
 
 console.log('\n=== 6. pricing is untouched by a keys edit ===');

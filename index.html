@@ -130,6 +130,21 @@ input[type=number]{font-family:var(--mono)}
 .qtyrow:last-child{border-bottom:0}
 .qtyrow .t{font-weight:600}
 .qtyrow .sub{font-size:13px;color:var(--muted)}
+/* A sub-row belongs to the option above it — indented and rule-joined so the
+   relationship is visible rather than remembered. */
+.sub-row{margin-left:22px;padding-left:12px;border-left:2px solid var(--line)}
+/* Feet and inches. Two boxes reading as one field. */
+.ftin{display:flex;align-items:center;gap:6px}
+.ftin input{width:100%;min-width:0;flex:1 1 0;text-align:right}
+.ftin span{color:var(--muted);font-size:13px;flex:0 0 auto}
+/* A charge the customer cannot choose — applied when it is earned. Must not
+   look like an option, or somebody will hunt for the checkbox. Deliberately
+   NOT .warnbox: that one already exists for error states (an unsigned
+   contract) and is red. A penalty that has not happened yet is a caution, not
+   an error, and reusing the class would have quietly restyled the other. */
+.penaltybox{background:#FDF3E0;border:1px solid var(--gold);border-left-width:4px;border-radius:8px;
+  padding:10px 12px;font-size:13.5px;line-height:1.5;color:#5A431A}
+.penaltybox b{color:#7A5A12}
 .qtyrow .p{font-family:var(--mono);font-size:13.5px;color:var(--gold);font-weight:600}
 .qtyrow.disabled{opacity:.45}
 
@@ -272,12 +287,21 @@ aside.ticket{position:sticky;top:18px}
       <label class="opt"><input type="radio" name="hasTrailer" value="no" checked><div><div class="t">No trailer</div><div class="d">Boat is blocked on stands for storage · $<span data-cfg="depositNoTrailer"></span> storage deposit</div></div></label>
     </fieldset>
 
+    <fieldset id="pontoonFs" style="display:none">
+      <legend>Hull type</legend>
+      <label class="opt"><input type="radio" name="isPontoon" value="no" checked><div><div class="t">Not a pontoon</div><div class="d">Blocked on stands · $<span data-cfg="depositNoTrailer"></span> storage deposit</div></div></label>
+      <label class="opt"><input type="radio" name="isPontoon" value="yes"><div><div class="t">Pontoon</div><div class="d">Handled differently on the yard · $<span data-cfg="depositNoTrailerPontoon"></span> storage deposit</div></div></label>
+    </fieldset>
+
     <fieldset id="dimsBoat">
       <legend>Dimensions</legend>
       <div class="grid3">
-        <div><label class="f" for="loa">Boat length — LOA (ft) <small>incl. platform, drives, etc.</small></label><input type="number" id="loa" data-k="loa" min="0" step="0.5" placeholder="e.g. 22"></div>
-        <div><label class="f" for="beam">Beam — B (ft)</label><input type="number" id="beam" data-k="beam" min="0" step="0.5" placeholder="e.g. 8.5"></div>
-        <div id="lwtField"><label class="f" for="lwt">Length with trailer — LWT (ft)</label><input type="number" id="lwt" data-k="lwt" min="0" step="0.5" placeholder="incl. tongue"></div>
+        <div><label class="f">Boat length — LOA <small>incl. platform, drives, etc.</small></label>
+          <div class="ftin" data-ftin="loa"><input type="number" min="0" step="1" inputmode="numeric" placeholder="22" aria-label="LOA feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="LOA inches"><span>in</span></div></div>
+        <div><label class="f">Beam — B</label>
+          <div class="ftin" data-ftin="beam"><input type="number" min="0" step="1" inputmode="numeric" placeholder="8" aria-label="Beam feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="6" aria-label="Beam inches"><span>in</span></div></div>
+        <div id="lwtField"><label class="f">Length with trailer — LWT</label>
+          <div class="ftin" data-ftin="lwt"><input type="number" min="0" step="1" inputmode="numeric" placeholder="incl. tongue" aria-label="LWT feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="LWT inches"><span>in</span></div></div>
       </div>
       <p class="note"><b>LOA includes swim platform, drives, outboards, etc.</b> Most boat manufacturers do not include these in their listed LOA. We reserve the right to remeasure and adjust the bill accordingly.</p>
     </fieldset>
@@ -286,8 +310,10 @@ aside.ticket{position:sticky;top:18px}
       <legend>Stored footprint</legend>
       <p class="note" style="margin:-4px 0 12px">Jetskis are stored on their trailers, so we price the space the whole rig occupies — including tandem trailers carrying a single ski.</p>
       <div class="grid2">
-        <div><label class="f" for="skiLen">Stored length (ft) <small>tip of the trailer tongue to the rearmost point — jetski or trailer, whichever extends further</small></label><input type="number" id="skiLen" data-k="skiLen" min="0" step="0.5" placeholder="e.g. 14"></div>
-        <div><label class="f" for="skiWid">Stored width (ft) <small>full width of the trailer at its widest point</small></label><input type="number" id="skiWid" data-k="skiWid" min="0" step="0.5" placeholder="e.g. 5.5"></div>
+        <div><label class="f">Stored length <small>tip of the trailer tongue to the rearmost point — jetski or trailer, whichever extends further</small></label>
+          <div class="ftin" data-ftin="skiLen"><input type="number" min="0" step="1" inputmode="numeric" placeholder="14" aria-label="Stored length feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="Stored length inches"><span>in</span></div></div>
+        <div><label class="f">Stored width <small>full width of the trailer at its widest point</small></label>
+          <div class="ftin" data-ftin="skiWid"><input type="number" min="0" step="1" inputmode="numeric" placeholder="5" aria-label="Stored width feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="6" aria-label="Stored width inches"><span>in</span></div></div>
       </div>
       <p class="note">We reserve the right to remeasure and adjust the bill accordingly.</p>
     </fieldset>
@@ -337,13 +363,14 @@ aside.ticket{position:sticky;top:18px}
     <p class="lead">Fresh water, heads, ballast, A/C, generators — anything that holds water needs protecting too. Skip this page if none apply.</p>
     <fieldset>
       <legend>Water systems winterization</legend>
-      <div class="qtyrow"><div><div class="t">Ballast system (drain only)</div><div class="p" data-price="ballast" data-suffix=" / tank"></div></div>
+      <label class="opt"><input type="checkbox" data-chk="ballastOn"><div><div class="t">Ballast system (drain only)</div><div class="d">Tick and set how many tanks</div></div><span class="p" data-price="ballast" data-suffix=" / tank"></span></label>
+      <div class="qtyrow sub-row" id="ballastRow"><div><div class="t">Ballast tanks</div></div>
         <div class="qty" data-qty="ballast"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Ballast tanks"><button type="button" aria-label="increase">+</button></div></div>
       <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="waterCold"><div><div class="t">Water system — cold only</div><div class="d">Fresh water system, no head</div></div><span class="p" data-price="waterCold"></span></label>
       <label class="opt"><input type="checkbox" data-chk="waterHead"><div><div class="t">Water system including 1 head</div><div class="d">Fresh water system plus one head</div></div><span class="p" data-price="waterHead"></span></label>
-      <div class="qtyrow" id="addlHeadsRow"><div><div class="t">Additional heads</div><div class="sub">Requires "Water system including 1 head" above</div><div class="p" data-price="addlHeads" data-suffix=" each"></div></div>
+      <div class="qtyrow sub-row" id="addlHeadsRow"><div><div class="t">Additional heads</div><div class="sub">Beyond the one included above</div><div class="p" data-price="addlHeads" data-suffix=" each"></div></div>
         <div class="qty" data-qty="addlHeads"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Additional heads"><button type="button" aria-label="increase">+</button></div></div>
-      <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="pumpout"><div><div class="t">Pumpout service charge</div><div class="d">Applies if holding tank isn't emptied before drop-off</div></div><span class="p" data-price="pumpout"></span></label>
+      <div class="penaltybox" style="margin-top:10px"><b>Pumpout service charge — <span data-price="pumpout"></span></b><br>If the holding tank isn't emptied before drop-off, this is added to your invoice. Empty it first and it never applies.</div>
       <label class="opt"><input type="checkbox" data-chk="ac"><div><div class="t">Air conditioning</div><div class="d">Up to 2 units</div></div><span class="p" data-price="ac"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genBasic"><div><div class="t">Generator — basic winterization</div></div><span class="p" data-price="genBasic"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genFull"><div><div class="t">Generator — including oil &amp; filter change</div></div><span class="p" data-price="genFull"></span></label>
@@ -370,8 +397,8 @@ aside.ticket{position:sticky;top:18px}
 
     <fieldset>
       <legend>Timing</legend>
-      <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
-      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
+      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Your discount is worked out from your finished total and applied by Quest staff</div></div><span class="p">TBD</span></label>
       <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
     </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Shrinkwrap &amp; extras →</button></div>
@@ -400,6 +427,7 @@ aside.ticket{position:sticky;top:18px}
       <label class="opt"><input type="checkbox" data-chk="bottomTouch"><div><div class="t">Bottom paint touch-up</div></div><span class="p">quote</span></label>
       <label class="opt"><input type="checkbox" data-chk="bottomStrip"><div><div class="t">Strip bottom paint &amp; reapply</div></div><span class="p">quote</span></label>
       <label class="opt"><input type="checkbox" data-chk="propRefurb"><div><div class="t">Propeller refurbishment</div></div><span class="p">quote</span></label>
+      <label class="opt"><input type="checkbox" data-chk="impeller"><div><div class="t">Impeller change</div></div><span class="p">quote</span></label>
     </fieldset>
 
     <fieldset>
@@ -447,8 +475,8 @@ aside.ticket{position:sticky;top:18px}
     </fieldset>
     <fieldset>
       <legend>Timing</legend>
-      <label class="opt"><input type="checkbox" data-chk="lateRetrieval"><div><div class="t">Late retrieval surcharge</div><div class="d">Retrieval after <span data-cfg="payByShort"></span></div></div><span class="p" data-price="lateRetrieval"></span></label>
-      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
+      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Your discount is worked out from your finished total and applied by Quest staff</div></div><span class="p">TBD</span></label>
       <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
     </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
@@ -583,7 +611,8 @@ if (typeof QuestPricing === 'undefined') {
 /* Exposed under the same names this page has always used, so every existing
    call site is unchanged. */
 const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
-       fmtPhone, fmtPhonePartial} = QuestPricing;
+       fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
+       depositBaseFor} = QuestPricing;
 
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
@@ -611,7 +640,7 @@ const S = {
   hasTrailer:false,
   engines:{ inboard:{qty:0,level:'basic'}, io:{qty:0,level:'basic'}, outboard:{qty:0,level:'basic'}, pwc:{qty:1,level:'basic'} },
   dtTrans:0, dtTransom:0,
-  ballast:0, addlHeads:0,
+  ballast:0, ballastOn:false, addlHeads:0, isPontoon:false, impeller:false,
   waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
   storage:'none', retrieval:'none',
   wrap:false, inWater:false,
@@ -670,15 +699,36 @@ function setUnit(u){
   else if(S.storage==='golf'||S.storage==='ebike'){ S.storage='none'; }
   buildUnits(); syncStartUI(); buildNav(); refresh();
 }
+/* Write a decimal-feet value back into a pair of ft/in boxes. The engine's
+   fmtFtIn does the rounding, so the boxes can never disagree with the string
+   printed on the quote, the PDF or the yard sheet. */
+function setFtIn(key,val){
+  const wrap=document.querySelector(`[data-ftin="${key}"]`);
+  if(!wrap) return;
+  const [f,i]=wrap.querySelectorAll('input');
+  const v=Number(val)||0;
+  if(!v){ f.value=''; i.value=''; return; }
+  let ft=Math.floor(v), inch=Math.round((v-ft)*12);
+  if(inch===12){ ft+=1; inch=0; }
+  f.value=ft; i.value=inch||'';
+}
+function syncFtInAll(){ ['loa','beam','lwt','skiLen','skiWid'].forEach(k=>setFtIn(k,S[k])); }
+
 function syncStartUI(){
   const u=S.unit;
   $('#trailerFs').style.display=(u==='boat'||u==='jetski')?'block':'none';
+  /* Hull type only matters for a boat coming off its trailer: it decides how
+     the boat is blocked and what deposit is owed. */
+  const askPontoon=(u==='boat'&&!S.hasTrailer);
+  $('#pontoonFs').style.display=askPontoon?'block':'none';
+  if(!askPontoon && S.isPontoon) S.isPontoon=false;
+  $$('input[name=isPontoon]').forEach(r=>r.checked=((r.value==='yes')===!!S.isPontoon));
   $('#dimsBoat').style.display=u==='boat'?'block':'none';
   $('#dimsSki').style.display=u==='jetski'?'block':'none';
   // trailer radios reflect state (jetski forces yes)
   $$('input[name=hasTrailer]').forEach(r=>r.checked=(r.value==='yes')===S.hasTrailer);
   $('#lwtField').style.display=(u==='boat'&&S.hasTrailer)?'block':'none';
-  if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.lwt=0;$('#lwt').value='';} }
+  if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.lwt=0;setFtIn('lwt',0);} }
   // flat info card
   const fc=$('#flatInfo');
   if(u==='golf'){
@@ -704,7 +754,7 @@ function buildEngines(){
       </div>
       <div class="lvl" style="display:none;margin-top:10px;gap:8px;flex-wrap:wrap" data-lvl="${e.id}">
         <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="basic" checked><div><div class="t">Basic</div><div class="d">${LEVEL_DESC.basic}</div></div><span class="p">${fmt(PRICES.basic[e.id])} ea</span></label>
-        <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="full"><div><div class="t">Full service</div><div class="d">${LEVEL_DESC.full}</div></div><span class="p">${fmt(PRICES.full[e.id])} ea</span></label>
+        <label class="opt" style="margin:0;flex:1;min-width:240px"><input type="radio" name="lvl-${e.id}" value="full"><div><div class="t">Full service</div><div class="d">${LEVEL_DESC.full}</div></div><span class="p">+${fmt(fullDelta(e.id))} ea</span></label>
       </div>
     </div>`).join('');
 }
@@ -746,7 +796,7 @@ function buildStorage(){
   const opts = [
     {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
     {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
-    {v:'inside', t:'Inside storage', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
+    {v:'inside', t:'Inside storage (non-heated)', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
     {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`, pid:'stP'}
   ].filter(o=>!(hideInside && o.v==='inside'));
   $('#storageOpts').innerHTML = opts.map(o=>`<label class="opt"><input type="radio" name="storage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p" ${o.pid?`id="${o.pid}"`:''}>${o.p||''}</span></label>`).join('');
@@ -796,6 +846,18 @@ function syncStorageUI(){
   $('#retrievalFs').style.display=(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none'))?'block':'none';
   if(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
 }
+/* Ballast is a tick plus a count, and they must agree: counting up from zero
+   ticks the box, and un-ticking clears the count so the line leaves the quote.
+   The engine only ever looks at the count — the tick is here to make the row
+   read like every other option beside it. */
+function syncBallastUI(){
+  const row=$('#ballastRow'), q=row.querySelector('.qty');
+  const box=document.querySelector('input[data-chk="ballastOn"]');
+  if(box) box.checked=!!S.ballastOn;
+  row.classList.toggle('disabled',!S.ballastOn);
+  q.classList.toggle('disabled',!S.ballastOn);
+  if(!S.ballastOn && S.ballast>0){ S.ballast=0; q.querySelector('input').value=0; }
+}
 function syncHeadsUI(){
   const row=$('#addlHeadsRow'), q=row.querySelector('.qty');
   row.classList.toggle('disabled',!S.waterHead);
@@ -828,7 +890,7 @@ function computeLines(){
 function totals(){
   const {L}=computeLines();
   const total=L.reduce((a,b)=>a+b.amt,0);
-  const depBase=S.hasTrailer?RULES.depositTrailer:RULES.depositNoTrailer;
+  const depBase=depositBaseFor(S);
   const deposit=Math.min(depBase,total);
   return {
     total,
@@ -867,7 +929,7 @@ function logQuote(status, extra){
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
     slipNo:S.slipNo, hhoAddr:S.hhoAddr, keyLoc:S.keyLoc, hasTrailer:S.hasTrailer?1:0,
-    depositBase:S.hasTrailer?RULES.depositTrailer:RULES.depositNoTrailer,
+    depositBase:depositBaseFor(S),
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
@@ -976,11 +1038,16 @@ function hydrateFromState(state, qn){
      value back to the sheet. */
   S.phone=fmtPhone(S.phone||'');
   S.quoteNo=qn; // updates land on the same spreadsheet row / PDF
+  S.ballastOn = (S.ballast||0) > 0;
   setUnit(S.unit); // rebuilds units, start UI, storage, nav
   // text inputs
   $$('input[data-k],textarea[data-k]').forEach(el=>{ const k=el.dataset.k; if(k in S) el.value=S[k]||''; });
   // checkboxes
   $$('input[data-chk]').forEach(el=>{ const k=el.dataset.chk; el.checked=!!S[k]; });
+  /* The dimension boxes are not data-k inputs any more, and the hull-type
+     radios are not checkboxes — both need repainting by hand. */
+  syncFtInAll();
+  $$('input[name=isPontoon]').forEach(r=>r.checked=((r.value==='yes')===!!S.isPontoon));
   // acid wash disables powerwash
   const pw=document.querySelector('input[data-chk="powerwash"]');
   if(pw){ pw.disabled=!!S.acidWash; $('#powerwashOpt').classList.toggle('disabled', !!S.acidWash); }
@@ -1478,6 +1545,10 @@ function init(){
       $('#powerwashOpt').classList.remove('disabled');
     }
     if(k==='waterHead') syncHeadsUI();
+    if(k==='ballastOn'){
+      if(e.target.checked && !S.ballast){ S.ballast=1; $('#ballastRow').querySelector('.qty input').value=1; }
+      syncBallastUI();
+    }
     refresh();
   }));
 
@@ -1495,6 +1566,9 @@ function init(){
         if(v>0) clearOtherEngineTypes_(id);
         syncEngineRows_();
       } else S[key]=v;
+      /* Counting up from zero is the customer saying yes — tick the box for
+         them rather than making them do it twice. */
+      if(key==='ballast'){ S.ballastOn = v>0 ? true : S.ballastOn; syncBallastUI(); }
       refresh();
     };
     dec.onclick=()=>setV(+inp.value-1); inc.onclick=()=>setV(+inp.value+1);
@@ -1502,6 +1576,27 @@ function init(){
   });
 
   BOAT_ENGINES.forEach(e=>$$(`input[name=lvl-${e.id}]`).forEach(r=>r.addEventListener('change',ev=>{S.engines[e.id].level=ev.target.value;refresh();})));
+
+  /* Two boxes, one value. Either box writing recomputes the decimal the engine
+     prices on; 13 inches is accepted and normalised rather than rejected, since
+     someone typing fast should not be scolded. */
+  $$('[data-ftin]').forEach(wrap=>{
+    const key=wrap.dataset.ftin, [f,i]=wrap.querySelectorAll('input');
+    const push=()=>{
+      S[key]=ftInToDecimal(f.value,i.value);
+      if(['loa','beam','lwt'].includes(key)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
+      if(key==='beam'&&S.unit==='boat'){ buildStorage(); syncStorageUI(); }
+      refresh();
+    };
+    f.addEventListener('input',push);
+    i.addEventListener('input',push);
+    i.addEventListener('blur',()=>{ if(Number(i.value)>=12){ setFtIn(key,S[key]); } });
+  });
+
+  $$('input[name=isPontoon]').forEach(r=>r.addEventListener('change',e=>{
+    S.isPontoon = e.target.value==='yes';
+    refresh();
+  }));
 
   $$('input[name=hasTrailer]').forEach(r=>r.addEventListener('change',e=>{
     const wantNo=e.target.value==='no';

@@ -459,6 +459,15 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="noteMsg"></div>
           </div>
 
+          <div class="card hide" id="penaltyCard">
+            <h2>Penalties</h2>
+            <div class="msg" style="margin:0 0 8px">Charges the customer is never offered on the quote
+              page. Apply one when it has been earned; removing it puts the total straight back.
+              <b>Nobody is emailed either way.</b></div>
+            <div id="penaltyRows"></div>
+            <div class="msg" id="penaltyMsg"></div>
+          </div>
+
           <div class="card hide" id="adjCard">
             <h2>Adjustment</h2>
             <div class="row2">
@@ -884,6 +893,37 @@ function collectDims(){
   return out;
 }
 
+/* ---------- Penalties ----------
+   Pumpout and late retrieval are charges the customer cannot pick. They live
+   in the manual journal, not in the customer's own selections, so a customer
+   reloading and re-saving their quote cannot wipe one — and the engine prices
+   them from there exactly as if they had been chosen. */
+function renderPenalties(list){
+  PENALTIES=list||[];
+  const box=$('penaltyRows');
+  box.innerHTML=PENALTIES.map(p=>
+    '<div class="srow" style="border:0;padding:6px 0">'+
+      '<div><b>'+esc(p.label)+'</b><div class="msg" style="margin:0">'+esc(p.amt)+'</div></div>'+
+      '<div class="msg" style="margin:0">'+(p.on?'<b style="color:var(--red)">Applied</b>':'Not applied')+'</div>'+
+      '<button class="btn '+(p.on?'ghost':'navy')+' sm" onclick="togglePenalty(\''+esc(p.key)+'\','+(p.on?0:1)+')">'+
+        (p.on?'Remove':'Apply')+'</button>'+
+    '</div>').join('');
+  setMsg('penaltyMsg','');
+}
+async function togglePenalty(key,on){
+  if(!QN) return;
+  const p=(PENALTIES||[]).find(x=>x.key===key)||{label:key};
+  if(!confirm((on?'Apply ':'Remove ')+p.label+' on '+QN+'?\n\nThe total changes immediately. The customer is not emailed.')) return;
+  setMsg('penaltyMsg','Saving…',null);
+  try{
+    const r=await api('penalty',[QN,key,on?1:0]);
+    if(!r||!r.ok){ setMsg('penaltyMsg',(r&&r.error)||'Could not do that.',false); return; }
+    toast(p.label+(on?' applied':' removed'));
+    const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
+    setMsg('penaltyMsg',r.msg,true);
+  }catch(e){ setMsg('penaltyMsg',e.message,false); }
+}
+
 /* ---------- Staff notes ----------
    Deliberately separate from the customer's own notes, which are typed on the
    quote page and printed on the PDF. This one is ours: it never leaves the
@@ -1083,6 +1123,9 @@ function renderQuote(r){
   renderContract(P);
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
+  /* Same permission as any other change that moves money. */
+  $('penaltyCard').classList.toggle('hide',!P.adjust);
+  if(P.adjust) renderPenalties(r.penalties);
   /* Re-measuring moves money, so it sits behind the same permission as any
      other adjustment. */
   $('dimsCard').classList.toggle('hide',!P.adjust);
@@ -1445,6 +1488,7 @@ let STAFF=[];
    quote from the customer's CHOICES, priced fresh — so an imported quote
    behaves like any other and re-prices with the rest. */
 let IMP=null, IMPFILE=null, IMPFILES=[];
+let PENALTIES=[];
 /* The folder holds fifty-odd sheets. Sorted by name they are findable; with a
    filter they are findable in one go, which is what you want standing at a
    counter with somebody waiting. Filtering keeps whatever is already selected

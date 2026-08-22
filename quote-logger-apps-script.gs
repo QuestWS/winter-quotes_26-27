@@ -189,7 +189,12 @@ const PRICES = {
   ebikeStorage:160,     // includes a tune-up
   skiDetail:175,        // flat, per ski
   wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
-  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, blocking:185, lateRetrieval:225,
+  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, lateRetrieval:225,
+  /* Blocking a pontoon is a different job from blocking a deep-V on stands.
+     Both rates are $185 for 2025-2026; Chris splits them at the 2026-2027
+     rollover, and this is already wired so that is a one-number edit here
+     rather than a change to the engine. */
+  blocking:185, blockingPontoon:185,
 };
 
 const RULES = {
@@ -197,6 +202,9 @@ const RULES = {
   ccPct:3,
   depositTrailer:500,
   depositNoTrailer:1000,
+  /* A pontoon on stands is the one non-trailered boat that only owes the
+     smaller deposit. Everything else off a trailer owes the full 1000. */
+  depositNoTrailerPontoon:500,
   wrapFlat20MaxLOA:20,
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
@@ -268,6 +276,34 @@ function ftInToDecimal(ft,inch){
   const f=Number(ft)||0, i=Number(inch)||0;
   const v=f+(i/12);
   return v ? Math.round(v*1000)/1000 : 0;
+}
+
+/* The deposit rule. Lived only on the customer page, which was fine while it
+   was one ternary; with the pontoon carve-out it is a rule, and a rule both
+   sides may need to state belongs here. Returns the BASE — callers still cap
+   it at the quote total, since a deposit larger than the bill is nonsense. */
+function depositBaseFor(s){
+  if(s.unit!=='boat') return RULES.depositTrailer;
+  if(s.hasTrailer) return RULES.depositTrailer;
+  return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;
+}
+
+/* Requests that resolve to a CREDIT rather than a charge. The slipholder
+   discount is worked out from the customer's finished total, so it cannot be
+   shown while they are still building the quote — and it must never be shown
+   to someone who is not a slipholder. It goes on as an open request reading
+   TBD, and staff price it later as a negative.
+
+   Shared because the server enforces the sign against this list: every other
+   request must be positive, so a mistyped charge cannot become a refund. */
+const DISCOUNT_REQUESTS = ['Heritage Harbor Slipholder discount'];
+function isDiscountRequest(label){
+  const t=String(label||'');
+  return DISCOUNT_REQUESTS.some(function(d){ return t===d || t.indexOf(d+' —')===0; });
+}
+function hhoRequest_(s){
+  if(!s.hho) return '';
+  return DISCOUNT_REQUESTS[0] + (s.slipNo ? ' — slip '+s.slipNo : '');
 }
 
 /* What Full service ADDS over Basic, per engine type. The customer is choosing
@@ -357,8 +393,8 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho) add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0);
-    return {lines:L, need, rq:[], flags:computeFlags_(s)};
+    if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
+    return {lines:L, need, rq:hhoRequest_(s)?[hhoRequest_(s)]:[], flags:computeFlags_(s)};
   }
 
   /* ---- boat ---- */
@@ -408,7 +444,9 @@ function computeQuote(s){
   if(insideSel) add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
 
   if((s.storage==='outside'||insideSel) && !T){
-    add('Blocking & washing','Blocking, stands & handling (non-trailer)', PRICES.blocking);
+    const pont=!!s.isPontoon;
+    add('Blocking & washing','Blocking, stands & handling (non-trailer'+(pont?', pontoon':'')+')',
+        pont?PRICES.blockingPontoon:PRICES.blocking);
   }
 
   if(s.wrap){
@@ -431,9 +469,10 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho) add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0);
+  if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
+  if(hhoRequest_(s)) rq.push(hhoRequest_(s));
   return {lines:L, need, rq, flags:computeFlags_(s)};
 }
 
@@ -530,6 +569,7 @@ function doPost(e) {
           dimsPreview: function (a) { return adminDimsPreview(d.token, a[0], a[1]); },
           dimsApply:   function (a) { return adminDimsApply(d.token, a[0], a[1], a[2]); },
           keysApply:   function (a) { return adminKeysApply(d.token, a[0], a[1]); },
+          penalty:     function (a) { return adminPenalty(d.token, a[0], a[1], a[2]); },
           staffNote:   function (a) { return adminSetStaffNote(d.token, a[0], a[1]); },
           pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
           adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
@@ -1116,10 +1156,50 @@ function effectiveState_(d) {
   const base = (d && d.state) || null;
   if (!base) return null;
   const meas = d.manual && d.manual.measured;
-  if (!meas) return base;
+  const pen  = d.manual && d.manual.penalties;
+  if (!meas && !pen) return base;
   const s = JSON.parse(JSON.stringify(base));
-  Object.keys(meas).forEach(function (k) { s[k] = meas[k]; });
+  if (meas) Object.keys(meas).forEach(function (k) { s[k] = meas[k]; });
+  /* Penalties last, so a later re-measure cannot quietly drop one. They ride
+     the same overlay as measurements rather than getting their own line-
+     building code: the engine already knows how to price a pumpout and a late
+     retrieval, so a rate change flows through and a re-price keeps them. And
+     like every other staff change they live in the journal, never in
+     d.state — that is the customer's own answer and stays theirs. */
+  if (pen) Object.keys(pen).forEach(function (k) { if (pen[k]) s[k] = true; });
   return s;
+}
+
+/* The two charges that are penalties rather than choices: the customer is not
+   offered them on the quote page, staff apply them when they are earned. */
+const PENALTY_KEYS_ = { pumpout: 'Pumpout service charge',
+                        lateRetrieval: 'Late retrieval surcharge' };
+
+function adminPenalty(token, qn, which, on) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const key = String(which || '');
+  if (!PENALTY_KEYS_.hasOwnProperty(key)) return { ok: 0, error: 'Unknown charge.' };
+  const d = ctx.d;
+  if (!d.state) return { ok: 0, error: 'This quote is too old to re-price automatically.' };
+  const m = ensureManual_(d);
+  m.penalties = m.penalties || {};
+  const want = !!on;
+  if (m.penalties[key] === want) {
+    return { ok: 1, msg: PENALTY_KEYS_[key] + ' was already ' + (want ? 'applied' : 'off') + '.', total: usd_(d.total) };
+  }
+  const before = Number(d.total || 0);
+  m.penalties[key] = want;
+  rebuildLinesFromState_(d);
+  recomputeTotals_(d);
+  saveQuoteRow_(ctx);
+  const after = Number(d.total || 0);
+  auditLog_(who.name, (want ? 'Applied ' : 'Removed ') + PENALTY_KEYS_[key] + ' on ' + qn +
+    ' — total ' + usd_(before) + ' -> ' + usd_(after));
+  return { ok: 1, msg: PENALTY_KEYS_[key] + (want ? ' applied. ' : ' removed. ') +
+    'Total ' + usd_(before) + ' \u2192 ' + usd_(after) + '. The customer has not been emailed.',
+    total: usd_(after), on: want };
 }
 
 function serverPrice_(d) {
@@ -1427,11 +1507,20 @@ function priceQuoteRequest() {
   const amtResp = ui.prompt('Price: ' + item, 'Enter the price for this service.', ui.ButtonSet.OK_CANCEL);
   if (amtResp.getSelectedButton() !== ui.Button.OK) return;
   const amt = Number(String(amtResp.getResponseText()).replace(/[$,\s]/g, ''));
-  if (!isFinite(amt) || amt <= 0) { ui.alert('Enter a positive amount, e.g. 225'); return; }
+  /* The slipholder discount is the one request that resolves to a credit, so
+     it is the one that may be negative — and it MUST be, because a positive
+     "discount" would silently bill the customer for it. Every other request
+     must be positive, so a mistyped charge cannot become a refund. The list
+     lives in the engine, shared, so the console and the sheet menu agree. */
+  const discM = isDiscountRequest(item);
+  if (!isFinite(amt) || amt === 0) { ui.alert('Enter an amount.'); return; }
+  if (discM && amt > 0) { ui.alert('A slipholder discount is a credit — enter it as a negative, e.g. -150'); return; }
+  if (!discM && amt < 0) { ui.alert('Enter a positive amount, e.g. 225. Only the slipholder discount goes on as a negative.'); return; }
+  const secM = discM ? 'Adjustments' : 'Additional services';
 
-  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: 'Additional services' });
+  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: secM });
   d.lines = d.lines || [];
-  d.lines.push({ sec: 'Additional services', label: item, calc: '', amt: amt, desc: '' });
+  d.lines.push({ sec: secM, label: item, calc: '', amt: amt, desc: '' });
   d.quotesRequested = rqs.filter(function (x, i2) { return i2 !== idx; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
@@ -2073,6 +2162,14 @@ function adminLookup(token, qn) {
     feeSuggest2: bal > 0 ? Math.max(5, Math.round(bal * 2) / 100) : 0,
     payByShort: (d.season && d.season.payByShort) || 'Nov 15',
     hasEmail: !!d.email, email: d.email || '', phone: fmtPhone(d.phone || ''),
+    penalties: (function () {
+      const pen = (d.manual && d.manual.penalties) || {};
+      const st = effectiveState_(d) || {};
+      return Object.keys(PENALTY_KEYS_).map(function (k) {
+        return { key: k, label: PENALTY_KEYS_[k], on: !!st[k], byStaff: !!pen[k],
+                 amt: usd_(PRICES[k === 'lateRetrieval' ? 'lateRetrieval' : 'pumpout']) };
+      });
+    })(),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
     rq: String(d.quotesRequested || ''),
@@ -3406,13 +3503,22 @@ function adminPriceRequest(token, qn, rqLabel, amt, note) {
   const rqs = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
   const item = String(rqLabel || '').trim();
   if (rqs.indexOf(item) === -1) return { ok: 0, error: 'That request is no longer open.' };
+  /* The slipholder discount is the one request that resolves to a credit, so
+     it is the one that may be negative — and it MUST be, because a positive
+     "discount" would silently bill the customer for it. Every other request
+     must be positive, so a mistyped charge cannot become a refund. The list
+     lives in the engine, shared, so the console and the sheet menu agree. */
   const a = Number(String(amt).replace(/[$,\s]/g, ''));
-  if (!isFinite(a) || a <= 0) return { ok: 0, error: 'Enter a positive price, e.g. 225.' };
+  const disc = isDiscountRequest(item);
+  if (!isFinite(a) || a === 0) return { ok: 0, error: 'Enter an amount.' };
+  if (disc && a > 0) return { ok: 0, error: 'A slipholder discount is a credit — enter it as a negative, e.g. -150.' };
+  if (!disc && a < 0) return { ok: 0, error: 'Enter a positive price, e.g. 225. Only the slipholder discount goes on as a negative.' };
+  const sec = disc ? 'Adjustments' : 'Additional services';
   const nt = String(note || '').trim();
   const finalLabel = nt ? item + ' — ' + nt : item;
-  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: 'Additional services' });
+  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: sec });
   d.lines = d.lines || [];
-  d.lines.push({ sec: 'Additional services', label: finalLabel, calc: '', amt: a, desc: '' });
+  d.lines.push({ sec: sec, label: finalLabel, calc: '', amt: a, desc: '' });
   d.quotesRequested = rqs.filter(function (x) { return x !== item; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);

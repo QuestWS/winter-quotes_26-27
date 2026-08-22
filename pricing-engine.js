@@ -50,7 +50,12 @@ const PRICES = {
   ebikeStorage:160,     // includes a tune-up
   skiDetail:175,        // flat, per ski
   wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
-  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, blocking:185, lateRetrieval:225,
+  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, lateRetrieval:225,
+  /* Blocking a pontoon is a different job from blocking a deep-V on stands.
+     Both rates are $185 for 2025-2026; Chris splits them at the 2026-2027
+     rollover, and this is already wired so that is a one-number edit here
+     rather than a change to the engine. */
+  blocking:185, blockingPontoon:185,
 };
 
 const RULES = {
@@ -58,6 +63,9 @@ const RULES = {
   ccPct:3,
   depositTrailer:500,
   depositNoTrailer:1000,
+  /* A pontoon on stands is the one non-trailered boat that only owes the
+     smaller deposit. Everything else off a trailer owes the full 1000. */
+  depositNoTrailerPontoon:500,
   wrapFlat20MaxLOA:20,
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
@@ -129,6 +137,34 @@ function ftInToDecimal(ft,inch){
   const f=Number(ft)||0, i=Number(inch)||0;
   const v=f+(i/12);
   return v ? Math.round(v*1000)/1000 : 0;
+}
+
+/* The deposit rule. Lived only on the customer page, which was fine while it
+   was one ternary; with the pontoon carve-out it is a rule, and a rule both
+   sides may need to state belongs here. Returns the BASE — callers still cap
+   it at the quote total, since a deposit larger than the bill is nonsense. */
+function depositBaseFor(s){
+  if(s.unit!=='boat') return RULES.depositTrailer;
+  if(s.hasTrailer) return RULES.depositTrailer;
+  return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;
+}
+
+/* Requests that resolve to a CREDIT rather than a charge. The slipholder
+   discount is worked out from the customer's finished total, so it cannot be
+   shown while they are still building the quote — and it must never be shown
+   to someone who is not a slipholder. It goes on as an open request reading
+   TBD, and staff price it later as a negative.
+
+   Shared because the server enforces the sign against this list: every other
+   request must be positive, so a mistyped charge cannot become a refund. */
+const DISCOUNT_REQUESTS = ['Heritage Harbor Slipholder discount'];
+function isDiscountRequest(label){
+  const t=String(label||'');
+  return DISCOUNT_REQUESTS.some(function(d){ return t===d || t.indexOf(d+' —')===0; });
+}
+function hhoRequest_(s){
+  if(!s.hho) return '';
+  return DISCOUNT_REQUESTS[0] + (s.slipNo ? ' — slip '+s.slipNo : '');
 }
 
 /* What Full service ADDS over Basic, per engine type. The customer is choosing
@@ -218,8 +254,8 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho) add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0);
-    return {lines:L, need, rq:[], flags:computeFlags_(s)};
+    if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
+    return {lines:L, need, rq:hhoRequest_(s)?[hhoRequest_(s)]:[], flags:computeFlags_(s)};
   }
 
   /* ---- boat ---- */
@@ -269,7 +305,9 @@ function computeQuote(s){
   if(insideSel) add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
 
   if((s.storage==='outside'||insideSel) && !T){
-    add('Blocking & washing','Blocking, stands & handling (non-trailer)', PRICES.blocking);
+    const pont=!!s.isPontoon;
+    add('Blocking & washing','Blocking, stands & handling (non-trailer'+(pont?', pontoon':'')+')',
+        pont?PRICES.blockingPontoon:PRICES.blocking);
   }
 
   if(s.wrap){
@@ -292,9 +330,10 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho) add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0);
+  if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
+  if(hhoRequest_(s)) rq.push(hhoRequest_(s));
   return {lines:L, need, rq, flags:computeFlags_(s)};
 }
 
@@ -375,7 +414,8 @@ const DIM_FIELDS = {
 
   const API = { SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
-                fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta };
+                fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
+                depositBaseFor, isDiscountRequest, DISCOUNT_REQUESTS };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

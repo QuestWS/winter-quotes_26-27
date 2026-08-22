@@ -359,20 +359,14 @@
         "amt": 225,
         "calc": "",
         "desc": ""
-      },
-      {
-        "sec": "Misc",
-        "label": "Heritage Harbor Slipholder — slip B-14 — discount applied by Quest",
-        "amt": 0,
-        "calc": "",
-        "desc": ""
       }
     ],
     "need": [],
     "rq": [
       "Bottom paint touch-up",
       "Propeller refurbishment",
-      "Exterior detail"
+      "Exterior detail",
+      "Heritage Harbor Slipholder discount — slip B-14"
     ],
     "total": 1140
   },

@@ -258,6 +258,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   fi
   # The written rules are the only reason a later session knows why this code
   # is shaped the way it is. Losing one costs more than losing a function.
+  # Pumpout and late retrieval are penalties: journalled, never written into the
+  # customer's own selections, and not offered on the quote page at all.
+  if node tools/check-penalties.js > "$TMP/pen.txt" 2>&1; then
+    echo "  OK   gate: penalties journalled, priced and reversible"
+  else
+    echo "  FAIL gate: penalty handling broken"; sed 's/^/       /' "$TMP/pen.txt"; FAIL=1
+  fi
   if node tools/check-docs-coverage.js > "$TMP/docs.txt" 2>&1; then
     echo "  OK   gate: every documented rule still written down somewhere"
     grep -E 'CLAUDE.md is|entry points' "$TMP/docs.txt" | sed 's/^ */       /'

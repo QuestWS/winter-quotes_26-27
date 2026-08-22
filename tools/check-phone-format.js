@@ -89,8 +89,12 @@ console.log('=== every backend render site runs it ===');
 console.log('=== the quote page uses the shared one, not its own ===');
 {
   const page = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  if (!/fmtPhone,\s*fmtPhonePartial\}\s*=\s*QuestPricing/.test(page.replace(/\s+/g, ' '))) {
-    fail('index.html does not take fmtPhone from the shared engine');
+  const flat = page.replace(/\s+/g, ' ');
+  const destructure = (flat.match(/const \{[^}]*\} = QuestPricing/) || [''])[0];
+  for (const name of ['fmtPhone', 'fmtPhonePartial']) {
+    if (!new RegExp('\\b' + name + '\\b').test(destructure)) {
+      fail('index.html does not take ' + name + ' from the shared engine');
+    }
   }
   if (/function\s+fmtPhone\s*\(/.test(page)) {
     fail('index.html defines its own fmtPhone — there must be exactly one');

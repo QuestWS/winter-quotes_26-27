@@ -230,6 +230,21 @@ const useEngine = process.argv.includes('--engine');
  * legacy code is deleted from index.html. Any intentional price change must
  * regenerate the baseline in the same commit, which makes the money move
  * visible in the diff instead of silent. */
+/* Regenerating the baseline is a deliberate act: it says "this movement is
+   intended". There was no supported way to do it, which meant the only options
+   were hand-editing the JSON or leaving the gate red — both worse. --json
+   cannot serve here because it runs the old inline-engine path that no longer
+   exists. */
+if (process.argv.includes('--write-baseline')) {
+  const basePath = path.join(ROOT, 'tools', 'baseline', 'pricing-baseline.json');
+  const actual = FIXTURES.map(runEngine).map(r => { const c = Object.assign({}, r); delete c.flags; return c; });
+  fs.writeFileSync(basePath, JSON.stringify(actual, null, 2) + '\n');
+  console.log('wrote ' + actual.length + ' fixtures to ' + path.relative(ROOT, basePath) +
+    ' — grand total $' + actual.reduce((x, r) => x + r.total, 0).toFixed(2));
+  console.log('Say in the commit message WHY each total or label moved.');
+  process.exit(0);
+}
+
 if (process.argv.includes('--check-baseline')) {
   const basePath = path.join(ROOT, 'tools', 'baseline', 'pricing-baseline.json');
   const expected = JSON.parse(fs.readFileSync(basePath, 'utf8'));

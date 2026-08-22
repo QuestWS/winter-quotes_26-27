@@ -26,7 +26,7 @@
       },
       {
         "sec": "Storage",
-        "label": "Inside storage — on trailer",
+        "label": "Inside (non-heated) storage — on trailer",
         "amt": 1269.6,
         "calc": "30×8 sqft × $5.29",
         "desc": ""
@@ -84,7 +84,7 @@
       },
       {
         "sec": "Storage",
-        "label": "Inside storage — non-trailer",
+        "label": "Inside (non-heated) storage — non-trailer",
         "amt": 1851.7759999999998,
         "calc": "32×9.2 sqft × $6.29",
         "desc": ""

@@ -229,7 +229,11 @@ const QUOTE_ITEMS = [
   ['extDetail','Exterior detail'],
   ['washWax','Wash & wax'],
   ['intDetail','Interior detail'],
-  ['intWipe','Interior wipe-down']
+  ['intWipe','Interior wipe-down'],
+  /* Quoted rather than priced for now. If it settles at a set cost, move it
+     into PRICES and add a normal line — the state key stays the same, so
+     quotes already carrying the request keep working. */
+  ['impeller','Impeller change']
 ];
 
 /* Money formatter for the `calc` recipe strings. Deliberately NOT
@@ -237,6 +241,42 @@ const QUOTE_ITEMS = [
    browser's, and calc strings are compared byte-for-byte by the drift alarm.
    Verified identical to the page's old formatter across every rate in use. */
 function fmtMoney_(n){ return '$'+Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+
+/* Feet and inches, everywhere a dimension is shown. Nobody measures a boat in
+   decimal feet — they read 30 ft 6 in off a tape — so the page collects it that
+   way and every downstream surface prints it that way. The engine still
+   CALCULATES in decimal feet, because that is what the per-foot and per-sqft
+   rates multiply; this is a display and input concern only.
+
+   Rounds to the nearest inch, and rolls 12" up to the next foot so nothing
+   ever reads 29' 12". Anything unparseable comes back as-is rather than
+   becoming 0' 0" — a dimension we cannot read must look wrong, not look like
+   a very small boat. */
+function fmtFtIn(v){
+  if(v===''||v===null||v===undefined) return '';
+  const n=Number(v);
+  if(!isFinite(n)) return String(v);
+  const neg=n<0, a=Math.abs(n);
+  let ft=Math.floor(a), inch=Math.round((a-ft)*12);
+  if(inch===12){ ft+=1; inch=0; }
+  return (neg?'-':'')+ft+"'"+(inch?' '+inch+'"':'');
+}
+
+/* The inverse, for the page's two-box input. Kept beside fmtFtIn so the pair
+   can never disagree about what a foot is. */
+function ftInToDecimal(ft,inch){
+  const f=Number(ft)||0, i=Number(inch)||0;
+  const v=f+(i/12);
+  return v ? Math.round(v*1000)/1000 : 0;
+}
+
+/* What Full service ADDS over Basic, per engine type. The customer is choosing
+   an upgrade, so the page shows the difference; the quote still carries the
+   full price, because that is what they are charged. */
+function fullDelta(engineId){
+  const b=PRICES.basic[engineId], f=PRICES.full[engineId];
+  return (b===undefined||f===undefined) ? null : Math.round((f-b)*100)/100;
+}
 
 /* Shrinkwrap sub-calc. Pure: reads only the state passed in.
    Returns {label, amt, type} and, for the per-foot tier, a `split` of the
@@ -346,7 +386,7 @@ function computeQuote(s){
   }
   if(s.storage==='inside'||s.storage==='insidePrem'){
     const prem=s.storage==='insidePrem';
-    const name=(prem?'Premium inside':'Inside')+' storage'+(prem?' (pending Quest approval)':'');
+    const name=(prem?'Premium inside':'Inside (non-heated)')+' storage'+(prem?' (pending Quest approval)':'');
     if(T){
       const r=prem?PRICES.insidePremT:PRICES.insideT;
       if(lwt&&beam) add('Storage',name+' — on trailer', r*lwt*beam, `${lwt}×${beam} sqft × $${r}`); else need.push('LWT & beam for on-trailer inside storage');
@@ -414,13 +454,13 @@ function storageTabFor(s){
    to be able to rewrite this string exactly the way the page first wrote it. */
 function dimsString(s){
   if(s.unit==='boat'){
-    return [ s.loa?('LOA '+s.loa+"'"):'', s.beam?('B '+s.beam+"'"):'',
-             (s.hasTrailer&&s.lwt)?('LWT '+s.lwt+"'"):'',
+    return [ s.loa?('LOA '+fmtFtIn(s.loa)):'', s.beam?('B '+fmtFtIn(s.beam)):'',
+             (s.hasTrailer&&s.lwt)?('LWT '+fmtFtIn(s.lwt)):'',
              s.hasTrailer?'trailer':'no trailer' ].filter(Boolean).join(' · ');
   }
   if(s.unit==='jetski'){
-    return [ s.skiLen?('stored L '+s.skiLen+"'"):'',
-             s.skiWid?('stored W '+s.skiWid+"'"):'' ].filter(Boolean).join(' · ');
+    return [ s.skiLen?('stored L '+fmtFtIn(s.skiLen)):'',
+             s.skiWid?('stored W '+fmtFtIn(s.skiWid)):'' ].filter(Boolean).join(' · ');
   }
   if(s.unit==='golf') return s.hhoAddr?('HHO: '+s.hhoAddr):'';
   return '';

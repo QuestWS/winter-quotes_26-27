@@ -574,6 +574,20 @@ aside.ticket{position:sticky;top:18px}
   </div>
 </div>
 
+<!-- Heritage Harbor slip number modal -->
+<div class="modal-back" id="hhoModal" role="dialog" aria-modal="true" aria-labelledby="hhoModalTitle">
+  <div class="modal">
+    <h3 id="hhoModalTitle">Slip number needed</h3>
+    <p>The Heritage Harbor Slipholder discount is worked out from your finished total by Quest staff. Enter your slip number to add it — we can't apply it without one.</p>
+    <label class="f" for="hhoModalSlip">Slip number</label>
+    <input type="text" id="hhoModalSlip" placeholder="e.g. B-14" style="width:100%;margin:6px 0 18px" autocomplete="off">
+    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn ghost" type="button" onclick="cancelHhoModal()">Cancel</button>
+      <button class="btn primary" type="button" id="hhoModalOk" onclick="confirmHhoModal()" disabled>Add the discount</button>
+    </div>
+  </div>
+</div>
+
 <!-- Shared pricing engine: ONE rule set, also embedded in the Apps Script
      backend. Must load before the page script below. -->
 <script src="pricing-engine.js"></script>
@@ -755,6 +769,37 @@ function syncStartUI(){
 }
 function openSkiModal(){ $('#skiModal').classList.add('open'); }
 function closeSkiModal(){ $('#skiModal').classList.remove('open'); }
+
+/* Heritage Harbor only ever applies to a slipholder, and staff can't work out
+   a discount without knowing which slip — so checking the box does not commit
+   the selection by itself. It opens this modal, which is the only path that
+   sets S.hho=true: cancel, backdrop, Escape, or Confirm with nothing typed all
+   leave the checkbox exactly where it started, unchecked. */
+function uncheckHho_(){
+  S.hho=false;
+  $$('input[data-chk="hho"]').forEach(c=>{c.checked=false;});
+}
+function openHhoModal(){
+  const inp=$('#hhoModalSlip');
+  inp.value=S.slipNo||'';
+  $('#hhoModalOk').disabled=!inp.value.trim();
+  $('#hhoModal').classList.add('open');
+  setTimeout(()=>inp.focus(),0);
+}
+function closeHhoModal(){ $('#hhoModal').classList.remove('open'); }
+function confirmHhoModal(){
+  const v=$('#hhoModalSlip').value.trim();
+  if(!v) return; // the button is disabled for this, but never trust only that
+  S.hho=true; S.slipNo=v;
+  $$('input[data-chk="hho"]').forEach(c=>{c.checked=true;});
+  closeHhoModal();
+  refresh();
+}
+function cancelHhoModal(){
+  uncheckHho_();
+  closeHhoModal();
+  refresh();
+}
 
 /* ================= BUILD DYNAMIC UI ================= */
 function buildEngines(){
@@ -1298,8 +1343,8 @@ function refresh(){
   const hhoOk = t.total >= RULES.hhoMinTotal;
   document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
   if(!hhoOk && S.hho){
-    S.hho=false;
-    document.querySelectorAll('[data-chk="hho"]').forEach(c=>{ c.checked=false; });
+    uncheckHho_();
+    closeHhoModal();
   }
   syncHhoUI();
   $('#tDepRow').style.display = t.dueToday ? 'none' : '';
@@ -1545,8 +1590,16 @@ function init(){
       $('#powerwashOpt').classList.remove('disabled');
     }
     if(k==='waterHead') syncHeadsUI();
+    if(k==='hho' && e.target.checked){ openHhoModal(); return; }
     refresh();
   }));
+
+  /* Enter confirms, matching the button; Escape/backdrop cancel, matching
+     every other way out of this modal. */
+  $('#hhoModalSlip').addEventListener('input',e=>{ $('#hhoModalOk').disabled=!e.target.value.trim(); });
+  $('#hhoModalSlip').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); if(!$('#hhoModalOk').disabled) confirmHhoModal(); } });
+  $('#hhoModal').addEventListener('click',e=>{ if(e.target.id==='hhoModal') cancelHhoModal(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#hhoModal').classList.contains('open')) cancelHhoModal(); });
 
   $$('.qty').forEach(q=>{
     const key=q.dataset.qty, inp=q.querySelector('input'), [dec,inc]=q.querySelectorAll('button');

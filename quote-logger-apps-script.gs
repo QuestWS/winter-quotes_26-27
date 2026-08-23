@@ -288,6 +288,23 @@ function depositBaseFor(s){
   return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;
 }
 
+/* The total length-with-trailer, from the boat's own length and how far the
+   trailer adds to it. Customers are asked for the overhang, not the total —
+   guessing at a whole rig's length badly is easy, but "how far does the
+   trailer stick out past your boat" is something most owners can eyeball or
+   measure directly. This is the one formula that turns that into the LWT the
+   rest of the system has always priced from, so page and server can never
+   compute two different totals from the same overhang. */
+function lwtFromOverhang(loa, overhang){
+  const l=Number(loa)||0, o=Number(overhang)||0;
+  /* Both pieces or neither — a boat length with no overhang yet typed must
+     stay 0 (not-yet-priced), the same way a bare LWT box used to. Otherwise
+     an unanswered overhang box would silently price as "trailer adds
+     nothing," never asking the question at all. */
+  if(!l || !o) return 0;
+  return Math.round((l+o)*1000)/1000;
+}
+
 /* What Full service ADDS over Basic, per engine type. The customer is choosing
    an upgrade, so the page shows the difference; the quote still carries the
    full price, because that is what they are charged. */

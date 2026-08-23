@@ -314,8 +314,8 @@ aside.ticket{position:sticky;top:18px}
           <div class="ftin" data-ftin="loa"><input type="number" min="0" step="1" inputmode="numeric" placeholder="22" aria-label="LOA feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="LOA inches"><span>in</span></div></div>
         <div><label class="f">Beam — B</label>
           <div class="ftin" data-ftin="beam"><input type="number" min="0" step="1" inputmode="numeric" placeholder="8" aria-label="Beam feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="6" aria-label="Beam inches"><span>in</span></div></div>
-        <div id="lwtField"><label class="f">Length with trailer — LWT</label>
-          <div class="ftin" data-ftin="lwt"><input type="number" min="0" step="1" inputmode="numeric" placeholder="incl. tongue" aria-label="LWT feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="LWT inches"><span>in</span></div></div>
+        <div id="trailerOverhangField"><label class="f">Trailer overhang <small>how far it sticks out past the boat</small></label>
+          <div class="ftin" data-ftin="trailerOverhang"><input type="number" min="0" step="1" inputmode="numeric" placeholder="3" aria-label="Trailer overhang feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="Trailer overhang inches"><span>in</span></div></div>
       </div>
       <p class="note"><b>LOA includes swim platform, drives, outboards, etc.</b> Most boat manufacturers do not include these in their listed LOA. We reserve the right to remeasure and adjust the bill accordingly.</p>
     </fieldset>
@@ -630,7 +630,7 @@ if (typeof QuestPricing === 'undefined') {
    call site is unchanged. */
 const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
        fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
-       depositBaseFor} = QuestPricing;
+       depositBaseFor, lwtFromOverhang} = QuestPricing;
 
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
@@ -653,7 +653,7 @@ const STEP_LABELS = {
 const S = {
   unit:'boat',
   firstName:'', lastName:'', phone:'', email:'', ymm:'', notes:'',
-  loa:0, beam:0, lwt:0,
+  loa:0, beam:0, lwt:0, trailerOverhang:0,
   skiLen:0, skiWid:0, skiDetail:0,
   hasTrailer:false,
   engines:{ inboard:{qty:0,level:'basic'}, io:{qty:0,level:'basic'}, outboard:{qty:0,level:'basic'}, pwc:{qty:1,level:'basic'} },
@@ -730,7 +730,11 @@ function setFtIn(key,val){
   if(inch===12){ ft+=1; inch=0; }
   f.value=ft; i.value=inch||'';
 }
-function syncFtInAll(){ ['loa','beam','lwt','skiLen','skiWid'].forEach(k=>setFtIn(k,S[k])); }
+function syncFtInAll(){ ['loa','beam','trailerOverhang','skiLen','skiWid'].forEach(k=>setFtIn(k,S[k])); }
+/* The engine prices off S.lwt, but the customer only ever types the overhang —
+   this is the one place that turns "loa + overhang" into the LWT the rest of
+   the system has always run on, so page and server can't drift apart on it. */
+function syncLwt_(){ S.lwt=lwtFromOverhang(S.loa,S.trailerOverhang); }
 function syncPontoonUI(){
   $$('#pontoonFs [data-pontoon]').forEach(b=>b.classList.toggle('on',(b.dataset.pontoon==='yes')===!!S.isPontoon));
 }
@@ -748,8 +752,8 @@ function syncStartUI(){
   $('#dimsSki').style.display=u==='jetski'?'block':'none';
   // trailer radios reflect state (jetski forces yes)
   $$('input[name=hasTrailer]').forEach(r=>r.checked=(r.value==='yes')===S.hasTrailer);
-  $('#lwtField').style.display=(u==='boat'&&S.hasTrailer)?'block':'none';
-  if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.lwt=0;setFtIn('lwt',0);} }
+  $('#trailerOverhangField').style.display=(u==='boat'&&S.hasTrailer)?'block':'none';
+  if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.trailerOverhang=0;S.lwt=0;setFtIn('trailerOverhang',0);} }
   // flat info card
   const fc=$('#flatInfo');
   if(u==='golf'){
@@ -1073,6 +1077,14 @@ function loadQuote(){
 }
 function hydrateFromState(state, qn){
   Object.assign(S, state);
+  /* Quotes saved before the overhang redesign carry a total LWT with no
+     trailerOverhang. Back-fill the overhang so the box shows something
+     sensible, then recompute LWT the same way a live edit would — same
+     formula either way, so the priced total does not move. */
+  if(S.hasTrailer && !S.trailerOverhang && S.lwt && S.loa){
+    S.trailerOverhang=Math.max(0,Math.round((S.lwt-S.loa)*1000)/1000);
+  }
+  if(S.hasTrailer) S.lwt=lwtFromOverhang(S.loa,S.trailerOverhang);
   /* Quotes saved before phones were formatted carry bare digits. Reloading is
      the moment we can put that right, and re-saving then carries the tidy
      value back to the sheet. */
@@ -1570,8 +1582,6 @@ function init(){
   $$('input[data-k],textarea[data-k]').forEach(el=>el.addEventListener('input',e=>{
     const k=e.target.dataset.k;
     S[k]=e.target.type==='number'?(parseFloat(e.target.value)||0):e.target.value;
-    if(['loa','beam','lwt'].includes(k)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
-    if(k==='beam'&&S.unit==='boat'){ buildStorage(); syncStorageUI(); }
     refresh();
   }));
 
@@ -1632,7 +1642,8 @@ function init(){
     const key=wrap.dataset.ftin, [f,i]=wrap.querySelectorAll('input');
     const push=()=>{
       S[key]=ftInToDecimal(f.value,i.value);
-      if(['loa','beam','lwt'].includes(key)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
+      if(key==='loa'||key==='trailerOverhang') syncLwt_();
+      if(['loa','beam','trailerOverhang'].includes(key)&&S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
       if(key==='beam'&&S.unit==='boat'){ buildStorage(); syncStorageUI(); }
       refresh();
     };

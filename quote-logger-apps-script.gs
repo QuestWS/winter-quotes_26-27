@@ -288,24 +288,6 @@ function depositBaseFor(s){
   return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;
 }
 
-/* Requests that resolve to a CREDIT rather than a charge. The slipholder
-   discount is worked out from the customer's finished total, so it cannot be
-   shown while they are still building the quote — and it must never be shown
-   to someone who is not a slipholder. It goes on as an open request reading
-   TBD, and staff price it later as a negative.
-
-   Shared because the server enforces the sign against this list: every other
-   request must be positive, so a mistyped charge cannot become a refund. */
-const DISCOUNT_REQUESTS = ['Heritage Harbor Slipholder discount'];
-function isDiscountRequest(label){
-  const t=String(label||'');
-  return DISCOUNT_REQUESTS.some(function(d){ return t===d || t.indexOf(d+' —')===0; });
-}
-function hhoRequest_(s){
-  if(!s.hho) return '';
-  return DISCOUNT_REQUESTS[0] + (s.slipNo ? ' — slip '+s.slipNo : '');
-}
-
 /* What Full service ADDS over Basic, per engine type. The customer is choosing
    an upgrade, so the page shows the difference; the quote still carries the
    full price, because that is what they are charged. */
@@ -366,7 +348,10 @@ function computeFlags_(s){
 function computeQuote(s){
   const L=[], loa=s.loa||0, beam=s.beam||0, lwt=s.lwt||0, T=s.hasTrailer, u=s.unit;
   const need=[];
-  const add=(sec,label,amt,calc,desc)=>L.push({sec,label,amt,calc,desc});
+  /* tbd: this line prices at 0 today but is not free — the customer's own
+     total decides it, and staff fill it in afterward. The ticket renderer
+     prints "TBD" instead of "incl." when it sees this flag. */
+  const add=(sec,label,amt,calc,desc,tbd)=>L.push({sec,label,amt,calc,desc,tbd});
 
   /* ---- flat-rate units ---- */
   if(u==='golf'){
@@ -393,8 +378,11 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-    return {lines:L, need, rq:hhoRequest_(s)?[hhoRequest_(s)]:[], flags:computeFlags_(s)};
+    if(s.hho){
+      if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
+      add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
+    }
+    return {lines:L, need, rq:[], flags:computeFlags_(s)};
   }
 
   /* ---- boat ---- */
@@ -469,10 +457,12 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho && !s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
+  if(s.hho){
+    if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
+    add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
+  }
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
-  if(hhoRequest_(s)) rq.push(hhoRequest_(s));
   return {lines:L, need, rq, flags:computeFlags_(s)};
 }
 
@@ -1215,10 +1205,17 @@ function serverPrice_(d) {
   /* Normalise to the exact shape the page posts, so a stored payload does not
      change shape depending on which side computed it. */
   const lines = r.lines.map(function (l) {
-    return {
+    const out = {
       sec: l.sec, label: l.label, calc: l.calc || '',
       amt: Number(l.amt || 0), desc: l.desc || ''
     };
+    /* tbd marks a line that prices at 0 today but is not actually free — the
+       Heritage Harbor Slipholder discount, worked out from the customer's own
+       total and priced later by staff. Drop it here and the console and PDF
+       print "incl." for a discount nobody has priced yet, which reads as
+       "this is free" rather than "ask Quest." */
+    if (l.tbd) out.tbd = true;
+    return out;
   });
   return { ok: true, lines: lines, rq: r.rq || [], need: r.need || [], flags: r.flags || [], state: st };
 }
@@ -1507,20 +1504,11 @@ function priceQuoteRequest() {
   const amtResp = ui.prompt('Price: ' + item, 'Enter the price for this service.', ui.ButtonSet.OK_CANCEL);
   if (amtResp.getSelectedButton() !== ui.Button.OK) return;
   const amt = Number(String(amtResp.getResponseText()).replace(/[$,\s]/g, ''));
-  /* The slipholder discount is the one request that resolves to a credit, so
-     it is the one that may be negative — and it MUST be, because a positive
-     "discount" would silently bill the customer for it. Every other request
-     must be positive, so a mistyped charge cannot become a refund. The list
-     lives in the engine, shared, so the console and the sheet menu agree. */
-  const discM = isDiscountRequest(item);
-  if (!isFinite(amt) || amt === 0) { ui.alert('Enter an amount.'); return; }
-  if (discM && amt > 0) { ui.alert('A slipholder discount is a credit — enter it as a negative, e.g. -150'); return; }
-  if (!discM && amt < 0) { ui.alert('Enter a positive amount, e.g. 225. Only the slipholder discount goes on as a negative.'); return; }
-  const secM = discM ? 'Adjustments' : 'Additional services';
+  if (!isFinite(amt) || amt <= 0) { ui.alert('Enter a positive amount, e.g. 225'); return; }
 
-  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: secM });
+  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: 'Additional services' });
   d.lines = d.lines || [];
-  d.lines.push({ sec: secM, label: item, calc: '', amt: amt, desc: '' });
+  d.lines.push({ sec: 'Additional services', label: item, calc: '', amt: amt, desc: '' });
   d.quotesRequested = rqs.filter(function (x, i2) { return i2 !== idx; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
@@ -3503,22 +3491,13 @@ function adminPriceRequest(token, qn, rqLabel, amt, note) {
   const rqs = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
   const item = String(rqLabel || '').trim();
   if (rqs.indexOf(item) === -1) return { ok: 0, error: 'That request is no longer open.' };
-  /* The slipholder discount is the one request that resolves to a credit, so
-     it is the one that may be negative — and it MUST be, because a positive
-     "discount" would silently bill the customer for it. Every other request
-     must be positive, so a mistyped charge cannot become a refund. The list
-     lives in the engine, shared, so the console and the sheet menu agree. */
   const a = Number(String(amt).replace(/[$,\s]/g, ''));
-  const disc = isDiscountRequest(item);
-  if (!isFinite(a) || a === 0) return { ok: 0, error: 'Enter an amount.' };
-  if (disc && a > 0) return { ok: 0, error: 'A slipholder discount is a credit — enter it as a negative, e.g. -150.' };
-  if (!disc && a < 0) return { ok: 0, error: 'Enter a positive price, e.g. 225. Only the slipholder discount goes on as a negative.' };
-  const sec = disc ? 'Adjustments' : 'Additional services';
+  if (!isFinite(a) || a <= 0) return { ok: 0, error: 'Enter a positive price, e.g. 225.' };
   const nt = String(note || '').trim();
   const finalLabel = nt ? item + ' — ' + nt : item;
-  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: sec });
+  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: 'Additional services' });
   d.lines = d.lines || [];
-  d.lines.push({ sec: sec, label: finalLabel, calc: '', amt: a, desc: '' });
+  d.lines.push({ sec: 'Additional services', label: finalLabel, calc: '', amt: a, desc: '' });
   d.quotesRequested = rqs.filter(function (x) { return x !== item; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
@@ -5185,7 +5164,7 @@ function quoteHtml_(d) {
     body += '<tr><td>' + esc_(li.label) +
       (li.calc ? '<br><span class="calc">' + esc_(li.calc) + '</span>' : '') +
       (li.desc ? '<br><span class="calc" style="font-style:italic">' + esc_(li.desc) + '</span>' : '') +
-      '</td><td class="amt">' + (li.amt ? usd_(li.amt) : 'incl.') + '</td></tr>';
+      '</td><td class="amt">' + (li.amt ? usd_(li.amt) : (li.tbd ? 'TBD' : 'incl.')) + '</td></tr>';
   });
   const rq = d.quotesRequested
     ? '<tr><td colspan="2" class="sec">Quotes requested (pricing to follow)</td></tr>' +

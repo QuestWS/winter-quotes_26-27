@@ -133,10 +133,26 @@ input[type=number]{font-family:var(--mono)}
 /* A sub-row belongs to the option above it — indented and rule-joined so the
    relationship is visible rather than remembered. */
 .sub-row{margin-left:22px;padding-left:12px;border-left:2px solid var(--line)}
-/* Feet and inches. Two boxes reading as one field. */
-.ftin{display:flex;align-items:center;gap:6px}
-.ftin input{width:100%;min-width:0;flex:1 1 0;text-align:right}
+/* Feet and inches. Two boxes reading as one field — sized for what they
+   actually hold (inches never exceeds 11, feet rarely exceeds two digits),
+   not stretched to fill the row. */
+.ftin{display:inline-flex;align-items:center;gap:6px}
+.ftin input{width:2.6em;flex:0 0 auto;text-align:center}
 .ftin span{color:var(--muted);font-size:13px;flex:0 0 auto}
+/* The pontoon sub-toggle: small, indented under "No trailer" rather than a
+   full option box of its own. */
+.subToggle{display:flex;align-items:center;gap:8px;margin:8px 0 2px 22px;padding-left:12px;border-left:2px solid var(--line)}
+.subToggle-label{font-size:13px;color:var(--muted)}
+.subToggle .pill{flex:0 0 auto;padding:5px 12px;font-size:13px;font-weight:600;border:1.5px solid var(--line);
+  border-radius:999px;background:#fff;color:var(--navy);cursor:pointer}
+.subToggle .pill.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+/* A boxed option with no checkbox — same look as .opt, for a control (like
+   ballast) that is a stepper rather than a yes/no. */
+.optbox{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1.5px solid var(--line);
+  border-radius:9px;padding:13px 15px;margin-bottom:10px;background:#fff}
+.optbox .t{font-weight:700;color:var(--navy)}
+.optbox .d{font-size:13.5px;color:var(--muted)}
+.optbox .p{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:600;white-space:nowrap}
 /* A charge the customer cannot choose — applied when it is earned. Must not
    look like an option, or somebody will hunt for the checkbox. Deliberately
    NOT .warnbox: that one already exists for error states (an unsigned
@@ -283,14 +299,13 @@ aside.ticket{position:sticky;top:18px}
 
     <fieldset id="trailerFs">
       <legend>Trailer</legend>
-      <label class="opt"><input type="radio" name="hasTrailer" value="yes"><div><div class="t">I have a trailer</div><div class="d">On-trailer storage rates apply · $<span data-cfg="depositTrailer"></span> storage deposit</div></div></label>
-      <label class="opt"><input type="radio" name="hasTrailer" value="no" checked><div><div class="t">No trailer</div><div class="d">Boat is blocked on stands for storage · $<span data-cfg="depositNoTrailer"></span> storage deposit</div></div></label>
-    </fieldset>
-
-    <fieldset id="pontoonFs" style="display:none">
-      <legend>Hull type</legend>
-      <label class="opt"><input type="radio" name="isPontoon" value="no" checked><div><div class="t">Not a pontoon</div><div class="d">Blocked on stands · $<span data-cfg="depositNoTrailer"></span> storage deposit</div></div></label>
-      <label class="opt"><input type="radio" name="isPontoon" value="yes"><div><div class="t">Pontoon</div><div class="d">Handled differently on the yard · $<span data-cfg="depositNoTrailerPontoon"></span> storage deposit</div></div></label>
+      <label class="opt"><input type="radio" name="hasTrailer" value="yes"><div><div class="t">I have a trailer</div><div class="d">On-trailer storage rates apply</div></div></label>
+      <label class="opt"><input type="radio" name="hasTrailer" value="no" checked><div><div class="t">No trailer</div><div class="d">Boat is blocked on stands for storage</div></div></label>
+      <div class="subToggle" id="pontoonFs" style="display:none">
+        <span class="subToggle-label">Is it a pontoon?</span>
+        <button type="button" class="pill" data-pontoon="no">No</button>
+        <button type="button" class="pill" data-pontoon="yes">Yes, pontoon</button>
+      </div>
     </fieldset>
 
     <fieldset id="dimsBoat">
@@ -363,14 +378,13 @@ aside.ticket{position:sticky;top:18px}
     <p class="lead">Fresh water, heads, ballast, A/C, generators — anything that holds water needs protecting too. Skip this page if none apply.</p>
     <fieldset>
       <legend>Water systems winterization</legend>
-      <label class="opt"><input type="checkbox" data-chk="ballastOn"><div><div class="t">Ballast system (drain only)</div><div class="d">Tick and set how many tanks</div></div><span class="p" data-price="ballast" data-suffix=" / tank"></span></label>
-      <div class="qtyrow sub-row" id="ballastRow"><div><div class="t">Ballast tanks</div></div>
+      <div class="optbox" id="ballastRow"><div><div class="t">Ballast system (drain only)</div><div class="d">Set how many tanks to add it to your quote</div><div class="p" data-price="ballast" data-suffix=" / tank"></div></div>
         <div class="qty" data-qty="ballast"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Ballast tanks"><button type="button" aria-label="increase">+</button></div></div>
       <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="waterCold"><div><div class="t">Water system — cold only</div><div class="d">Fresh water system, no head</div></div><span class="p" data-price="waterCold"></span></label>
       <label class="opt"><input type="checkbox" data-chk="waterHead"><div><div class="t">Water system including 1 head</div><div class="d">Fresh water system plus one head</div></div><span class="p" data-price="waterHead"></span></label>
       <div class="qtyrow sub-row" id="addlHeadsRow"><div><div class="t">Additional heads</div><div class="sub">Beyond the one included above</div><div class="p" data-price="addlHeads" data-suffix=" each"></div></div>
         <div class="qty" data-qty="addlHeads"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Additional heads"><button type="button" aria-label="increase">+</button></div></div>
-      <div class="penaltybox" style="margin-top:10px"><b>Pumpout service charge — <span data-price="pumpout"></span></b><br>If the holding tank isn't emptied before drop-off, this is added to your invoice. Empty it first and it never applies.</div>
+      <div class="penaltybox" style="margin-top:10px"><b>Pumpout service charge — <span data-price="pumpout"></span></b><br>Please make sure your holding tank is empty before storage.</div>
       <label class="opt"><input type="checkbox" data-chk="ac"><div><div class="t">Air conditioning</div><div class="d">Up to 2 units</div></div><span class="p" data-price="ac"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genBasic"><div><div class="t">Generator — basic winterization</div></div><span class="p" data-price="genBasic"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genFull"><div><div class="t">Generator — including oil &amp; filter change</div></div><span class="p" data-price="genFull"></span></label>
@@ -395,12 +409,6 @@ aside.ticket{position:sticky;top:18px}
       <p class="note">Retrieval date requests before <span data-cfg="storageStartShort"></span> or after <span data-cfg="payByShort"></span> are subject to approval and/or surcharge. Canvas removal at shop rates.</p>
     </fieldset>
 
-    <fieldset>
-      <legend>Timing</legend>
-      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
-      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Your discount is worked out from your finished total and applied by Quest staff</div></div><span class="p">TBD</span></label>
-      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
-    </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn primary" onclick="goNext()">Next: Shrinkwrap &amp; extras →</button></div>
   </section>
 
@@ -473,12 +481,6 @@ aside.ticket{position:sticky;top:18px}
       <div id="skiStorageOpts"></div>
       <p class="note" id="skiStorageNote"></p>
     </fieldset>
-    <fieldset>
-      <legend>Timing</legend>
-      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
-      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Your discount is worked out from your finished total and applied by Quest staff</div></div><span class="p">TBD</span></label>
-      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
-    </fieldset>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
   </section>
 
@@ -486,6 +488,13 @@ aside.ticket{position:sticky;top:18px}
   <section class="panel" data-step="review">
     <h2>Your winter quote</h2>
     <p class="lead">Everything you picked, itemized on the ticket. Look it over, add any notes, then continue to sign your agreement and pay online.</p>
+    <fieldset class="timingOnly" style="display:none">
+      <legend>Timing</legend>
+      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
+      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
+    </fieldset>
+
     <div class="golfOnly" style="display:none;margin-bottom:12px"><label class="f" for="hhoAddr">Heritage Harbor address for pickup &amp; delivery (street &amp; number only)</label><input type="text" id="hhoAddr" data-k="hhoAddr" placeholder="e.g. 123 Anchor Ln" style="max-width:320px"></div>
     <div class="keysOnly" style="display:none;margin-bottom:12px"><label class="f" for="keyLoc">Where will the keys be?</label><input type="text" id="keyLoc" data-k="keyLoc" placeholder="e.g. in the glove box / at the front desk / on the seat" style="max-width:380px">
       <p class="note" id="keysNote" style="margin-top:6px"></p></div>
@@ -640,7 +649,7 @@ const S = {
   hasTrailer:false,
   engines:{ inboard:{qty:0,level:'basic'}, io:{qty:0,level:'basic'}, outboard:{qty:0,level:'basic'}, pwc:{qty:1,level:'basic'} },
   dtTrans:0, dtTransom:0,
-  ballast:0, ballastOn:false, addlHeads:0, isPontoon:false, impeller:false,
+  ballast:0, addlHeads:0, isPontoon:false, impeller:false,
   waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
   storage:'none', retrieval:'none',
   wrap:false, inWater:false,
@@ -713,6 +722,9 @@ function setFtIn(key,val){
   f.value=ft; i.value=inch||'';
 }
 function syncFtInAll(){ ['loa','beam','lwt','skiLen','skiWid'].forEach(k=>setFtIn(k,S[k])); }
+function syncPontoonUI(){
+  $$('#pontoonFs [data-pontoon]').forEach(b=>b.classList.toggle('on',(b.dataset.pontoon==='yes')===!!S.isPontoon));
+}
 
 function syncStartUI(){
   const u=S.unit;
@@ -720,9 +732,9 @@ function syncStartUI(){
   /* Hull type only matters for a boat coming off its trailer: it decides how
      the boat is blocked and what deposit is owed. */
   const askPontoon=(u==='boat'&&!S.hasTrailer);
-  $('#pontoonFs').style.display=askPontoon?'block':'none';
+  $('#pontoonFs').style.display=askPontoon?'flex':'none';
   if(!askPontoon && S.isPontoon) S.isPontoon=false;
-  $$('input[name=isPontoon]').forEach(r=>r.checked=((r.value==='yes')===!!S.isPontoon));
+  syncPontoonUI();
   $('#dimsBoat').style.display=u==='boat'?'block':'none';
   $('#dimsSki').style.display=u==='jetski'?'block':'none';
   // trailer radios reflect state (jetski forces yes)
@@ -845,18 +857,6 @@ function syncWrapUI(){
 function syncStorageUI(){
   $('#retrievalFs').style.display=(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none'))?'block':'none';
   if(S.unit==='boat'&&(S.storage==='outside'||S.storage==='none')) buildRetrieval();
-}
-/* Ballast is a tick plus a count, and they must agree: counting up from zero
-   ticks the box, and un-ticking clears the count so the line leaves the quote.
-   The engine only ever looks at the count — the tick is here to make the row
-   read like every other option beside it. */
-function syncBallastUI(){
-  const row=$('#ballastRow'), q=row.querySelector('.qty');
-  const box=document.querySelector('input[data-chk="ballastOn"]');
-  if(box) box.checked=!!S.ballastOn;
-  row.classList.toggle('disabled',!S.ballastOn);
-  q.classList.toggle('disabled',!S.ballastOn);
-  if(!S.ballastOn && S.ballast>0){ S.ballast=0; q.querySelector('input').value=0; }
 }
 function syncHeadsUI(){
   const row=$('#addlHeadsRow'), q=row.querySelector('.qty');
@@ -1038,16 +1038,15 @@ function hydrateFromState(state, qn){
      value back to the sheet. */
   S.phone=fmtPhone(S.phone||'');
   S.quoteNo=qn; // updates land on the same spreadsheet row / PDF
-  S.ballastOn = (S.ballast||0) > 0;
   setUnit(S.unit); // rebuilds units, start UI, storage, nav
   // text inputs
   $$('input[data-k],textarea[data-k]').forEach(el=>{ const k=el.dataset.k; if(k in S) el.value=S[k]||''; });
   // checkboxes
   $$('input[data-chk]').forEach(el=>{ const k=el.dataset.chk; el.checked=!!S[k]; });
-  /* The dimension boxes are not data-k inputs any more, and the hull-type
-     radios are not checkboxes — both need repainting by hand. */
+  /* The dimension boxes are not data-k inputs any more, and hull type is a
+     pair of pills, not a checkbox — both need repainting by hand. */
   syncFtInAll();
-  $$('input[name=isPontoon]').forEach(r=>r.checked=((r.value==='yes')===!!S.isPontoon));
+  syncPontoonUI();
   // acid wash disables powerwash
   const pw=document.querySelector('input[data-chk="powerwash"]');
   if(pw){ pw.disabled=!!S.acidWash; $('#powerwashOpt').classList.toggle('disabled', !!S.acidWash); }
@@ -1277,18 +1276,19 @@ function refresh(){
     if(meta.length||dims) html+=`<div class="trow" style="border-bottom:1px solid var(--navy)"><div class="l">${meta.join('<br>')}${dims?`<span class="calc">${dims}</span>`:''}</div></div>`;
     for(const li of L){
       if(li.sec!==lastSec){ html+=`<div class="trow sec"><div class="l">${li.sec}</div></div>`; lastSec=li.sec; }
-      html+=`<div class="trow"><div class="l">${li.label}${li.calc?`<span class="calc">${li.calc}</span>`:''}${li.desc?`<span class="calc desc">${li.desc}</span>`:''}</div><div class="r">${li.amt?fmt(li.amt):'incl.'}</div></div>`;
+      html+=`<div class="trow"><div class="l">${li.label}${li.calc?`<span class="calc">${li.calc}</span>`:''}${li.desc?`<span class="calc desc">${li.desc}</span>`:''}</div><div class="r">${li.amt?fmt(li.amt):(li.tbd?'TBD':'incl.')}</div></div>`;
     }
     if(rq.length){
       html+=`<div class="trow sec"><div class="l">Quotes requested</div></div>`;
       html+=rq.map(x=>`<div class="trow"><div class="l">${x}</div><div class="r">TBD</div></div>`).join('');
     }
-    if(need.length) html+=`<div class="trow" style="border:0"><div class="l" style="color:var(--warn);font-family:var(--body);font-size:12px">Add ${[...new Set(need)].join(', ')} on the first step to finish pricing.</div></div>`;
+    if(need.length) html+=`<div class="trow" style="border:0"><div class="l" style="color:var(--warn);font-family:var(--body);font-size:12px">Add ${[...new Set(need)].join(', ')} to finish pricing.</div></div>`;
     body.innerHTML=html;
   }
 
   const t=totals();
   document.querySelectorAll('.golfOnly').forEach(el=>{ el.style.display = S.unit==='golf' ? '' : 'none'; });
+  document.querySelectorAll('.timingOnly').forEach(el=>{ el.style.display = ['boat','jetski'].includes(S.unit) ? 'block' : 'none'; });
   const keysApply=['boat','jetski','golf'].includes(S.unit);
   document.querySelectorAll('.keysOnly').forEach(el=>{ el.style.display = keysApply ? '' : 'none'; });
   const kn=$('#keysNote');
@@ -1545,10 +1545,6 @@ function init(){
       $('#powerwashOpt').classList.remove('disabled');
     }
     if(k==='waterHead') syncHeadsUI();
-    if(k==='ballastOn'){
-      if(e.target.checked && !S.ballast){ S.ballast=1; $('#ballastRow').querySelector('.qty input').value=1; }
-      syncBallastUI();
-    }
     refresh();
   }));
 
@@ -1566,9 +1562,6 @@ function init(){
         if(v>0) clearOtherEngineTypes_(id);
         syncEngineRows_();
       } else S[key]=v;
-      /* Counting up from zero is the customer saying yes — tick the box for
-         them rather than making them do it twice. */
-      if(key==='ballast'){ S.ballastOn = v>0 ? true : S.ballastOn; syncBallastUI(); }
       refresh();
     };
     dec.onclick=()=>setV(+inp.value-1); inc.onclick=()=>setV(+inp.value+1);
@@ -1593,8 +1586,9 @@ function init(){
     i.addEventListener('blur',()=>{ if(Number(i.value)>=12){ setFtIn(key,S[key]); } });
   });
 
-  $$('input[name=isPontoon]').forEach(r=>r.addEventListener('change',e=>{
-    S.isPontoon = e.target.value==='yes';
+  $$('#pontoonFs [data-pontoon]').forEach(b=>b.addEventListener('click',()=>{
+    S.isPontoon = b.dataset.pontoon==='yes';
+    syncPontoonUI();
     refresh();
   }));
 

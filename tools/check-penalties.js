@@ -104,18 +104,24 @@ console.log('=== the source of truth is the journal, so nothing is offered to th
   console.log('  no customer checkbox for either; staff have adminPenalty()');
 }
 
-console.log('=== only the slipholder discount may be negative ===');
+console.log('=== the slipholder discount is a normal line, priced through the existing Adjustment card ===');
 {
-  if (!E.isDiscountRequest('Heritage Harbor Slipholder discount — slip B-14')) {
-    fail('the slipholder discount is not recognised as a discount request');
-  }
-  for (const other of ['Exterior detail', 'Impeller change', 'Wash & wax', '']) {
-    if (E.isDiscountRequest(other)) fail(JSON.stringify(other) + ' would be allowed to go on as a credit');
-  }
-  /* The server must enforce it in both places a request can be priced. */
-  const guards = (gas.match(/isDiscountRequest\(/g) || []).length;
-  if (guards < 2) fail('the sign rule is enforced in ' + guards + ' place(s); both the console and the sheet menu price requests');
-  console.log('  sign rule enforced in ' + guards + ' places; only the slipholder discount may be a credit');
+  /* HHO is not a quote-request any more — it is a $0 line like it always was,
+     just flagged tbd so the ticket prints "TBD" instead of "incl.". Staff
+     price it the same way they price any other discount: the Adjustment
+     card, which has always taken a negative amount. Nothing special to
+     enforce here beyond the line actually existing and reading tbd. */
+  const base = { unit: 'boat', hasTrailer: false, isPontoon: false,
+    engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' } },
+    loa: 24, beam: 8, lwt: 0, storage: 'outside', retrieval: 'quest',
+    dtTrans: 0, dtTransom: 0, ballast: 0, addlHeads: 0, hho: true, slipNo: 'B-14' };
+  const r = E.computeQuote(base);
+  const line = r.lines.find(l => /Heritage Harbor Slipholder/.test(l.label));
+  if (!line) fail('checking the HHO box no longer adds a line to the quote');
+  else if (!line.tbd) fail('the HHO line is not flagged tbd, so the ticket would print "incl." instead of "TBD"');
+  else if (line.amt !== 0) fail('the HHO line prices at ' + line.amt + ', not 0 — staff price it via the Adjustment card');
+  else console.log('  HHO is a $0 tbd line: "' + line.label + '"');
+  if (r.rq.length) fail('HHO is back on the quote-requests list — it should not be, it is a line now');
 }
 
 if (bad) { console.error('FAIL: ' + bad + ' penalty/discount problem(s)'); process.exit(1); }

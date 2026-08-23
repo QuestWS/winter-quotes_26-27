@@ -179,12 +179,18 @@ function buildState(fx) {
  * difference in output *structure* can't disguise a difference in pricing. */
 function normalize(fx, out) {
   const raw = out.lines || out.L;
-  const lines = raw.map(l => ({
-    sec: l.sec || '', label: l.label,
-    amt: l.amt == null ? null : Number(l.amt),
-    calc: l.calc || '',
-    desc: l.desc || '',
-  }));
+  const lines = raw.map(l => {
+    const out = {
+      sec: l.sec || '', label: l.label,
+      amt: l.amt == null ? null : Number(l.amt),
+      calc: l.calc || '',
+      desc: l.desc || '',
+    };
+    // Same rule as serverPrice_ in the .gs: a line priced at 0 today that is
+    // not actually free (the slipholder discount) carries this through.
+    if (l.tbd) out.tbd = true;
+    return out;
+  });
   // Total is the sum of line amounts — the same basis the page and sheet use.
   const total = lines.reduce((a, l) => a + (Number(l.amt) || 0), 0);
   const r = { name: fx.name, why: fx.why, lines, need: out.need, rq: out.rq, total: Number(total.toFixed(2)) };

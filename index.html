@@ -577,13 +577,11 @@ aside.ticket{position:sticky;top:18px}
 <!-- Heritage Harbor slip number modal -->
 <div class="modal-back" id="hhoModal" role="dialog" aria-modal="true" aria-labelledby="hhoModalTitle">
   <div class="modal">
-    <h3 id="hhoModalTitle">Slip number needed</h3>
-    <p>The Heritage Harbor Slipholder discount is worked out from your finished total by Quest staff. Enter your slip number to add it — we can't apply it without one.</p>
-    <label class="f" for="hhoModalSlip">Slip number</label>
-    <input type="text" id="hhoModalSlip" placeholder="e.g. B-14" style="width:100%;margin:6px 0 18px" autocomplete="off">
+    <h3 id="hhoModalTitle">Slip Number:</h3>
+    <input type="text" id="hhoModalSlip" placeholder="e.g. B-14" aria-label="Slip number" style="width:100%;margin:2px 0 18px" autocomplete="off">
     <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn ghost" type="button" onclick="cancelHhoModal()">Cancel</button>
-      <button class="btn primary" type="button" id="hhoModalOk" onclick="confirmHhoModal()" disabled>Add the discount</button>
+      <button class="btn primary" type="button" id="hhoModalOk" onclick="confirmHhoModal()" disabled>Confirm</button>
     </div>
   </div>
 </div>

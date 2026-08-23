@@ -98,7 +98,11 @@ input[type=text],input[type=number],input[type=tel],input[type=email],textarea,s
 input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--frost-soft);border-color:var(--frost)}
 input[type=number]{font-family:var(--mono)}
 
-/* option cards */
+/* option cards — the shared look for anything the customer picks or sets: a
+   checkbox/radio row (.opt), a stepper row (.qtyrow), a boxed control with no
+   input of its own (ballast reuses .qtyrow directly). Same border, radius,
+   padding and 10px gap to the next one, so nothing in this family ever
+   touches its neighbor and nothing reads as a different kind of control. */
 .opt{display:flex;gap:12px;align-items:flex-start;border:1.5px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:10px;cursor:pointer;background:#fff}
 .opt:hover{border-color:var(--frost)}
 .opt.sel{border-color:var(--navy);background:var(--frost-soft);box-shadow:inset 3px 0 0 var(--navy)}
@@ -126,9 +130,9 @@ input[type=number]{font-family:var(--mono)}
 .qty button{width:34px;height:34px;border:0;background:var(--ice);font-size:18px;font-weight:700;color:var(--navy);cursor:pointer}
 .qty button:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
 .qty input{width:44px;border:0;text-align:center;font-family:var(--mono);font-size:15px;height:34px}
-.qtyrow{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px dashed var(--line);padding:10px 2px}
-.qtyrow:last-child{border-bottom:0}
-.qtyrow .t{font-weight:600}
+.qtyrow{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1.5px solid var(--line);border-radius:9px;padding:13px 15px;margin-bottom:10px;background:#fff}
+.qtyrow .t{font-weight:700;color:var(--navy)}
+.qtyrow .d{font-size:13.5px;color:var(--muted)}
 .qtyrow .sub{font-size:13px;color:var(--muted)}
 /* A sub-row belongs to the option above it — indented and rule-joined so the
    relationship is visible rather than remembered. */
@@ -141,27 +145,22 @@ input[type=number]{font-family:var(--mono)}
 .ftin span{color:var(--muted);font-size:13px;flex:0 0 auto}
 /* The pontoon sub-toggle: small, indented under "No trailer" rather than a
    full option box of its own. */
-.subToggle{display:flex;align-items:center;gap:8px;margin:8px 0 2px 22px;padding-left:12px;border-left:2px solid var(--line)}
+.subToggle{display:flex;align-items:center;gap:8px;margin:8px 0 0 22px;padding-left:12px;border-left:2px solid var(--line)}
 .subToggle-label{font-size:13px;color:var(--muted)}
 .subToggle .pill{flex:0 0 auto;padding:5px 12px;font-size:13px;font-weight:600;border:1.5px solid var(--line);
   border-radius:999px;background:#fff;color:var(--navy);cursor:pointer}
 .subToggle .pill.on{background:var(--navy);color:#fff;border-color:var(--navy)}
-/* A boxed option with no checkbox — same look as .opt, for a control (like
-   ballast) that is a stepper rather than a yes/no. */
-.optbox{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1.5px solid var(--line);
-  border-radius:9px;padding:13px 15px;margin-bottom:10px;background:#fff}
-.optbox .t{font-weight:700;color:var(--navy)}
-.optbox .d{font-size:13.5px;color:var(--muted)}
-.optbox .p{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:600;white-space:nowrap}
 /* A charge the customer cannot choose — applied when it is earned. Must not
    look like an option, or somebody will hunt for the checkbox. Deliberately
    NOT .warnbox: that one already exists for error states (an unsigned
    contract) and is red. A penalty that has not happened yet is a caution, not
-   an error, and reusing the class would have quietly restyled the other. */
+   an error, and reusing the class would have quietly restyled the other. Same
+   10px trailing gap as the option family, so it never touches whatever comes
+   after it either. */
 .penaltybox{background:#FDF3E0;border:1px solid var(--gold);border-left-width:4px;border-radius:8px;
-  padding:10px 12px;font-size:13.5px;line-height:1.5;color:#5A431A}
+  padding:10px 12px;font-size:13.5px;line-height:1.5;color:#5A431A;margin-bottom:10px}
 .penaltybox b{color:#7A5A12}
-.qtyrow .p{font-family:var(--mono);font-size:13.5px;color:var(--gold);font-weight:600}
+.qtyrow .p{font-family:var(--mono);font-size:14px;color:var(--gold);font-weight:600;white-space:nowrap}
 .qtyrow.disabled{opacity:.45}
 
 /* nav buttons */
@@ -378,13 +377,13 @@ aside.ticket{position:sticky;top:18px}
     <p class="lead">Fresh water, heads, ballast, A/C, generators — anything that holds water needs protecting too. Skip this page if none apply.</p>
     <fieldset>
       <legend>Water systems winterization</legend>
-      <div class="optbox" id="ballastRow"><div><div class="t">Ballast system (drain only)</div><div class="d">Set how many tanks to add it to your quote</div><div class="p" data-price="ballast" data-suffix=" / tank"></div></div>
+      <div class="qtyrow" id="ballastRow"><div><div class="t">Ballast system (drain only)</div><div class="d">Set how many tanks to add it to your quote</div><div class="p" data-price="ballast" data-suffix=" / tank"></div></div>
         <div class="qty" data-qty="ballast"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Ballast tanks"><button type="button" aria-label="increase">+</button></div></div>
       <label class="opt" style="margin-top:10px"><input type="checkbox" data-chk="waterCold"><div><div class="t">Water system — cold only</div><div class="d">Fresh water system, no head</div></div><span class="p" data-price="waterCold"></span></label>
       <label class="opt"><input type="checkbox" data-chk="waterHead"><div><div class="t">Water system including 1 head</div><div class="d">Fresh water system plus one head</div></div><span class="p" data-price="waterHead"></span></label>
       <div class="qtyrow sub-row" id="addlHeadsRow"><div><div class="t">Additional heads</div><div class="sub">Beyond the one included above</div><div class="p" data-price="addlHeads" data-suffix=" each"></div></div>
         <div class="qty" data-qty="addlHeads"><button type="button" aria-label="decrease">−</button><input type="number" min="0" value="0" aria-label="Additional heads"><button type="button" aria-label="increase">+</button></div></div>
-      <div class="penaltybox" style="margin-top:10px"><b>Pumpout service charge — <span data-price="pumpout"></span></b><br>Please make sure your holding tank is empty before storage.</div>
+      <div class="penaltybox"><b>Pumpout service charge — <span data-price="pumpout"></span></b><br>Please make sure your holding tank is empty before storage.</div>
       <label class="opt"><input type="checkbox" data-chk="ac"><div><div class="t">Air conditioning</div><div class="d">Up to 2 units</div></div><span class="p" data-price="ac"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genBasic"><div><div class="t">Generator — basic winterization</div></div><span class="p" data-price="genBasic"></span></label>
       <label class="opt"><input type="checkbox" data-chk="genFull"><div><div class="t">Generator — including oil &amp; filter change</div></div><span class="p" data-price="genFull"></span></label>
@@ -488,12 +487,10 @@ aside.ticket{position:sticky;top:18px}
   <section class="panel" data-step="review">
     <h2>Your winter quote</h2>
     <p class="lead">Everything you picked, itemized on the ticket. Look it over, add any notes, then continue to sign your agreement and pay online.</p>
-    <fieldset class="timingOnly" style="display:none">
-      <legend>Timing</legend>
-      <div class="penaltybox"><b>Late retrieval surcharge — <span data-price="lateRetrieval"></span></b><br>Haul-outs requested after <span data-cfg="payByShort"></span> carry this surcharge. Tell us your timing early and it never applies.</div>
-      <label class="opt hhoOpt"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
-      <div class="hhoSlipWrap" style="display:none;margin:6px 0 2px 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
-    </fieldset>
+    <div class="timingOnly" style="display:none;margin-bottom:12px">
+      <label class="opt hhoOpt" style="margin-bottom:0"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <div class="hhoSlipWrap" style="display:none;margin:8px 0 0 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
+    </div>
 
     <div class="golfOnly" style="display:none;margin-bottom:12px"><label class="f" for="hhoAddr">Heritage Harbor address for pickup &amp; delivery (street &amp; number only)</label><input type="text" id="hhoAddr" data-k="hhoAddr" placeholder="e.g. 123 Anchor Ln" style="max-width:320px"></div>
     <div class="keysOnly" style="display:none;margin-bottom:12px"><label class="f" for="keyLoc">Where will the keys be?</label><input type="text" id="keyLoc" data-k="keyLoc" placeholder="e.g. in the glove box / at the front desk / on the seat" style="max-width:380px">
@@ -1331,13 +1328,20 @@ function refresh(){
 
   const t=totals();
   document.querySelectorAll('.golfOnly').forEach(el=>{ el.style.display = S.unit==='golf' ? '' : 'none'; });
-  document.querySelectorAll('.timingOnly').forEach(el=>{ el.style.display = ['boat','jetski'].includes(S.unit) ? 'block' : 'none'; });
+  document.querySelectorAll('.timingOnly').forEach(el=>{ el.style.display = ['boat','jetski'].includes(S.unit) ? '' : 'none'; });
   const keysApply=['boat','jetski','golf'].includes(S.unit);
   document.querySelectorAll('.keysOnly').forEach(el=>{ el.style.display = keysApply ? '' : 'none'; });
   const kn=$('#keysNote');
+  const lateLine=['boat','jetski'].includes(S.unit)
+    ? `Haul-outs requested after ${SEASON.payByShort} carry a $${PRICES.lateRetrieval} late retrieval surcharge.`
+    : '';
   if(kn) kn.innerHTML = S.unit==='golf'
-    ? 'Golf carts cannot be picked up without keys.<br>If the battery is dead and needs a jump start, a $50 fee applies.'
-    : keysApply ? 'Units that must be towed out and/or mechanically started because keys aren\'t available are subject to a $500 fee.<br>If the battery/batteries are dead and require a jump start, a $50 fee applies.' : '';
+    ? ['Golf carts cannot be picked up without keys.','If the battery is dead and needs a jump start, a $50 fee applies.'].join('<br>')
+    : keysApply ? [
+        'Units that must be towed out and/or mechanically started because keys aren\'t available are subject to a $500 fee.',
+        'If the battery/batteries are dead and require a jump start, a $50 fee applies.',
+        lateLine
+      ].filter(Boolean).join('<br>') : '';
   const hhoOk = t.total >= RULES.hhoMinTotal;
   document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
   if(!hhoOk && S.hho){

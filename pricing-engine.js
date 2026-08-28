@@ -51,6 +51,11 @@ const PRICES = {
   skiDetail:175,        // flat, per ski
   wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
   powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, lateRetrieval:225,
+  /* Impeller change stays a QUOTE_ITEMS request — boat-to-boat variance is
+     too wide to price outright — but showing a baseline next to the checkbox
+     gives customers something to plan around. Display only; not a priced
+     line, so this number is never added into any total. */
+  impellerStartingAt:225,
   /* Blocking a pontoon is a different job from blocking a deep-V on stands.
      Both rates are $185 for 2025-2026; Chris splits them at the 2026-2027
      rollover, and this is already wired so that is a one-number edit here

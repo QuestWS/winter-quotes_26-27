@@ -149,6 +149,13 @@ function ftInToDecimal(ft,inch){
    sides may need to state belongs here. Returns the BASE — callers still cap
    it at the quote total, since a deposit larger than the bill is nonsense. */
 function depositBaseFor(s){
+  /* No storage purchased means nothing is being locked in for the season —
+     there is no deposit-now/balance-later split, the whole total comes due
+     when the work itself is finished. A sentinel far above any real total
+     makes the caller's Math.min(base,total) always resolve to the CURRENT
+     total, so it stays correct even after a later edit changes that total;
+     a frozen dollar amount would stop matching the moment the total moved. */
+  if(s.storage==='none') return Number.MAX_SAFE_INTEGER;
   if(s.unit!=='boat') return RULES.depositTrailer;
   if(s.hasTrailer) return RULES.depositTrailer;
   return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;

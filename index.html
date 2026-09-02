@@ -141,7 +141,7 @@ input[type=number]{font-family:var(--mono)}
    actually hold (inches never exceeds 11, feet rarely exceeds two digits),
    not stretched to fill the row. */
 .ftin{display:inline-flex;align-items:center;gap:6px}
-.ftin input{width:2.6em;flex:0 0 auto;text-align:center}
+.ftin input{width:3.4em;flex:0 0 auto;text-align:center;padding:9px 4px}
 .ftin span{color:var(--muted);font-size:13px;flex:0 0 auto}
 /* The pontoon sub-toggle: small, indented under "No trailer" rather than a
    full option box of its own. */
@@ -850,7 +850,7 @@ function buildStorage(){
   const hideInside = !T && (S.beam||0) > RULES.insideBeamMaxNT;
   if(hideInside && S.storage==='inside') S.storage='none';
   const opts = [
-    {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
+    {v:'none', t:'No storage with Quest', d:'Winterization / services only — pick up within 2 weeks of being notified, or a $25/day fee applies'},
     {v:'outside', t:'Outside storage', d:`$${PRICES.outsidePerFt} per foot (LOA)`, pid:'stO'},
     {v:'inside', t:'Inside storage (non-heated)', d:`Retrieval, set & relaunch included · $${insideRate}/sqft (${dim})`, pid:'stI'},
     {v:'insidePrem', t:'Premium inside storage — Quest approval required', d:`Very limited space; returning customers prioritized. Retrieval, set & relaunch included · $${premRate}/sqft (${dim})`, pid:'stP'}
@@ -867,7 +867,7 @@ function buildSkiStorage(){
   const len=S.skiLen||0, wid=S.skiWid||0;
   const amt=(len&&wid)?PRICES.insideT*len*wid:null;
   $('#skiStorageOpts').innerHTML=[
-    {v:'none', t:'No storage with Quest', d:'Winterization / services only'},
+    {v:'none', t:'No storage with Quest', d:'Winterization / services only — pick up within 2 weeks of being notified, or a $25/day fee applies'},
     {v:'inside', t:'Inside storage — on trailer', d:`Retrieval, set & relaunch included · $${PRICES.insideT}/sqft (stored length × width)`, p:amt!=null?fmt(amt):'needs stored dimensions'}
   ].map(o=>`<label class="opt"><input type="radio" name="skiStorage" value="${o.v}" ${S.storage===o.v?'checked':''}><div><div class="t">${o.t}</div><div class="d">${o.d}</div></div><span class="p">${o.p||''}</span></label>`).join('');
   $$('input[name=skiStorage]').forEach(r=>r.addEventListener('change',e=>{S.storage=e.target.value;refresh();}));
@@ -930,6 +930,12 @@ function computeLines(){
     r.rq=(r.rq||[]).filter(l=>!pricedRqLabels().includes(l));
   }
   return r;
+}
+/* The lien/pickup policy for anything not stored with Quest — shared between
+   the checkout fine print and the payment-terms callout so the two can't say
+   different things. */
+function noStoragePickupText_(){
+  return "Units not stored with Quest must be picked up within 2 weeks of being notified the work is complete. After that, a $25/day fee applies until the unit is removed from Quest's property, and any open invoice must be paid in full before it's released.";
 }
 function totals(){
   const {L}=computeLines();
@@ -1289,7 +1295,7 @@ function renderSignPay(){
     S.payMode='full';
     $('#payStepTitle').textContent='Pay your total';
     $('#payChoices').innerHTML='';
-    $('#payAmtLabel').textContent='Total due today';
+    $('#payAmtLabel').textContent=S.storage==='none'?'Total — due when the work is completed':'Total due today';
     $('#payAmt').textContent=fmt(t.total);
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').href=INTEGRATIONS.paymentPageUrl;
@@ -1361,19 +1367,27 @@ function refresh(){
     closeHhoModal();
   }
   syncHhoUI();
+  const noStorage = S.storage==='none';
   $('#tDepRow').style.display = t.dueToday ? 'none' : '';
-  $('#tTotalLabel').textContent = t.dueToday
+  $('#tTotalLabel').textContent = noStorage
+    ? 'Total — due when the work is completed (Cash, Check, Debit, Zelle or ACH)'
+    : t.dueToday
     ? 'Total due today — Cash, Check, Debit, Zelle or ACH'
     : `Total — Cash, Check, Debit, Zelle or ACH by ${SEASON.payByShort}`;
   const pf=$('#payFoot');
-  if(t.dueToday){ pf.style.display='none'; pf.innerHTML=''; }
+  if(noStorage){
+    pf.style.display='';
+    pf.innerHTML=`<b>Pickup:</b> ${noStoragePickupText_()}`;
+  }else if(t.dueToday){ pf.style.display='none'; pf.innerHTML=''; }
   else{
     pf.style.display='';
     pf.innerHTML=`<b>Paid after ${SEASON.payByShort}?</b> Balance increases ${RULES.latePct}% to <b>${fmt(t.late)}</b> (<b>${fmt(t.lateCC)}</b> by card), plus a 2%/month service charge beginning ${SEASON.lateChargeStart}.`;
   }
   const qt=$('#quoteTerms');
   if(qt){
-    qt.innerHTML = t.dueToday
+    qt.innerHTML = noStorage
+      ? `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This estimate does not include storage — payment in full is due when the work is completed; credit card payments are subject to a 3% fee. ${noStoragePickupText_()}`
+      : t.dueToday
       ? `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Payment is due today; credit card payments are subject to a 3% fee. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`
       : `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b>${SEASON.payByDate}</b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after ${SEASON.payByShort} increase by ${RULES.latePct}%, and a 2% monthly service charge (min. $5) applies beginning ${SEASON.lateChargeStart}. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`;
   }
@@ -1392,7 +1406,7 @@ function refresh(){
   $('#mAmt').textContent=fmt(t.total);
   $('#mDep').textContent=fmt(t.deposit);
   $('#mDepWrap').style.display = t.dueToday ? 'none' : '';
-  $('#mLabel').textContent = t.dueToday ? 'Total due today' : 'Total · deposit due today';
+  $('#mLabel').textContent = noStorage ? 'Total — due when completed' : t.dueToday ? 'Total due today' : 'Total · deposit due today';
 
   $('#pwPrice').textContent=S.loa?fmt(PRICES.powerwashFt*S.loa):'needs LOA';
   $('#acidPrice').textContent=(S.loa&&S.beam)?fmt((S.beam<=RULES.acidBeamMax?PRICES.acidNarrowFt:PRICES.acidWideFt)*S.loa):'needs LOA & beam';

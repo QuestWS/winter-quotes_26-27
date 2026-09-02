@@ -288,6 +288,13 @@ function ftInToDecimal(ft,inch){
    sides may need to state belongs here. Returns the BASE — callers still cap
    it at the quote total, since a deposit larger than the bill is nonsense. */
 function depositBaseFor(s){
+  /* No storage purchased means nothing is being locked in for the season —
+     there is no deposit-now/balance-later split, the whole total comes due
+     when the work itself is finished. A sentinel far above any real total
+     makes the caller's Math.min(base,total) always resolve to the CURRENT
+     total, so it stays correct even after a later edit changes that total;
+     a frozen dollar amount would stop matching the moment the total moved. */
+  if(s.storage==='none') return Number.MAX_SAFE_INTEGER;
   if(s.unit!=='boat') return RULES.depositTrailer;
   if(s.hasTrailer) return RULES.depositTrailer;
   return s.isPontoon ? RULES.depositNoTrailerPontoon : RULES.depositNoTrailer;
@@ -3122,7 +3129,7 @@ function adminImportApply(token, state, meta) {
     notes: st.notes || '',
     slipNo: '', hhoAddr: '', keyLoc: '',
     hasTrailer: st.hasTrailer ? 1 : 0,
-    depositBase: st.hasTrailer ? RULES.depositTrailer : RULES.depositNoTrailer,
+    depositBase: depositBaseFor(st),
     payMode: 'deposit', payments: [], emailLog: [],
     state: st, lines: [], total: '0.00',
     /* Why this quote exists and what it came from, in the staff note — which
@@ -4351,8 +4358,9 @@ function adminEmailPreview(token, qn, kind, extra) {
     const paid = paymentsTotal_(d);
     const balance = Number(d.total || 0) - paid;
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
+    const noStorage = !!(d.state && d.state.storage === 'none');
     const html = customerEmailHtml_({ firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
-      total: d.total, deposit: d.deposit, dueToday: dueToday, paid: paid, balance: balance,
+      total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
@@ -4740,7 +4748,7 @@ function buttonHtml_(url, label, bg) {
 }
 
 function customerEmailHtml_(o) {
-  // o: {firstName, quoteNo, unit, total, deposit, dueToday, payBy, signUrl, hasPdf, reminder}
+  // o: {firstName, quoteNo, unit, total, deposit, dueToday, noStorage, payBy, signUrl, hasPdf, reminder}
   // width/height ATTRIBUTES are required: Outlook's renderer ignores CSS
   // max-height and displays the full-size image without them
   const logo = LOGO_URL
@@ -4754,7 +4762,9 @@ function customerEmailHtml_(o) {
     ? 'Just a friendly reminder — your winter services quote is still waiting for you. Everything below is ready whenever you are.'
     : 'Thanks for getting your winter services quote from Quest Watersports! Your full itemized quote is attached as a PDF. When you\'re ready, you can sign your agreement and pay online — no extra trip needed.';
   let money = '';
-  if (o.dueToday) {
+  if (o.noStorage) {
+    money = moneyRow_('Total — due when the work is completed (Cash, Check, Debit, Zelle or ACH)', usd_(o.total), true);
+  } else if (o.dueToday) {
     money = moneyRow_('Total due today — Cash, Check, Debit, Zelle or ACH', usd_(o.total), true);
   } else {
     money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH' + (o.payBy ? ' by ' + o.payBy : '') + ')', usd_(o.total), true) +
@@ -4770,7 +4780,7 @@ function customerEmailHtml_(o) {
   }
   let buttons = '';
   if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E');
-  if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
+  if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
   /* Season-done survey. Only for customers who have actually committed --
      a deposit or payment in full. Asking someone to book their haul-out
      before they have put money down is asking them to schedule work they
@@ -4822,11 +4832,12 @@ function surveyBase_(d) {
 function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
   try {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
+    const noStorage = !!(d.state && d.state.storage === 'none');
     const paid = paymentsTotal_(d);
     const balance = Number(d.total || 0) - paid;
     const html = customerEmailHtml_({
       firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
-      total: d.total, deposit: d.deposit, dueToday: dueToday,
+      total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage,
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
@@ -4994,8 +5005,8 @@ function dailyReminderCheck() {
       const ts = r[COL.TS-1], status = String(r[COL.STATUS-1] || ''), quoteNo = r[COL.QN-1], unit = r[COL.UNIT-1],
             first = r[COL.FIRST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
             signUrl = r[COL.SIGN-1], reminder = r[COL.REM-1];
-      let payByShort = '';
-      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; } catch (e) {}
+      let payByShort = '', noStorage = false;
+      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); } catch (e) {}
       if (reminder) return;                                   // already reminded
       if (!email) return;                                     // nowhere to send
       if (status.indexOf('Signed & paying') === 0) return;    // already moving forward
@@ -5006,7 +5017,7 @@ function dailyReminderCheck() {
         const dueToday = Number(total) > 0 && Number(deposit) >= Number(total);
         const html = customerEmailHtml_({
           firstName: first, quoteNo: quoteNo, unit: unit,
-          total: total, deposit: deposit, dueToday: dueToday,
+          total: total, deposit: deposit, dueToday: dueToday, noStorage: noStorage,
           payBy: payByShort, signUrl: signUrl || '', reminder: true
         });
         const pdf = getPdfBlob_(quoteNo);
@@ -5172,6 +5183,17 @@ function surveyBlurb_(o) {
     ' are subject to a late retrieval surcharge.';
 }
 
+/* The lien/pickup sentence at the bottom of the quote/invoice — a different
+   policy for a unit not stored with Quest (2 weeks from notice) than for one
+   coming off a normal storage term (10 days from service completion). Shared
+   across every terms paragraph in quoteHtml_ below so they can't drift apart. */
+function pickupTermsSentence_(d, sn) {
+  const noStorage = !!(d.state && d.state.storage === 'none');
+  return noStorage
+    ? 'Units not stored with Quest must be picked up within 2 weeks of being notified the work is complete. After that, a $25/day fee applies until the unit is removed from Quest\'s property, and any open invoice must be paid in full before it is released.'
+    : 'Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ' + esc_(sn.storageStart || '') + ' – ' + esc_(sn.storageEnd || '') + ' and is subject to Quest\'s Storage Terms.';
+}
+
 function quoteHtml_(d) {
   const sn = d.season || {};
   const term = docTerm_(d);
@@ -5269,11 +5291,12 @@ function quoteHtml_(d) {
       const paid = pays.reduce(function (a, p) { return a + Number(p.amt || 0); }, 0);
       const paidInFull = paid > 0 && Number(d.total || 0) - paid <= 0.005;
       if (paidInFull) {
-        return '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This quote is paid in full — thank you. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ' + esc_(sn.storageStart || '') + ' – ' + esc_(sn.storageEnd || '') + ' and is subject to Quest\'s Storage Terms.</p>';
+        return '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This quote is paid in full — thank you. ' + pickupTermsSentence_(d, sn) + '</p>';
       }
+      const noStorage = !!(d.state && d.state.storage === 'none');
       return dueToday
-        ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Payment is due today; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ' + esc_(sn.storageStart || '') + ' – ' + esc_(sn.storageEnd || '') + ' and is subject to Quest\'s Storage Terms.</p>'
-        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices valid when balances are settled in full by ' + esc_(sn.payBy || '') + ' by cash, check, debit card, Zelle, or ACH; credit card payments subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by 10%, and a 2% monthly service charge (min. $5) applies beginning ' + esc_(sn.lateStart || '') + '. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ' + esc_(sn.storageStart || '') + ' – ' + esc_(sn.storageEnd || '') + ' and is subject to Quest\'s Storage Terms.</p>';
+        ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + (noStorage ? 'Payment is due when the work is completed' : 'Payment is due today') + '; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. ' + pickupTermsSentence_(d, sn) + '</p>'
+        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices valid when balances are settled in full by ' + esc_(sn.payBy || '') + ' by cash, check, debit card, Zelle, or ACH; credit card payments subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by 10%, and a 2% monthly service charge (min. $5) applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';
     })() +
     '</body></html>';
 }

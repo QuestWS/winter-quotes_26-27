@@ -1083,6 +1083,15 @@ function loadQuote(){
 }
 function hydrateFromState(state, qn){
   Object.assign(S, state);
+  /* Object.assign above replaces S.engines wholesale with whatever the saved
+     quote had — a quote saved before an engine id existed (jet drive, or
+     whatever comes next) simply has no key for it, not a zero one. Every
+     `S.engines[id].qty=…` call site downstream assumes every id is present
+     and would throw on the first click, so backfill anything missing here
+     rather than guard each of those sites individually. */
+  const engDefaults={pwc:{qty:1,level:'basic'}};
+  BOAT_ENGINES.forEach(e=>{ engDefaults[e.id]={qty:0,level:'basic'}; });
+  S.engines=Object.assign(engDefaults, S.engines);
   /* Quotes saved before the overhang redesign carry a total LWT with no
      trailerOverhang. Back-fill the overhang so the box shows something
      sensible, then recompute LWT the same way a live edit would — same

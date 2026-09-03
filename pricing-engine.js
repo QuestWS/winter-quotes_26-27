@@ -289,7 +289,11 @@ function computeQuote(s){
 
   /* ---- boat ---- */
   for(const e of BOAT_ENGINES){
-    const g=s.engines[e.id];
+    /* A quote saved before a given engine id existed (jet drive, or whatever
+       comes next) has no key for it at all — not zero, absent. Treat absent
+       as zero rather than crashing every price/PDF/email on every quote
+       that predates the id, on both the page and the server. */
+    const g=s.engines[e.id] || {qty:0, level:'basic'};
     if(g.qty>0){
       const rate=PRICES[g.level][e.id];
       const fullText = e.likePwc ? LEVEL_DESC.fullPwcQuote : LEVEL_DESC.fullQuote;

@@ -114,6 +114,15 @@ const FIXTURES = [
     },
   },
   {
+    name: 'boat-jet-drive',
+    why: 'Jet-drive boat motor — must price and describe like a PWC/jetski, not a boat engine (BOAT_ENGINES\' likePwc flag, aliased PRICES.full.jet).',
+    state: {
+      unit: 'boat', loa: 22, beam: 8, lwt: 25, hasTrailer: true,
+      engines: { inboard: { qty: 0, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' }, jet: { qty: 1, level: 'full' }, pwc: { qty: 0, level: 'basic' } },
+      storage: 'none',
+    },
+  },
+  {
     name: 'jetski-inside-detail',
     why: 'PWC full service, two skis detailed, inside storage priced from ski L×W.',
     state: {

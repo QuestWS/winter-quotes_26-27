@@ -260,6 +260,22 @@
     "total": 802.41
   },
   {
+    "name": "boat-jet-drive",
+    "why": "Jet-drive boat motor — must price and describe like a PWC/jetski, not a boat engine (BOAT_ENGINES' likePwc flag, aliased PRICES.full.jet).",
+    "lines": [
+      {
+        "sec": "Engine winterization",
+        "label": "Full service — Jet Drive",
+        "amt": 230,
+        "calc": "1 × $230.00",
+        "desc": "Drain water, run on anti-freeze, drain & fog, disconnect batteries, plus (as applicable): engine oil & filter change and fuel conditioner. Fuel filter not included for PWC."
+      }
+    ],
+    "need": [],
+    "rq": [],
+    "total": 230
+  },
+  {
     "name": "jetski-inside-detail",
     "why": "PWC full service, two skis detailed, inside storage priced from ski L×W.",
     "lines": [

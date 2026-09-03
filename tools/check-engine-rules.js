@@ -32,12 +32,13 @@ try {
   process.exit(1);
 }
 
-const BOAT_TYPES = ['inboard', 'io', 'outboard'];
+const BOAT_TYPES = ['inboard', 'io', 'outboard', 'jet'];
 const start = {
   unit: 'boat',
   engines: {
     inboard: { qty: 2, level: 'full' }, io: { qty: 0, level: 'basic' },
-    outboard: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' }
+    outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' },
+    pwc: { qty: 0, level: 'basic' }
   }
 };
 
@@ -61,10 +62,10 @@ for (const t of BOAT_TYPES) {
         fail(`${t} × ${q} produced active=[${active.join(',')}] — a boat cannot mix motor types`);
       }
       if (Number((out.pwc || {}).qty || 0) !== 0) fail(`${t} × ${q} left a jet ski count on a boat`);
-      if (t === 'outboard' && !out._clearTrans) {
-        fail('outboard did not clear the transmission count — outboards have no V-drive');
+      if ((t === 'outboard' || t === 'jet') && !out._clearTrans) {
+        fail(`${t} did not clear the transmission count — ${t === 'outboard' ? 'outboards' : 'jet drives'} have no V-drive`);
       }
-      if (t !== 'outboard' && out._clearTrans) {
+      if (t !== 'outboard' && t !== 'jet' && out._clearTrans) {
         fail(`${t} cleared the transmission count when it should not`);
       }
     }
@@ -103,4 +104,4 @@ if (bad) {
   console.error(`FAIL: ${bad} motor-rule violation(s)`);
   process.exit(1);
 }
-console.log('motor rules hold: one type per boat, whole counts only, outboards carry no V-drive');
+console.log('motor rules hold: one type per boat, whole counts only, outboards/jet drives carry no V-drive');

@@ -33,7 +33,7 @@ const fail = (m) => { console.error('  FAIL ' + m); bad++; };
 
 const baseState = () => ({
   unit: 'boat', hasTrailer: false, isPontoon: false,
-  engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' } },
+  engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' } },
   loa: 24, beam: 8, lwt: 0, storage: 'outside', retrieval: 'quest',
   dtTrans: 0, dtTransom: 0, ballast: 0, addlHeads: 0,
   pumpout: false, lateRetrieval: false
@@ -112,7 +112,7 @@ console.log('=== the slipholder discount is a normal line, priced through the ex
      card, which has always taken a negative amount. Nothing special to
      enforce here beyond the line actually existing and reading tbd. */
   const base = { unit: 'boat', hasTrailer: false, isPontoon: false,
-    engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' } },
+    engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' } },
     loa: 24, beam: 8, lwt: 0, storage: 'outside', retrieval: 'quest',
     dtTrans: 0, dtTransom: 0, ballast: 0, addlHeads: 0, hho: true, slipNo: 'B-14' };
   const r = E.computeQuote(base);

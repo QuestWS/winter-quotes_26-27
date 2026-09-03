@@ -117,9 +117,9 @@ before/after line diff → **Apply**. Nothing is written until Apply.
 - **Motors travel as one control group** (`sanitizeEngines_`), because the rules
   bind them: a boat may have multiples of ONE type but never a mix, so changing
   the type has to zero the others. Three counts sent loose could leave a boat
-  with two inboards *and* an outboard. Switching to outboard also clears
-  `dtTrans` — outboards have no transmission or V-drive, and the console hides
-  that field for them, so staff couldn't fix it otherwise.
+  with two inboards *and* an outboard. Switching to outboard or jet drive also
+  clears `dtTrans` — neither has a transmission or V-drive, and the console
+  hides that field for both, so staff couldn't fix it otherwise.
   `tools/check-engine-rules.js` **executes** the rule over every type/count
   combination rather than grepping for it; `verify.sh` runs it.
 - **A blank count is refused, not read as zero.** `Number('')` is 0, so an

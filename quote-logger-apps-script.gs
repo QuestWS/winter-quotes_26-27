@@ -201,6 +201,12 @@ const PRICES = {
      rather than a change to the engine. */
   blocking:185, blockingPontoon:185,
 };
+/* Jet-drive boats winterize exactly like a PWC/jetski — no drive oil, no
+   gimbal ring, none of the shaft-drive steps — so this ALIASES the pwc rate
+   rather than carrying a second number that could quietly drift from it at
+   the next season rollover. Update pwc above and jet follows automatically. */
+PRICES.basic.jet = PRICES.basic.pwc;
+PRICES.full.jet = PRICES.full.pwc;
 
 const RULES = {
   latePct:10,
@@ -232,7 +238,13 @@ const LEVEL_DESC = {
 const BOAT_ENGINES = [
   {id:'inboard',  name:'Inboard'},
   {id:'io',       name:'Inboard/Outboard (sterndrive)'},
-  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'}
+  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'},
+  /* Some boats run a jet drive instead of a prop — same winterizing steps as
+     a PWC/jetski, not a shaft-drive or sterndrive boat, so likePwc points the
+     price lookup and the description text at the pwc rate/text (aliased
+     above) instead of the boat-engine text, which lists steps a jet drive
+     doesn't have (drive oil, gimbal ring). */
+  {id:'jet', name:'Jet Drive', likePwc:true, sub:'Priced and winterized the same as PWC / Jetski'}
 ];
 
 const QUOTE_ITEMS = [
@@ -419,7 +431,8 @@ function computeQuote(s){
     const g=s.engines[e.id];
     if(g.qty>0){
       const rate=PRICES[g.level][e.id];
-      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmtMoney_(rate)}`, g.level==='full'?LEVEL_DESC.fullQuote:LEVEL_DESC.basic);
+      const fullText = e.likePwc ? LEVEL_DESC.fullPwcQuote : LEVEL_DESC.fullQuote;
+      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmtMoney_(rate)}`, g.level==='full'?fullText:LEVEL_DESC.basic);
     }
   }
   if(s.dtTrans>0) add('Drive train','Transmission or V-drive'+(s.dtTrans>1?` × ${s.dtTrans}`:''), PRICES.dtTrans*s.dtTrans, `${s.dtTrans} × ${fmtMoney_(PRICES.dtTrans)}`);
@@ -1793,6 +1806,7 @@ function sanitizeEngines_(e, st) {
     inboard:  { qty: 0, level: (cur.inboard  || {}).level || 'basic' },
     io:       { qty: 0, level: (cur.io       || {}).level || 'basic' },
     outboard: { qty: 0, level: (cur.outboard || {}).level || 'basic' },
+    jet:      { qty: 0, level: (cur.jet      || {}).level || 'basic' },
     pwc:      { qty: Number((cur.pwc || {}).qty || 0), level: (cur.pwc || {}).level || 'basic' }
   };
 
@@ -1804,14 +1818,14 @@ function sanitizeEngines_(e, st) {
   if (kind !== 'boat') throw new Error('This unit type has no motors to change.');
 
   const t = String(e.type || '');
-  if (['inboard', 'io', 'outboard'].indexOf(t) < 0) throw new Error('Pick a motor type.');
+  if (['inboard', 'io', 'outboard', 'jet'].indexOf(t) < 0) throw new Error('Pick a motor type.');
   out.pwc.qty = 0;                       // a boat is not a jet ski
   out[t] = { qty: qty(e.qty), level: lvl(e.level, (cur[t] || {}).level) };
-  /* Outboards have no transmission or V-drive. Correcting a boat from inboard
-     to outboard has to clear that count too, or the quote keeps charging for
-     drive-train work on a boat that has none — and the console hides the field
-     for outboards, so staff cannot fix it in the same pass. */
-  out._clearTrans = (t === 'outboard');
+  /* Outboards and jet drives have no transmission or V-drive. Correcting a
+     boat to either has to clear that count too, or the quote keeps charging
+     for drive-train work on a boat that has none — and the console hides the
+     field for both, so staff couldn't fix it in the same pass. */
+  out._clearTrans = (t === 'outboard' || t === 'jet');
   return out;
 }
 
@@ -3227,7 +3241,7 @@ function legacyToState_(parsed, pick) {
     skiLen: 0, skiWid: 0, skiDetail: 0,
     hasTrailer: hasTrailer,
     engines: { inboard: { qty: 0, level: 'basic' }, io: { qty: 0, level: 'basic' },
-               outboard: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' } },
+               outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' } },
     dtTrans: q.trans || 0, dtTransom: q.transom || 0,
     ballast: q.ballast || 0, addlHeads: q.addlHeads || 0,
     waterCold: !!q.waterCold, waterHead: !!q.waterHead, pumpout: !!q.pumpout,
@@ -5162,9 +5176,9 @@ function hasDetailing_(d) {
 
 function engineSummary_(st) {
   const eng = (st && st.engines) || {};
-  const names = { inboard: 'Inboard', io: 'Inboard/Outboard', outboard: 'Outboard', pwc: 'Jet ski' };
+  const names = { inboard: 'Inboard', io: 'Inboard/Outboard', outboard: 'Outboard', jet: 'Jet Drive', pwc: 'Jet ski' };
   const parts = [];
-  ['inboard', 'io', 'outboard', 'pwc'].forEach(function (k) {
+  ['inboard', 'io', 'outboard', 'jet', 'pwc'].forEach(function (k) {
     const g = eng[k] || {};
     const q = Number(g.qty || 0);
     if (q > 0) parts.push(q + ' \u00d7 ' + names[k] + ', ' + (g.level === 'full' ? 'full service' : 'basic'));

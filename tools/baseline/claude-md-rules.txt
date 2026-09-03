@@ -357,8 +357,8 @@ and five hundred. `check-bulk-targets.js` executes all of it.
 - Every bulk send is audited (`SEND TO ALL "…" — n of m`) and lands in each
 Rules that live on `index.html` — what a customer may build, how they get
 back to an unfinished quote, and what the proceed button commits them to.
-Inboard / outboard / I-O are mutually exclusive; multiples of one type are
-normal. Picking a type zeroes the others and dims their rows
+Inboard / outboard / I-O / jet drive are mutually exclusive; multiples of one
+type are normal. Picking a type zeroes the others and dims their rows
 (`clearOtherEngineTypes_`, `syncEngineRows_`). Genuinely odd rigs are handled
 by Quest as a line-item adjustment, not by letting a customer build a boat
 Exterior detail / wash & wax, interior detail / wipe-down, and bottom-paint
@@ -510,9 +510,9 @@ before/after line diff → **Apply**. Nothing is written until Apply.
 - **Motors travel as one control group** (`sanitizeEngines_`), because the rules
 bind them: a boat may have multiples of ONE type but never a mix, so changing
 the type has to zero the others. Three counts sent loose could leave a boat
-with two inboards *and* an outboard. Switching to outboard also clears
-`dtTrans` — outboards have no transmission or V-drive, and the console hides
-that field for them, so staff couldn't fix it otherwise.
+with two inboards *and* an outboard. Switching to outboard or jet drive also
+clears `dtTrans` — neither has a transmission or V-drive, and the console
+hides that field for both, so staff couldn't fix it otherwise.
 `tools/check-engine-rules.js` **executes** the rule over every type/count
 combination rather than grepping for it; `verify.sh` runs it.
 - **A blank count is refused, not read as zero.** `Number('')` is 0, so an

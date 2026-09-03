@@ -10,11 +10,18 @@ every request. The rules are unchanged — this text was moved verbatim, and
 ---
 
 ## One motor type per boat
-Inboard / outboard / I-O are mutually exclusive; multiples of one type are
-normal. Picking a type zeroes the others and dims their rows
+Inboard / outboard / I-O / jet drive are mutually exclusive; multiples of one
+type are normal. Picking a type zeroes the others and dims their rows
 (`clearOtherEngineTypes_`, `syncEngineRows_`). Genuinely odd rigs are handled
 by Quest as a line-item adjustment, not by letting a customer build a boat
 that cannot exist.
+
+Jet drive is a boat engine that winterizes exactly like a PWC/jetski — no
+drive oil, no gimbal ring — so it rides the pwc rate and description text
+instead of carrying its own (`BOAT_ENGINES`' `likePwc` flag in
+`pricing-engine.js`, aliased in `PRICES.basic.jet`/`PRICES.full.jet`). Update
+the pwc rate at rollover and jet follows automatically; there is no second
+number to remember.
 
 
 ## Detail options are NOT mutually exclusive

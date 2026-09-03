@@ -62,6 +62,12 @@ const PRICES = {
      rather than a change to the engine. */
   blocking:185, blockingPontoon:185,
 };
+/* Jet-drive boats winterize exactly like a PWC/jetski — no drive oil, no
+   gimbal ring, none of the shaft-drive steps — so this ALIASES the pwc rate
+   rather than carrying a second number that could quietly drift from it at
+   the next season rollover. Update pwc above and jet follows automatically. */
+PRICES.basic.jet = PRICES.basic.pwc;
+PRICES.full.jet = PRICES.full.pwc;
 
 const RULES = {
   latePct:10,
@@ -93,7 +99,13 @@ const LEVEL_DESC = {
 const BOAT_ENGINES = [
   {id:'inboard',  name:'Inboard'},
   {id:'io',       name:'Inboard/Outboard (sterndrive)'},
-  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'}
+  {id:'outboard', name:'Outboard', sub:'Basic includes drive oil change · Full subject to oil volume adjustment'},
+  /* Some boats run a jet drive instead of a prop — same winterizing steps as
+     a PWC/jetski, not a shaft-drive or sterndrive boat, so likePwc points the
+     price lookup and the description text at the pwc rate/text (aliased
+     above) instead of the boat-engine text, which lists steps a jet drive
+     doesn't have (drive oil, gimbal ring). */
+  {id:'jet', name:'Jet Drive', likePwc:true, sub:'Priced and winterized the same as PWC / Jetski'}
 ];
 
 const QUOTE_ITEMS = [
@@ -280,7 +292,8 @@ function computeQuote(s){
     const g=s.engines[e.id];
     if(g.qty>0){
       const rate=PRICES[g.level][e.id];
-      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmtMoney_(rate)}`, g.level==='full'?LEVEL_DESC.fullQuote:LEVEL_DESC.basic);
+      const fullText = e.likePwc ? LEVEL_DESC.fullPwcQuote : LEVEL_DESC.fullQuote;
+      add('Engine winterization', `${g.level==='full'?'Full service':'Basic'} — ${e.name}${g.qty>1?` × ${g.qty}`:''}`, rate*g.qty, `${g.qty} × ${fmtMoney_(rate)}`, g.level==='full'?fullText:LEVEL_DESC.basic);
     }
   }
   if(s.dtTrans>0) add('Drive train','Transmission or V-drive'+(s.dtTrans>1?` × ${s.dtTrans}`:''), PRICES.dtTrans*s.dtTrans, `${s.dtTrans} × ${fmtMoney_(PRICES.dtTrans)}`);

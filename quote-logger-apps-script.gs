@@ -225,6 +225,24 @@ const RULES = {
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
 
+/* ============ PER-QUOTE PRICING EXCEPTIONS ============
+   One-off negotiated rates for a specific customer, keyed by quote number.
+   Deliberately kept OUTSIDE the Annual Update Zone above: a season-wide rate
+   rollover only ever edits that block, so an entry here survives untouched
+   through any future update to everyone else's pricing — exactly the point.
+   Read ONLY by rateOverride_ below; nothing else ever consults this table,
+   so a quote not listed here can never be affected by one that is.
+   Remove an entry the moment its exception no longer applies. */
+const QUOTE_RATE_OVERRIDES = {
+  'QW-26-1991': { insideNT: 6.74 }   // negotiated inside/non-trailer rate — Sep 2026
+};
+/* Returns the override for this exact quote + rate key, or null if this quote
+   has none — callers fall back to the normal PRICES value on null. */
+function rateOverride_(s, key){
+  const o = QUOTE_RATE_OVERRIDES[s && s.quoteNo];
+  return (o && o[key] != null) ? o[key] : null;
+}
+
 const LEVEL_DESC = {
   basic:'Drain water, run on anti-freeze, drain & fog, disconnect batteries.',
   full: 'Everything in Basic, plus (as applicable): engine oil & filter change, drive oil change, gimbal ring torque check, fuel conditioner, and 1 fuel filter.',
@@ -461,7 +479,8 @@ function computeQuote(s){
       const r=prem?PRICES.insidePremT:PRICES.insideT;
       if(lwt&&beam) add('Storage',name+' — on trailer', r*lwt*beam, `${lwt}×${beam} sqft × $${r}`); else need.push('LWT & beam for on-trailer inside storage');
     }else{
-      const r=prem?PRICES.insidePremNT:PRICES.insideNT;
+      const ntOverride=prem?null:rateOverride_(s,'insideNT');
+      const r=prem?PRICES.insidePremNT:(ntOverride!=null?ntOverride:PRICES.insideNT);
       if(loa&&beam) add('Storage',name+' — non-trailer', r*loa*beam, `${loa}×${beam} sqft × $${r}`); else need.push('LOA & beam for inside storage');
     }
   }

@@ -630,7 +630,7 @@ if (typeof QuestPricing === 'undefined') {
    call site is unchanged. */
 const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
        fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
-       depositBaseFor, lwtFromOverhang} = QuestPricing;
+       depositBaseFor, lwtFromOverhang, rateOverride_} = QuestPricing;
 
 const UNITS = [
   {id:'boat',   ic:'🚤', t:'Boat',      d:'Winterize, store, shrinkwrap & more'},
@@ -843,7 +843,8 @@ function buildSkiLevels(){
 }
 function buildStorage(){
   const T=S.hasTrailer;
-  const insideRate = T?PRICES.insideT:PRICES.insideNT;
+  const ntOverride = T?null:rateOverride_(S,'insideNT');
+  const insideRate = T?PRICES.insideT:(ntOverride!=null?ntOverride:PRICES.insideNT);
   const premRate   = T?PRICES.insidePremT:PRICES.insidePremNT;
   const dim = T?'LWT × Beam':'LOA × Beam';
   // Non-trailered boats with beam over the limit can't go in regular inside storage
@@ -1422,7 +1423,9 @@ function refresh(){
   const stO=$('#stO'); if(stO) stO.textContent=S.loa?fmt(PRICES.outsidePerFt*S.loa):'needs LOA';
   const inSq = S.hasTrailer ? ((S.lwt&&S.beam)?S.lwt*S.beam:null) : ((S.loa&&S.beam)?S.loa*S.beam:null);
   const inNeed = S.hasTrailer ? 'needs LWT & beam' : 'needs LOA & beam';
-  const stI=$('#stI'); if(stI) stI.textContent=inSq?fmt((S.hasTrailer?PRICES.insideT:PRICES.insideNT)*inSq):inNeed;
+  const stINtOverride=S.hasTrailer?null:rateOverride_(S,'insideNT');
+  const stIRate=S.hasTrailer?PRICES.insideT:(stINtOverride!=null?stINtOverride:PRICES.insideNT);
+  const stI=$('#stI'); if(stI) stI.textContent=inSq?fmt(stIRate*inSq):inNeed;
   const stP=$('#stP'); if(stP) stP.textContent=inSq?fmt((S.hasTrailer?PRICES.insidePremT:PRICES.insidePremNT)*inSq):inNeed;
   syncWrapUI();
   if(S.unit==='jetski') buildSkiStorage();

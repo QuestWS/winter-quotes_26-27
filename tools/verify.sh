@@ -265,6 +265,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: penalty handling broken"; sed 's/^/       /' "$TMP/pen.txt"; FAIL=1
   fi
+  # A per-quote negotiated rate (QUOTE_RATE_OVERRIDES) must reach only the
+  # named quote, never anyone else, and must survive a season-wide rate
+  # change to everyone else's pricing.
+  if node tools/check-quote-rate-overrides.js > "$TMP/rateov.txt" 2>&1; then
+    echo "  OK   gate: per-quote rate overrides stay isolated and survive a season update"
+  else
+    echo "  FAIL gate: a per-quote rate override leaked or was overwritten"; sed 's/^/       /' "$TMP/rateov.txt"; FAIL=1
+  fi
   if node tools/check-docs-coverage.js > "$TMP/docs.txt" 2>&1; then
     echo "  OK   gate: every documented rule still written down somewhere"
     grep -E 'CLAUDE.md is|entry points' "$TMP/docs.txt" | sed 's/^ */       /'

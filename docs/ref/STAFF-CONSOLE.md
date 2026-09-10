@@ -33,6 +33,32 @@ not by pasting the name into an `onclick`** — an apostrophe in a name would
 otherwise break the handler.
 
 
+## Customer link
+
+Every loaded quote shows a **Customer link** block under the print button: the
+URL in full, selectable, with Copy and Open. It opens that customer's quote on
+the customer page already filled in — nothing to spell out over the phone, and
+it can be texted.
+
+- **The server builds it, not the console** (`quoteLinkFor_` on `adminLookup`).
+  The same `quoteLink_` builds the one inside every customer email, so the link
+  staff hand over in the yard and the link the customer was emailed are the
+  same URL. See `docs/ref/EMAILS.md`.
+- **The URL is shown, not just copied.** `navigator.clipboard` needs a secure
+  context and is missing in some in-app browsers; `copyQuoteLink()` falls back
+  to select + `execCommand`, and if that goes too it leaves the field selected
+  so press-and-hold still works. A copy button that can silently do nothing is
+  worse than a field you can read out.
+- **Hidden, not broken, when there is no last name.** The server returns `''`
+  and the block does not render — a link missing half its query string opens an
+  empty quote page and looks like the system lost the quote.
+- The sheet menu's *Show customer link for selected quote* is the same link
+  (menu ↔ console parity). It reads the row and shows the URL; it writes
+  nothing and sends nothing. The legacy `?page=admin` console shows it too, as
+  a row in its info list — a fallback console missing something staff have
+  started relying on is a fallback that fails the day it is needed.
+
+
 ## Staff notes
 
 `d.staffNote`, own card, gated on `keys`. Why a quote is the way it is —

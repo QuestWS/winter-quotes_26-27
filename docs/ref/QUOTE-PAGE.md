@@ -49,6 +49,13 @@ The follow-up email links back with `?quote=…&ln=…`; `autoLoadFromUrl_()`
 restores the quote on load and also fills the two fields, so a mangled link
 still leaves the customer one button press away.
 
+That link is no longer only the follow-up email's: the quote/invoice email, the
+10-day reminder and the staff console's copyable **Customer link** all hand out
+the same `?quote=…&ln=…` URL, all built by `quoteLink_` server-side
+(`docs/ref/EMAILS.md`). `autoLoadFromUrl_()` is therefore a **customer-facing
+entry point**, not a one-off — a change to it, or to the fields it fills, is a
+change to every one of those paths.
+
 
 ## Terms acceptance & lead capture
 Name, phone and email are **required** before a customer can leave the start

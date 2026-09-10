@@ -51,7 +51,7 @@ const DRIVE_FOLDER_NAME = 'Winter Quotes 2025-26';
 // of the Gmail address. Leave '' to send from the Gmail account directly.
 const FROM_ALIAS = '';
 // Customer-facing email settings
-const PAYMENT_URL = 'https://pay.pospluslogin.com/questwatersports';
+const PAYMENT_URL = 'https://pay.pospluslogin.com/questws';
 // Customer replies to quote emails go here (works regardless of FROM_ALIAS)
 const REPLY_TO = 'service@questwatersports.com';
 // Optional: public URL of the Quest logo PNG (e.g. upload Quest_wet_rect.png to
@@ -1071,6 +1071,7 @@ function onOpen() {
     .addItem('Adjust selected quote (no email)…', 'adjustSelectedQuote')
     .addItem('Adjust & email customer…', 'adjustAndEmail')
     .addItem('Email updated quote to customer…', 'emailUpdatedQuote')
+    .addItem('Show customer link for selected quote…', 'showQuoteLink')
     .addItem('Edit / remove line items…', 'editLineItems')
     .addItem('Price a quote request…', 'priceQuoteRequest')
     .addSeparator()
@@ -2226,6 +2227,13 @@ function adminLookup(token, qn) {
     })(),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
+    /* The customer's own way back into this quote — quote number and last name
+       already attached, so nothing to read out over the phone. Built server-
+       side by the same quoteLink_ every customer email uses, so what staff copy
+       in the yard is byte-for-byte what the customer was emailed. Empty when
+       the row has no last name; the console hides the block rather than
+       offering a link that opens a blank quote page. */
+    quoteUrl: quoteLinkFor_(d),
     rq: String(d.quotesRequested || ''),
     rqList: String(d.quotesRequested || '').split('; ').filter(function (x) { return x; }),
     seasonDone: d.seasonDone || null,
@@ -4096,8 +4104,7 @@ function buildEmailFor_(d, kind, extra, photos) {
      name so the page restores their quote without them typing anything, and
      the number is spelled out as well for anyone whose client mangles links. */
   if (kind === 'finishquote') {
-    const resume = QUOTE_PAGE_URL + '?quote=' + encodeURIComponent(d.quoteNo || '') +
-                   '&ln=' + encodeURIComponent(d.lastName || '');
+    const resume = quoteLinkFor_(d);
     /* No greeting here: noticeHtml_ already opens with "Hi <first name>," for
        every kind, and a second one reads like a mail merge gone wrong. */
     const intro = 'It' +
@@ -4400,6 +4407,7 @@ function adminEmailPreview(token, qn, kind, extra) {
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
+      quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
     return { ok: 1, to: d.email, subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
   }
@@ -4420,6 +4428,22 @@ function requirePhotos_(ctx) {
   const url = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
   if (!url) ctx.ui.alert('Tip: no photo folder on this quote yet — run "Create / open photo folder" first if you want a photo link included.');
   return url;
+}
+
+/* Menu <-> console parity: the console shows a copyable customer link on every
+   quote, so the sheet offers the same thing. Read-only — it builds the link
+   from the row and shows it, writes nothing and sends nothing. Desktop only,
+   like every menu item (see the mobile-Sheets constraint), which is also the
+   only place the dialog text can be selected and copied. */
+function showQuoteLink() {
+  const ctx = getSelectedQuoteRow_();
+  if (!ctx) return;
+  const url = quoteLinkFor_(ctx.d);
+  if (!url) { ctx.ui.alert('This row has no last name on it, so a customer link cannot be built.'); return; }
+  ctx.ui.alert('Customer link — ' + ctx.d.quoteNo,
+    'Select the link below and copy it. It opens their ' + docTerm_(ctx.d).toLowerCase() +
+    ' already filled in — no quote number or last name to type.\n\n' + url,
+    ctx.ui.ButtonSet.OK);
 }
 
 function sendStoredEmail() {
@@ -4785,7 +4809,7 @@ function buttonHtml_(url, label, bg) {
 }
 
 function customerEmailHtml_(o) {
-  // o: {firstName, quoteNo, unit, total, deposit, dueToday, noStorage, payBy, signUrl, hasPdf, reminder}
+  // o: {firstName, quoteNo, unit, total, deposit, dueToday, noStorage, payBy, signUrl, quoteUrl, hasPdf, reminder}
   // width/height ATTRIBUTES are required: Outlook's renderer ignores CSS
   // max-height and displays the full-size image without them
   const logo = LOGO_URL
@@ -4818,6 +4842,16 @@ function customerEmailHtml_(o) {
   let buttons = '';
   if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E');
   if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
+  /* Their own quote, already filled in — no quote number to find, no last name
+     to type. Secondary to signing and paying on purpose: those are what this
+     email is for, this is the way back in if something needs changing. Built
+     by quoteLink_, the same link staff copy from the console. Word it with the
+     same term the rest of the email uses, so an invoice is not called a quote
+     in its own button. */
+  if (o.quoteUrl) {
+    buttons += buttonHtml_(o.quoteUrl,
+      'View my ' + (Number(o.paid || 0) > 0 ? 'invoice' : 'quote') + ' online', '#4A81A6');
+  }
   /* Season-done survey. Only for customers who have actually committed --
      a deposit or payment in full. Asking someone to book their haul-out
      before they have put money down is asking them to schedule work they
@@ -4866,6 +4900,26 @@ function surveyBase_(d) {
     '&ln=' + encodeURIComponent(d.lastName || '');
 }
 
+/* ---------------------------------------------------------------------------
+   THE "PICK UP YOUR QUOTE" LINK — built in exactly one place
+   ---------------------------------------------------------------------------
+   Quote number + last name is precisely what the quote page's loader already
+   asks a customer to type (`autoLoadFromUrl_` fills both fields and presses
+   the button for them), so a link carrying them opens that customer's own
+   restored quote and nothing else. It reveals no more than the form does.
+
+   Every producer goes through here — the console's copyable link, the lead
+   follow-up email, and the quote/invoice email — so the link staff copy in the
+   yard and the link the customer got by email can never drift apart. Returns
+   '' when either half is missing rather than a half-built URL that lands on an
+   empty quote page; callers hide the button on ''. */
+function quoteLink_(quoteNo, lastName) {
+  const qn = String(quoteNo || '').trim(), ln = String(lastName || '').trim();
+  if (!qn || !ln) return '';
+  return QUOTE_PAGE_URL + '?quote=' + encodeURIComponent(qn) + '&ln=' + encodeURIComponent(ln);
+}
+function quoteLinkFor_(d) { return quoteLink_(d && d.quoteNo, d && d.lastName); }
+
 function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
   try {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
@@ -4878,6 +4932,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
+      quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
@@ -5040,7 +5095,7 @@ function dailyReminderCheck() {
     const data = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
     data.forEach(function (r, i) {
       const ts = r[COL.TS-1], status = String(r[COL.STATUS-1] || ''), quoteNo = r[COL.QN-1], unit = r[COL.UNIT-1],
-            first = r[COL.FIRST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
+            first = r[COL.FIRST-1], last = r[COL.LAST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
             signUrl = r[COL.SIGN-1], reminder = r[COL.REM-1];
       let payByShort = '', noStorage = false;
       try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); } catch (e) {}
@@ -5055,7 +5110,11 @@ function dailyReminderCheck() {
         const html = customerEmailHtml_({
           firstName: first, quoteNo: quoteNo, unit: unit,
           total: total, deposit: deposit, dueToday: dueToday, noStorage: noStorage,
-          payBy: payByShort, signUrl: signUrl || '', reminder: true
+          payBy: payByShort, signUrl: signUrl || '',
+          /* The whole point of this email is "come back and finish" — it is the
+             one that most needs the one-tap way back in. Built from the row's
+             own last name, the same halves quoteLinkFor_ takes off a payload. */
+          quoteUrl: quoteLink_(quoteNo, last), reminder: true
         });
         const pdf = getPdfBlob_(quoteNo);
         const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
@@ -5473,7 +5532,11 @@ function adminPage_() {
   'var kv=function(k,v){return "<div class=kv><span>"+k+"</span><b>"+v+"</b></div>"};' +
   '$("qInfo").innerHTML=kv("Unit",r.unit+(r.ymm?" · "+r.ymm:""))+kv("Status",r.status)+kv("Total",r.total)+kv("Paid",r.paid)+kv("Balance",r.balance)+' +
   '(r.keyLoc?kv("Keys",r.keyLoc):"")+(r.hhoAddr?kv("HHO addr",r.hhoAddr):"")+(r.rq?kv("Quotes open",r.rq):"")+' +
-  'kv("Email",r.hasEmail?r.email:"— none —")+(r.phone?kv("Phone",r.phone):"");' +
+  'kv("Email",r.hasEmail?r.email:"— none —")+(r.phone?kv("Phone",r.phone):"")+' +
+  /* Same customer link the GitHub console offers, so the fallback console is
+     not missing something staff have started relying on. Rendered as the URL
+     itself, not the word "open": it exists to be copied and texted. */
+  '(r.quoteUrl?kv("Customer link","<a href=\'"+r.quoteUrl+"\' target=_blank style=\'word-break:break-all;font-weight:normal\'>"+r.quoteUrl+"</a>"):"");' +
   '$("qLines").textContent=r.lines.join("\\n");' +
   'var P=ME.admin?{pay:1,adjust:1,email:1,photos:1}:(ME.perms||{});' +
   'show("payCard",!!P.pay);show("adjCard",!!P.adjust);show("emailCard",!!P.email&&r.hasEmail);show("photoCard",!!P.photos);' +

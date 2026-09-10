@@ -21,6 +21,28 @@ that builder — not to the send path directly.
 Email History.
 
 
+## The "pick up your quote" link
+
+**`quoteLink_(quoteNo, lastName)` is the only place this URL is built**, and
+`quoteLinkFor_(d)` is its payload-shaped wrapper. Quote number + last name is
+exactly what the quote page's own loader asks a customer to type, so a link
+carrying both opens that customer's restored quote and nothing else — it
+reveals no more than the form already does, and the server's matcher trims and
+lower-cases both halves, so a link built from the stored last name always
+matches.
+
+Everything that hands the link out goes through that one builder: the quote /
+invoice email (`customerEmailHtml_`, as `o.quoteUrl` — "View my quote online",
+worded *invoice* once a payment exists), the 10-day auto-reminder, the lead
+follow-up ("Finish my quote"), the console's copyable **Customer link** block,
+and the sheet menu's *Show customer link*. That is what stops the link staff
+read out in the yard from differing from the one the customer was emailed.
+
+It returns `''` when either half is missing rather than a half-built URL that
+lands on an empty quote page — **every caller must hide its button on `''`**,
+which is what the console and the email builder both do.
+
+
 ## The automatic-email pause
 
 `AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,

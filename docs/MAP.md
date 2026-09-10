@@ -61,6 +61,7 @@ symptom.
 |---|---|---|
 | **Every** email body | `buildEmailFor_` | `.gs` |
 | Customer-facing bodies | `customerEmailHtml_`, `noticeHtml_` | `.gs` |
+| The "pick up your quote" link | `quoteLink_`, `quoteLinkFor_` | `.gs` |
 | Send, and record in Email History | `adminSendEmail`, `recordEmail_` | `.gs` |
 | The two automatic sends | `dailyReminderCheck`, `leadFollowUpCheck` | `.gs` |
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
@@ -77,6 +78,7 @@ symptom.
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
+| Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | Old-sheet import | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply` | `previewImport`, `doImport` |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
@@ -90,6 +92,7 @@ symptom.
 |---|---|
 | Contact gate and terms acceptance | `startAcceptAndContinue`, `contactMissing_`, `stampTermsAcceptance_` |
 | Resume an unfinished quote | `checkForUnfinished_`, `autoLoadFromUrl_` |
+| Land on a quote from a link | `autoLoadFromUrl_` (server side: `quoteLink_`) |
 | Restore a loaded quote into the form | `hydrateFromState` |
 | Recompute and redraw | `refresh` |
 | Engine type exclusivity | `clearOtherEngineTypes_`, `syncEngineRows_` |

@@ -96,6 +96,15 @@ border-bottom:1px solid var(--ice);font-size:13px}
 .rqrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;
 background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bottom:6px;font-size:13px}
 .rqrow .btn{flex:0 0 auto}
+/* The customer's own link to their quote. It exists to be handed over — read
+   out on the phone, texted, pasted into an email — so the URL is shown in full
+   and selectable rather than hidden behind a button that may have no clipboard
+   permission in whatever browser the yard phone is running. */
+.lnkbox{background:#F4F9FC;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:10px}
+.lnkbox .lab{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
+.lnkbox .row{display:flex;gap:6px;align-items:center;margin-top:6px}
+.lnkbox input{width:100%;margin-top:6px;box-sizing:border-box;padding:8px 10px;font-size:12.5px;
+border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);background:#fff;color:var(--navy)}
 .sdbox{background:#F4F9FC;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:13px}
 .sdbox .lab{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
 .sdopts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
@@ -358,6 +367,14 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             </div>
             <div id="qInfo"></div>
             <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">Print quote</button></div>
+            <div class="lnkbox hide" id="linkBox">
+              <div class="lab" id="linkLab">Customer link — opens this quote already filled in</div>
+              <input id="linkUrl" readonly onclick="this.select()">
+              <div class="row">
+                <button class="btn navy sm" onclick="copyQuoteLink()">Copy link</button>
+                <button class="btn ghost sm" onclick="openQuoteLink()">Open</button>
+              </div>
+            </div>
             <div id="rqBlock" style="margin-top:8px"></div>
             <div id="seasonBlock" style="margin-top:8px"></div>
             <div class="ctr" id="contractRow">
@@ -1083,6 +1100,33 @@ async function printQuote(){
   }
 }
 
+/* The link a customer can follow straight into their own quote — quote number
+   and last name already attached, so nothing has to be spelled out over the
+   phone. The server builds it (quoteLink_) and the quote, reminder and
+   follow-up emails carry the identical URL, so a texted link and an emailed
+   one land the customer in the same place. Hidden when the server sends ''
+   (a row with no last name), rather than offering a link to a blank page. */
+function renderQuoteLink(url, term){
+  window._quoteUrl=String(url||'');
+  $('linkBox').classList.toggle('hide',!window._quoteUrl);
+  if(!window._quoteUrl) return;
+  $('linkUrl').value=window._quoteUrl;
+  $('linkLab').textContent='Customer link — opens this '+String(term||'quote').toLowerCase()+' already filled in';
+}
+async function copyQuoteLink(){
+  const u=window._quoteUrl; if(!u) return;
+  const el=$('linkUrl');
+  try{
+    /* navigator.clipboard needs a secure context and is missing outright in
+       some in-app browsers. Falling back to select + execCommand keeps the
+       button working there; if both fail the field is left selected, so a
+       press-and-hold copy is still one gesture away. */
+    if(navigator.clipboard&&navigator.clipboard.writeText) await navigator.clipboard.writeText(u);
+    else { el.focus(); el.select(); if(!document.execCommand('copy')) throw new Error('copy refused'); }
+    toast('Link copied — paste it into a text or email');
+  }catch(e){ el.focus(); el.select(); toast('Press and hold the link to copy it'); }
+}
+function openQuoteLink(){ if(window._quoteUrl) window.open(window._quoteUrl,'_blank'); }
 function closeQuote(){$('quoteArea').classList.add('hide');QN='';setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
 async function doLookup(qn){
   QN=qn||$('qn').value.trim().toUpperCase();if(!QN)return;
@@ -1096,6 +1140,7 @@ function renderQuote(r){
   $('quoteArea').classList.remove('hide');
   QTERM=r.term||'Quote';
   const pb=$('btnPrint'); if(pb) pb.textContent=printBtnLabel_();
+  renderQuoteLink(r.quoteUrl,QTERM);
   $('qName').textContent=r.quoteNo+' — '+r.name;
   $('qStatus').textContent=r.status||'—';$('qStatus').className='pill '+pillClass(r.status||'');
   const credit=r.balance.startsWith('CREDIT');

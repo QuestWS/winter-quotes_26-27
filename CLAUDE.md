@@ -258,6 +258,11 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 - **HtmlService serializes uploads** (one at a time). The GitHub console posts
   directly to `/exec` and uploads 3-in-parallel. Don't "simplify" the GitHub
   console back onto `google.script.run`.
+- **A console POST can be lost in transit**, and when it is, the request lands
+  on `doGet` and the customer quote-loader answers it — which is how staff came
+  to be told "Enter both your quote number and last name." while looking at an
+  open quote. Every console reply is stamped `_api:'console'` and reads retry
+  over GET; **writes must never become GET-able**. `docs/ref/STAFF-CONSOLE.md`.
 - **Mobile Google Sheets app cannot show custom menus, ever.** Desktop web or
   Chrome's "Desktop site" toggle only. That limitation is why the console
   exists.

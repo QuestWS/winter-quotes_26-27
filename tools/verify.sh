@@ -39,6 +39,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
+    "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
     "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "legacyToState_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
@@ -74,7 +75,8 @@ if [ -f admin/index.html ]; then
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
-    "renderQuoteLink" "copyQuoteLink" "linkBox"
+    "renderQuoteLink" "copyQuoteLink" "linkBox" \
+    "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
   # preview was broken for the person who most needs it. It needs
@@ -360,6 +362,15 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminRepriceApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
     echo "  FAIL trap: re-price emails customers — that must stay a separate decision"; FAIL=1
   else echo "  OK   trap: re-price emails nobody"; fi
+  # The console API answers on POST and, since a lost POST broke the console in
+  # the yard, on GET too. Writes must stay POST-only and every reply must carry
+  # the _api stamp — both are executed against the real dispatcher, because a
+  # grep cannot tell a refused GET from one that quietly ran a payment twice.
+  if node tools/check-console-transport.js > "$TMP/trans.txt" 2>&1; then
+    echo "  OK   gate: console transport (writes POST-only, reads survive a lost POST)"
+  else
+    echo "  FAIL gate: console transport rules broken"; sed 's/^/       /' "$TMP/trans.txt"; FAIL=1
+  fi
   # Who can actually record a key location today, and which way a broken pause
   # fails. Both are properties of the code, so they are checked by running it.
   if node tools/check-perms-pause.js > "$TMP/perm.txt" 2>&1; then

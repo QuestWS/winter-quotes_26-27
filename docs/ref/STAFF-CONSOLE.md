@@ -33,6 +33,49 @@ not by pasting the name into an `onclick`** — an apostrophe in a name would
 otherwise break the handler.
 
 
+## How the console talks to the backend
+
+`api(fn,args)` POSTs `{api:'console',fn,token,args}` to `/exec`, and
+`consoleServe_` in the `.gs` dispatches it. Since September 2026 the same
+dispatcher also answers a **GET** (`?api=console&fn=…&token=…&args=…`).
+
+**Why:** those POSTs started coming back with `doGet`'s customer-facing *"Enter
+both your quote number and last name."* That string is reachable only by a GET
+carrying no quote number, so the POST body was being lost between the browser
+and Apps Script and the call was landing on the customer quote-loader. The
+console displayed the answer it got, so staff were asked for a customer's last
+name to look up a quote they already had open, and Print did the same thing.
+Nothing was wrong with the quote, the PIN, or the console — the question never
+reached the code that answers it.
+
+- **A reply is only believed if it carries `_api:'console'`.** That stamp is
+  how the console tells *"the server said no"* from *"the server never heard
+  me"*. Without it the two are indistinguishable, which is exactly how a
+  customer error message ended up inside the staff console.
+- **Read-only calls are retried over GET; writes never are.** A reply that went
+  missing cannot prove whether the write ran first, and a silently repeated
+  payment is far worse than an error. Writes report the transport failure and
+  say plainly that nothing was changed. After the first lost POST the console
+  switches to GET for the rest of the session rather than paying for a round
+  trip already known to fail.
+- **`CONSOLE_GET_FNS_` is enforced server-side, not just client-side.** The
+  console is not the only thing that can build a URL, and the retry makes GETs
+  repeatable by construction — so a GET naming a write is *refused*, not merely
+  un-sent. `auth` is on the list deliberately: a PIN in a query string is not
+  free (it reaches Quest's own Apps Script log; a fetch URL never enters browser
+  history), but being unable to sign in to the console at all is the worse
+  failure.
+- **The lost-call detector matches on wording**, which is fragile, so
+  `tools/check-console-transport.js` pins it against the customer loader's real
+  strings. That guard also runs the real dispatcher to prove every write is
+  refused on GET and never reaches its function, that all allow-listed reads do
+  answer, that every reply is stamped, and that the client's retry list and the
+  server's allow-list are the same set.
+- **A reply with no stamp at all is still accepted** when it isn't the customer
+  loader's — an older backend answers exactly that way, so the page and the
+  script can be deployed in either order.
+
+
 ## Customer link
 
 Every loaded quote shows a **Customer link** block under the print button: the

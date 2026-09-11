@@ -611,57 +611,7 @@ function doPost(e) {
     let d = JSON.parse(e.postData.contents);
 
     // ---- Staff console API (the GitHub admin site posts here) ----
-    if (d.api === 'console') {
-      const json = function (obj) {
-        return ContentService.createTextOutput(JSON.stringify(obj))
-          .setMimeType(ContentService.MimeType.JSON);
-      };
-      try {
-        const FNS = {
-          auth:        function (a) { return adminAuth(a[0]); },
-          lookup:      function (a) { return adminLookup(d.token, a[0]); },
-          quoteHtml:   function (a) { return adminQuoteHtml(d.token, a[0]); },
-          dimsPreview: function (a) { return adminDimsPreview(d.token, a[0], a[1]); },
-          dimsApply:   function (a) { return adminDimsApply(d.token, a[0], a[1], a[2]); },
-          keysApply:   function (a) { return adminKeysApply(d.token, a[0], a[1]); },
-          penalty:     function (a) { return adminPenalty(d.token, a[0], a[1], a[2]); },
-          staffNote:   function (a) { return adminSetStaffNote(d.token, a[0], a[1]); },
-          pay:         function (a) { return adminRecordPayment(d.token, a[0], a[1], a[2], a[3]); },
-          adjust:      function (a) { return adminAdjust(d.token, a[0], a[1], a[2], a[3]); },
-          sendEmail:   function (a) { return adminSendEmail(d.token, a[0], a[1], a[2]); },
-          search:      function (a) { return adminSearch(d.token, a[0]); },
-          lateFee:     function (a) { return adminLateFee(d.token, a[0], a[1], a[2], a[3]); },
-          storageView: function (a) { return adminStorageView(d.token); },
-          photoInfo:   function (a) { return adminPhotoInfo(d.token, a[0]); },
-          uploadPhoto: function (a) { return adminUploadPhoto(d.token, a[0], a[1], a[2], a[3], a[4]); },
-          uploadContract: function (a) { return adminUploadContract(d.token, a[0], a[1], a[2], a[3]); },
-          editLine:    function (a) { return adminEditLine(d.token, a[0], a[1], a[2], a[3], a[4]); },
-          emailPreview:function (a) { return adminEmailPreview(d.token, a[0], a[1], a[2]); },
-          priceRequest:function (a) { return adminPriceRequest(d.token, a[0], a[1], a[2], a[3]); },
-          setSeasonDone:function (a) { return adminSetSeasonDone(d.token, a[0], a[1], a[2], a[3]); },
-          listStaff:   function (a) { return adminListStaff(d.token); },
-          autoPause:   function (a) { return adminAutoPause(d.token); },
-          setAutoPause:function (a) { return adminSetAutoPause(d.token, a[0], a[1]); },
-          setPerm:     function (a) { return adminSetPerm(d.token, a[0], a[1], a[2]); },
-          resetPin:    function (a) { return adminResetPin(d.token, a[0]); },
-          addStaff:    function (a) { return adminAddStaff(d.token, a[0], a[1], a[2]); },
-          removeStaff: function (a) { return adminRemoveStaff(d.token, a[0]); },
-          backupPreview: function (a) { return adminBackupPreview(d.token, a[0], a[1]); },
-          backupRestore: function (a) { return adminBackupRestore(d.token, a[0], a[1], a[2]); },
-          bulkPreview: function (a) { return adminBulkPreview(d.token, a[0]); },
-          bulkSend:    function (a) { return adminBulkSend(d.token, a[0], a[1]); },
-          repricePreview: function (a) { return adminRepricePreview(d.token); },
-          repriceApply:   function (a) { return adminRepriceApply(d.token, a[0], a[1]); },
-          importList:     function (a) { return adminImportList(d.token); },
-          importPreview:  function (a) { return adminImportPreview(d.token, a[0], a[1], a[2], a[3]); },
-          importApply:    function (a) { return adminImportApply(d.token, a[0], a[1]); }
-        };
-        if (!FNS[d.fn]) return json({ ok: 0, error: 'Unknown function.' });
-        return json(FNS[d.fn](d.args || []));
-      } catch (err) {
-        return json({ ok: 0, error: String(err.message || err) });
-      }
-    }
+    if (d.api === 'console') return consoleServe_(d, 'POST');
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -827,6 +777,117 @@ function doPost(e) {
  * GET ?quote=QW-26-XXXX&ln=LastName&callback=fn  ->  JSONP with saved state.
  * Requires BOTH the quote number and a matching last name, so quote numbers
  * alone can't be enumerated to pull up someone else's contact details. */
+/* ---------------------------------------------------------------------------
+   THE STAFF CONSOLE API — one dispatcher, answering on BOTH verbs
+   ---------------------------------------------------------------------------
+   The console posts here. In September 2026 those posts started coming back
+   with `doGet`'s customer-facing "Enter both your quote number and last name."
+   — which is only reachable by a GET with no parameters, so the body was being
+   dropped somewhere between the browser and `doPost` and the request was
+   landing on `doGet`. Staff saw a customer error message inside the console and
+   could neither look a quote up nor print an invoice.
+
+   The fix is to stop depending on the POST body surviving. This map is now
+   shared: `doPost` serves it, and `doGet` serves it too from a query string
+   (`?api=console&fn=…&token=…&args=…`) — the same transport the customer page
+   has used to load quotes all season, so it is proven in production here.
+
+   Two rules make that safe, and both are enforced below rather than remembered:
+
+   1. **Only CONSOLE_GET_FNS_ may answer on GET**, and everything in it is
+      read-only. A GET is retryable — the console retries one automatically when
+      a POST comes back wrong — and retrying a payment, an adjustment or a send
+      is exactly the thing that must never happen. A GET naming a write is
+      refused by the server, not merely omitted by the client.
+   2. **Every reply carries `_api: 'console'`.** That stamp is how the console
+      tells a real answer from whatever else came back — a `doGet` fallthrough,
+      an error page, a captive portal. Without it the console cannot distinguish
+      "the server said no" from "the server never heard the question", and it
+      showed the wrong one to Chris for a week.
+
+   `auth` is on the GET list deliberately, though a PIN in a query string is not
+   free: a fetch URL never enters browser history, it reaches Quest's own Apps
+   Script log, and the alternative is nobody being able to sign in to the
+   console at all on the day POST breaks. Being locked out of the whole console
+   is the worse failure. */
+const CONSOLE_GET_FNS_ = {
+  /* Sign-in. Creates a session and counts a failed PIN, so it is not strictly
+     read-only — but see above: without it a broken POST locks the yard out. */
+  auth: 1,
+  /* Pure reads. */
+  lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
+  listStaff: 1, autoPause: 1,
+  /* Previews. Every one of these renders or proposes and writes nothing —
+     that is the invariant they already had to hold (docs/ref/EMAILS.md,
+     docs/ref/STAFF-CONSOLE.md), and check-console-transport.js pins it. */
+  emailPreview: 1, dimsPreview: 1, bulkPreview: 1, repricePreview: 1,
+  importList: 1, importPreview: 1, backupPreview: 1
+};
+
+function consoleFns_(p) {
+  return {
+    auth:        function (a) { return adminAuth(a[0]); },
+    lookup:      function (a) { return adminLookup(p.token, a[0]); },
+    quoteHtml:   function (a) { return adminQuoteHtml(p.token, a[0]); },
+    dimsPreview: function (a) { return adminDimsPreview(p.token, a[0], a[1]); },
+    dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
+    keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
+    penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
+    staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
+    pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
+    adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
+    sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
+    search:      function (a) { return adminSearch(p.token, a[0]); },
+    lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
+    storageView: function (a) { return adminStorageView(p.token); },
+    photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
+    uploadPhoto: function (a) { return adminUploadPhoto(p.token, a[0], a[1], a[2], a[3], a[4]); },
+    uploadContract: function (a) { return adminUploadContract(p.token, a[0], a[1], a[2], a[3]); },
+    editLine:    function (a) { return adminEditLine(p.token, a[0], a[1], a[2], a[3], a[4]); },
+    emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2]); },
+    priceRequest:function (a) { return adminPriceRequest(p.token, a[0], a[1], a[2], a[3]); },
+    setSeasonDone:function (a) { return adminSetSeasonDone(p.token, a[0], a[1], a[2], a[3]); },
+    listStaff:   function (a) { return adminListStaff(p.token); },
+    autoPause:   function (a) { return adminAutoPause(p.token); },
+    setAutoPause:function (a) { return adminSetAutoPause(p.token, a[0], a[1]); },
+    setPerm:     function (a) { return adminSetPerm(p.token, a[0], a[1], a[2]); },
+    resetPin:    function (a) { return adminResetPin(p.token, a[0]); },
+    addStaff:    function (a) { return adminAddStaff(p.token, a[0], a[1], a[2]); },
+    removeStaff: function (a) { return adminRemoveStaff(p.token, a[0]); },
+    backupPreview: function (a) { return adminBackupPreview(p.token, a[0], a[1]); },
+    backupRestore: function (a) { return adminBackupRestore(p.token, a[0], a[1], a[2]); },
+    bulkPreview: function (a) { return adminBulkPreview(p.token, a[0]); },
+    bulkSend:    function (a) { return adminBulkSend(p.token, a[0], a[1]); },
+    repricePreview: function (a) { return adminRepricePreview(p.token); },
+    repriceApply:   function (a) { return adminRepriceApply(p.token, a[0], a[1]); },
+    importList:     function (a) { return adminImportList(p.token); },
+    importPreview:  function (a) { return adminImportPreview(p.token, a[0], a[1], a[2], a[3]); },
+    importApply:    function (a) { return adminImportApply(p.token, a[0], a[1]); }
+  };
+}
+
+/* Serve one console call. `verb` is how it arrived; a write that arrives on a
+   GET is refused here, so the allow-list cannot be bypassed by crafting a URL. */
+function consoleServe_(p, verb) {
+  const reply = function (obj) {
+    const o = (obj && typeof obj === 'object') ? obj : { ok: 0, error: 'The server gave no answer.' };
+    o._api = 'console';   // the stamp: proof this came from the console API
+    return ContentService.createTextOutput(JSON.stringify(o))
+      .setMimeType(ContentService.MimeType.JSON);
+  };
+  try {
+    const fn = String((p && p.fn) || '');
+    const FNS = consoleFns_(p || {});
+    if (!FNS[fn]) return reply({ ok: 0, error: 'Unknown function.' });
+    if (verb === 'GET' && !CONSOLE_GET_FNS_[fn]) {
+      return reply({ ok: 0, error: 'That action has to be sent as a POST — it changes something, and a link that changes something can be followed twice.' });
+    }
+    return reply(FNS[fn]((p && p.args) || []));
+  } catch (err) {
+    return reply({ ok: 0, error: String(err.message || err) });
+  }
+}
+
 function doGet(e) {
   const p = (e && e.parameter) || {};
   const cb = String(p.callback || '').replace(/[^\w$.]/g, '');
@@ -838,6 +899,16 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(obj))
       .setMimeType(ContentService.MimeType.JSON);
   };
+  /* The console API over GET — the fallback transport, see consoleServe_.
+     First thing in doGet on purpose: it must be decided before any branch that
+     could fall through to the customer quote-load, which is what was answering
+     these calls with "Enter both your quote number and last name." */
+  if (p.api === 'console') {
+    let args = [];
+    try { args = JSON.parse(p.args || '[]'); } catch (e0) { args = []; }
+    return consoleServe_({ fn: p.fn, token: p.token, args: Array.isArray(args) ? args : [] }, 'GET');
+  }
+
   // staff console
   if (p.page === 'admin') {
     return HtmlService.createHtmlOutput(adminPage_())

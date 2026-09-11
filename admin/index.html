@@ -686,11 +686,79 @@ let T=localStorage.getItem('qwtok')||'',ME=JSON.parse(localStorage.getItem('qwme
    the page, the PDF and the emails once a payment exists. */
 let QTERM='Quote';
 const $=id=>document.getElementById(id);
-async function api(fn,args){
+/* ---------------------------------------------------------------------------
+   TALKING TO THE BACKEND — and what to do when the POST doesn't arrive
+   ---------------------------------------------------------------------------
+   Every console action comes through here as a POST. In September 2026 those
+   POSTs started being answered by the script's doGet instead: the body was
+   being dropped between the browser and Apps Script, the request landed on the
+   customer quote-loader, and the console dutifully displayed its reply —
+   "Enter both your quote number and last name." — as if a staff lookup needed
+   a customer's last name. Nothing was wrong with the quote, the PIN or the
+   console; the question never reached the code that answers it.
+
+   So the console no longer assumes the POST arrived. Two mechanisms:
+
+   - **Every genuine answer is stamped `_api:'console'`** by the server. A reply
+     without the stamp that looks like the customer quote-loader (the only
+     thing a lost console call ever lands on) is treated as "never asked",
+     not as "the server said no".
+   - **Read-only calls are retried over GET**, with the payload in the query
+     string — the transport the customer page has used to load quotes all
+     season. Writes are never retried: the reply cannot prove whether the write
+     ran before the answer went missing, and a silently repeated payment is far
+     worse than an error message. They report the transport failure instead.
+
+   API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
+   this list only decides what the console bothers retrying. */
+const API_GET_OK={auth:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
+  listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
+  repricePreview:1,importList:1,importPreview:1,backupPreview:1};
+/* Once a POST has come back lost, every later read goes straight to GET — no
+   point paying for a round trip that is already known to fail. */
+let API_USE_GET=false;
+/* The fingerprint of a lost call: the customer quote-loader's own reply, which
+   is what doGet returns for a request carrying no quote number. Matching the
+   wording is deliberate and is pinned by verify.sh against the .gs, so the two
+   cannot drift apart silently. */
+function apiLostReply_(j){
+  return !!(j && !j._api && Number(j.ok)===0 && typeof j.error==='string' &&
+            /quote number and last name/i.test(j.error));
+}
+async function apiPost_(body){
   const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({api:'console',fn,token:T,args:args||[]})});
+    body:JSON.stringify(body)});
   if(!res.ok)throw new Error('Network error ('+res.status+')');
-  const j=await res.json();
+  return res.json();
+}
+async function apiGet_(body){
+  const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
+    '&token='+encodeURIComponent(body.token||'')+
+    '&args='+encodeURIComponent(JSON.stringify(body.args||[]))+'&t='+Date.now();
+  /* A URL has a length ceiling and Apps Script's is lower than a browser's.
+     Anything this big belongs on a POST, and saying so beats a truncated
+     request that fails in a way nobody can read. */
+  if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
+  const res=await fetch(u,{method:'GET',redirect:'follow'});
+  if(!res.ok)throw new Error('Network error ('+res.status+')');
+  return res.json();
+}
+async function api(fn,args){
+  const body={api:'console',fn,token:T,args:args||[]};
+  let j=null;
+  if(!API_USE_GET){
+    j=await apiPost_(body);
+    if(!apiLostReply_(j)) return apiDone_(j);
+  }
+  if(API_GET_OK[fn]){
+    const g=await apiGet_(body);
+    if(!apiLostReply_(g)){ API_USE_GET=true; return apiDone_(g); }
+  }
+  /* Both routes lost it, or this one is a write we will not repeat blindly. */
+  throw new Error('The server didn\'t receive that request. Nothing was changed. '+
+    'Reload the page and try again — if it keeps happening, tell Chris the console can\'t reach the backend.');
+}
+function apiDone_(j){
   if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
   return j;
 }

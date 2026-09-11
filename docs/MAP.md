@@ -74,6 +74,7 @@ symptom.
 | Sign in, sessions, lockout | `adminAuth`, `requireAuth_` | `doLogin` |
 | Permissions incl. the `keys` fallback | `resolvedPerms_`, `canKeys_` | `permsOf` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
+| Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |

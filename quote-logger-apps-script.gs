@@ -223,7 +223,91 @@ const RULES = {
   hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
   retrieveSmallMaxLOA:36,
 };
+
+/* ----------------------------------------------------------------------------
+   PROVISIONAL PRICING — the one switch that turns every estimate disclaimer
+   on, and off again.
+   ----------------------------------------------------------------------------
+   PRICES above still holds last season's numbers because the next rate card
+   is not published yet, so every quote we hand out is an ESTIMATE: a deposit
+   reserves a storage space and a place in the retrieval order, it does not
+   hold a price. While `provisional` is true, the banner on the quote page,
+   the wording on the pay step, the live ticket, the PDF and every customer
+   email say exactly that — all of them from `pricingNotice()` and
+   `lockinCopy()` below, so there is one wording rather than six copies that
+   drift apart.
+
+   AT THE ROLLOVER: update PRICES, then set `provisional:false`. That single
+   edit removes every disclaimer from page, PDF and email at once and puts the
+   ordinary lock-in wording back — there is nothing else to go find.
+   `tools/check-pricing-notice.js` proves both halves: the disclaimer is on
+   every surface while the flag is true, and gone from all of them when it is
+   false.
+---------------------------------------------------------------------------- */
+const PRICING = {
+  provisional: true,
+  ratesLabel:  '2025–2026',   // the season the numbers in PRICES came from
+  nextLabel:   '2026–2027',   // the season they are being updated to
+};
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
+
+/* The estimate disclaimer itself, in one place. Returns null — not an empty
+   string — once pricing is current, so a caller that forgets to check renders
+   nothing rather than an empty box, and the guard can assert on it.
+     heading/body : the page banner
+     short        : the one-paragraph version for the ticket, the PDF and email
+   Phrased so it reads correctly on a quote and on an invoice, since the same
+   text rides both. */
+function pricingNotice(){
+  if(!PRICING.provisional) return null;
+  const r = PRICING.ratesLabel, n = PRICING.nextLabel;
+  return {
+    heading: 'Heads up — these prices are ' + r + ' estimates',
+    body: 'Our ' + n + ' winter rates are not published yet, so every price shown here uses last season\'s ' +
+          r + ' rates and is an estimate. A deposit reserves your storage space and your place in the ' +
+          'retrieval order — it does not lock in the prices shown. We expect ' + n + ' pricing very soon; ' +
+          'your quote will be updated to those rates and we will send you the new total. ' +
+          'Questions? Call us at (815) 433-2200.',
+    short: 'Estimate only — priced at ' + r + ' rates. ' + n + ' rates are not published yet. A deposit ' +
+           'reserves your storage space and your place in the retrieval order, but does not lock in the prices ' +
+           'shown. Totals will be updated to ' + n + ' rates as soon as they are released.'
+  };
+}
+
+/* The one sentence in the fine print that says whether paying holds a price.
+   It is the heart of what a customer is being asked to trust, so it is built
+   here rather than written out once on the page and again in the PDF. Takes
+   the quote's own pay-by date when it has one, so an old quote keeps the date
+   it was quoted under. */
+function pricesValidSentence(payBy){
+  const by = payBy || SEASON.payByDate;
+  return PRICING.provisional
+    ? 'Settling in full by ' + by + ' by cash, check, debit card, Zelle, or ACH avoids the card fee, but does not hold the prices shown: they are ' +
+      PRICING.ratesLabel + ' estimates and will be updated to ' + PRICING.nextLabel + ' rates.'
+    : 'Prices shown are valid when balances are settled in full by ' + by + ' by cash, check, debit card, Zelle, or ACH.';
+}
+
+/* Every phrase that promises a customer something is being locked in. While
+   pricing is provisional a deposit buys a SPACE, not a price, and each of
+   these says so; flipping the flag restores the ordinary wording. Page, PDF
+   and email all read their copy from here — nothing hardcodes "lock in"
+   ahead of a price we cannot yet honour. */
+function lockinCopy(){
+  const p = PRICING.provisional, n = PRICING.nextLabel;
+  return {
+    signHeading:   p ? 'Sign & reserve your spot' : 'Sign & lock it in',
+    depositRow:    p ? 'Deposit due today to reserve your spot' : 'Deposit due today to lock in',
+    depositEmail:  p ? 'Deposit to reserve your spot' : 'Deposit to lock in your spot',
+    depositOptSub: p ? 'Reserves your storage space and retrieval window · balance due by ' + SEASON.payByShort + ', at ' + n + ' rates'
+                     : 'Locks in your selections and retrieval window · balance due by ' + SEASON.payByShort,
+    fullOptSub:    p ? 'Nothing further due — unless ' + n + ' rates change your total, and we will tell you if they do'
+                     : 'Done and dusted — nothing due later',
+    signPlaceholder: p ? 'pay your deposit online below to reserve your spot'
+                       : 'pay your deposit online below to lock in your spot',
+    reservedNote:  p ? ' Your deposit holds that spot at whatever the ' + n + ' rate turns out to be — it is not a price lock.'
+                     : ''
+  };
+}
 
 /* ============ PER-QUOTE PRICING EXCEPTIONS ============
    One-off negotiated rates for a specific customer, keyed by quote number.
@@ -4141,6 +4225,14 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
       moneyRow_('Open balance on this invoice', usd_(balance), true) + '</table>' +
       '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div></div>';
   }
+  /* A figure quoted at provisional rates is an estimate wherever it appears,
+     including on an operational notice that happens to print one. Short form
+     only -- these emails are about a haul-out or a balance, not about pricing
+     -- and gone entirely once PRICING.provisional flips. */
+  if (money) {
+    const pn = pricingNotice();
+    if (pn) money += '<p style="font-size:12px;color:#6B5A2A;line-height:1.5;margin:-8px 0 0">' + esc_(pn.short) + '</p>';
+  }
   const html =
   '<div style="background:#EBF1F6;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">' +
     '<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #C7D5E0">' +
@@ -4900,7 +4992,7 @@ function customerEmailHtml_(o) {
     money = moneyRow_('Total due today — Cash, Check, Debit, Zelle or ACH', usd_(o.total), true);
   } else {
     money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH' + (o.payBy ? ' by ' + o.payBy : '') + ')', usd_(o.total), true) +
-            (o.paid > 0 ? '' : moneyRow_('Deposit to lock in your spot', usd_(o.deposit), false));
+            (o.paid > 0 ? '' : moneyRow_(lockinCopy().depositEmail, usd_(o.deposit), false));
   }
   if (o.paid > 0) {
     money += moneyRow_('Payments received', '−' + usd_(o.paid), false);
@@ -4953,6 +5045,17 @@ function customerEmailHtml_(o) {
       '<div style="padding:26px 28px">' +
         '<p style="font-size:16px;color:#1D2B38;margin:0 0 6px">Hi ' + esc_(o.firstName || 'there') + ',</p>' +
         '<p style="font-size:15px;color:#1D2B38;line-height:1.5;margin:0 0 18px">' + intro + '</p>' +
+        /* The estimate disclaimer, above the money box it applies to. Rides
+           every customer email kind — quote, update, reminder and receipt —
+           because while rates are provisional the total in any of them can
+           still move. Gone from all of them when PRICING.provisional flips. */
+        (function () {
+          const n = pricingNotice();
+          return n ? '<div style="background:#F4E8CF;border:1px solid #C08A22;border-left:5px solid #C08A22;' +
+            'border-radius:8px;padding:14px 16px;margin:0 0 18px">' +
+            '<div style="font-size:14px;font-weight:bold;color:#14293E;margin-bottom:4px">' + esc_(n.heading) + '</div>' +
+            '<div style="font-size:13px;color:#6B5A2A;line-height:1.5">' + esc_(n.body) + '</div></div>' : '';
+        })() +
         '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:16px 18px;margin-bottom:18px">' +
           '<div style="font-family:Courier New,monospace;font-size:13px;color:#5C7185;margin-bottom:8px">QUOTE# ' + esc_(o.quoteNo) + ' &nbsp;·&nbsp; ' + esc_(o.unit) + '</div>' +
           '<table width="100%" cellpadding="0" cellspacing="0">' + money + '</table>' +
@@ -5364,6 +5467,11 @@ function pickupTermsSentence_(d, sn) {
 function quoteHtml_(d) {
   const sn = d.season || {};
   const term = docTerm_(d);
+  /* One sentence appended to the terms paragraphs that do NOT already carry
+     pricesValidSentence() -- paid in full, and due today -- so every PDF says
+     it in the fine print as well as in the box at the top, and none of them
+     says it twice. Empty string once pricing is current. */
+  const provisionalTerms = (function () { const n = pricingNotice(); return n ? ' ' + n.short : ''; })();
   const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
   const lines = Array.isArray(d.lines) ? d.lines : [];
   let body = '', lastSec = '';
@@ -5400,6 +5508,9 @@ function quoteHtml_(d) {
     'tr.dep td{background:#F4E8CF;border:1px solid #C08A22;font-weight:bold}' +
     'tr.grand td{border-top:2px solid #14293E;font-weight:bold;font-size:13px}' +
     'td.r{text-align:right;white-space:nowrap}' +
+    '.pnotice{margin:10px 0 4px;padding:9px 11px;background:#F4E8CF;border:1px solid #C08A22;' +
+      'border-left:4px solid #C08A22;color:#6B5A2A;font-size:10px;line-height:1.5}' +
+    '.pnotice b{display:block;text-transform:uppercase;letter-spacing:.5px;color:#14293E;font-size:10.5px;margin-bottom:2px}' +
     '.terms{margin-top:16px;font-size:8.5px;color:#5C7185;line-height:1.5}' +
     '.notes{margin-top:10px;font-size:10.5px}' +
     '.status{display:inline-block;margin-top:6px;padding:2px 8px;background:#D8E6EF;color:#14293E;font-size:9.5px;font-weight:bold;text-transform:uppercase;letter-spacing:1px}' +
@@ -5417,6 +5528,14 @@ function quoteHtml_(d) {
         (d.dims ? '<br>' + esc_(d.dims) : '') +
         (d.keyLoc ? '<br>Keys: ' + esc_(d.keyLoc) : '') + '</td>' +
     '</tr></table>' +
+    /* The estimate disclaimer, above the prices it applies to rather than in
+       the fine print — a customer reading the PDF sees it before the totals.
+       Built from the engine's pricingNotice(), so it is gone from every PDF
+       the moment PRICING.provisional flips. */
+    (function () {
+      const n = pricingNotice();
+      return n ? '<div class="pnotice"><b>' + esc_(n.heading) + '</b>' + esc_(n.body) + '</div>' : '';
+    })() +
     '<table class="items">' + body + rq + '</table>' +
     '<table class="tot">' +
       (function () {
@@ -5428,7 +5547,7 @@ function quoteHtml_(d) {
           return dueToday
             ? '<tr class="grand"><td>Total due today — Cash, Check, Debit, Zelle or ACH</td><td class="r">' + usd_(d.total) + '</td></tr>' +
               '<tr><td>Paying by credit card (+3% fee)</td><td class="r">' + usd_(d.totalCC) + '</td></tr>'
-            : '<tr class="dep"><td>Deposit due today to lock in</td><td class="r">' + usd_(d.deposit) + '</td></tr>' +
+            : '<tr class="dep"><td>' + esc_(lockinCopy().depositRow) + '</td><td class="r">' + usd_(d.deposit) + '</td></tr>' +
               '<tr class="grand"><td>Total — Cash, Check, Debit, Zelle or ACH by ' + esc_(sn.payByShort || '') + '</td><td class="r">' + usd_(d.total) + '</td></tr>' +
               '<tr><td>Paying by credit card (+3% fee)</td><td class="r">' + usd_(d.totalCC) + '</td></tr>' +
               '<tr><td>If paid after ' + esc_(sn.payByShort || '') + ' (+10%) — cash / card</td><td class="r">' + usd_(d.totalLate) + ' / ' + usd_(d.totalLateCC) + '</td></tr>';
@@ -5458,12 +5577,12 @@ function quoteHtml_(d) {
       const paid = pays.reduce(function (a, p) { return a + Number(p.amt || 0); }, 0);
       const paidInFull = paid > 0 && Number(d.total || 0) - paid <= 0.005;
       if (paidInFull) {
-        return '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This quote is paid in full — thank you. ' + pickupTermsSentence_(d, sn) + '</p>';
+        return '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This quote is paid in full — thank you. ' + pickupTermsSentence_(d, sn) + provisionalTerms + '</p>';
       }
       const noStorage = !!(d.state && d.state.storage === 'none');
       return dueToday
-        ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + (noStorage ? 'Payment is due when the work is completed' : 'Payment is due today') + '; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. ' + pickupTermsSentence_(d, sn) + '</p>'
-        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices valid when balances are settled in full by ' + esc_(sn.payBy || '') + ' by cash, check, debit card, Zelle, or ACH; credit card payments subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by 10%, and a 2% monthly service charge (min. $5) applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';
+        ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + (noStorage ? 'Payment is due when the work is completed' : 'Payment is due today') + '; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. ' + pickupTermsSentence_(d, sn) + provisionalTerms + '</p>'
+        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + esc_(pricesValidSentence(sn.payBy)) + ' Credit card payments are subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by 10%, and a 2% monthly service charge (min. $5) applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';
     })() +
     '</body></html>';
 }

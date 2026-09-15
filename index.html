@@ -48,6 +48,22 @@ html{scroll-behavior:smooth}
 }
 .ackline a{color:var(--frost);text-decoration:underline}
 .ackline a:hover{color:var(--navy)}
+/* PROVISIONAL-PRICING DISCLAIMER (two places, one wording)
+   .pnotice sits above the step nav, so it is on screen at every step of the
+   quote and does not scroll away with a panel. .ticket-notice rides inside the
+   ticket, which is the only thing @media print keeps — so the printed / saved
+   PDF carries the same disclaimer as the screen. Both are filled from the
+   engine's pricingNotice(); when pricing is current it returns null and both
+   are removed, which is why neither has any text in the markup. */
+.pnotice{
+  background:#F4E8CF;border:1.5px solid var(--gold);border-left:5px solid var(--gold);
+  border-radius:10px;padding:12px 16px;margin:0 0 16px;color:#6B5A2A;font-size:14px;line-height:1.5;
+}
+.pnotice b{display:block;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.03em;
+  text-transform:uppercase;color:var(--navy);margin-bottom:4px}
+.ticket-notice{padding:9px 16px;background:#F4E8CF;border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);color:#6B5A2A;font-size:10.5px;line-height:1.45;
+  font-family:var(--body);font-weight:600}
 .gatemsg{
   display:none;background:var(--warn-bg);border:1px solid #E4B48F;border-left:4px solid var(--warn);
   color:var(--warn);border-radius:8px;padding:10px 13px;font-size:14px;margin-bottom:12px;
@@ -245,7 +261,7 @@ aside.ticket{position:sticky;top:18px}
 
 /* print */
 @media print{
-  header.site,nav.steps,section.panel,.mobilebar,.panel-nav,.modal-back{display:none!important}
+  header.site,nav.steps,section.panel,.mobilebar,.panel-nav,.modal-back,.pnotice{display:none!important}
   body{background:#fff}
   .wrap{display:block;padding:0;max-width:none}
   aside.ticket{position:static}
@@ -265,6 +281,9 @@ aside.ticket{position:sticky;top:18px}
 
 <div class="wrap">
 <main>
+  <!-- Filled by applyPricingNotice() from the engine; removed entirely once
+       PRICING.provisional is false. -->
+  <div class="pnotice" id="pricingNotice" role="note" hidden></div>
   <nav class="steps" id="stepsNav" aria-label="Quote steps"></nav>
 
   <!-- STEP: start -->
@@ -501,13 +520,18 @@ aside.ticket{position:sticky;top:18px}
       <button class="btn ghost" onclick="saveAndPrint()">Print / save PDF</button>
       <button class="btn ghost" onclick="emailQuote(this)">📧 Email me this quote</button>
     </div>
-    <p class="note" id="quoteTerms" style="margin-top:16px">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b><span data-cfg="payByDate"></span></b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after <span data-cfg="payByShort"></span> increase by <span data-cfg="latePct"></span>%, and a 2% monthly service charge (min. $5) applies beginning <span data-cfg="lateChargeStart"></span>. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs <span data-cfg="storageStart"></span> – <span data-cfg="storageEnd"></span> and is subject to Quest's Storage Terms.</p>
+    <!-- refresh() writes this paragraph on every recompute (it varies with
+         storage and with whether anything is due today), and the sentence about
+         whether paying holds a price comes from the engine's
+         pricesValidSentence(). Deliberately empty here so there is no second,
+         stale copy of the terms in the markup. -->
+    <p class="note" id="quoteTerms" style="margin-top:16px"></p>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><span></span></div>
   </section>
 
   <!-- STEP: sign & pay -->
   <section class="panel" data-step="signpay">
-    <h2>Sign &amp; lock it in</h2>
+    <h2 id="signHeading">Sign &amp; lock it in</h2>
     <p class="lead">Two steps and you're on the winter schedule: sign the storage &amp; services agreement, then pay online. Your quote number ties it all together.</p>
     <div class="warnbox" id="signMissing" style="display:none"></div>
 
@@ -529,7 +553,7 @@ aside.ticket{position:sticky;top:18px}
       </div>
     </div>
 
-    <div class="okbox">Once we receive your signed agreement and deposit, your retrieval window is reserved in the order received — last out, first in. We'll confirm by email.</div>
+    <div class="okbox" id="reservedOk">Once we receive your signed agreement and deposit, your retrieval window is reserved in the order received — last out, first in. We'll confirm by email.</div>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back to quote</button><button class="btn ghost" onclick="saveAndPrint()">Print quote</button><button class="btn ghost" onclick="emailQuote(this)">📧 Email me this quote</button></div>
   </section>
 </main>
@@ -543,9 +567,10 @@ aside.ticket{position:sticky;top:18px}
       <div class="qn" id="ticketQn"></div>
     </div>
     <div class="perf"></div>
+    <div class="ticket-notice" id="ticketNotice" hidden></div>
     <div class="ticket-body" id="ticketBody"><div class="ticket-empty">Your selections will print here, line by line — just like the paper quote.</div></div>
     <div class="ticket-totals">
-      <div class="trow2 deposit" id="tDepRow"><span class="k">Deposit due today to lock in</span><span class="v" id="tDeposit">$0.00</span></div>
+      <div class="trow2 deposit" id="tDepRow"><span class="k" id="tDepLabel">Deposit due today to lock in</span><span class="v" id="tDeposit">$0.00</span></div>
       <div class="trow2 total"><span class="k" id="tTotalLabel">Total — Cash, Check, Debit, Zelle or ACH by <span data-cfg="payByShort"></span></span><span class="v" id="tCash">$0.00</span></div>
       <div class="trow2"><span class="k">Paying by credit card? (+3% fee)</span><span class="v" id="tCC">$0.00</span></div>
       <div class="trow2" id="tPaidRow" style="display:none"><span class="k">Payments received</span><span class="v" id="tPaid">−$0.00</span></div>
@@ -628,7 +653,8 @@ if (typeof QuestPricing === 'undefined') {
 }
 /* Exposed under the same names this page has always used, so every existing
    call site is unchanged. */
-const {SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
+const {SEASON, PRICES, RULES, PRICING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
+       pricingNotice, lockinCopy, pricesValidSentence,
        fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
        depositBaseFor, lwtFromOverhang, rateOverride_} = QuestPricing;
 
@@ -689,6 +715,39 @@ let QUOTE_LOADED=false; // true once an existing quote was pulled from the serve
                         // suppresses the contact gate and the "Quote started" log
 let PAYMENTS=[];      // payments collected, loaded with a saved quote (display only)
 function paymentsTotal(){ return PAYMENTS.reduce((a,p)=>a+Number(p.amt||0),0); }
+
+/* ================= PROVISIONAL-PRICING DISCLAIMER =================
+   Every customer-facing sentence that turns on whether our rates are current
+   is rendered here, from the engine — never written out in this file. That is
+   what makes "all of it disappears when pricing is updated" a single edit in
+   pricing-engine.js (PRICING.provisional) rather than a hunt through the page,
+   the PDF and the emails. The parts that are re-rendered as a customer works
+   (the pay-step choices, the ticket's deposit row) read lockinCopy() at render
+   time for the same reason. */
+function applyPricingNotice(){
+  const n = pricingNotice();          // null once pricing is current
+  const c = lockinCopy();
+
+  const banner = $('#pricingNotice'), tick = $('#ticketNotice');
+  if(n){
+    banner.innerHTML = '<b></b><span></span>';
+    banner.querySelector('b').textContent = n.heading;
+    banner.querySelector('span').textContent = n.body;
+    banner.hidden = false;
+    tick.textContent = n.short;
+    tick.hidden = false;
+  }else{
+    /* Removed, not just hidden: nothing left in the DOM to un-hide by accident,
+       and nothing for a print stylesheet to bring back. */
+    if(banner) banner.remove();
+    if(tick) tick.remove();
+  }
+
+  const h = $('#signHeading'); if(h) h.textContent = c.signHeading;
+  const dl = $('#tDepLabel');  if(dl) dl.textContent = c.depositRow;
+  const ok = $('#reservedOk');
+  if(ok) ok.textContent = "Once we receive your signed agreement and deposit, your retrieval window is reserved in the order received — last out, first in. We'll confirm by email." + c.reservedNote;
+}
 
 /* ================= CONFIG-DRIVEN COPY ================= */
 function fillConfig(){
@@ -984,7 +1043,11 @@ function logQuote(status, extra){
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
-    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd,lateRetrievalFee:PRICES.lateRetrieval,lateRetrievalLabel:'Late retrieval surcharge (after '+SEASON.payByShort+')'},
+    /* pricingProvisional / ratesLabel are a RECORD of what the customer was
+       shown, so a quote saved while rates were provisional can still be told
+       apart later. Nothing renders from them — the PDF and the emails read the
+       live engine flag, so the disclaimer clears everywhere at the rollover. */
+    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd,lateRetrievalFee:PRICES.lateRetrieval,lateRetrievalLabel:'Late retrieval surcharge (after '+SEASON.payByShort+')',pricingProvisional:!!PRICING.provisional,ratesLabel:PRICING.ratesLabel},
     dueToday:t.dueToday?1:0,
     /* Terms acceptance, promoted to the top level of the payload so the sheet
        and console can read it without unpacking `state`. */
@@ -1271,7 +1334,7 @@ function renderSignPay(){
     target.innerHTML=`
       <div class="demo-embed">
         <div class="de-title">Online signing is almost here</div>
-        <p>We're putting the finishing touches on online signing. For now: save or email yourself this quote, pay your deposit online below to lock in your spot, and we'll have your Storage &amp; Services Agreement ready to sign — takes two minutes by phone or at the shop, whichever is easier.</p>
+        <p>We're putting the finishing touches on online signing. For now: save or email yourself this quote, ${lockinCopy().signPlaceholder}, and we'll have your Storage &amp; Services Agreement ready to sign — takes two minutes by phone or at the shop, whichever is easier.</p>
         <p style="margin-top:10px">Questions? Call us at (815) 433-2200 with quote# <b>${S.quoteNo}</b>.</p>
       </div>`;
   }
@@ -1314,9 +1377,10 @@ function renderSignPay(){
   }
   $('#payStepTitle').textContent='Pay your deposit';
   const full=S.payMode==='full';
+  const LC=lockinCopy();
   $('#payChoices').innerHTML=`
-    <label class="opt"><input type="radio" name="payMode" value="deposit" ${!full?'checked':''}><div><div class="t">Pay deposit now</div><div class="d">Locks in your selections & retrieval window · balance due by ${SEASON.payByShort}</div></div><span class="p">${fmt(t.deposit)}</span></label>
-    <label class="opt"><input type="radio" name="payMode" value="full" ${full?'checked':''}><div><div class="t">Pay in full</div><div class="d">Done and dusted — nothing due later</div></div><span class="p">${fmt(t.total)}</span></label>`;
+    <label class="opt"><input type="radio" name="payMode" value="deposit" ${!full?'checked':''}><div><div class="t">Pay deposit now</div><div class="d">${LC.depositOptSub}</div></div><span class="p">${fmt(t.deposit)}</span></label>
+    <label class="opt"><input type="radio" name="payMode" value="full" ${full?'checked':''}><div><div class="t">Pay in full</div><div class="d">${LC.fullOptSub}</div></div><span class="p">${fmt(t.total)}</span></label>`;
   $$('input[name=payMode]').forEach(r=>r.addEventListener('change',e=>{S.payMode=e.target.value;renderSignPay();}));
   const amt=full?t.total:t.deposit;
   $('#payAmtLabel').textContent=full?'Pay in full':'Deposit due today';
@@ -1399,7 +1463,7 @@ function refresh(){
       ? `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This estimate does not include storage — payment in full is due when the work is completed; credit card payments are subject to a 3% fee. ${noStoragePickupText_()}`
       : t.dueToday
       ? `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Payment is due today; credit card payments are subject to a 3% fee. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`
-      : `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. Prices shown are valid when balances are settled in full by <b>${SEASON.payByDate}</b> by cash, check, debit card, Zelle, or ACH. Credit card payments are subject to a 3% fee. Balances unpaid after ${SEASON.payByShort} increase by ${RULES.latePct}%, and a 2% monthly service charge (min. $5) applies beginning ${SEASON.lateChargeStart}. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`;
+      : `Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest's review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ${pricesValidSentence()} Credit card payments are subject to a 3% fee. Balances unpaid after ${SEASON.payByShort} increase by ${RULES.latePct}%, and a 2% monthly service charge (min. $5) applies beginning ${SEASON.lateChargeStart}. Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ${SEASON.storageStart} – ${SEASON.storageEnd} and is subject to Quest's Storage Terms.`;
   }
   $('#tDeposit').textContent=fmt(t.deposit);
   $('#tCash').textContent=fmt(t.total);
@@ -1580,6 +1644,7 @@ function goPrev(){ const f=flow(), i=f.indexOf(cur); if(i>0) go(f[i-1]); }
 /* ================= WIRING ================= */
 function init(){
   fillConfig();
+  applyPricingNotice();
   buildUnits(); buildEngines(); buildStorage(); buildSkiLevels(); buildSkiStorage(); buildNav();
 
   /* Phone is shown as (815) 555-0123 everywhere in the system, including in

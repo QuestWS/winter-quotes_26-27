@@ -151,3 +151,17 @@ the console with **no quote loaded**, gated on `email`, and from the sheet menu.
   and five hundred. `check-bulk-targets.js` executes all of it.
 - Every bulk send is audited (`SEND TO ALL "…" — n of m`) and lands in each
   quote's Email History.
+
+
+## The provisional-pricing disclaimer rides every customer email
+While `PRICING.provisional` is true, `customerEmailHtml_` puts
+`pricingNotice()` in a gold box above the money box — on the quote, the
+update, the 10-day reminder **and** the receipt. All four can have their total
+moved by the coming rate update, so all four say so; a receipt is not an
+exception just because it reads like a closing document. `noticeHtml_` carries
+the short form only when it actually prints a balance, since those emails are
+about a haul-out, not about pricing. Deposit rows come from `lockinCopy()`.
+
+Nothing here writes that wording itself, and nothing should: the flag has to
+be able to take it away from every already-built body at once
+(`docs/ref/DATA-AND-MONEY.md`).

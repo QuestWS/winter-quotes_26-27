@@ -277,6 +277,15 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: a per-quote rate override leaked or was overwritten"; sed 's/^/       /' "$TMP/rateov.txt"; FAIL=1
   fi
+  # While PRICES still holds last season's numbers, every customer-facing
+  # surface has to say so — and one flag (PRICING.provisional) has to take all
+  # of it away again at the rollover. Checked by rendering the PDF and the
+  # emails with the flag both ways, not by grepping for the wording.
+  if node tools/check-pricing-notice.js > "$TMP/pnote.txt" 2>&1; then
+    echo "  OK   gate: $(tail -1 "$TMP/pnote.txt")"
+  else
+    echo "  FAIL gate: provisional-pricing disclaimer is inconsistent"; grep -E '^  FAIL|^FAIL' "$TMP/pnote.txt" | sed 's/^/       /'; FAIL=1
+  fi
   if node tools/check-docs-coverage.js > "$TMP/docs.txt" 2>&1; then
     echo "  OK   gate: every documented rule still written down somewhere"
     grep -E 'CLAUDE.md is|entry points' "$TMP/docs.txt" | sed 's/^ */       /'

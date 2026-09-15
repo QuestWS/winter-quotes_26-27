@@ -36,6 +36,8 @@ symptom.
 | Feature | Entry point | File |
 |---|---|---|
 | The rules themselves | `computeQuote` | `pricing-engine.js` |
+| Estimate disclaimer while rates are last season's | `pricingNotice`, `lockinCopy`, `pricesValidSentence` (switched by `PRICING`) | `pricing-engine.js` |
+| Where the page puts that disclaimer | `applyPricingNotice` | `index.html` |
 | Which storage tab a quote belongs on | `storageTabFor` | `pricing-engine.js` |
 | The dimension line shown everywhere | `dimsString` | `pricing-engine.js` |
 | Phone formatting, page and server | `fmtPhone`, `fmtPhonePartial` | `pricing-engine.js` |
@@ -115,4 +117,5 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-reprice.js` | A discount survives a season re-price |
 | `check-legacy-import.js` | Old-sheet parsing, including the broken and comparison files |
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
+| `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

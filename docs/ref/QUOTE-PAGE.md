@@ -115,3 +115,20 @@ date. Editable from the console (Season timing block, adjust permission) and
 carries an optional customer/staff note. The console uses a real inline date
 field + live fee warning — **never a `prompt()`** (a raw prompt shipped once and
 looked unacceptable; all console inputs are inline UI now).
+
+
+## The provisional-pricing banner
+`#pricingNotice` sits in `<main>` **above the step nav**, outside every
+`.panel`, so it is on screen at every step and cannot scroll away with a
+panel — that placement is the requirement, not a detail, and the guard checks
+it. `#ticketNotice` is the same disclaimer inside the ticket card, because
+`@media print` hides the panels and the banner and keeps only the ticket: the
+printed / saved PDF has to carry it too. `applyPricingNotice()` fills both
+from the engine at init, and **removes** them from the DOM (not just hides
+them) when `pricingNotice()` returns null, so nothing is left for a stylesheet
+or a stray `hidden = false` to bring back.
+
+Both containers are empty in the markup on purpose — the wording has exactly
+one source (`docs/ref/DATA-AND-MONEY.md`). Same for `#quoteTerms`, whose
+paragraph `refresh()` writes on every recompute: a second copy of the terms in
+the markup would be the one that goes stale.

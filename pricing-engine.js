@@ -84,7 +84,91 @@ const RULES = {
   hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
   retrieveSmallMaxLOA:36,
 };
+
+/* ----------------------------------------------------------------------------
+   PROVISIONAL PRICING — the one switch that turns every estimate disclaimer
+   on, and off again.
+   ----------------------------------------------------------------------------
+   PRICES above still holds last season's numbers because the next rate card
+   is not published yet, so every quote we hand out is an ESTIMATE: a deposit
+   reserves a storage space and a place in the retrieval order, it does not
+   hold a price. While `provisional` is true, the banner on the quote page,
+   the wording on the pay step, the live ticket, the PDF and every customer
+   email say exactly that — all of them from `pricingNotice()` and
+   `lockinCopy()` below, so there is one wording rather than six copies that
+   drift apart.
+
+   AT THE ROLLOVER: update PRICES, then set `provisional:false`. That single
+   edit removes every disclaimer from page, PDF and email at once and puts the
+   ordinary lock-in wording back — there is nothing else to go find.
+   `tools/check-pricing-notice.js` proves both halves: the disclaimer is on
+   every surface while the flag is true, and gone from all of them when it is
+   false.
+---------------------------------------------------------------------------- */
+const PRICING = {
+  provisional: true,
+  ratesLabel:  '2025–2026',   // the season the numbers in PRICES came from
+  nextLabel:   '2026–2027',   // the season they are being updated to
+};
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
+
+/* The estimate disclaimer itself, in one place. Returns null — not an empty
+   string — once pricing is current, so a caller that forgets to check renders
+   nothing rather than an empty box, and the guard can assert on it.
+     heading/body : the page banner
+     short        : the one-paragraph version for the ticket, the PDF and email
+   Phrased so it reads correctly on a quote and on an invoice, since the same
+   text rides both. */
+function pricingNotice(){
+  if(!PRICING.provisional) return null;
+  const r = PRICING.ratesLabel, n = PRICING.nextLabel;
+  return {
+    heading: 'Heads up — these prices are ' + r + ' estimates',
+    body: 'Our ' + n + ' winter rates are not published yet, so every price shown here uses last season\'s ' +
+          r + ' rates and is an estimate. A deposit reserves your storage space and your place in the ' +
+          'retrieval order — it does not lock in the prices shown. We expect ' + n + ' pricing very soon; ' +
+          'your quote will be updated to those rates and we will send you the new total. ' +
+          'Questions? Call us at (815) 433-2200.',
+    short: 'Estimate only — priced at ' + r + ' rates. ' + n + ' rates are not published yet. A deposit ' +
+           'reserves your storage space and your place in the retrieval order, but does not lock in the prices ' +
+           'shown. Totals will be updated to ' + n + ' rates as soon as they are released.'
+  };
+}
+
+/* The one sentence in the fine print that says whether paying holds a price.
+   It is the heart of what a customer is being asked to trust, so it is built
+   here rather than written out once on the page and again in the PDF. Takes
+   the quote's own pay-by date when it has one, so an old quote keeps the date
+   it was quoted under. */
+function pricesValidSentence(payBy){
+  const by = payBy || SEASON.payByDate;
+  return PRICING.provisional
+    ? 'Settling in full by ' + by + ' by cash, check, debit card, Zelle, or ACH avoids the card fee, but does not hold the prices shown: they are ' +
+      PRICING.ratesLabel + ' estimates and will be updated to ' + PRICING.nextLabel + ' rates.'
+    : 'Prices shown are valid when balances are settled in full by ' + by + ' by cash, check, debit card, Zelle, or ACH.';
+}
+
+/* Every phrase that promises a customer something is being locked in. While
+   pricing is provisional a deposit buys a SPACE, not a price, and each of
+   these says so; flipping the flag restores the ordinary wording. Page, PDF
+   and email all read their copy from here — nothing hardcodes "lock in"
+   ahead of a price we cannot yet honour. */
+function lockinCopy(){
+  const p = PRICING.provisional, n = PRICING.nextLabel;
+  return {
+    signHeading:   p ? 'Sign & reserve your spot' : 'Sign & lock it in',
+    depositRow:    p ? 'Deposit due today to reserve your spot' : 'Deposit due today to lock in',
+    depositEmail:  p ? 'Deposit to reserve your spot' : 'Deposit to lock in your spot',
+    depositOptSub: p ? 'Reserves your storage space and retrieval window · balance due by ' + SEASON.payByShort + ', at ' + n + ' rates'
+                     : 'Locks in your selections and retrieval window · balance due by ' + SEASON.payByShort,
+    fullOptSub:    p ? 'Nothing further due — unless ' + n + ' rates change your total, and we will tell you if they do'
+                     : 'Done and dusted — nothing due later',
+    signPlaceholder: p ? 'pay your deposit online below to reserve your spot'
+                       : 'pay your deposit online below to lock in your spot',
+    reservedNote:  p ? ' Your deposit holds that spot at whatever the ' + n + ' rate turns out to be — it is not a price lock.'
+                     : ''
+  };
+}
 
 /* ============ PER-QUOTE PRICING EXCEPTIONS ============
    One-off negotiated rates for a specific customer, keyed by quote number.
@@ -467,7 +551,8 @@ const DIM_FIELDS = {
 };
 // ENGINE-END
 
-  const API = { SEASON, PRICES, RULES, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
+  const API = { SEASON, PRICES, RULES, PRICING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
+                pricingNotice, lockinCopy, pricesValidSentence,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
                 depositBaseFor, lwtFromOverhang, rateOverride_ };

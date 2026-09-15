@@ -212,6 +212,17 @@ embeds verbatim between `ENGINE-START` / `ENGINE-END`.
   code.
 - The **Annual Update Zone** at the top of `pricing-engine.js` is where a season
   rollover happens: one edit updates page and server together.
+- **`PRICES` currently holds 2025–2026 rates, so every quote is an estimate.**
+  `PRICING.provisional` (same zone) is the one switch for that: while it is
+  true, `pricingNotice()` / `lockinCopy()` / `pricesValidSentence()` put the
+  estimate banner on the quote page, the ticket, the PDF and every customer
+  email, and replace all "lock in" wording with "reserve your spot" — a
+  deposit holds a storage space and a place in the retrieval order, not a
+  price. **Set `provisional:false` in the same commit that updates `PRICES`**
+  and all of it disappears everywhere at once. Never write that wording into
+  the page, the PDF or an email; `tools/check-pricing-notice.js` fails both on
+  a surface that stops showing it and on a surface that hardcodes it.
+  Detail: `docs/ref/DATA-AND-MONEY.md`.
 - Anything both sides must decide the same way belongs in the engine —
   `storageTabFor()`, `dimsString()` and `fmtPhone()` are there for that reason.
 - **The server prices the quote; the browser does not.** Disagreements become a
@@ -285,6 +296,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 | Excel import of last year's selections | Blocked | Needs a sample workbook from Chris to map columns. Architecture supports it — quotes store selections, not prices. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
+| 2026–2027 rates | **Waiting on Chris** | `PRICES` still holds 2025–2026 numbers, so quotes go out as estimates behind `PRICING.provisional` (§5). When the rate card lands: update `PRICES`, flip `provisional:false`, re-baseline the fixtures, and re-price the season from the console. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
 

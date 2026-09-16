@@ -159,6 +159,7 @@ request. Open the one that covers what you are about to change — and open it
 | `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, yard printing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |
+| `docs/CUSTOM-DOMAIN.md` | Moving the customer page to questws.com — routes, DNS, the rename trap |
 
 `tools/check-docs-coverage.js` fails if a rule that was once written down stops
 appearing anywhere in this set, so moving text between these files is safe and

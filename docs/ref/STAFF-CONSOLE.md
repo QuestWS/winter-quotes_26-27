@@ -52,12 +52,37 @@ reached the code that answers it.
   how the console tells *"the server said no"* from *"the server never heard
   me"*. Without it the two are indistinguishable, which is exactly how a
   customer error message ended up inside the staff console.
-- **Read-only calls are retried over GET; writes never are.** A reply that went
-  missing cannot prove whether the write ran first, and a silently repeated
-  payment is far worse than an error. Writes report the transport failure and
-  say plainly that nothing was changed. After the first lost POST the console
-  switches to GET for the rest of the session rather than paying for a round
-  trip already known to fail.
+- **Read-only calls are retried over GET; a write is never re-sent blindly.**
+  A reply that went missing cannot prove whether the write ran first, and a
+  silently repeated payment is far worse than an error. After the first lost
+  POST the console switches to GET for reads for the rest of the session rather
+  than paying for a round trip already known to fail — **but a write always
+  posts anyway**, because the server refuses writes on GET, so skipping the
+  POST would mean the action was never attempted at all.
+- **A write that goes unanswered is chased down, not guessed at.** Every write
+  carries a `rid` the console generates, one per action. The server claims that
+  id under the script lock, does the work once, and keeps the answer for fifteen
+  minutes — so asking about it again is free and re-sending it is harmless. When
+  the reply goes missing the console polls `jobStatus` **over GET** (the route
+  that still works when POST is what broke) for about half a minute and reports
+  what actually happened:
+  - *done* → it shows the server's real message, so a payment that went through
+    reads as "Recorded $500.00 — Paid in full", not as an error;
+  - *unknown*, several times over → the request never arrived, nothing changed,
+    try again;
+  - *still running* → it says so and tells staff **not** to send it again, and
+    to reload and check the quote first.
+
+  **Why this exists:** recording a payment rebuilds the PDF and sends two
+  emails. When that ran long, Google gave up on the POST and handed the console
+  a 404 — so Chris was told the payment had failed while the receipt, carrying
+  the new balance, was already in the customer's inbox. The next thing anyone
+  does with a failed payment is record it again.
+- **A transport failure is not an answer.** A non-2xx, an unreachable host and
+  a body that will not parse are tagged as transport failures and handled apart
+  from anything the server said. Before that, a 404 on the POST was thrown
+  before the GET fallback could run — which is why the storage view failed
+  after minutes of waiting and then worked on the very next tap.
 - **`CONSOLE_GET_FNS_` is enforced server-side, not just client-side.** The
   console is not the only thing that can build a URL, and the retry makes GETs
   repeatable by construction — so a GET naming a write is *refused*, not merely
@@ -71,6 +96,43 @@ reached the code that answers it.
   refused on GET and never reaches its function, that all allow-listed reads do
   answer, that every reply is stamped, and that the client's retry list and the
   server's allow-list are the same set.
+- **Both halves of the recovery are executed, not grepped.**
+  `tools/check-idempotent-writes.js` runs the real dispatcher against a faked
+  cache and lock: one run per `rid`, the same answer replayed to a repeat,
+  "running" while it is in flight, unchanged behaviour with no `rid` at all, and
+  a write still working when CacheService is unavailable.
+  `tools/check-console-recovery.js` lifts the console's own script out of
+  `admin/index.html` and runs it against a `fetch` that fails on cue — the 404
+  that must fall through to GET, and the payment that must be reported by its
+  real result rather than as a failure.
+
+
+## Why the console got slow, and what is cached
+
+Every action used to re-walk the whole spreadsheet. Opening a quote read the
+Quote # column of every tab; the storage view read all 23 columns of every row
+on every tab, and column 21 is the full JSON payload — kilobytes per quote. By
+September that was tens of seconds of Sheets traffic for one tap, which is what
+put the calls over the edge Google gives up at.
+
+- **The storage view is cached for two minutes**, split across CacheService
+  entries (`cachePutBig_` / `cacheGetBig_`, 100KB cap each). A missing chunk is
+  a miss, never half a yard sheet.
+- **Every write drops that cache**, from one place: `consoleServe_` invalidates
+  after any function that is *not* on the read-only allow-list. Deriving it from
+  that list is the point — a write added later cannot forget to. The customer
+  save path does the same at the end of `doPost`.
+- **The quote → (tab, row) index is cached for half an hour and verified before
+  it is trusted**: one cell is re-read to confirm the quote number still matches
+  there. A row that moved simply misses and falls back to the full scan.
+- **The storage view and the search read columns 1..`COL.DIMS`**, plus the
+  payload column on its own for the storage view. Neither needs the itemised
+  services, the customer notes or the link columns, and those were the bulk of
+  what was being shipped.
+- **`savePdf_` remembers the blob it just filed** (`_freshPdf_`), so the email
+  that follows attaches it instead of searching Drive and downloading the file
+  back. That also removes a race: Drive's index is not instant, and the search
+  could still be returning the copy `savePdf_` had just trashed.
 - **A reply with no stamp at all is still accepted** when it isn't the customer
   loader's — an older backend answers exactly that way, so the page and the
   script can be deployed in either order.

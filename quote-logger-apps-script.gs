@@ -850,6 +850,11 @@ function doPost(e) {
 
     // 4) Customer copy, when the Email-me button was used
     if (d.emailCustomer && d.email) { sendCustomerEmail_(d); recordEmail_(sh, rowNum, d, 'quote copy', 'Quote page'); }
+    /* A customer save moves a balance and can move a quote to another tab, so
+       the yard sheet staff are about to open must not be the one cached before
+       it happened. */
+    rememberQuoteRow_(d.quoteNo, sh.getName(), rowNum);
+    invalidateStorageView_();
     return ContentService.createTextOutput('ok');
   } catch (err) {
     console.error('Quote log failed: ' + err);
@@ -901,6 +906,11 @@ const CONSOLE_GET_FNS_ = {
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
   listStaff: 1, autoPause: 1,
+  /* "What became of the write I sent?" — see the idempotency section below.
+     It is on this list because it is the one question staff must still be able
+     to ask when the POST route is the thing that is broken. It reads a cached
+     answer and touches nothing. */
+  jobStatus: 1,
   /* Previews. Every one of these renders or proposes and writes nothing —
      that is the invariant they already had to hold (docs/ref/EMAILS.md,
      docs/ref/STAFF-CONSOLE.md), and check-console-transport.js pins it. */
@@ -924,6 +934,7 @@ function consoleFns_(p) {
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
     storageView: function (a) { return adminStorageView(p.token); },
+    jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
     uploadPhoto: function (a) { return adminUploadPhoto(p.token, a[0], a[1], a[2], a[3], a[4]); },
     uploadContract: function (a) { return adminUploadContract(p.token, a[0], a[1], a[2], a[3]); },
@@ -950,6 +961,85 @@ function consoleFns_(p) {
   };
 }
 
+/* ---------------------------------------------------------------------------
+   WRITE ONCE, ANSWER TWICE — the request id
+   ---------------------------------------------------------------------------
+   Recording a payment takes real time: the PDF is rebuilt, two emails go out.
+   When that ran long, Google stopped waiting and the console was handed a 404
+   — so staff were told the payment had failed while the customer's receipt was
+   already in their inbox, with the new balance on it. The next thing a person
+   does with a failed payment is record it again.
+
+   The console now stamps every write with a `rid` it generates, and we keep
+   that request's answer for fifteen minutes:
+
+   - first time we see a rid, claim it and do the work;
+   - see it again with the work still running, say so — do not start it twice;
+   - see it again once the work is finished, hand back the SAME answer.
+
+   Retrying a write therefore stopped being dangerous, which is what lets the
+   console go and find out what really happened instead of guessing. The claim
+   is taken under the script lock so two copies of one tap cannot both win it.
+
+   A call with no rid behaves exactly as it always did. Nothing depends on the
+   cache being there: if CacheService is unavailable the claim fails open to
+   "do the work", which is the behaviour from before this existed. */
+const RID_TTL_ = 900;          // how long an answer stays replayable, seconds
+const RID_RUNNING_TTL_ = 400;  // just over the Apps Script execution ceiling
+const RID_RUNNING_ = '\u0000running';
+
+function ridKey_(rid) { return 'RID_' + String(rid || ''); }
+
+/* Returns {prior} when this rid has already been answered, {running:true} when
+   it is in flight, {} when the caller now owns it and should do the work. */
+function claimRid_(rid) {
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { return {}; }
+  const key = ridKey_(rid);
+  let lock = null, held = false;
+  try { lock = LockService.getScriptLock(); held = lock.tryLock(10000); } catch (e) { held = false; }
+  try {
+    const prior = cache.get(key);
+    if (prior === RID_RUNNING_) return { running: true };
+    if (prior) { try { return { prior: JSON.parse(prior) }; } catch (e) { return {}; } }
+    cache.put(key, RID_RUNNING_, RID_RUNNING_TTL_);
+    return {};
+  } catch (e) {
+    return {};
+  } finally {
+    if (held) { try { lock.releaseLock(); } catch (e) {} }
+  }
+}
+
+/* Park the answer where a retry of the same rid will find it. An answer too
+   large to cache is replaced by a short one that still says the work is done —
+   never by nothing, because "no record" is what makes a person pay twice. */
+function finishRid_(rid, out) {
+  try {
+    const cache = CacheService.getScriptCache();
+    let s = JSON.stringify(out || {});
+    if (s.length > CACHE_CHUNK_) {
+      s = JSON.stringify({ ok: (out && Number(out.ok) === 1) ? 1 : 0, _trimmed: 1,
+        msg: 'Done — reload to see the result.',
+        error: (out && Number(out.ok) === 1) ? '' : String((out && out.error) || 'Failed.') });
+    }
+    cache.put(ridKey_(rid), s, RID_TTL_);
+  } catch (e) {}
+}
+
+/* The console's "what happened to my write?" probe. Read-only by construction:
+   it reports a stored answer and never makes one. */
+function adminJobStatus(token, rid) {
+  requireAuth_(token, 'view');
+  let raw = null;
+  try { raw = CacheService.getScriptCache().get(ridKey_(rid)); } catch (e) { raw = null; }
+  if (!raw) return { ok: 1, state: 'unknown' };
+  if (raw === RID_RUNNING_) return { ok: 1, state: 'running' };
+  let r = null;
+  try { r = JSON.parse(raw); } catch (e) { r = null; }
+  return r ? { ok: 1, state: 'done', reply: r } : { ok: 1, state: 'unknown' };
+}
+
 /* Serve one console call. `verb` is how it arrived; a write that arrives on a
    GET is refused here, so the allow-list cannot be bypassed by crafting a URL. */
 function consoleServe_(p, verb) {
@@ -966,7 +1056,30 @@ function consoleServe_(p, verb) {
     if (verb === 'GET' && !CONSOLE_GET_FNS_[fn]) {
       return reply({ ok: 0, error: 'That action has to be sent as a POST — it changes something, and a link that changes something can be followed twice.' });
     }
-    return reply(FNS[fn]((p && p.args) || []));
+    /* Anything not on the read-only allow-list is a write. Deriving it from
+       that list rather than from a second list of write names is the point:
+       a function added later is a write until somebody deliberately says it is
+       not, so it gets the request-id protection and it drops the storage-view
+       cache without anyone having to remember either. */
+    const isWrite = !CONSOLE_GET_FNS_[fn];
+    const rid = String((p && p.rid) || '');
+    if (!isWrite || !rid) {
+      const plain = FNS[fn]((p && p.args) || []);
+      if (isWrite) invalidateStorageView_();
+      return reply(plain);
+    }
+    const claim = claimRid_(rid);
+    if (claim.prior) { claim.prior._replay = 1; return reply(claim.prior); }
+    if (claim.running) {
+      return reply({ ok: 0, pending: 1,
+        error: 'That is still being processed — do not send it again. Give it a moment and reload the quote.' });
+    }
+    let out;
+    try { out = FNS[fn]((p && p.args) || []); }
+    catch (err) { out = { ok: 0, error: String(err.message || err) }; }
+    finishRid_(rid, out);
+    invalidateStorageView_();
+    return reply(out);
   } catch (err) {
     return reply({ ok: 0, error: String(err.message || err) });
   }
@@ -1181,6 +1294,15 @@ function findQuoteRow_(sh, quoteNo) {
 
 /* ---------- PDF generation & Drive archive ---------- */
 
+/* The PDF this execution last filed, kept so the email that follows does not
+   have to go and fetch it back. Payment, adjustment and customer-save all do
+   the same thing: build the PDF, then attach it to a message seconds later.
+   getPdfBlob_ used to answer that by searching Drive and downloading the file
+   again — a round trip we had already paid for, and a race, because Drive's
+   index is not instant and the search could still be handing back the copy
+   savePdf_ had just trashed. */
+let _freshPdf_ = null;
+
 function savePdf_(d) {
   try {
     const folder = getFolder_();
@@ -1193,6 +1315,7 @@ function savePdf_(d) {
                           .getAs(MimeType.PDF)
                           .setName(fileName);
     const file = folder.createFile(blob);
+    _freshPdf_ = { qn: String(d.quoteNo || ''), blob: blob };
     return file.getUrl();
   } catch (err) {
     console.error('PDF save failed: ' + err);
@@ -1846,21 +1969,118 @@ function auditLog_(who, action) {
   } catch (e) {}
 }
 
+/* ===========================================================================
+   THE SHORT-LIVED CACHE — why the console got slow enough to break
+   ---------------------------------------------------------------------------
+   Every console action used to re-walk the whole spreadsheet. Opening a quote
+   read the Quote # column of every tab; the storage view read all 23 columns
+   of every row on every tab, and column 21 is the full JSON payload — several
+   kilobytes per quote. By September that was tens of seconds of Sheets traffic
+   for one tap, and the answer arrived after Google had already given up on the
+   request: staff got `Network error (404)` after minutes of waiting, then the
+   same tap worked on the second try.
+
+   Nothing here changes what an answer says. It only stops us fetching the same
+   bytes twice in a row:
+
+   - `cachePutBig_` / `cacheGetBig_` split a value across CacheService entries,
+     which cap at 100KB each. A missing chunk is a miss, never a half-answer.
+   - The storage view is cached for two minutes and **thrown away by every
+     write**, from one place — `consoleServe_` invalidates after any function
+     that is not on the read-only allow-list, so a write added later cannot
+     forget to. The customer save path does the same at the end of `doPost`.
+   - The quote → (tab, row) index is cached for half an hour and **verified
+     before it is trusted**: we re-read that one cell and check the quote
+     number still matches. A row that moved, or a tab that was rebuilt, simply
+     misses and falls back to the full scan.
+
+   Every read here is wrapped: CacheService is an optimisation, and a console
+   that breaks when the cache is unavailable would be worse than a slow one.
+=========================================================================== */
+const CACHE_CHUNK_ = 90 * 1024;          // CacheService caps a value at 100KB
+const STORAGE_VIEW_TTL_ = 120;           // seconds
+const QROW_TTL_ = 1800;                  // seconds
+
+function cachePutBig_(key, str, ttl) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const parts = {};
+    let n = 0;
+    for (let i = 0; i < str.length; i += CACHE_CHUNK_) parts[key + ':' + (n++)] = str.substr(i, CACHE_CHUNK_);
+    if (!n || n > 40) return false;      // nothing to store, or too big to be worth it
+    parts[key + ':n'] = String(n);
+    cache.putAll(parts, ttl);
+    return true;
+  } catch (e) { return false; }
+}
+function cacheGetBig_(key) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Number(cache.get(key + ':n') || 0);
+    if (!n) return null;
+    const want = [];
+    for (let i = 0; i < n; i++) want.push(key + ':' + i);
+    const got = cache.getAll(want);
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      const part = got[key + ':' + i];
+      if (part == null) return null;     // a chunk expired — the whole value is a miss
+      out += part;
+    }
+    return out;
+  } catch (e) { return null; }
+}
+function cacheDropBig_(key) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Number(cache.get(key + ':n') || 0);
+    const keys = [key + ':n'];
+    for (let i = 0; i < n; i++) keys.push(key + ':' + i);
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+function invalidateStorageView_() { cacheDropBig_('storageView'); }
+
+function qrowKey_(qn) { return 'QROW_' + String(qn || '').trim().toUpperCase(); }
+function rememberQuoteRow_(qn, tabName, rowNum) {
+  try {
+    CacheService.getScriptCache().put(qrowKey_(qn),
+      JSON.stringify({ tab: tabName, row: rowNum }), QROW_TTL_);
+  } catch (e) {}
+}
+/* The cached location, only if the sheet still says so. One cell read replaces
+   a scan of every tab; a wrong guess costs that one read and nothing else. */
+function cachedQuoteRow_(ss, qn) {
+  let hint = null;
+  try { hint = JSON.parse(CacheService.getScriptCache().get(qrowKey_(qn)) || 'null'); }
+  catch (e) { hint = null; }
+  if (!hint || !hint.tab || !(hint.row > 1)) return null;
+  const sh = ss.getSheetByName(hint.tab);
+  if (!sh || sh.getLastRow() < hint.row) return null;
+  if (String(sh.getRange(hint.row, COL.QN).getValue() || '').trim().toUpperCase() !== String(qn).trim().toUpperCase()) return null;
+  return { sh: sh, rowNum: hint.row };
+}
+
 function findQuoteCtx_(qn) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const want = String(qn).trim().toUpperCase();
+  const build = function (sh, rowNum) {
+    const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
+    if (!payloadJson) return null;
+    const d = JSON.parse(payloadJson);
+    reconcileManual_(d);
+    rememberQuoteRow_(want, sh.getName(), rowNum);
+    return { sh: sh, rowNum: rowNum, quoteNo: d.quoteNo, d: d,
+             ui: { alert: function(){}, prompt: function(){} } };
+  };
+  const hit = cachedQuoteRow_(ss, want);
+  if (hit) { const ctx = build(hit.sh, hit.rowNum); if (ctx) return ctx; }
   const sheets = ss.getSheets();
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
     if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
-    const rowNum = findQuoteRow_(sh, String(qn).trim().toUpperCase());
-    if (rowNum > 0) {
-      const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
-      if (!payloadJson) return null;
-      const d = JSON.parse(payloadJson);
-      reconcileManual_(d);
-      return { sh: sh, rowNum: rowNum, quoteNo: d.quoteNo, d: d,
-               ui: { alert: function(){}, prompt: function(){} } };
-    }
+    const rowNum = findQuoteRow_(sh, want);
+    if (rowNum > 0) return build(sh, rowNum);
   }
   return null;
 }
@@ -1875,7 +2095,11 @@ function adminSearch(token, query) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
     const last = sh.getLastRow();
     if (last < 2) return;
-    sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r) {
+    /* Columns 1..DIMS only. Everything this list shows lives in the first
+       eleven columns; reading HEADERS.length pulled the itemised services and
+       the whole JSON payload of every quote in the season across the wire to
+       match a few letters of a surname. */
+    sh.getRange(2, 1, last - 1, COL.DIMS).getValues().forEach(function (r) {
       const ln = String(r[COL.LAST - 1] || '').toLowerCase();
       if (!ln || ln.indexOf(q) === -1) return;
       const bal = Number(r[COL.BAL - 1] || 0);
@@ -3668,6 +3892,14 @@ function adminRepriceApply(token, only, first) {
 
 function adminStorageView(token) {
   requireAuth_(token, 'view');
+  /* The heaviest read in the console — every row of every tab, and the payload
+     of each one. Two minutes of cache, dropped by any write (see the cache
+     section above), is the difference between a yard sheet that opens and one
+     that times out. */
+  const cached = cacheGetBig_('storageView');
+  if (cached) {
+    try { const r = JSON.parse(cached); if (r && r.groups) { r.cached = 1; return r; } } catch (e) {}
+  }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const groups = [];
   ss.getSheets().forEach(function (sh) {
@@ -3675,12 +3907,18 @@ function adminStorageView(token) {
     const last = sh.getLastRow();
     const rows = [];
     if (last > 1) {
-      sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r) {
+      /* Two narrow reads instead of one wide one. Everything shown comes from
+         columns 1..DIMS, plus the payload for keys, slip and the season-done
+         answer — so the itemised services, the customer notes and the link
+         columns never leave the sheet. */
+      const head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+      const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+      head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null;
         try {
-          const pd = JSON.parse(r[COL.PAYLOAD - 1] || '{}');
+          const pd = JSON.parse(pays[i][0] || '{}');
           /* The haul-out sheet needs what the customer actually has, so read
              the EFFECTIVE state — a boat we re-measured or relocated must
              appear on the sheet as it is now, not as they first described it.
@@ -3709,7 +3947,9 @@ function adminStorageView(token) {
     const w = function (t) { return t === 'No Storage' ? 2 : 1; };
     return w(a.tab) - w(b.tab) || a.tab.localeCompare(b.tab);
   });
-  return { ok: 1, groups: groups };
+  const out = { ok: 1, groups: groups };
+  cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
+  return out;
 }
 
 function adminPriceRequest(token, qn, rqLabel, amt, note) {
@@ -4873,8 +5113,11 @@ function addLateFee() {
 
 /* ================= CUSTOMER-FACING EMAIL ================= */
 function getPdfBlob_(quoteNo) {
+  const qn = String(quoteNo || '');
+  /* Built earlier in this same execution? Use it — see _freshPdf_. */
+  if (qn && _freshPdf_ && _freshPdf_.qn === qn) return _freshPdf_.blob;
   try {
-    const it = getFolder_().searchFiles('title contains "' + quoteNo + '"');
+    const it = getFolder_().searchFiles('title contains "' + qn + '"');
     return it.hasNext() ? it.next().getBlob() : null;
   } catch (e) { return null; }
 }

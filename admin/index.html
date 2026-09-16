@@ -713,9 +713,11 @@ const $=id=>document.getElementById(id);
    this list only decides what the console bothers retrying. */
 const API_GET_OK={auth:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
-  repricePreview:1,importList:1,importPreview:1,backupPreview:1};
-/* Once a POST has come back lost, every later read goes straight to GET — no
-   point paying for a round trip that is already known to fail. */
+  repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1};
+/* Once a POST has come back lost, every later READ goes straight to GET — no
+   point paying for a round trip that is already known to fail. A write always
+   posts anyway: GET is refused for writes by the server, so skipping the POST
+   would mean the action never being attempted at all. */
 let API_USE_GET=false;
 /* The fingerprint of a lost call: the customer quote-loader's own reply, which
    is what doGet returns for a request carrying no quote number. Matching the
@@ -725,11 +727,46 @@ function apiLostReply_(j){
   return !!(j && !j._api && Number(j.ok)===0 && typeof j.error==='string' &&
             /quote number and last name/i.test(j.error));
 }
+/* ---------------------------------------------------------------------------
+   TRANSPORT FAILURE IS NOT AN ANSWER
+   ---------------------------------------------------------------------------
+   Apps Script answers a POST with a redirect to a one-shot googleusercontent
+   URL. On a phone in the yard, on a call that took Google long enough to give
+   up on, that leg comes back 404 — and the old code turned that into
+   `Network error (404)` and stopped. Two things went wrong with that:
+
+   - a READ never reached its GET fallback, because the 404 was thrown before
+     the retry could run. The storage view failed after minutes of waiting and
+     then worked on the next tap, which is the same request over the same route
+     with better luck;
+   - a WRITE was reported as failed while the server was busy finishing it.
+     Chris got "error" on a payment whose receipt was already in the customer's
+     inbox. The next thing anyone does with a failed payment is record it again.
+
+   So a failure of the transport is now tagged as one and handled apart from an
+   answer the server actually gave. Reads retry. Writes carry a request id and
+   go and ask what became of them. */
+function transportErr_(msg,code){const e=new Error(msg);e.transport=(code===undefined?0:code);return e;}
+function isTransportErr_(e){return !!(e&&e.transport!==undefined);}
+function apiWait_(ms){return new Promise(function(r){setTimeout(r,ms);});}
+/* The id that makes a write safe to ask about twice. One per user action. */
+function apiRid_(){
+  try{ if(window.crypto&&window.crypto.randomUUID) return window.crypto.randomUUID(); }catch(e){}
+  return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+}
+async function apiRead_(res){
+  if(!res.ok)throw transportErr_('Network error ('+res.status+')',res.status);
+  /* An error page, a captive portal or a truncated body is a broken pipe, not
+     the server declining — say so, so the retry paths below can run. */
+  try{ return await res.json(); }
+  catch(e){ throw transportErr_('The server\'s reply could not be read.',res.status); }
+}
 async function apiPost_(body){
-  const res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(body)});
-  if(!res.ok)throw new Error('Network error ('+res.status+')');
-  return res.json();
+  let res;
+  try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(body)}); }
+  catch(e){ throw transportErr_('Could not reach the server.',0); }
+  return apiRead_(res);
 }
 async function apiGet_(body){
   const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
@@ -739,20 +776,69 @@ async function apiGet_(body){
      Anything this big belongs on a POST, and saying so beats a truncated
      request that fails in a way nobody can read. */
   if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
-  const res=await fetch(u,{method:'GET',redirect:'follow'});
-  if(!res.ok)throw new Error('Network error ('+res.status+')');
-  return res.json();
+  let res;
+  try{ res=await fetch(u,{method:'GET',redirect:'follow'}); }
+  catch(e){ throw transportErr_('Could not reach the server.',0); }
+  return apiRead_(res);
+}
+/* A write whose answer went missing. The request id makes asking again safe —
+   the server replays the answer it already produced rather than doing the work
+   twice — so ask, over GET, because POST is the route that just failed.
+   Roughly half a minute of asking, which is long enough for a payment to
+   finish rebuilding its PDF and sending its two emails. */
+async function settleWrite_(rid){
+  /* Half a minute of "Working…" with no explanation is its own kind of alarming,
+     and the button stays disabled throughout — which is the point, nobody
+     should be tapping it again. Say what the wait is for. */
+  try{ toast('Connection dropped — checking whether that went through…'); }catch(e){}
+  let unknown=0;
+  for(let i=0;i<12;i++){
+    await apiWait_(i?2500:1500);
+    let s=null;
+    try{ s=await apiGet_({fn:'jobStatus',token:T,args:[rid]}); }catch(e){ continue; }
+    if(!s||!s._api||Number(s.ok)!==1) continue;
+    if(s.state==='done') return {reply:s.reply};
+    if(s.state==='running'){ unknown=0; continue; }
+    /* "Unknown" the moment we ask can just mean the request is still on its way
+       to Google. Only several in a row mean it never arrived. */
+    if(++unknown>=4) return {never:true};
+  }
+  return {};
 }
 async function api(fn,args){
+  const isRead=!!API_GET_OK[fn];
   const body={api:'console',fn,token:T,args:args||[]};
-  let j=null;
-  if(!API_USE_GET){
-    j=await apiPost_(body);
-    if(!apiLostReply_(j)) return apiDone_(j);
+  if(!isRead) body.rid=apiRid_();
+  let dropped=null;
+  if(!API_USE_GET||!isRead){
+    try{
+      const j=await apiPost_(body);
+      if(!apiLostReply_(j)) return apiDone_(j);
+    }catch(e){
+      if(!isTransportErr_(e)) throw e;
+      dropped=e;
+    }
   }
-  if(API_GET_OK[fn]){
-    const g=await apiGet_(body);
-    if(!apiLostReply_(g)){ API_USE_GET=true; return apiDone_(g); }
+  if(isRead){
+    for(let i=0;i<3;i++){
+      try{
+        const g=await apiGet_(body);
+        if(!apiLostReply_(g)){ API_USE_GET=true; return apiDone_(g); }
+        break;  /* a genuine lost-POST fingerprint on the GET route too */
+      }catch(e){
+        if(!isTransportErr_(e)) throw e;
+        dropped=e;
+        if(i<2) await apiWait_(900*(i+1));
+      }
+    }
+    if(dropped) throw new Error(dropped.message+' The console could not reach the backend — '+
+      'check the signal and try again.');
+  }else if(dropped){
+    const s=await settleWrite_(body.rid);
+    if(s.reply) return apiDone_(s.reply);
+    if(s.never) throw new Error('The server never received that. Nothing was changed — try again.');
+    throw new Error('The connection dropped before the server answered, and it may still be '+
+      'finishing. Do NOT send it again — reload the page and check the quote first.');
   }
   /* Both routes lost it, or this one is a write we will not repeat blindly. */
   throw new Error('The server didn\'t receive that request. Nothing was changed. '+

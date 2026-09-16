@@ -380,6 +380,19 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: console transport rules broken"; sed 's/^/       /' "$TMP/trans.txt"; FAIL=1
   fi
+  # A slow write whose answer is dropped must not be reported as a failure —
+  # Chris was told a payment failed while its receipt was already sent. The
+  # request id makes asking again safe; both halves are executed, not grepped.
+  if node tools/check-idempotent-writes.js > "$TMP/idem.txt" 2>&1; then
+    echo "  OK   gate: writes run once per request id and can answer twice"
+  else
+    echo "  FAIL gate: write idempotency broken"; sed 's/^/       /' "$TMP/idem.txt"; FAIL=1
+  fi
+  if node tools/check-console-recovery.js > "$TMP/recov.txt" 2>&1; then
+    echo "  OK   gate: the console chases a dropped answer instead of guessing"
+  else
+    echo "  FAIL gate: console recovery broken"; sed 's/^/       /' "$TMP/recov.txt"; FAIL=1
+  fi
   # Who can actually record a key location today, and which way a broken pause
   # fails. Both are properties of the code, so they are checked by running it.
   if node tools/check-perms-pause.js > "$TMP/perm.txt" 2>&1; then

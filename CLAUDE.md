@@ -274,6 +274,19 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
   to be told "Enter both your quote number and last name." while looking at an
   open quote. Every console reply is stamped `_api:'console'` and reads retry
   over GET; **writes must never become GET-able**. `docs/ref/STAFF-CONSOLE.md`.
+- **Apps Script answers a POST with a redirect to a one-shot URL, and that leg
+  404s** when the call ran long enough for Google to give up — on a phone, in
+  the yard, on a call that rebuilds a PDF and sends two emails. A transport
+  failure is therefore **not an answer**: reads fall through to GET and retry,
+  and a write carries a `rid` so the console can ask `jobStatus` what actually
+  happened instead of reporting a payment as failed while its receipt is already
+  in the customer's inbox. Never tell staff a write changed nothing unless the
+  server said the id was never seen. `docs/ref/STAFF-CONSOLE.md`.
+- **The console's speed is a correctness problem, not a comfort one.** A call
+  slow enough to be dropped is a call that gets reported wrong. Before adding a
+  read that walks the spreadsheet, check what it actually needs: the payload
+  column is kilobytes per quote, and reading it to show a name is what made the
+  storage view time out. `docs/ref/STAFF-CONSOLE.md`.
 - **Mobile Google Sheets app cannot show custom menus, ever.** Desktop web or
   Chrome's "Desktop site" toggle only. That limitation is why the console
   exists.

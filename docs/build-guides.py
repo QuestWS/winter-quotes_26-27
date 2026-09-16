@@ -406,7 +406,7 @@ def doc2():
     g.head()
 
     g.story += [P(
-        'The console lives at <b>questws.github.io/winter-quotes_26-27/admin/</b>. It works on a '
+        'The console lives at <b>winter.questws.com/admin/</b>. It works on a '
         'phone. Add it to your home screen and it behaves like an app.')]
 
     g.story += [P('Signing in', H1)]
@@ -775,7 +775,7 @@ def doc3():
     g.head()
 
     g.story += [P(
-        'The quote page is at <b>questws.github.io/winter-quotes_26-27/</b>. It is the same page '
+        'The quote page is at <b>winter.questws.com</b>. It is the same page '
         'customers use, so building a quote on someone\'s behalf and letting them build their own '
         'are the same process. It works on a phone.')]
 

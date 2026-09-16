@@ -590,6 +590,24 @@ else
   echo "  (no deploy workflow — Apps Script is deployed by hand)"
 fi
 
+echo "== Custom domain =="
+# The CNAME file is what points winter.questws.com at this repo. QUOTE_PAGE_URL
+# builds every customer-facing quote link, so if the two ever disagree the
+# emails send people to a host that is no longer serving the page.
+if [ -f CNAME ]; then
+  DOM=$(tr -d " \t\r\n" < CNAME)
+  echo "  CNAME: ${DOM:-empty}"
+  if [ -z "$DOM" ]; then
+    echo "  FAIL CNAME is empty — Pages will drop the custom domain"; FAIL=1
+  elif grep -q "QUOTE_PAGE_URL = 'https://$DOM/'" quote-logger-apps-script.gs; then
+    echo "  OK   QUOTE_PAGE_URL matches CNAME (trailing slash present)"
+  else
+    echo "  FAIL QUOTE_PAGE_URL does not match https://$DOM/ — quote links in emails will point at the wrong host"; FAIL=1
+  fi
+else
+  echo "  (no CNAME — site served from github.io)"
+fi
+
 echo "== URL sync =="
 U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null | sort -u | head -1)
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)

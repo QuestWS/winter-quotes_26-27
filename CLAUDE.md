@@ -29,8 +29,13 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
 - **Repo:** `QuestWS/winter-quotes_26-27`
-- **Customer page:** `https://questws.github.io/winter-quotes_26-27/`
-- **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
+- **Customer page:** `https://winter.questws.com/`
+- **Staff console:** `https://winter.questws.com/admin/`
+- The `questws.github.io/winter-quotes_26-27/` addresses still 301 to these,
+  query string intact, which is what keeps quote links in already-sent emails
+  and printed QR codes alive. The `CNAME` file in the repo root is what sets
+  the domain — **deleting it drops the domain on the next deploy.**
+  `docs/CUSTOM-DOMAIN.md`
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`
 

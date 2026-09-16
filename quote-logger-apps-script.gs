@@ -111,9 +111,12 @@ const REPORT_EMAIL = 'chris@questwatersports.com';
 // Used for one-click buttons in customer emails. If the deployment is ever
 // recreated (new URL), update this to match the page's quoteLogUrl.
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
-// Public URL of the CUSTOMER QUOTE PAGE (GitHub Pages). Used to build
-// "pick your quote back up" links. Must end in a trailing slash.
-const QUOTE_PAGE_URL = 'https://questws.github.io/winter-quotes_26-27/';
+// Public URL of the CUSTOMER QUOTE PAGE. Used to build "pick your quote
+// back up" links. Must end in a trailing slash, and must match the CNAME
+// file in the repo root — tools/verify.sh fails the pair if they drift.
+// The old questws.github.io address still redirects here, which is what
+// keeps links in already-sent emails and printed QR codes working.
+const QUOTE_PAGE_URL = 'https://winter.questws.com/';
 const REPORT_MONTHS = [11, 12, 1, 2, 3, 4];
 // Percentages used when recalculating totals after a manual adjustment
 const ADJ_CC_PCT = 3;

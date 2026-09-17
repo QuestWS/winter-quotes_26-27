@@ -231,6 +231,25 @@ aside.ticket{position:sticky;top:18px}
 .mobilebar .k{font-size:11px;color:#B9CDDD;text-transform:uppercase;letter-spacing:.07em}
 .mobilebar button{font-family:var(--disp);font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:var(--gold);border:0;color:#fff;border-radius:7px;padding:9px 16px;font-size:15px;cursor:pointer}
 @media(max-width:960px){.mobilebar{display:flex}aside.ticket{position:static}}
+/* THE SIGNING STEP NEEDS WIDTH, NOT HEIGHT. The agreement renders at a fixed
+   page width; with the summary column alongside it, the frame was ~635px --
+   barely over the 600px Adobe itself calls a minimum -- so the page overflowed
+   sideways and the required Owner signature field sat off the right edge. The
+   customer CAN scroll to it, which is exactly the problem: a required field
+   they have to go hunting for is a contract they can later say was obstructed
+   by our site. So on this one step the summary steps aside and the frame takes
+   the full page width (~1053px). Every other step keeps the ticket. */
+/* `screen` is load-bearing: @media print hides every panel and keeps ONLY the
+   ticket -- the ticket IS the printed quote -- so an unscoped rule here would
+   print a blank page for anyone who hits Ctrl+P on the signing step. */
+@media screen and (min-width:961px){
+  body.signing .wrap{grid-template-columns:minmax(0,1fr)}
+  body.signing aside.ticket{display:none}
+}
+/* The escape hatch under the frame. However wide we make it, we do not control
+   the customer's screen -- this is the guarantee that nobody is ever unable to
+   sign, and it opens Adobe's own page at whatever size their browser is. */
+.signopen{margin:10px 0 0;text-align:center}
 
 /* review + signpay */
 .review-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
@@ -1280,7 +1299,12 @@ function renderSignPay(){
   const target=$('#signEmbed');
   $('#signNote').style.display = src ? '' : 'none';
   if(src){
-    target.innerHTML=`<iframe class="signframe" src="${src}" title="Quest Watersports storage & services agreement"></iframe>`;
+    /* The link is built WITHOUT embed:true on purpose: that one opens Adobe's
+       own hosted page, so it must not claim to be embedded in ours. Same
+       agreement, same pre-fill. */
+    const direct = signUrlFor({ quoteNo: S.quoteNo, slipNo: S.slipNo });
+    target.innerHTML=`<iframe class="signframe" src="${src}" title="Quest Watersports storage & services agreement"></iframe>
+      <p class="note signopen">Can't see the whole agreement? <a href="${direct}" target="_blank" rel="noopener">Open it in a new window</a> — same agreement, already filled in.</p>`;
   }else{
     target.innerHTML=`
       <div class="demo-embed">
@@ -1470,6 +1494,9 @@ function go(name){
     if(need.length){ showGate_(need); return; }
   }
   cur=name;
+  /* Drives the full-width signing layout above. Set here rather than in
+     renderSignPay so that LEAVING the step takes it off again. */
+  document.body.classList.toggle('signing', name==='signpay');
   if(name==='storage') syncStorageUI();
   if(name==='ski') buildSkiLevels();
   if(name==='skistore') buildSkiStorage();

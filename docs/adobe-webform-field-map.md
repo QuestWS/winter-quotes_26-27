@@ -15,16 +15,14 @@ email land on the same pre-filled form.
 
 | We send | Adobe field must be named | Contents | When |
 |---|---|---|---|
-| quote number | `Quote Number` | `QW-26-1255` | always |
-| slip number | `Slip Number` | `B-14` | only when the unit is in a slip |
+| quote number | `Quote_Number` | `QW-26-1255` | always |
+| slip number | `Slip_Number` | `B-14` | only when the unit is in a slip |
 
-**Those names contain a space**, because that is how the fields are named in
-the live web form. The parameter key is percent-encoded on the way out, so the
-link reads `#Quote%20Number=QW-26-1255` — a raw space is not a valid URL and
-email clients each guess differently about where it ends. If a field comes back
-blank on a live test, renaming both sides to `Quote_Number` / `Slip_Number` is
-the fix Adobe itself recommends; it is one line in `SIGNING.fields` plus a
-rename in the authoring tool.
+**Underscores, no spaces** — what Adobe recommends and what the live form uses.
+The builder percent-encodes the parameter key as well as the value, which is a
+no-op for these two names and is kept on purpose: it is what would make a
+future field name containing a space safe, and a raw space in a URL is not a
+URL — email clients each guess differently about where it ends.
 
 The slip is left out of the URL entirely when we don't have one, rather than
 sent empty. An empty value would blank a field somebody may have filled in on
@@ -50,18 +48,17 @@ For each of the two fields, in the web form authoring tool:
    `Slip_Number`.
 3. Open the field's properties and check **"Default value may come from URL."**
    Without this the pre-fill is ignored and the field just stays blank.
-4. **Read Only.** Right for `Quote Number` — it is our reference back to the
-   row in the sheet, and a customer "fixing a typo" in it costs us the link
+4. **Read Only — on `Quote_Number` only.** That one is our reference back to
+   the row in the sheet, and a customer "fixing a typo" in it costs us the link
    between the signed contract and the quote.
 
-   **`Slip Number` is currently read-only too, and that is worth a second
-   look.** We only have a slip to send when the customer entered one for the
-   Heritage Harbor discount, or when staff filled one in from the console. For
-   most quotes at signing time we have neither, so the field arrives blank —
-   and read-only means the customer cannot fill it in either. A blank locked
-   box on a contract invites the phone call we built this to avoid. Leaving it
-   editable costs nothing: when we do send a slip it still arrives pre-filled,
-   and when we do not, the one person who definitely knows it can type it.
+   **`Slip_Number` is deliberately left editable.** We only have a slip to send
+   when the customer entered one for the Heritage Harbor discount, or when
+   staff filled one in from the console — for most quotes at signing time we
+   have neither, so the field arrives blank. Locked *and* blank is a box the
+   customer can see, cannot fill, and has to phone about. Editable costs
+   nothing: when we send a slip it still arrives pre-filled, and when we do
+   not, the one person who definitely knows it can type it.
 5. Save and publish the form, then copy the published web form URL.
 
 That URL goes in `SIGNING.webFormUrl` in `pricing-engine.js` — **it is already
@@ -79,13 +76,13 @@ step, page and email together.
 Emailed button — opens the form directly:
 
 ```
-https://na3.documents.adobe.com/public/esignWidget?wid=CBFC…U*#Quote%20Number=QW-26-1255&Slip%20Number=B-14
+https://na3.documents.adobe.com/public/esignWidget?wid=CBFC…U*#Quote_Number=QW-26-1255&Slip_Number=B-14
 ```
 
 Quote-page iframe — same link plus `hosted=false`:
 
 ```
-https://na3.documents.adobe.com/public/esignWidget?wid=CBFC…U*&hosted=false#Quote%20Number=QW-26-1255
+https://na3.documents.adobe.com/public/esignWidget?wid=CBFC…U*&hosted=false#Quote_Number=QW-26-1255
 ```
 
 `hosted=false` is what Adobe's own iframe snippet carries: it tells the widget

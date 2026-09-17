@@ -128,9 +128,12 @@ our page rather than hosted on one of Adobe's. The emailed button must **not**
 carry it, because that one opens the form directly; the server never passes the
 flag, and `tools/check-sign-link.js` checks both halves.
 
-The two field names contain **spaces** (`Quote Number`, `Slip Number`), so the
-parameter keys are percent-encoded — `#Quote%20Number=…`. A raw space is not a
-valid URL and email clients disagree about where it ends.
+The two fields are `Quote_Number` and `Slip_Number` — underscores, which is
+what Adobe recommends. `Quote_Number` is read-only on the Adobe side (it is our
+reference back to the sheet row); `Slip_Number` is editable on purpose, because
+for most quotes we have no slip to send and a locked blank box is a phone call.
+Keys are percent-encoded along with values, which is a no-op for these names
+and the guard for the next one.
 
 The panel also warns about anything the crew will need and the customer has not
 given — name, slip, Heritage Harbor pickup address, key location, email —

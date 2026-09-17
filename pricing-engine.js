@@ -139,15 +139,16 @@ const PRICING = {
 ---------------------------------------------------------------------------- */
 const SIGNING = {
   webFormUrl: 'https://na3.documents.adobe.com/public/esignWidget?wid=CBFCIBAA3AAABLblqZhD_H9Z6wlwlhi9HgnMlxUkxv9O4Da6Wup4QyROF6Ev-0BGnkrRVBxCtC9Y642eshIU*',
-  /* THE NAMES ON THE ADOBE FORM, character for character. These two carry a
-     SPACE, because that is how the fields are named in the web form — so the
-     parameter key is percent-encoded on the way out ('Quote%20Number'). If a
-     field ever comes back blank on a live test, renaming both sides to
-     `Quote_Number` / `Slip_Number` is the fix Adobe itself recommends, and it
-     is a one-line edit here plus a rename in the authoring tool. */
+  /* THE NAMES ON THE ADOBE FORM, character for character and case for case.
+     Underscores, no spaces — which is what Adobe recommends and what the live
+     form uses. Rename one side without the other and nothing errors: Adobe
+     just leaves the field blank, on every contract, until somebody notices.
+     tools/check-sign-link.js holds these to the table in
+     docs/adobe-webform-field-map.md, but nothing here can see the Adobe side,
+     so a live test link is the only real check after a rename. */
   fields: {
-    quoteNo: 'Quote Number',
-    slipNo:  'Slip Number',
+    quoteNo: 'Quote_Number',
+    slipNo:  'Slip_Number',
   },
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
@@ -537,7 +538,7 @@ function storageTabFor(s){
    the web form existed still get a working button.
 
    Pre-fill rides the URL FRAGMENT (#), not a query string (?): Acrobat Sign
-   reads `#Field%20Name=value&Other%20Field=value`, key and value both encoded.
+   reads `#Field_Name=value&Other_Field=value`, key and value both encoded.
    Anything already after a # on the configured URL is dropped rather than
    appended to, so pasting a URL that already carries a fragment cannot produce
    two of them. Pass `embed:true` for the copy that goes in our own iframe.
@@ -552,9 +553,10 @@ function signUrlFor(o){
   const qn   = String((o && o.quoteNo) || '').trim();
   if(!base || !qn) return '';
   const slip = String((o && o.slipNo) || '').trim();
-  /* The KEY is encoded too, not just the value. Our field names contain a
-     space, and a raw space in a URL is not a URL — browsers and email clients
-     each guess differently about where it ends. */
+  /* The KEY is encoded as well as the value. A no-op for the two underscore
+     names above, and deliberately kept: it is what makes a future field name
+     with a space in it safe, and a raw space in a URL is not a URL — email
+     clients each guess differently about where it ends. */
   const pair = (k, v) => encodeURIComponent(k) + '=' + encodeURIComponent(v);
   const parts = [ pair(SIGNING.fields.quoteNo, qn) ];
   if(slip) parts.push(pair(SIGNING.fields.slipNo, slip));

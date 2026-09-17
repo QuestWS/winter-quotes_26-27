@@ -239,7 +239,19 @@ aside.ticket{position:sticky;top:18px}
 .stepcard .sc-num{font-family:var(--disp);font-weight:700;font-size:20px;color:#fff;background:var(--navy);width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
 .stepcard .sc-title{font-family:var(--disp);font-size:21px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--navy)}
 .stepcard .sc-body{padding:16px}
-.signframe{width:100%;height:640px;border:0;display:block;background:#fff}
+/* The Adobe Sign widget. Its height is OURS to set — the widget does not grow
+   to fit its own content, and neither embed method changes that (Adobe's
+   JavaScript snippet sizes to its container exactly like this iframe does), so
+   this rule is the whole fix for a clipped agreement. It is a multi-page
+   contract, so no height shows all of it; the goal is a frame tall enough that
+   scrolling inside it reads as a document rather than a letterbox. Desktop
+   gets most of the window, floored so a short laptop still gets a usable frame
+   and the page scrolls instead of the widget shrinking. 640px was too short on
+   desktop; it stays on mobile, where it already reads well. */
+.signframe{width:100%;height:min(1100px,calc(100vh - 140px));min-height:760px;border:0;display:block;background:#fff}
+/* Mobile keeps the original 640px, which already reads well there. This has
+   to come AFTER the rule above: same specificity, so source order decides. */
+@media(max-width:960px){.signframe{height:640px;min-height:0}}
 .demo-embed{border:2px dashed var(--frost);border-radius:8px;background:var(--ice);padding:28px 22px;text-align:center}
 .demo-embed .de-title{font-family:var(--disp);font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--frost)}
 .demo-embed p{color:var(--muted);font-size:14px;max-width:52ch;margin:8px auto 0}

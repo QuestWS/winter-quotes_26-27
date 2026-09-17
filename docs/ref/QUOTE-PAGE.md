@@ -98,6 +98,46 @@ posting a `Quote started` status over a real (possibly paid) quote would
 overwrite it. `QUOTE_LOADED` guards both paths.
 
 
+## The sign step
+
+The Acrobat Sign web form is embedded in an iframe on the sign & pay panel,
+with **two** values pre-filled through the URL fragment: the quote number, and
+the slip number when the unit is in one. That is the entire hand-off —
+`adobeSignUrl()` on the page is three lines and delegates to `signUrlFor()` in
+the shared engine, which the server uses too. Setup and field names:
+`docs/adobe-webform-field-map.md`.
+
+The selections and totals are deliberately **not** sent. The agreement is a
+contract, not a restatement of the quote; the numbers travel on the quote PDF
+attached to the same email. Pricing in two places is pricing that can disagree,
+and a quote re-prices on reload while a signed PDF is frozen. (An earlier
+builder pushed ~50 fields — every line item and amount — at a form that never
+had fields to receive them; Adobe ignores a parameter with no matching field,
+silently, so it looked like it worked.)
+
+`SIGNING.webFormUrl` in `pricing-engine.js` is the on switch, and it is now
+**set** to the live form. Empty it and `adobeSignUrl()` returns `''`, the page
+shows the "signing almost here" placeholder instead of an iframe, and
+`#signNote` is hidden — the note promises the form opens pre-filled, so it must
+not show when there is no form. That fallback is the kill switch if Adobe ever
+has a bad day: one line, and the page stops sending anyone to a broken form.
+
+The page's link carries `hosted=false` (`signUrlFor({…, embed:true})`), which
+is what Adobe's own iframe snippet uses — it tells the widget it is embedded in
+our page rather than hosted on one of Adobe's. The emailed button must **not**
+carry it, because that one opens the form directly; the server never passes the
+flag, and `tools/check-sign-link.js` checks both halves.
+
+The two field names contain **spaces** (`Quote Number`, `Slip Number`), so the
+parameter keys are percent-encoded — `#Quote%20Number=…`. A raw space is not a
+valid URL and email clients disagree about where it ends.
+
+The panel also warns about anything the crew will need and the customer has not
+given — name, slip, Heritage Harbor pickup address, key location, email —
+through `#signMissing`. That gate is about the haul-out, not about the
+pre-fill: only the slip is actually sent to Adobe.
+
+
 ## Season-done survey
 A 3-option survey (done now / done on a date / will call) rides on customer
 emails — but **only once a deposit or payment exists** (`o.paid > 0`, checked in

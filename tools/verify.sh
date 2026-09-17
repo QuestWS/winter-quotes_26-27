@@ -253,6 +253,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: key-location / slip rules broken"; sed 's/^/       /' "$TMP/haul.txt"; FAIL=1
   fi
+  # The Adobe Sign hand-off. A field name that stops matching the Adobe form
+  # fails silently -- blank contracts, no error -- so everything that can drift
+  # on our side is executed rather than eyeballed.
+  if node tools/check-sign-link.js > "$TMP/sign.txt" 2>&1; then
+    echo "  OK   gate: Adobe Sign pre-fill link holds"
+  else
+    echo "  FAIL gate: Adobe Sign pre-fill link broken"; sed 's/^/       /' "$TMP/sign.txt"; FAIL=1
+  fi
   # One phone format, (815) 555-0123, everywhere a number is shown — and
   # nothing mangled that we cannot confidently read. Run, not grepped.
   if node tools/check-phone-format.js > "$TMP/phone.txt" 2>&1; then

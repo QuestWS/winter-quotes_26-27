@@ -249,6 +249,46 @@ const PRICING = {
   ratesLabel:  '2025–2026',   // the season the numbers in PRICES came from
   nextLabel:   '2026–2027',   // the season they are being updated to
 };
+
+/* ----------------------------------------------------------------------------
+   ADOBE SIGN WEB FORM — the signing hand-off.
+   ----------------------------------------------------------------------------
+   `webFormUrl` is the published web form URL. Empty it and the quote page
+   falls back to the "signing almost here" placeholder and no email carries a
+   sign button — so this one string is the on switch for the whole signing
+   step, page AND email, and the kill switch if the form ever has a bad day.
+
+   It lives in the engine rather than in the page's INTEGRATIONS block because
+   BOTH sides build the link: the page for the customer sitting in front of it,
+   the server for the sign button in every email it sends. Two copies would
+   drift the moment Adobe re-publishes the form under a new wid.
+
+   `fields` maps what we know to the FIELD NAMES ON THE ADOBE FORM. Each key
+   here must match the field's name in the Acrobat Sign authoring tool exactly,
+   character for character and case for case, and that field must have
+   "Default value may come from URL" checked in its properties. A name that
+   does not match is not an error — Adobe silently leaves the field blank — so
+   a renamed field fails quietly and forever. Test one live link after any
+   change here. Full setup steps and the current field list:
+   docs/adobe-webform-field-map.md.
+
+   Adding a third pre-filled field later is one line in `fields` and one line
+   in signUrlFor below — only text fields work this way; checkboxes and
+   dropdowns need separate handling.
+---------------------------------------------------------------------------- */
+const SIGNING = {
+  webFormUrl: 'https://na3.documents.adobe.com/public/esignWidget?wid=CBFCIBAA3AAABLblqZhD_H9Z6wlwlhi9HgnMlxUkxv9O4Da6Wup4QyROF6Ev-0BGnkrRVBxCtC9Y642eshIU*',
+  /* THE NAMES ON THE ADOBE FORM, character for character. These two carry a
+     SPACE, because that is how the fields are named in the web form — so the
+     parameter key is percent-encoded on the way out ('Quote%20Number'). If a
+     field ever comes back blank on a live test, renaming both sides to
+     `Quote_Number` / `Slip_Number` is the fix Adobe itself recommends, and it
+     is a one-line edit here plus a rename in the authoring tool. */
+  fields: {
+    quoteNo: 'Quote Number',
+    slipNo:  'Slip Number',
+  },
+};
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
 
 /* The estimate disclaimer itself, in one place. Returns null — not an empty
@@ -627,6 +667,46 @@ function storageTabFor(s){
   return 'No Storage';
 }
 
+/* The link that carries a customer into the Adobe Sign web form with their
+   quote already filled in. Shared because both sides hand it out: the page
+   embeds it in the sign step, the server puts it behind the "Review & sign"
+   button in every customer email. The server's copy is the one that matters
+   most — it is built fresh at send time from the quote's CURRENT slip, so a
+   slip staff corrected in the console reaches Adobe, and quotes saved before
+   the web form existed still get a working button.
+
+   Pre-fill rides the URL FRAGMENT (#), not a query string (?): Acrobat Sign
+   reads `#Field%20Name=value&Other%20Field=value`, key and value both encoded.
+   Anything already after a # on the configured URL is dropped rather than
+   appended to, so pasting a URL that already carries a fragment cannot produce
+   two of them. Pass `embed:true` for the copy that goes in our own iframe.
+
+   Returns '' when there is no web form configured yet or no quote number to
+   send — an empty string every caller already treats as "no signing link",
+   which is what keeps the placeholder showing and the email button hidden.
+   The slip is optional by design: most units have none, and sending an empty
+   one would blank a field staff may have filled in on the Adobe side. */
+function signUrlFor(o){
+  const base = String((SIGNING && SIGNING.webFormUrl) || '').trim().split('#')[0];
+  const qn   = String((o && o.quoteNo) || '').trim();
+  if(!base || !qn) return '';
+  const slip = String((o && o.slipNo) || '').trim();
+  /* The KEY is encoded too, not just the value. Our field names contain a
+     space, and a raw space in a URL is not a URL — browsers and email clients
+     each guess differently about where it ends. */
+  const pair = (k, v) => encodeURIComponent(k) + '=' + encodeURIComponent(v);
+  const parts = [ pair(SIGNING.fields.quoteNo, qn) ];
+  if(slip) parts.push(pair(SIGNING.fields.slipNo, slip));
+  /* `hosted=false` is what Adobe's own iframe snippet carries: it tells the
+     widget it is embedded in somebody else's page rather than sitting on an
+     Adobe-hosted page of its own. The quote page embeds; an emailed button
+     opens the form directly, and must NOT carry it. */
+  const url = (o && o.embed) && base.indexOf('hosted=') < 0
+    ? base + (base.indexOf('?') > -1 ? '&' : '?') + 'hosted=false'
+    : base;
+  return url + '#' + parts.join('&');
+}
+
 /* The human-readable dimension line shown in the sheet, the PDF and emails.
    Shared for the same reason: the console can now change dimensions, so it has
    to be able to rewrite this string exactly the way the page first wrote it. */
@@ -823,7 +903,9 @@ function doPost(e) {
       d.quotesRequested || '',
       d.notes || '',
       pdfUrl || '',
-      d.adobeUrl || '',
+      /* The sign link, rebuilt from this save rather than trusted from the
+         browser, so the column agrees with the link the emails send. */
+      signUrlFor_(d) || d.adobeUrl || '',
       '',
       JSON.stringify(d),
       paid0,
@@ -4809,7 +4891,7 @@ function adminEmailPreview(token, qn, kind, extra) {
     const html = customerEmailHtml_({ firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
-      payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
+      payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
     return { ok: 1, to: d.email, subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
@@ -5337,6 +5419,33 @@ function quoteLink_(quoteNo, lastName) {
 }
 function quoteLinkFor_(d) { return quoteLink_(d && d.quoteNo, d && d.lastName); }
 
+/* ---------------------------------------------------------------------------
+   THE "REVIEW & SIGN" LINK — built here, at send time, never read back
+   ---------------------------------------------------------------------------
+   Acrobat Sign pre-fills a web form field from the URL fragment, so the link
+   we hand a customer carries their quote number and, when the unit is in one,
+   their slip. `signUrlFor` in the shared engine builds the string; this
+   wrapper supplies the two values from the quote.
+
+   Why it is rebuilt rather than read out of the SIGN column: that column
+   stores whatever the browser produced the day the quote was saved. The slip
+   is not the customer's to know — staff fill it in from the console weeks
+   later — and every quote saved before the web form URL existed stored an
+   empty string. Rebuilding means a corrected slip reaches Adobe and last
+   month's quotes get a working sign button the moment Chris pastes the URL
+   into SIGNING.webFormUrl, with nothing to backfill.
+
+   Reads the slip through effectiveState_ for the same reason the haul-out
+   email does: a staff correction lives in the manual-ops journal, not in
+   d.state, and the journal is the one that is right. Returns '' when there is
+   no web form configured — callers hide the button on ''. */
+function signUrlFor_(d) {
+  if (!d) return '';
+  const st = effectiveState_(d) || d.state || d || {};
+  const slipNo = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim();
+  return signUrlFor({ quoteNo: d.quoteNo, slipNo: slipNo });
+}
+
 function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
   try {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
@@ -5348,7 +5457,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage,
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
-      payBy: (d.season && d.season.payByShort) || '', signUrl: d.adobeUrl || '',
+      payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
@@ -5514,8 +5623,12 @@ function dailyReminderCheck() {
       const ts = r[COL.TS-1], status = String(r[COL.STATUS-1] || ''), quoteNo = r[COL.QN-1], unit = r[COL.UNIT-1],
             first = r[COL.FIRST-1], last = r[COL.LAST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
             signUrl = r[COL.SIGN-1], reminder = r[COL.REM-1];
-      let payByShort = '', noStorage = false;
-      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); } catch (e) {}
+      let payByShort = '', noStorage = false, signLink = '';
+      /* The sign link is rebuilt from the payload rather than taken from the
+         SIGN column: this email goes to people who saved a quote and never
+         came back, which is exactly the set whose stored link predates the
+         web form. See signUrlFor_. */
+      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
       if (reminder) return;                                   // already reminded
       if (!email) return;                                     // nowhere to send
       if (status.indexOf('Signed & paying') === 0) return;    // already moving forward
@@ -5527,7 +5640,7 @@ function dailyReminderCheck() {
         const html = customerEmailHtml_({
           firstName: first, quoteNo: quoteNo, unit: unit,
           total: total, deposit: deposit, dueToday: dueToday, noStorage: noStorage,
-          payBy: payByShort, signUrl: signUrl || '',
+          payBy: payByShort, signUrl: signLink || signUrl || '',
           /* The whole point of this email is "come back and finish" — it is the
              one that most needs the one-tap way back in. Built from the row's
              own last name, the same halves quoteLinkFor_ takes off a payload. */

@@ -43,6 +43,34 @@ lands on an empty quote page — **every caller must hide its button on `''`**,
 which is what the console and the email builder both do.
 
 
+## The "review & sign" link
+
+The sibling of the link above, and it follows the same one-builder rule.
+`signUrlFor()` in `pricing-engine.js` builds the Acrobat Sign pre-fill URL;
+`signUrlFor_(d)` in the Apps Script is its payload-shaped wrapper. Field names
+and the Adobe-side setup: `docs/adobe-webform-field-map.md`.
+
+**Emails never read the stored `SIGN` column — they rebuild the link at send
+time.** Two reasons, and both bite:
+
+- **The slip is usually not known when the quote is saved.** Only a Heritage
+  Harbor customer types one on the quote page; for everyone else staff enter it
+  from the console weeks later, into the manual-ops journal. `signUrlFor_`
+  reads it through `effectiveState_`, so the staff correction is what reaches
+  Adobe — the same reason the haul-out email reads it that way.
+- **Every quote saved so far stored an empty string**, because the web form URL
+  is not set yet. Rebuilding means they all get a working sign button in their
+  next email the moment `SIGNING.webFormUrl` is filled in, with no backfill.
+
+The stored value stays as a fallback (`signUrlFor_(d) || d.adobeUrl || ''`) so
+the sheet still shows where a customer was sent. It returns `''` when the web
+form URL is unset, and `customerEmailHtml_` already hides the button and
+switches the numbered next-steps line on `''` — so the whole signing step
+turns on across every email from that one string.
+`tools/check-sign-link.js` fails any email that builds `signUrl` some other
+way.
+
+
 ## The automatic-email pause
 
 `AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,

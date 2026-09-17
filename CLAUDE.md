@@ -158,6 +158,7 @@ request. Open the one that covers what you are about to change — and open it
 | `docs/ref/QUOTE-PAGE.md` | `index.html` — motors, detail options, resuming a quote, the terms/lead gate, the season-done survey |
 | `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, yard printing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
+| `docs/adobe-webform-field-map.md` | The Adobe Sign hand-off — what pre-fills, the exact field names, the Adobe-side setup |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |
 
 `tools/check-docs-coverage.js` fails if a rule that was once written down stops
@@ -305,7 +306,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 ## 8. What's deliberately still open
 | Item | State | Notes |
 |---|---|---|
-| Adobe Sign web form | **Chris's task** | `adobeWebFormUrl:''` in the page; a customer-appropriate "signing almost here" placeholder shows until set. Last blocker to full couch-to-paid. |
+| Adobe Sign web form | **Live — needs one test signature** | Wired end to end. `SIGNING.webFormUrl` (`pricing-engine.js`) holds the published form; the page embeds it and every customer email carries a **Review & sign** button. Two fields pre-fill from the URL fragment, `Quote Number` and `Slip Number` (spaces are real, keys are percent-encoded). A field name that stops matching the Adobe side fails **silently** — blank contracts, no error — so send one live test link after any rename: `docs/adobe-webform-field-map.md`. |
 | Excel import of last year's selections | Blocked | Needs a sample workbook from Chris to map columns. Architecture supports it — quotes store selections, not prices. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |

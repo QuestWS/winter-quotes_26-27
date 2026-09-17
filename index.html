@@ -538,7 +538,7 @@ aside.ticket{position:sticky;top:18px}
     <div class="stepcard">
       <div class="sc-head"><div class="sc-num">1</div><div class="sc-title">Review &amp; sign your agreement</div></div>
       <div class="sc-body">
-        <p class="note" id="signNote" style="margin:0 0 12px">Your agreement is pre-filled with every selection and total from this quote, plus Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
+        <p class="note" id="signNote" style="margin:0 0 12px">Your agreement opens with your quote number already filled in, and covers Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
         <div id="signEmbed"></div>
       </div>
     </div>
@@ -617,18 +617,16 @@ aside.ticket{position:sticky;top:18px}
 <script>
 /* ============================================================================
    INTEGRATIONS — paste your live URLs here.
-   adobeWebFormUrl: the full public URL of your Acrobat Sign web form
-     (looks like https://secure.na1.adobesign.com/public/esignWidget?wid=XXXX).
-     Leave empty ('') to show the demo placeholder instead of a live iframe.
-     Field names must match adobe-webform-field-map.md; each pre-filled field
-     needs "Default value may come from URL" checked.
+   The Acrobat Sign web form URL is NOT here — it MOVED to `SIGNING.webFormUrl`
+     in pricing-engine.js, because the server builds the same sign link for
+     every customer email and the two must not drift. Setup steps and the
+     field names: docs/adobe-webform-field-map.md.
    paymentPageUrl: your POS+ hosted payment page.
    quoteLogUrl: the Google Apps Script Web App /exec URL from
      quote-logger-apps-script.gs (logs quotes to Sheets + emails service@).
      Leave empty ('') to skip logging (demo mode).
 ============================================================================ */
 const INTEGRATIONS = {
-  adobeWebFormUrl: '',
   paymentPageUrl: 'https://pay.pospluslogin.com/questws',
   quoteLogUrl: 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec',
 };
@@ -653,8 +651,8 @@ if (typeof QuestPricing === 'undefined') {
 }
 /* Exposed under the same names this page has always used, so every existing
    call site is unchanged. */
-const {SEASON, PRICES, RULES, PRICING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
-       pricingNotice, lockinCopy, pricesValidSentence,
+const {SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS,
+       pricingNotice, lockinCopy, pricesValidSentence, signUrlFor,
        fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
        depositBaseFor, lwtFromOverhang, rateOverride_} = QuestPricing;
 
@@ -1056,7 +1054,10 @@ function logQuote(status, extra){
     termsAcceptedAt:S.termsAcceptedAt||'',
     state:JSON.parse(JSON.stringify(S)),
     manual:MANUAL||undefined,
-    adobeUrl:INTEGRATIONS.adobeWebFormUrl?INTEGRATIONS.adobeWebFormUrl+'#'+buildAdobeParams():'',
+    /* Stored on the row so the sheet shows where this customer was sent to
+       sign. The server rebuilds it from the quote's current slip whenever it
+       emails a sign button, so a stale copy here can never reach a customer. */
+    adobeUrl:adobeSignUrl(),
     ...(extra||{})
   };
   if(!INTEGRATIONS.quoteLogUrl){ console.log('Quote log (demo mode — set INTEGRATIONS.quoteLogUrl):', payload); return; }
@@ -1230,85 +1231,24 @@ function saveAndPrint(){
   window.print();
 }
 
-/* ================= ADOBE SIGN WEB FORM PREFILL ================= */
-function buildAdobeParams(){
-  const {L,rq}=computeLines();
-  const t=totals();
-  const p={};
-  const set=(k,v)=>{ if(v!==''&&v!=null&&v!==0&&v!=='0') p[k]=String(v); };
-  const unitName=(UNITS.find(x=>x.id===S.unit)||{}).t||S.unit;
+/* ================= ADOBE SIGN WEB FORM PREFILL =================
+   Two fields go over to Acrobat Sign: the quote number, and the slip number
+   when the unit is in one. That is the whole hand-off — the agreement is a
+   contract, not a restatement of the quote, and the customer's selections and
+   totals travel on the quote PDF that rides along with it. The quote number is
+   what ties the signed contract back to the row in the sheet.
 
-  set('quote_no', ensureQuoteNo());
-  set('quote_date', new Date().toLocaleDateString('en-US'));
-  set('unit', unitName);
-  set('owner', ownerName()); set('phone', fmtPhone(S.phone)); set('email', S.email); set('ymm', S.ymm);
-  if(S.unit==='boat'){
-    set('loa', S.loa||''); set('beam', S.beam||''); set('lwt', S.hasTrailer?(S.lwt||''):'');
-    set('trailer', S.hasTrailer?'Yes':'No');
-  }
-  if(S.unit==='jetski'){
-    set('ski_len', S.skiLen||''); set('ski_wid', S.skiWid||'');
-    set('trailer','Yes');
-  }
-
-  // winterization lines (boat engines or jetski PWC)
-  const engMap={inboard:'in', io:'io', outboard:'ob', jet:'jt'};
-  if(S.unit==='boat'){
-    for(const [id,code] of Object.entries(engMap)){
-      const g=S.engines[id];
-      if(g.qty>0){
-        const pre=(g.level==='full'?'fw_':'bw_')+code;
-        set(pre, g.qty); set(pre+'_amt', fmt(PRICES[g.level][id]*g.qty));
-      }
-    }
-    if(S.dtTrans>0){set('dt_trans',S.dtTrans);set('dt_trans_amt',fmt(PRICES.dtTrans*S.dtTrans));}
-    if(S.dtTransom>0){set('dt_transom',S.dtTransom);set('dt_transom_amt',fmt(PRICES.dtTransom*S.dtTransom));}
-
-    if(S.ballast>0){set('ws_ballast',S.ballast);set('ws_ballast_amt',fmt(PRICES.ballast*S.ballast));}
-    if(S.waterCold) set('ws_cold_amt',fmt(PRICES.waterCold));
-    if(S.waterHead) set('ws_head_amt',fmt(PRICES.waterHead));
-    if(S.waterHead&&S.addlHeads>0){set('ws_addl',S.addlHeads);set('ws_addl_amt',fmt(PRICES.addlHeads*S.addlHeads));}
-    if(S.pumpout) set('ws_pump_amt',fmt(PRICES.pumpout));
-    if(S.ac) set('ws_ac_amt',fmt(PRICES.ac));
-    if(S.genBasic) set('ws_genb_amt',fmt(PRICES.genBasic));
-    if(S.genFull) set('ws_genf_amt',fmt(PRICES.genFull));
-  }
-  if(S.unit==='jetski'){
-    const g=S.engines.pwc;
-    if(g.qty>0){
-      const pre=(g.level==='full'?'fw_':'bw_')+'pwc';
-      set(pre, g.qty); set(pre+'_amt', fmt(PRICES[g.level].pwc*g.qty));
-    }
-    if(S.skiDetail>0){ set('det_ski', S.skiDetail); set('det_ski_amt', fmt(PRICES.skiDetail*S.skiDetail)); }
-  }
-
-  for(const li of L){
-    if(li.sec==='Storage'){ set('st_type', li.label); set('st_amt', li.amt?fmt(li.amt):''); }
-    if(li.sec==='Retrieval'){ set('ret_type', li.label); set('ret_amt', li.amt?fmt(li.amt):'Included'); }
-    if(li.label.startsWith('Blocking')) set('blk_amt', fmt(li.amt));
-    if(li.label==='Powerwash hull') set('pw_amt', fmt(li.amt));
-    if(li.label.startsWith('Acid wash hull')) set('acid_amt', fmt(li.amt));
-    if(li.label==='Additional in-water wrap labor') set('wrap_iw_amt', fmt(li.amt));
-  }
-  if(S.unit==='boat'&&S.wrap){
-    const w=wrapAuto();
-    if(w.amt!=null){ set('wrap_type', w.type); set('wrap_amt', fmt(w.amt)); }
-  }
-  if(S.lateRetrieval) set('late_amt', fmt(PRICES.lateRetrieval));
-  if(S.hho) set('hho','Yes'+(S.slipNo?' — slip '+S.slipNo:'')+' — discount to be applied by Quest');
-  if(S.keyLoc) set('keys', S.keyLoc);
-  if(S.unit==='golf'&&S.hhoAddr) set('hho_addr', S.hhoAddr);
-  if(rq.length) set('rq', rq.join('; '));
-  if(S.notes) set('cust_notes', S.notes);
-
-  set('total_cash', fmt(t.total));
-  set('total_cc', fmt(t.cc));
-  set('total_late', fmt(t.late));
-  set('total_late_cc', fmt(t.lateCC));
-  set('deposit', fmt(t.deposit));
-
-  return Object.entries(p).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&');
+   Building the URL itself lives in pricing-engine.js (`signUrlFor`), shared
+   with the server so the link in an email and the link on this page are the
+   same link. Field names and the Adobe-side setup: SIGNING in that file, and
+   docs/adobe-webform-field-map.md. */
+function adobeSignUrl(){
+  /* embed:true — this one goes in an iframe on our own page, so it carries the
+     `hosted=false` Adobe's own embed snippet uses. The server builds the same
+     link WITHOUT it for the emailed button, which opens the form directly. */
+  return signUrlFor({ quoteNo: ensureQuoteNo(), slipNo: S.slipNo, embed: true });
 }
+
 
 function renderSignPay(){
   ensureQuoteNo();
@@ -1324,11 +1264,10 @@ function renderSignPay(){
   if(missing.length){ mBox.style.display='block'; mBox.textContent='Heads up — go back to the first step and add '+missing.join(' and ')+' before signing.'; }
   else mBox.style.display='none';
 
-  const params=buildAdobeParams();
+  const src=adobeSignUrl();
   const target=$('#signEmbed');
-  $('#signNote').style.display = INTEGRATIONS.adobeWebFormUrl ? '' : 'none';
-  if(INTEGRATIONS.adobeWebFormUrl){
-    const src=INTEGRATIONS.adobeWebFormUrl + '#' + params;
+  $('#signNote').style.display = src ? '' : 'none';
+  if(src){
     target.innerHTML=`<iframe class="signframe" src="${src}" title="Quest Watersports storage & services agreement"></iframe>`;
   }else{
     target.innerHTML=`

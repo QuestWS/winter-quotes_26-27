@@ -89,6 +89,7 @@ symptom.
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
+| Signed contract on file | `adminUploadContract` | `renderContract`, `contractFiles`, `uploadContract` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
 
 ### Customer page

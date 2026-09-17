@@ -164,6 +164,29 @@ it can be texted.
   started relying on is a fallback that fails the day it is needed.
 
 
+## Filing a signed contract
+
+`adminUploadContract`, gated on `pay`, one file per quote — the server trashes
+any prior copy for that quote number before writing the new one. The row shows
+**View** / **Replace**; under it a dashed zone takes a dropped file, and is the
+tap target on a phone.
+
+- **The drop path has to re-check what `accept=` checks.** The file picker is
+  filtered to PDFs and images; a drop is not, so `contractFiles` tests the type
+  by hand. Without it a dropped `.docx` lands in `Signed Contracts/` and reads
+  as filed.
+- **A two-file drop is refused, not silently narrowed.** Uploading replaces, so
+  the second file would erase the first rather than add a page.
+- **A failed upload leaves the buttons in place.** The message has its own line
+  (`#contractMsg`); it used to be written over the controls, which left the row
+  with no way to retry short of a reload. `renderContract` clears it, so an
+  error cannot follow you into the next quote.
+- **Drops that miss a zone are swallowed at the window.** A file dropped on the
+  page makes the browser navigate to it, discarding the open quote and the
+  sign-in. The guard skips `input[type=file]` and `.drop` — the old-sheet
+  importer's input is visible and takes a dropped workbook today.
+
+
 ## Staff notes
 
 `d.staffNote`, own card, gated on `keys`. Why a quote is the way it is —

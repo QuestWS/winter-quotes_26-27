@@ -78,6 +78,7 @@ if [ -f admin/index.html ]; then
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
     "setStorageFilter" "renderStorage" "storageTabs" "tagred" "em_signreminder" "signAskAllowed_" \
+    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
@@ -263,9 +264,11 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: Adobe Sign pre-fill link broken"; sed 's/^/       /' "$TMP/sign.txt"; FAIL=1
   fi
-  # The chase for a signature: the storage view's deposit tabs and the nudge
-  # email. "Has a deposit" is not "owes nothing", a lead is neither, and the
-  # email must refuse to build rather than ship a dead button. All executed.
+  # The chase for a signature. A SIGNED AGREEMENT — never a deposit — is what
+  # authorises putting hands on a unit, and that condition is one inversion away
+  # from a boat being pulled on nothing but a $500 deposit. Also: "has a
+  # deposit" is not "owes nothing", a lead is neither, and the nudge email must
+  # refuse to build rather than ship a dead button. All executed.
   if node tools/check-sign-chase.js > "$TMP/signchase.txt" 2>&1; then
     echo "  OK   gate: deposit filter and the sign-chase email hold"
   else

@@ -142,6 +142,74 @@ if (/id="storageTabs"[^>]*class="[^"]*\bseg\b/.test(markup))
 else ok('the storage tabs have their own class, not the photo switch\'s');
 
 /* =====================================================================
+   1b. WHO MAY BE TOUCHED. Chris's rule, executed.
+   ---------------------------------------------------------------------
+   "If they don't have a contract or a deposit, we do not touch the boat. If
+   they have a deposit they can be on the haul out list with a note that they
+   don't have a contract so that we can plan around pulling them, but we will
+   not pull the boat without a signed contract."
+
+   So the gate for putting hands on a unit is the SIGNATURE, never the money.
+   Getting this backwards — letting a deposit authorise a pull — is the whole
+   liability this guards, and it is one inverted condition away at all times.
+   ===================================================================== */
+eq(C.haulAuth_({ contract: true,  deposit: true  }).state, 'cleared', 'signed and paid: cleared to pull');
+eq(C.haulAuth_({ contract: true,  deposit: false }).state, 'cleared',
+   'signed but unpaid is STILL cleared — the signature is the gate, not the money');
+eq(C.haulAuth_({ contract: false, deposit: true  }).state, 'hold',
+   'a deposit with no signature is planning only, never a pull');
+eq(C.haulAuth_({ contract: false, deposit: false }).state, 'blocked',
+   'neither means we do not touch the boat at all');
+
+{
+  const p = C.haulPartition_(GROUPS);
+  const on = p.plan.map((r) => r.qn).sort().join(',');
+  const off = p.blocked.map((r) => r.qn).sort().join(',');
+  eq(on, 'QW-26-0001,QW-26-0002,QW-26-0003,QW-26-0005',
+     'the working list is exactly the units with a signature or a deposit');
+  eq(off, 'QW-26-0004,QW-26-0006,QW-26-0007,QW-26-0008',
+     'everything with neither is held off the working list, leads included');
+  /* The one sentence that must never stop being true. */
+  if (p.plan.some((r) => r.auth.state === 'cleared' && !r.contract))
+    fail('a unit with no signed contract was marked cleared to pull');
+  else ok('nothing without a signed contract is ever marked cleared');
+  if (p.blocked.some((r) => r.deposit || r.contract))
+    fail('a unit with a deposit or a contract was held off the list entirely');
+  else ok('a deposit is enough to get onto the plan, as Chris asked');
+}
+
+/* And the paper says so. The sheet is what the yard acts on, and shop printers
+   are black and white, so the hold must be in WORDS, not a colour. */
+{
+  const printed = [];
+  const el = { textContent: '', className: '', innerHTML: '', value: '',
+               classList: { add: () => {}, remove: () => {}, toggle: () => {} }, addEventListener: () => {} };
+  const area = { get innerHTML() { return printed[0] || ''; }, set innerHTML(v) { printed[0] = v; },
+                 classList: el.classList, textContent: '' };
+  C.document.getElementById = (id) => (id === 'printArea' ? area : el);
+  C.print = () => {};
+  C.window._sg = GROUPS;
+  C.printHaulOut().then(function () {
+    const html = printed[0] || '';
+    const pages = html.split('class="pg"').length - 1;
+    eq(pages, 2, 'two pages: the working list, and the units nobody may touch');
+    if (/DO NOT TOUCH — NOT AUTHORISED/.test(html)) ok('the held-off units get their own headed page');
+    else fail('there is no "do not touch" page for the units with neither');
+    if (/NO SIGNED CONTRACT — DO NOT PULL/.test(html)) ok('a deposit-only row is stamped in words on the sheet');
+    else fail('a deposit-only row carries no printed warning — colour alone will not survive a shop printer');
+    if (/No unit is pulled without a signed agreement on file/.test(html)) ok('the rule itself is printed on the sheet');
+    else fail('the sheet does not state the rule');
+    /* The checkbox is the instruction to pull. A row we may not pull must not
+       have one, or it is the box that gets ticked. */
+    const holdRow = (html.match(/<tr class="noauth">[\s\S]*?<\/tr>/) || [''])[0];
+    if (/class="cb"/.test(holdRow)) fail('a HOLD row still carries a tick box — that box is the instruction to pull it');
+    else ok('a HOLD row has no tick box');
+    if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the sign chase'); process.exit(1); }
+    tail();
+  });
+}
+
+/* =====================================================================
    2. THE NUDGE EMAIL, built for real.
    ===================================================================== */
 function backend(src) {
@@ -253,6 +321,10 @@ else ok('a lead is never asked to sign');
   }
 }
 
+function tail() {
+  if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the sign chase'); process.exit(1); }
+  console.log('sign chase: a signature is the gate for touching a unit, a deposit only buys a ' +
+              'place on the plan, the filter sorts by payment not balance, and the nudge ' +
+              'refuses to build rather than ship a dead button');
+}
 if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the sign chase'); process.exit(1); }
-console.log('sign chase: the filter sorts by payment not balance, leads sit outside it, ' +
-            'and the nudge refuses to build rather than ship a dead button');

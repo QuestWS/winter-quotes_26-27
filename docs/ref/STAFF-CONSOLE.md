@@ -425,11 +425,15 @@ owes us money" and "who has paid but never signed", asked from a phone.
   would bury the customers who actually owe one. They stay visible under
   Everyone. The server flags the group (`lead`) rather than the console
   matching on the lead tab's name.
-- **Deposit taken and no signed agreement on file is tagged in red**
-  (`NO SIGNED CONTRACT`) — on screen and on the printed yard sheet. Only ever
-  on a row that has money on it: "no contract" on a quote nobody has paid for
-  is an unsold quote, not a problem, and tagging those would make the tag mean
-  nothing. The contract is `d.contractUrl`, written by `adminUploadContract`.
+- **A row with no signed agreement is tagged, in the weight its risk deserves**
+  — `haulAuth_` decides, so the screen and the paper cannot disagree.
+  Deposit taken and no signature is **solid red, `NO CONTRACT — DO NOT PULL`**:
+  money is in, so somebody has every reason to think the unit is good to go,
+  and that is the one that has to stop a person. Neither a deposit nor a
+  signature is a quiet outlined `not authorised` — nobody is about to pull it,
+  and on the *No deposit* tab that is every row, so shouting there would only
+  train people to stop seeing red. The contract is `d.contractUrl`, written by
+  `adminUploadContract`.
 - **The tab strip has its own class (`.stabs`) and its own handler.**
   `setSeason()` on the photo card clears `.on` from every `.seg button` on the
   page, so reusing that class would have a photo tap silently un-highlight
@@ -437,8 +441,10 @@ owes us money" and "who has paid but never signed", asked from a phone.
   bug above. The guard fails if the tabs ever pick up `.seg`.
 - **Yard sheets follow the tab and say so.** `printStorage` prints the current
   view and names it in the sheet header, because a partial sheet that looks
-  like the whole building is how a unit gets missed. **The haul-out list is
-  deliberately not filtered**: the crew hauls every unit out, paid or not.
+  like the whole building is how a unit gets missed. The haul-out list is
+  **not** narrowed by the tab — which view staff happen to be looking at must
+  not decide what the crew is handed. What narrows it is the signature; see
+  below.
 - **The storage view's cached copy carries a version** (`STORAGE_VIEW_V_`).
   Without it, a deploy that adds a field to those rows would be answered for
   two minutes from a cache that lacks it — and the console cannot tell "no
@@ -463,6 +469,46 @@ other email and sends nothing until the preview is confirmed.
   `signUrlFor_(d)` being non-empty and the quote not being a lead — the same
   "every caller hides its button on `''`" rule the emails follow.
 - The email itself, and why it sets no status: `docs/ref/EMAILS.md`.
+
+
+## A signed agreement is the gate for touching a unit
+
+Chris's rule, and it is liability, not bookkeeping:
+
+> If they don't have a contract or a deposit, we do not touch the boat. If they
+> have a deposit they can be on the haul-out list with a note that they don't
+> have a contract so that we can plan around pulling them — but we will not
+> pull the boat without a signed contract.
+
+So **the signature authorises the pull; the money never does.** Three states,
+decided in one place (`haulAuth_`) and used by the haul-out list, the yard
+sheets and the storage rows alike:
+
+| On file | State | What happens |
+|---|---|---|
+| Signed agreement | `cleared` | Normal row, tick box, pull it |
+| Deposit, no signature | `hold` | On the haul-out list **for planning**, shaded, stamped `NO SIGNED CONTRACT — DO NOT PULL`, and **no tick box** |
+| Neither | `blocked` | Off the working list entirely, on a `DO NOT TOUCH — NOT AUTHORISED` page at the back |
+
+- **A signed quote that has not paid a cent is still cleared.** The gate is the
+  signature. Inverting that — letting a deposit authorise a pull — is the exact
+  liability this exists to prevent, and it is one flipped condition away at all
+  times, so `tools/check-sign-chase.js` runs `haulAuth_` over all four
+  combinations and asserts nothing without a contract is ever `cleared`.
+- **The tick box is the instruction.** A box somebody can tick is the box that
+  gets ticked, so a held row does not get one — it gets the word `HOLD`.
+- **Shop printers are black and white**, so none of this may depend on colour:
+  the row is shaded, boxed on the left, and stamped in words. The guard asserts
+  the words, not the styling.
+- **The blocked units are printed, not dropped.** An absence explains nothing
+  to whoever is wondering where a boat went, and the office needs the list to
+  work from — take a deposit, get it signed, and the unit moves onto the
+  haul-out list. That page is headed for the office, carries no timing and no
+  tick boxes. Unfinished quotes land here too, marked as such.
+- **The rule is printed on the sheet itself**, in a box above the table. The
+  person holding it in the yard is the person it has to reach.
+- The quote-side answer to all of this is the **Ask them to sign** email —
+  above, and `docs/ref/EMAILS.md`.
 
 
 ## Haul-out list

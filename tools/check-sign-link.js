@@ -153,4 +153,74 @@ if (replays.length) {
       'predates the web form entirely on every quote saved so far:\n       ' + replays.join('\n       '));
 } else ok('every email rebuilds the sign link at send time');
 
+/* ---- 5. the scan-to-sign lookup: one parser, and a narrow answer ----
+   sign.html shows the customer a normalized quote number and the server looks
+   one up; two parsers would let those disagree, and the number rides into a
+   field that is READ ONLY on the Adobe side, so a disagreement is a signed
+   contract pointing at the wrong row. */
+if (typeof engine.normalizeQuoteNo !== 'function') {
+  bad('engine does not export normalizeQuoteNo — the page and the server would each parse ' +
+      'a typed quote number their own way');
+} else {
+  ok('engine exports normalizeQuoteNo');
+  const yy = String(new Date().getFullYear()).slice(2);
+  [['QW-26-1255', 'QW-26-1255'], ['qw261255', 'QW-26-1255'], ['  QW 26 1255 ', 'QW-26-1255'],
+   ['1255', 'QW-' + yy + '-1255'],
+   /* Anything ambiguous must come back empty rather than as a guess. */
+   ['', ''], ['12', ''], ['261255', ''], ['not a quote', '']].forEach(function (t) {
+    const got = engine.normalizeQuoteNo(t[0]);
+    if (got !== t[1]) bad('normalizeQuoteNo(' + JSON.stringify(t[0]) + ') = ' + JSON.stringify(got) +
+                          ', expected ' + JSON.stringify(t[1]));
+  });
+  ok('normalizeQuoteNo accepts the two written forms and refuses everything else');
+}
+
+{
+  const branch = (gas.match(/if \(p\.action === 'signlookup'\)[\s\S]*?\n  \}/) || [''])[0];
+  if (!branch) bad('quote-logger-apps-script.gs has no signlookup branch — sign.html has nothing to ask');
+  else if (!/normalizeQuoteNo\(/.test(branch))
+    bad('the signlookup branch parses the quote number itself instead of using normalizeQuoteNo');
+  else ok('the server normalizes through the same shared function the page does');
+
+  const fn = (gas.match(/^function signLookup_\b[\s\S]*?\n}/m) || [''])[0];
+  if (!fn) {
+    bad('quote-logger-apps-script.gs has no signLookup_');
+  } else {
+    /* THE PRIVACY BOUNDARY. Quote numbers are four digits and sign.html is
+       public, so whatever this returns is returned to anyone who guesses one.
+       The allowed keys are the ones needed to confirm identity to the person
+       holding the quote, and nothing else: no contact details, no money, no
+       selections. Widening it here is a deliberate act, not a drive-by. */
+    const ALLOWED_KEYS = ['ok', 'quoteNo', 'who', 'unit', 'slip'];
+    const returned = (fn.match(/return \{[\s\S]*?\n    \};/) || [''])[0];
+    const keys = (returned.match(/^\s*([A-Za-z_][A-Za-z0-9_]*):/gm) || [])
+      .map(k => k.trim().replace(':', ''));
+    const extra = keys.filter(k => ALLOWED_KEYS.indexOf(k) < 0);
+    if (extra.length) {
+      bad('signLookup_ returns ' + extra.join(', ') + ' — this endpoint is public and ' +
+          'answers on a guessable quote number alone. Allowed: ' + ALLOWED_KEYS.join(', '));
+    } else if (!keys.length) {
+      bad('could not read what signLookup_ returns — the guard cannot see the response shape');
+    } else ok('signLookup_ answers with only ' + keys.join(', '));
+
+    ['EMAIL', 'PHONE', 'TOTAL', 'BAL', 'DEP', 'PAID', 'ITEMS', 'NOTES', 'PDF'].forEach(function (c) {
+      if (new RegExp('COL\\.' + c + '\\b').test(fn)) {
+        bad('signLookup_ reads COL.' + c + ' — a public lookup on a guessable number must not ' +
+            'touch contact details, money or quote contents');
+      }
+    });
+    if (!/maskLastName_\(/.test(fn))
+      bad('signLookup_ returns the last name unmasked — a guessed quote number would hand out a name');
+    else ok('the last name is masked before it leaves the server');
+    if (!/isStartedTab_\(/.test(fn))
+      bad('signLookup_ does not skip the lead tab — somebody who only poked at pricing is not signing ' +
+          'a storage agreement, and lead rows are not customers');
+    else ok('the lead tab is skipped');
+  }
+
+  if (!/function signLookupAllowed_/.test(gas))
+    bad('there is no throttle on the public sign lookup');
+  else ok('the public lookup is throttled');
+}
+
 process.exit(fail);

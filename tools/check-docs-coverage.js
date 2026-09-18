@@ -83,7 +83,7 @@ fs.readdirSync(path.join(ROOT, 'docs/ref')).forEach(f => {
 {
   const map = read('docs/MAP.md');
   const src = ['quote-logger-apps-script.gs', 'index.html', 'admin/index.html',
-               'pricing-engine.js', 'terms-config.js']
+               'sign.html', 'pricing-engine.js', 'terms-config.js']
     .map(read).join('\n');
   const tools = fs.readdirSync(path.join(ROOT, 'tools'));
   const named = new Set((map.match(/`[A-Za-z_][A-Za-z0-9_]*_?`/g) || [])

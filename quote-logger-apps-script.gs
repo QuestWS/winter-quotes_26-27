@@ -709,6 +709,36 @@ function signUrlFor(o){
   return url + '#' + parts.join('&');
 }
 
+/* A quote number as a human types it, turned into the one form the sheet
+   stores. The scan-to-sign page (sign.html) is where this matters: somebody at
+   the service counter reads "1255" off a printed quote and types the digits,
+   and whatever comes out of here is written into a field that is READ-ONLY on
+   the Adobe contract — so a wrong guess is a signed agreement pointing at the
+   wrong row, with nothing the customer can do about it.
+
+   Two forms are accepted and nothing else:
+     QW-26-1255 / qw261255 / "QW 26 1255"  ->  QW-26-1255   (year supplied)
+     1255                                  ->  QW-<yy>-1255 (year guessed)
+   The bare-digit form guesses the current calendar year, which is exactly how
+   both the page and the server MINT a quote number, so it is right for every
+   quote issued this season. It is still a guess for one carried over from last
+   season — which is why sign.html writes the result back into the input rather
+   than keeping it to itself: what the customer is about to send is what they
+   can see and correct.
+
+   Anything else returns '' — a caller must treat that as "not a quote number"
+   rather than forwarding a guess. Both sides normalize with this one function
+   so the number the page shows and the number the server looks up cannot
+   disagree. */
+function normalizeQuoteNo(raw, nowYear){
+  const s = String(raw == null ? '' : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let m = s.match(/^QW(\d{2})(\d{3,5})$/);
+  if(m) return 'QW-' + m[1] + '-' + m[2];
+  m = s.match(/^(\d{3,5})$/);
+  if(m) return 'QW-' + String(nowYear || new Date().getFullYear()).slice(2) + '-' + m[1];
+  return '';
+}
+
 /* The human-readable dimension line shown in the sheet, the PDF and emails.
    Shared for the same reason: the console can now change dimensions, so it has
    to be able to rewrite this string exactly the way the page first wrote it. */
@@ -1231,6 +1261,47 @@ function doGet(e) {
       }
       return out({ ok: 0 });
     } catch (err) { return out({ ok: 0, error: String(err) }); }
+  }
+
+  /* ---------------------------------------------------------------------
+     SCAN-TO-SIGN LOOKUP — the narrow read behind sign.html.
+
+     A customer at the service counter scans a QR code, types their quote
+     number, and this confirms back to them that they grabbed the right quote
+     off the right piece of paper before they are handed to the Adobe
+     contract. It exists as its own action, rather than reusing ?action=load,
+     for one reason: that one needs a last name AND hands back the entire
+     priced quote, and this page has neither the last name nor any business
+     seeing the money.
+
+     WHAT IT IS ALLOWED TO RETURN, and why it is this little: quote numbers
+     are four digits and this page is public, so anything returned here is
+     returned to anyone who guesses a number. So it returns a MASKED last
+     initial and the unit description — enough for the person holding the
+     paper to recognise their own boat, not enough to be worth guessing for.
+     No phone, no email, no address, no totals, no selections. Widening this
+     shape turns a counter convenience into an enumeration tool; if a future
+     change needs more, it needs a different door with a last name on it.
+
+     The lead tab is skipped: somebody who poked at pricing and wandered off
+     is not signing a storage agreement, and lead rows are not customers.
+
+     Failure is always SILENT AND IDENTICAL — { ok: 0 } — whether the quote is
+     unknown, the sheet is unreachable or the throttle tripped. sign.html
+     treats every one of them the same way: show a soft warning and let the
+     customer carry on to the contract. A lookup outage must never stand
+     between somebody and signing.
+  --------------------------------------------------------------------- */
+  if (p.action === 'signlookup') {
+    try {
+      const qnS = normalizeQuoteNo(String(p.quote || ''));
+      if (!qnS) return out({ ok: 0 });
+      if (!signLookupAllowed_()) return out({ ok: 0 });
+      return out(signLookup_(qnS));
+    } catch (err) {
+      console.error('Sign lookup failed: ' + err);
+      return out({ ok: 0 });
+    }
   }
 
   // season-done survey from the quote email
@@ -5446,6 +5517,81 @@ function signUrlFor_(d) {
   const st = effectiveState_(d) || d.state || d || {};
   const slipNo = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim();
   return signUrlFor({ quoteNo: d.quoteNo, slipNo: slipNo });
+}
+
+/* ---------------------------------------------------------------------------
+   THE SCAN-TO-SIGN LOOKUP ITSELF.  Reached only from doGet's `signlookup`
+   branch, which documents what this is allowed to hand back and why.
+--------------------------------------------------------------------------- */
+
+/* A soft, global throttle on the public lookup. Apps Script web apps cannot
+   see a client IP — free Gmail, no visitor identity (CLAUDE.md §7) — so there
+   is nobody to rate-limit individually and this counts everyone together: a
+   ceiling on how fast the whole endpoint can be walked, not a per-person quota.
+   The number is set well above a service counter's real traffic, so the only
+   thing that should ever trip it is a script enumerating quote numbers.
+
+   Deliberately lock-free. Two calls in the same second can both read the same
+   count and undercount by one; a LockService round trip on every lookup would
+   cost more latency than the miscount costs us, and this is a speed bump, not
+   a security control. If the cache is unavailable the lookup is ALLOWED: a
+   throttle that fails closed would stop customers signing, which is the one
+   outcome this whole page exists to prevent. */
+const SIGN_LOOKUP_PER_MIN_ = 40;
+function signLookupAllowed_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = 'signlookup:' + Math.floor(Date.now() / 60000);
+    const n = Number(cache.get(key) || 0) + 1;
+    cache.put(key, String(n), 120);   // outlives its own minute, then expires
+    return n <= SIGN_LOOKUP_PER_MIN_;
+  } catch (e) {
+    return true;
+  }
+}
+
+/* The last name, reduced to what confirms identity and no further: an initial.
+   The person holding their own printed quote sees their own initial and knows
+   they typed the right number; somebody guessing numbers learns a letter.
+   Returns '' for a blank name rather than a lone bullet, so the page can leave
+   the name out of the confirmation entirely instead of showing a placeholder
+   that looks like a bug. */
+function maskLastName_(name) {
+  const n = String(name || '').trim();
+  return n ? n.charAt(0).toUpperCase() + '\u2022\u2022\u2022' : '';
+}
+
+/* Find a quote by number alone and answer with the narrow shape.
+   Reads the payload cell for ONE row that has already been located — not for
+   every row — so this stays a single-row read rather than the kind of walk
+   that timed the storage view out (CLAUDE.md §7). The slip comes through
+   effectiveState_ for the same reason signUrlFor_ does: most quotes have no
+   slip at save time and the one staff typed into the console weeks later is
+   the one that must reach Adobe. */
+function signLookup_(quoteNo) {
+  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  for (let i = 0; i < sheets.length; i++) {
+    const sh = sheets[i];
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+    if (isStartedTab_(sh.getName())) continue;   // a lead is not a signer
+    const rowNum = findQuoteRow_(sh, quoteNo);
+    if (rowNum <= 0) continue;
+    const row = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
+    let slip = '';
+    try {
+      const d = JSON.parse(row[COL.PAYLOAD - 1] || '{}');
+      const st = effectiveState_(d) || d.state || {};
+      slip = String(st.slipNo || '').trim();
+    } catch (e) {}
+    return {
+      ok: 1,
+      quoteNo: quoteNo,
+      who: maskLastName_(row[COL.LAST - 1]),
+      unit: String(row[COL.YMM - 1] || '').trim() || String(row[COL.UNIT - 1] || '').trim(),
+      slip: slip
+    };
+  }
+  return { ok: 0 };
 }
 
 function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {

@@ -141,6 +141,73 @@ through `#signMissing`. That gate is about the haul-out, not about the
 pre-fill: only the slip is actually sent to Adobe.
 
 
+## Scan to sign (`sign.html`)
+
+The second door into the same Adobe form, for a customer standing at the
+service counter rather than sitting at home with their quote open. A laminated
+flyer carries a QR code to
+`https://questws.github.io/winter-quotes_26-27/sign.html`; the customer types
+their quote number, the page confirms it against the sheet, and hands them to
+the web form with `Quote_Number` — and `Slip_Number` when we have one —
+already filled in.
+
+**Why the page exists at all.** The QR used to point straight at Adobe, so the
+customer typed the quote number into the agreement itself, into a field nobody
+checks until a signed contract comes back pointing at nothing. This page moves
+that typing one step earlier, to the one place we can check it.
+
+**The rule everything on the page bends to: the lookup may inform, it may never
+block.** An unknown quote number, a lookup that times out, a backend that is
+down, a browser that refuses the cross-origin fetch — all four end the same
+way, with a soft message and a working Continue button. Nothing returns early
+on a failure. A customer at the counter who cannot sign is a worse outcome than
+a contract with a typo in it, and `tools/check-sign-page.js` runs the page's
+real script against each of those four backends to prove it.
+
+**One parser, and the customer can see its answer.** `normalizeQuoteNo()` lives
+in the shared engine and turns `1255`, `qw261255` or `QW-26-1255` into
+`QW-26-1255`; anything else comes back `''` and is refused rather than guessed
+at. The bare-digit form assumes the current calendar year, which is how both
+the page and the server *mint* a quote number, so it is right for anything
+issued this season and a guess for anything older. That is why the page writes
+the normalized number **back into the input**: `Quote_Number` is read-only on
+the Adobe side, so what the customer sends is what they are stuck with, and the
+only defence is that they can see it first. The server normalizes with the same
+function, so the number shown and the number looked up cannot disagree.
+
+**What the lookup is allowed to say back.** `?action=signlookup` →
+`signLookup_`, and it returns a *masked* last initial, the unit description and
+the slip. Nothing else — no phone, no email, no address, no totals, no
+selections. The reason is the shape of the page: quote numbers are four digits
+and this page is public, so anything it returns is returned to anyone who
+guesses a number. It is deliberately **not** `?action=load`, which needs a last
+name and hands back the whole priced quote. `tools/check-sign-link.js` holds
+the response to that key list and fails if it grows one, or if the function
+starts reading a contact or money column. The lead tab is skipped: somebody who
+poked at pricing and wandered off is not signing a storage agreement.
+
+`signLookupAllowed_` is a soft global throttle — 40 lookups a minute across
+everyone, because a free-Gmail web app cannot see a client IP and there is
+nobody to limit individually. It is a speed bump against enumeration, not a
+security control, and it **fails open**: an unavailable cache lets the lookup
+through, since a throttle that stopped customers signing would defeat the page.
+
+**The escape hatch is a real path, not a courtesy.** "I don't have my quote
+number" goes straight to the unprefilled form. Somebody at the counter without
+their paperwork must never be stuck, and the same link is what a quote number
+we could not parse falls back to.
+
+**Deep links.** `sign.html?quote=1255&slip=B-14` fills both inputs in, so a
+customer-specific link can be emailed alongside a quote later without building
+anything new. It deliberately does **not** auto-continue — the confirmation
+step is the whole point of the page.
+
+The page is `noindex`: a QR code on a counter flyer is the only thing that
+should ever send anyone here. It links `quest.css` for the Quest palette rather
+than carrying its own copy, and holds no Adobe URL and no Adobe field name of
+its own — those stay in `SIGNING`, in the engine.
+
+
 ## Season-done survey
 A 3-option survey (done now / done on a date / will call) rides on customer
 emails — but **only once a deposit or payment exists** (`o.paid > 0`, checked in

@@ -16,6 +16,8 @@ in a day and a function name does not.
 | `index.html` | ~1,550 | The customer quote page |
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
+| `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
+| `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
 | `docs/build-guides.py` | ~1,140 | Builds the four staff PDFs in `docs/pdf/` |
@@ -28,7 +30,7 @@ symptom.
 | Entry | Handles |
 |---|---|
 | `doPost` | Customer saves, and **every** console API call (the action is dispatched from a table inside it) |
-| `doGet` | `?action=load` (customer reload), `?action=findlead`, `?action=launchpref`, `?action=seasondone`, `?page=admin` (legacy console) |
+| `doGet` | `?action=load` (customer reload), `?action=findlead`, `?action=signlookup` (scan-to-sign), `?action=launchpref`, `?action=seasondone`, `?page=admin` (legacy console) |
 
 ## Feature → where to start
 
@@ -98,6 +100,8 @@ symptom.
 | Resume an unfinished quote | `checkForUnfinished_`, `autoLoadFromUrl_` |
 | Land on a quote from a link | `autoLoadFromUrl_` (server side: `quoteLink_`) |
 | The Adobe Sign step and its pre-fill | `adobeSignUrl` (rules: `SIGNING`, `signUrlFor` in the engine) |
+| Scan to sign, at the counter | `signLookup_`, `signLookupAllowed_`, `maskLastName_` (`.gs`); the page is `sign.html` |
+| A typed quote number, normalized | `normalizeQuoteNo` (engine — page and server share it) |
 | Restore a loaded quote into the form | `hydrateFromState` |
 | Recompute and redraw | `refresh` |
 | Engine type exclusivity | `clearOtherEngineTypes_`, `syncEngineRows_` |
@@ -120,4 +124,6 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-legacy-import.js` | Old-sheet parsing, including the broken and comparison files |
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
+| `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
+| `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

@@ -570,6 +570,36 @@ function signUrlFor(o){
   return url + '#' + parts.join('&');
 }
 
+/* A quote number as a human types it, turned into the one form the sheet
+   stores. The scan-to-sign page (sign.html) is where this matters: somebody at
+   the service counter reads "1255" off a printed quote and types the digits,
+   and whatever comes out of here is written into a field that is READ-ONLY on
+   the Adobe contract — so a wrong guess is a signed agreement pointing at the
+   wrong row, with nothing the customer can do about it.
+
+   Two forms are accepted and nothing else:
+     QW-26-1255 / qw261255 / "QW 26 1255"  ->  QW-26-1255   (year supplied)
+     1255                                  ->  QW-<yy>-1255 (year guessed)
+   The bare-digit form guesses the current calendar year, which is exactly how
+   both the page and the server MINT a quote number, so it is right for every
+   quote issued this season. It is still a guess for one carried over from last
+   season — which is why sign.html writes the result back into the input rather
+   than keeping it to itself: what the customer is about to send is what they
+   can see and correct.
+
+   Anything else returns '' — a caller must treat that as "not a quote number"
+   rather than forwarding a guess. Both sides normalize with this one function
+   so the number the page shows and the number the server looks up cannot
+   disagree. */
+function normalizeQuoteNo(raw, nowYear){
+  const s = String(raw == null ? '' : raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let m = s.match(/^QW(\d{2})(\d{3,5})$/);
+  if(m) return 'QW-' + m[1] + '-' + m[2];
+  m = s.match(/^(\d{3,5})$/);
+  if(m) return 'QW-' + String(nowYear || new Date().getFullYear()).slice(2) + '-' + m[1];
+  return '';
+}
+
 /* The human-readable dimension line shown in the sheet, the PDF and emails.
    Shared for the same reason: the console can now change dimensions, so it has
    to be able to rewrite this string exactly the way the page first wrote it. */
@@ -634,7 +664,7 @@ const DIM_FIELDS = {
 // ENGINE-END
 
   const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
-                pricingNotice, lockinCopy, pricesValidSentence, signUrlFor,
+                pricingNotice, lockinCopy, pricesValidSentence, signUrlFor, normalizeQuoteNo,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
                 depositBaseFor, lwtFromOverhang, rateOverride_ };

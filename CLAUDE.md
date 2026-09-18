@@ -21,6 +21,8 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 |---|---|---|
 | `index.html` | GitHub Pages root | Customer quote page |
 | `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
+| `sign.html` | GitHub Pages root | **Scan to sign** — the QR-code page at the service counter: quote number in, pre-filled Adobe agreement out |
+| `quest.css` | GitHub Pages root | **The canonical Quest palette**, linked by `sign.html`; `check-design-tokens.js` holds every other copy to it |
 | `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
 | `terms-config.js` | GitHub Pages root | **`QuestTerms.version`, single source of truth** — read by the page *and* both legal pages |
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
@@ -31,6 +33,7 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 - **Repo:** `QuestWS/winter-quotes_26-27`
 - **Customer page:** `https://questws.github.io/winter-quotes_26-27/`
 - **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
+- **Scan to sign:** `https://questws.github.io/winter-quotes_26-27/sign.html` — *the URL the counter QR code is generated against*
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`
 
@@ -51,13 +54,16 @@ icon; that one is outside the rule.
 https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec
 ```
 
-It appears in **three places that must stay in sync**:
+It appears in **four places that must stay in sync**:
 1. `quote-logger-apps-script.gs` → `const WEB_APP_URL`
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
+4. `sign.html` → `const API_URL`
 
-Same URL serves three behaviors: plain `/exec` (quote page lookups + console
-API via POST), `?action=launchpref&...` (spring email buttons),
+Same URL serves several behaviors: plain `/exec` (quote page lookups + console
+API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a
+deliberately narrow, public read; see `docs/ref/QUOTE-PAGE.md` before widening
+what it returns), `?action=launchpref&...` (spring email buttons),
 `?page=admin` (legacy HtmlService console — kept as fallback, see §8).
 
 ---
@@ -155,7 +161,7 @@ request. Open the one that covers what you are about to change — and open it
 | Read this | Before touching |
 |---|---|
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
-| `docs/ref/QUOTE-PAGE.md` | `index.html` — motors, detail options, resuming a quote, the terms/lead gate, the season-done survey |
+| `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
 | `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, yard printing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/adobe-webform-field-map.md` | The Adobe Sign hand-off — what pre-fills, the exact field names, the Adobe-side setup |
@@ -306,6 +312,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 ## 8. What's deliberately still open
 | Item | State | Notes |
 |---|---|---|
+| Scan-to-sign QR flyer | **Page live — flyer not yet printed** | `sign.html` is deployed and guarded. The laminated counter flyer's QR must be generated against `.../sign.html`, **not** the Adobe link. The same live-test rule applies: one real signature through it after any Adobe field rename. |
 | Adobe Sign web form | **Live — needs one test signature** | Wired end to end. `SIGNING.webFormUrl` (`pricing-engine.js`) holds the published form; the page embeds it and every customer email carries a **Review & sign** button. Two fields pre-fill from the URL fragment, `Quote_Number` (read-only on the Adobe side) and `Slip_Number` (editable — most quotes have no slip to send). A field name that stops matching the Adobe side fails **silently** — blank contracts, no error — so send one live test link after any rename: `docs/adobe-webform-field-map.md`. |
 | Excel import of last year's selections | Blocked | Needs a sample workbook from Chris to map columns. Architecture supports it — quotes store selections, not prices. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |

@@ -261,6 +261,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: Adobe Sign pre-fill link broken"; sed 's/^/       /' "$TMP/sign.txt"; FAIL=1
   fi
+  # The scan-to-sign page. A customer standing at the counter must reach the
+  # contract whatever the lookup is doing, so the page's real script is run
+  # against a backend that is missing, slow, refusing and lying in turn.
+  if node tools/check-sign-page.js > "$TMP/signpage.txt" 2>&1; then
+    echo "  OK   gate: scan-to-sign page fails open and hands off correctly"
+  else
+    echo "  FAIL gate: scan-to-sign page"; sed 's/^/       /' "$TMP/signpage.txt"; FAIL=1
+  fi
   # One phone format, (815) 555-0123, everywhere a number is shown — and
   # nothing mangled that we cannot confidently read. Run, not grepped.
   if node tools/check-phone-format.js > "$TMP/phone.txt" 2>&1; then
@@ -493,7 +501,7 @@ if [ -f quote-logger-apps-script.gs ]; then
 fi
 
 echo "== Terms, privacy & lead capture =="
-for f in terms.html privacy.html terms-config.js legal.css; do
+for f in terms.html privacy.html terms-config.js legal.css quest.css sign.html; do
   if [ -f "$f" ]; then echo "  OK   present: $f"; else echo "  FAIL missing: $f"; FAIL=1; fi
 done
 if [ -f terms-config.js ]; then
@@ -535,6 +543,17 @@ if [ -f quote-logger-apps-script.gs ]; then
 fi
 if [ -f admin/index.html ]; then
   sweep admin/index.html "console terms" "termsText" "Terms accepted"
+fi
+
+echo "== Shared design tokens =="
+# One Quest palette. quest.css is canonical; index.html and legal.css keep
+# their own copy on purpose (see the header of the guard) and this proves the
+# copies still agree with it.
+if node tools/check-design-tokens.js > "$TMP/tok.txt" 2>&1; then
+  echo "  OK   gate: one palette, every copy identical"
+  sed 's/^/       /' "$TMP/tok.txt"
+else
+  echo "  FAIL gate: the Quest palette has drifted"; sed 's/^/       /' "$TMP/tok.txt"; FAIL=1
 fi
 
 echo "== Favicon on every page =="
@@ -615,8 +634,9 @@ echo "== URL sync =="
 U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null | sort -u | head -1)
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)
 U_ADM=$(grep -o 'AKfycb[A-Za-z0-9_-]*' admin/index.html 2>/dev/null | sort -u | head -1)
-echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"
-if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ]; }; then
+U_SIGN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' sign.html 2>/dev/null | sort -u | head -1)
+echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"
+if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ]; }; then
   echo "  FAIL: deployment URLs do not match across files"; FAIL=1
 else echo "  OK   all present URLs match"; fi
 

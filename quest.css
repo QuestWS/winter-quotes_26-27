@@ -1,0 +1,125 @@
+/* ===========================================================================
+   QUEST — SHARED DESIGN TOKENS AND PAGE PRIMITIVES
+   ---------------------------------------------------------------------------
+   THE CANONICAL VALUES. Every Quest customer-facing page uses these colours,
+   this type scale and these control shapes, so a page added a year from now
+   looks like it was always there instead of like a bolt-on.
+
+   Why this file exists rather than a fourth copy of the same hex codes: the
+   palette was invented in index.html and then re-typed into legal.css, and a
+   re-typed constant is a constant that drifts. `tools/check-design-tokens.js`
+   now holds every page that declares these names to the values below and
+   fails on a mismatch, so the copies cannot quietly disagree again.
+
+   WHY THE OLDER PAGES STILL CARRY THEIR OWN :root BLOCK. index.html is the
+   money path: it is the page a customer builds and pays a quote on, and
+   linking its palette out to a second file would make it render unstyled if
+   that one request ever failed on GitHub Pages. The copies stay, the guard
+   makes them provably identical, and a new page (sign.html) links this file
+   directly because it has no such legacy to protect. That is the same bargain
+   the pricing engine already makes: duplicate where the runtime demands it,
+   and prove the duplicates identical in CI.
+
+   legal.css deliberately overrides two of these — see the allowed-override
+   list in tools/check-design-tokens.js, which requires a stated reason.
+
+   THIS FILE IS LIGHT-THEMED ON PURPOSE. Quest has no dark palette; a page
+   that half-inverted under a phone's dark mode would look broken rather than
+   dark, so every page linking this declares `color-scheme: light` and names
+   its own colours for every surface, including form controls.
+=========================================================================== */
+:root{
+  --navy:#14293E;
+  --navy-deep:#0C1B2A;
+  --ice:#EBF1F6;
+  --frost:#4A81A6;
+  --frost-soft:#D8E6EF;
+  --gold:#C08A22;
+  --gold-soft:#F4E8CF;
+  --paper:#FDFCF7;
+  --ink:#1D2B38;
+  --muted:#5C7185;
+  --line:#C7D5E0;
+  --warn:#A6541F;
+  --warn-bg:#FBEEE2;
+  --ok:#2E7D4F;
+  --ok-bg:#E4F1E9;
+  --radius:10px;
+  --disp:"Barlow Condensed",Impact,sans-serif;
+  --body:"Source Sans 3","Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono","Courier New",monospace;
+}
+
+/* Never let a phone's dark mode repaint half of this. Quest is light. */
+:root{color-scheme:light}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--body);
+  background:var(--ice);
+  color:var(--ink);
+  font-size:16px;
+  line-height:1.45;
+  -webkit-text-size-adjust:100%;
+}
+
+/* ===== Site header — the branded bar the quote page and legal pages wear ===== */
+header.site{background:#fff;padding:14px 20px 12px;border-bottom:4px solid var(--gold);
+  box-shadow:0 1px 4px rgba(20,41,62,.08)}
+header.site .site-inner{max-width:1180px;margin:0 auto;display:flex;align-items:center;
+  justify-content:space-between;flex-wrap:wrap}
+header.site .brand img{height:52px;width:auto;display:block}
+header.site .season{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.06em}
+@media(max-width:640px){
+  header.site{padding:11px 16px 9px}
+  header.site .brand img{height:40px}
+  header.site .season{font-size:11.5px}
+}
+
+/* ===== Card — the white panel every Quest page puts its content in ===== */
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:24px 24px 20px;box-shadow:0 1px 3px rgba(20,41,62,.06)}
+.card h1{font-family:var(--disp);font-size:32px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.03em;color:var(--navy);line-height:1.05}
+.card .lead{color:var(--muted);margin:7px 0 20px;max-width:56ch}
+@media(max-width:640px){
+  .card{padding:18px 16px 16px;border-radius:0;border-left:0;border-right:0}
+  .card h1{font-size:27px}
+}
+
+/* ===== Form controls — one shape for every input on every Quest page ===== */
+label.f{display:block;font-weight:600;font-size:14px;margin-bottom:5px;color:var(--navy)}
+label.f small{font-weight:400;color:var(--muted)}
+input[type=text],input[type=tel],input[type=email],input[type=number],textarea,select{
+  width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:7px;
+  font-family:var(--body);font-size:15.5px;background:#fff;color:var(--ink)}
+input:focus-visible,textarea:focus-visible,select:focus-visible{
+  outline:3px solid var(--frost-soft);border-color:var(--frost)}
+.fieldbad{border-color:var(--warn)!important;background:#FEF7F1}
+
+/* ===== Buttons ===== */
+.btn{display:block;width:100%;font-family:var(--disp);font-weight:700;font-size:21px;
+  letter-spacing:.05em;text-transform:uppercase;border:0;border-radius:9px;
+  padding:15px 18px;cursor:pointer;background:var(--navy);color:#fff;text-align:center;
+  text-decoration:none;-webkit-appearance:none;appearance:none}
+.btn:hover{background:var(--navy-deep)}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.btn[disabled]{opacity:.55;cursor:default}
+.btn.quiet{background:none;color:var(--frost);font-family:var(--body);font-weight:600;
+  font-size:15px;letter-spacing:0;text-transform:none;text-decoration:underline;padding:12px}
+.btn.quiet:hover{background:none;color:var(--navy)}
+
+/* ===== Message boxes — the same three states the quote page uses ===== */
+.msg{border-radius:8px;padding:11px 13px;font-size:14.5px;line-height:1.45;
+  border:1px solid var(--line);background:var(--frost-soft);color:var(--ink)}
+.msg.ok{background:var(--ok-bg);border-color:#A9CFBA;color:#1F5A38}
+.msg.warn{background:var(--warn-bg);border-color:#E4B48F;border-left:4px solid var(--warn);
+  color:var(--warn)}
+
+/* ===== Page footer ===== */
+footer.site{max-width:1180px;margin:0 auto;padding:18px 20px 60px;font-size:13px;
+  color:var(--muted);text-align:center}
+footer.site a{color:var(--frost)}
+footer.site a:hover{color:var(--navy)}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}

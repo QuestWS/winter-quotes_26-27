@@ -107,6 +107,40 @@ the placeholder up and the email button hidden.
 
 ---
 
+## The third way in: the counter QR code
+
+`sign.html` is a second front door to the same form, for a customer standing at
+the service counter rather than sitting at home with their quote open. A
+laminated flyer carries a QR code to
+`https://questws.github.io/winter-quotes_26-27/sign.html`; the customer types
+their quote number, and the page redirects them to the same URL shape as the
+emailed button — **not** the iframe one, so no `hosted=false`:
+
+```
+https://na3.documents.adobe.com/public/esignWidget?wid=CBFC…U*#Quote_Number=QW-26-1255&Slip_Number=B-14
+```
+
+It calls the same `signUrlFor()` and reads the same `SIGNING`, so there is
+nothing extra to keep in step on the Adobe side — the two fields above are
+still the whole contract. Two things about it matter here:
+
+- **`Quote_Number` being read-only is what makes the page necessary.** The
+  customer cannot fix a wrong number once they are on the form, so the page
+  normalizes what they typed, writes it back into the input where they can see
+  it, and checks it against the sheet before handing them over. That check is
+  a confirmation, never a gate: an unknown number, a slow lookup or a dead
+  backend all still end at the contract.
+- **`Slip_Number` being editable is what makes the page safe to use without
+  one.** Most customers at the counter have no slip to send; the field arrives
+  blank and they can fill it in on the Adobe side.
+
+Behaviour, the narrow lookup it uses, and why it returns so little:
+`docs/ref/QUOTE-PAGE.md` § *Scan to sign*. The flyer's QR must be generated
+against that page's URL — not against the Adobe link, which is what it
+replaces.
+
+---
+
 ## Why the server rebuilds the link instead of storing it
 
 Column S (`SIGN`) on each quote tab holds the link as it stood when the quote

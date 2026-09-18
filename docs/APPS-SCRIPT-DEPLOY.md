@@ -12,12 +12,36 @@ tool instead of by remembering it — the workflow calls
 
 ---
 
-## Why setup needs you (and not Claude)
+## Who does what, now that setup is done
 
-Claude has no access to the Google account, by design. Steps 1–5 capture two
-things only you can get: the **project's real manifest** and a **credential**
-that lets GitHub act on your behalf. After that, Claude edits the `.gs` in the
-repo and you click Run.
+**Setup needed you. Deploying does not.** Claude has no access to the Google
+account, by design — steps 1–5 below capture two things only you can get: the
+**project's real manifest** and a **credential** that lets GitHub act on your
+behalf. That is a one-time job and it is finished.
+
+From then on Claude does the whole thing: edits the `.gs`, runs `verify.sh`,
+commits, and **starts the deploy workflow itself** through the GitHub API,
+then watches the run and tells you how it went. You do not have to open the
+Actions tab. Ask for a deploy in plain words — "deploy it", "push this live" —
+and it happens.
+
+You keep the controls that matter:
+
+- Nothing deploys unless somebody asks. The workflow is `workflow_dispatch`
+  only; it has never fired on a push and must not.
+- `verify.sh` runs first inside the workflow, so a failing tree cannot reach
+  the live backend even if Claude gets it wrong.
+- Every run cuts an **immutable numbered version**, so rolling back is a
+  dropdown, not a deploy: Apps Script → Deploy → Manage deployments → pencil →
+  Version.
+- The `/exec` URL cannot change — `clasp update-deployment` updates the
+  existing deployment and cannot mint a new one.
+
+Two things Claude still cannot do for you, and will say so rather than
+pretend otherwise: **approve a new OAuth scope** (that needs one run of the
+function from the editor with your Google login — deploy `push-only` first,
+you approve, then deploy for real), and **change anything inside the Google
+account** — the roster, the spreadsheet, Drive.
 
 You do **not** need to install anything on your computer. Everything below runs
 in **Google Cloud Shell**, a free terminal in your browser.

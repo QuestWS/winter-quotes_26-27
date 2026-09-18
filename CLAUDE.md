@@ -79,6 +79,35 @@ which points the *existing* deployment at a new version — so the rule below is
 enforced by the tool rather than by memory. Setup and troubleshooting:
 `docs/APPS-SCRIPT-DEPLOY.md`.
 
+**Claude can run that deploy itself — this is already built and in use.** Do
+not tell Chris to go and click it; offer to deploy, and on a yes, dispatch the
+workflow with the GitHub tools:
+
+```
+mcp__github__actions_run_trigger
+  method: run_workflow   workflow_id: deploy-apps-script.yml
+  owner: QuestWS         repo: winter-quotes_26-27
+  ref: <the branch the work is on — normally the claude/… branch, not main>
+  inputs: { description: "<what changed>", mode: "push-and-deploy" }
+```
+
+Then poll `mcp__github__actions_list` (`list_workflow_runs`) until it completes
+and **report the real conclusion**, pulling `mcp__github__get_job_logs` with
+`failed_only` on a failure. `mode: "push-only"` uploads without going live —
+that is the one to use for step 3 below, when a new Google scope needs
+approving from the editor first.
+
+- **Deploy from the working branch.** Every deploy since run 30 has been
+  dispatched against a `claude/…` branch, and the workflow checks out whatever
+  ref it is given. Merging first is not required and is not the habit here.
+- **The staff console and the customer page are NOT in this deploy.** They are
+  GitHub Pages, served from `main`, so those only go live on merge. A deploy
+  from a branch therefore ships the backend ahead of the UI — fine when the new
+  fields are additive, worth saying out loud either way.
+- **It is reversible without a deploy:** Apps Script → Deploy → Manage
+  deployments → pencil → pick the previous version from the dropdown. Each run
+  cuts an immutable numbered version, which is what makes that possible.
+
 Fallback (and what the workflow automates):
 1. Paste the full file over the editor contents, **Save**.
 2. **Deploy → Manage deployments → pencil (edit) → Version: New version → Deploy.**

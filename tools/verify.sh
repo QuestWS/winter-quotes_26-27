@@ -32,6 +32,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
+    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -76,6 +77,7 @@ if [ -f admin/index.html ]; then
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
+    "setStorageFilter" "renderStorage" "storageTabs" "tagred" "em_signreminder" "signAskAllowed_" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
@@ -260,6 +262,14 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: Adobe Sign pre-fill link holds"
   else
     echo "  FAIL gate: Adobe Sign pre-fill link broken"; sed 's/^/       /' "$TMP/sign.txt"; FAIL=1
+  fi
+  # The chase for a signature: the storage view's deposit tabs and the nudge
+  # email. "Has a deposit" is not "owes nothing", a lead is neither, and the
+  # email must refuse to build rather than ship a dead button. All executed.
+  if node tools/check-sign-chase.js > "$TMP/signchase.txt" 2>&1; then
+    echo "  OK   gate: deposit filter and the sign-chase email hold"
+  else
+    echo "  FAIL gate: deposit filter / sign-chase email"; sed 's/^/       /' "$TMP/signchase.txt"; FAIL=1
   fi
   # The scan-to-sign page. A customer standing at the counter must reach the
   # contract whatever the lookup is doing, so the page's real script is run

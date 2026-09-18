@@ -397,6 +397,74 @@ pay+email+photos; Marina → photos only.
 ---
 
 
+## The deposit tabs on the storage overview
+
+Three views over the storage overview, as a tab strip above the list:
+**Everyone**, **No deposit**, **Deposit paid**. It is the answer to "who still
+owes us money" and "who has paid but never signed", asked from a phone.
+
+- **One fetch, three views.** `storageView` is the heaviest read in the
+  console, so the tabs re-render `window._sg` rather than going back to the
+  server. Flipping between them costs nothing, which is the only reason they
+  are tabs and not three menu items. The filter survives a reload of the
+  overview — refreshing halfway through a chase should not drop you back to
+  Everyone.
+- **The facts come off the payload that is already parsed.** `adminStorageView`
+  computes `deposit` and `contract` inside the loop that was already reading
+  keys and slip out of column 21, so the filter adds no column and no second
+  read. Anything added to this call has to clear that bar; see *why the console
+  got slow*, above.
+- **"Has a deposit" is a payment, not a balance.** A quote paid in full and a
+  $500 deposit are both on the Deposit side; a quote showing `Paid` because it
+  was never priced is on the No-deposit side. Reading `COL.BAL` instead of the
+  payments would put both of those on the wrong tab, which is why
+  `tools/check-sign-chase.js` runs the real console filter over exactly those
+  rows rather than grepping the condition.
+- **A lead is in neither bucket.** Somebody who poked at pricing and walked
+  away has no quote to take a deposit on, so counting them as "no deposit"
+  would bury the customers who actually owe one. They stay visible under
+  Everyone. The server flags the group (`lead`) rather than the console
+  matching on the lead tab's name.
+- **Deposit taken and no signed agreement on file is tagged in red**
+  (`NO SIGNED CONTRACT`) — on screen and on the printed yard sheet. Only ever
+  on a row that has money on it: "no contract" on a quote nobody has paid for
+  is an unsold quote, not a problem, and tagging those would make the tag mean
+  nothing. The contract is `d.contractUrl`, written by `adminUploadContract`.
+- **The tab strip has its own class (`.stabs`) and its own handler.**
+  `setSeason()` on the photo card clears `.on` from every `.seg button` on the
+  page, so reusing that class would have a photo tap silently un-highlight
+  whichever storage tab was showing — the same shape as the duplicate-function
+  bug above. The guard fails if the tabs ever pick up `.seg`.
+- **Yard sheets follow the tab and say so.** `printStorage` prints the current
+  view and names it in the sheet header, because a partial sheet that looks
+  like the whole building is how a unit gets missed. **The haul-out list is
+  deliberately not filtered**: the crew hauls every unit out, paid or not.
+- **The storage view's cached copy carries a version** (`STORAGE_VIEW_V_`).
+  Without it, a deploy that adds a field to those rows would be answered for
+  two minutes from a cache that lacks it — and the console cannot tell "no
+  deposit" from "this row predates the flag", so every quote would read as
+  unpaid until the cache aged out. Bump it whenever the row or group shape
+  changes.
+
+
+## Asking a customer to sign (console)
+
+A quote with no signed agreement on file gets an **Ask them to sign** button,
+in two places that share one handler: next to *Signed contract — not on file*
+on the quote card, and in the **Customer emails** card. It previews like every
+other email and sends nothing until the preview is confirmed.
+
+- **It disappears the moment a contract is on file**, and the upload path
+  re-renders both doors together — `signAskAllowed_` is the one rule, and
+  `myPerms_()` is the one permission set, because the contract row used to be
+  re-rendered after an upload with a narrower set than `renderQuote` had just
+  used.
+- **No signing link, no button.** `adminLookup` returns `canSign`, which is
+  `signUrlFor_(d)` being non-empty and the quote not being a lead — the same
+  "every caller hides its button on `''`" rule the emails follow.
+- The email itself, and why it sets no status: `docs/ref/EMAILS.md`.
+
+
 ## Haul-out list
 
 `printHaulOut()` on the storage card — one yard-wide sheet, not one per

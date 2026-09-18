@@ -246,6 +246,21 @@ padding-bottom:6px;border-bottom:2px solid var(--gold)}
 .sgH:first-child{margin-top:2px}
 .sgH b{color:var(--navy);font-size:16px;letter-spacing:.03em}
 .sgH span{font-family:var(--mono);font-size:12px;color:var(--muted)}
+/* The storage overview's deposit filter. Its own class and its own handler,
+   NOT the .seg used by the photo season switch: setSeason() clears `.on` from
+   every `.seg button` on the page, so sharing the class would have a photo tap
+   silently un-highlight the storage tab you are looking at. */
+.stabs{display:flex;flex-wrap:wrap;border:1.5px solid var(--navy);border-radius:10px;overflow:hidden}
+.stabs button{flex:1 1 auto;border:0;border-right:1px solid var(--line);background:#fff;color:var(--navy);
+padding:10px 14px;font-weight:700;cursor:pointer;font-size:14px;font-family:var(--disp);white-space:nowrap}
+.stabs button:last-child{border-right:0}
+.stabs button.on{background:var(--navy);color:#fff}
+.stabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.75;margin-left:5px}
+/* Deposit taken, no signed agreement on file. Solid so it reads as a tag and
+   not as a second balance; --red is the palette's, not a new colour. */
+.tagred{display:inline-block;background:var(--red);color:#fff;border-radius:999px;
+padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;
+vertical-align:1px}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
 padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
 .srow:hover{background:#F4F9FC}
@@ -518,6 +533,10 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <button class="btn navy" id="em_dims" onclick="sendKind('dims')">Dimensions updated</button>
               <button class="btn gold" id="em_latewarn" onclick="sendKind('latewarn')">Late fee warning</button>
               <button class="btn ghost" id="em_updated" onclick="sendKind('updated')">Re-send invoice</button>
+              <!-- Shown only while there is no signed agreement on file and there
+                   is a web form to send them to. Previewed like every other
+                   email before anything leaves. -->
+              <button class="btn gold hide" id="em_signreminder" onclick="sendKind('signreminder')">Ask them to sign</button>
             </div>
             <div class="row2" style="margin-top:10px">
               <div><label class="fld">Up next — which way?</label>
@@ -655,6 +674,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
       </div>
+      <div id="storageTabs" class="stabs hide" style="margin-top:10px"></div>
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
@@ -866,6 +886,12 @@ function permsOf(me){
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
   return p;
 }
+/* My own permissions, admin's blanket grant included. One place, because the
+   two callers that used to build this by hand disagreed: the contract card was
+   re-rendered after an upload with a narrower set than the one renderQuote had
+   just used, so a button could come back missing on a page that had shown it a
+   second earlier. */
+function myPerms_(){ return ME&&ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1}:permsOf(ME); }
 /* Tolerant of a missing target: some of these live inside panels that get
    re-rendered, so the element a caller is writing to may already be gone. */
 function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
@@ -1317,8 +1343,13 @@ function renderQuote(r){
   $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
     `<div class="histrow"><b>${e.kind}</b> → ${e.to} <span class="hm">· ${e.ts} · by ${e.by}</span></div>`).join('')
     :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
-  const P=ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1}:permsOf(ME);
+  const P=myPerms_();
   window._contract=r.contractUrl||'';
+  /* Whether there is anywhere to send them: '' from the server's signUrlFor_
+     means the Acrobat Sign web form is unset (or this is an unfinished quote),
+     and every caller hides its button on ''. */
+  window._canSign=!!r.canSign;
+  window._hasEmail=!!r.hasEmail;
   renderContract(P);
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
@@ -1345,6 +1376,7 @@ function renderQuote(r){
     $('feeSuggest').textContent='Suggested: first fee '+fmt$(r.feeSuggest10)+' (10% of balance) · monthly '+fmt$(r.feeSuggest2)+' (2%, min $5) · pay-by '+r.payByShort;
   }
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
+  syncSignAsk_(P);
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
 }
@@ -1363,8 +1395,23 @@ function renderContract(P){
   let h='';
   if(window._contract) h+=`<a href="${window._contract}" target="_blank" class="btn ghost sm" style="text-decoration:none;display:inline-block">View</a> `;
   if(canUp) h+=`<button class="btn navy sm" onclick="$('contractFile').click()">${window._contract?'Replace':'Upload signed copy'}</button>`;
+  /* Nothing on file and something to send them: offer the nudge right here,
+     next to the gap it fills. It is the same previewed send as the button in
+     the emails card — one handler, two doors — because this is the row staff
+     are looking at when they open a red-tagged quote off the storage view. */
+  if(!window._contract&&signAskAllowed_(P))
+    h+=` <button class="btn gold sm" onclick="sendKind('signreminder')">Ask them to sign</button>`;
   if(!h) h='<span class="msg" style="margin:0">— not on file —</span>';
+  else if(!window._contract) h='<span class="msg" style="margin:0 8px 0 0">— not on file —</span>'+h;
   c.innerHTML=h;
+}
+/* Sending it needs the email permission, an address to send to, and a signing
+   link to put in the button. Asking somebody to sign an agreement we already
+   have is noise, so it goes the moment a contract is on file. */
+function signAskAllowed_(P){ return !!(P&&P.email)&&!!window._hasEmail&&!!window._canSign; }
+function syncSignAsk_(P){
+  const b=$('em_signreminder');
+  if(b) b.classList.toggle('hide',!(!window._contract&&signAskAllowed_(P)));
 }
 async function uploadContract(f){
   const c=$('contractCtl');c.innerHTML='<span class="msg">Uploading…</span>';
@@ -1373,7 +1420,11 @@ async function uploadContract(f){
     const r=await api('uploadContract',[QN,f.name,b64,f.type]);
     if(!r.ok){c.innerHTML='<span class="msg err">'+r.error+'</span>';return;}
     window._contract=r.url;toast('Signed contract saved');
-    renderContract(ME.admin?{pay:1}:(ME.perms||{}));
+    /* Same permission set renderQuote used, so the row cannot come back with a
+       button it had a second ago — and the emails-card button goes too, since
+       there is now a contract on file. */
+    renderContract(myPerms_());
+    syncSignAsk_(myPerms_());
   }catch(e){c.innerHTML='<span class="msg err">'+e.message+'</span>';}
 }
 function renderRequests(canAdj){
@@ -1632,46 +1683,124 @@ function toggleStorage(){
 async function loadStorage(){
   $('storageCard').classList.remove('hide');
   $('adminCard').classList.add('hide');
+  $('storageTabs').classList.add('hide');
   $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
   try{
     const r=await api('storageView',[]);
     if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
     window._sg=r.groups;
-    let total=0;
-    const html=r.groups.map(g=>{
-      total+=g.count;
-      const rows=g.rows.length?g.rows.map(x=>{
-        const owe=!(x.balance==='Paid'||x.balance.startsWith('CREDIT'));
-        return `<div class="srow" onclick="fromStorage('${x.qn}')">
-          <span class="nm">${x.name}</span>
-          <span class="un">${x.unit}${x.ymm?' · '+x.ymm:''}${x.dims?' · '+x.dims:''} · ${x.status}</span>
-          <span class="bl ${owe?'owe':'paid'}">${x.balance}</span></div>`;
-      }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
-      return `<div class="sgH"><b>${g.tab}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
-    }).join('');
-    $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${total} total units on file — tap any row to open it</div>`+html;
+    renderStorage();
   }catch(e){$('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';}
+}
+/* ---------------------------------------------------------------------------
+   THE DEPOSIT FILTER
+   ---------------------------------------------------------------------------
+   Three views over ONE fetch. storageView is the heaviest read in the console
+   (every row of every tab, plus each payload), so flipping between "everyone",
+   "no deposit" and "deposit paid" must not be three trips to the server — it
+   re-renders what is already in window._sg.
+
+   The filter is remembered across a reload of the overview: refreshing halfway
+   through a chase should not drop you back to "Everyone".
+
+   A LEAD ROW IS IN NEITHER DEPOSIT BUCKET. Somebody who poked at pricing and
+   walked away has no quote to take a deposit on, so counting them as "no
+   deposit" would bury the customers who actually owe one. They stay visible
+   under "Everyone", which is where the yard already looks for them. */
+let SFILTER='all';
+const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid'};
+function setStorageFilter(f){ if(!SFILTER_LABEL[f])return; SFILTER=f; renderStorage(); }
+function storageKeeps_(g,x){
+  if(SFILTER==='all') return true;
+  if(g.lead) return false;
+  return SFILTER==='dep' ? !!x.deposit : !x.deposit;
+}
+/* Groups with their rows narrowed to the current view. Under "Everyone" an
+   empty building still prints, because knowing a building is empty is worth a
+   line; under a filter an empty group is just noise. */
+function storageGroups_(){
+  return (window._sg||[]).map(function(g){
+    const rows=(g.rows||[]).filter(x=>storageKeeps_(g,x));
+    return {tab:g.tab,lead:g.lead,rows:rows,count:rows.length};
+  }).filter(g=>SFILTER==='all'||g.count>0);
+}
+function storageCounts_(){
+  const c={all:0,dep:0,nodep:0,unsigned:0};
+  (window._sg||[]).forEach(g=>(g.rows||[]).forEach(function(x){
+    c.all++;
+    if(g.lead) return;
+    if(x.deposit){ c.dep++; if(!x.contract) c.unsigned++; } else c.nodep++;
+  }));
+  return c;
+}
+function renderStorage(){
+  const c=storageCounts_();
+  const tab=(k,n)=>`<button class="${SFILTER===k?'on':''}" onclick="setStorageFilter('${k}')">`+
+    `${SFILTER_LABEL[k]}<span class="n">${n}</span></button>`;
+  const t=$('storageTabs');
+  t.innerHTML=tab('all',c.all)+tab('nodep',c.nodep)+tab('dep',c.dep);
+  t.classList.remove('hide');
+  const gs=storageGroups_();
+  const shown=gs.reduce((n,g)=>n+g.count,0);
+  const body=gs.map(function(g){
+    const rows=g.rows.length?g.rows.map(function(x){
+      const owe=!(x.balance==='Paid'||x.balance.startsWith('CREDIT'));
+      /* Money in, no signed agreement on file. Only ever tagged on a row that
+         HAS a payment: "no contract" on a quote nobody has paid for yet is an
+         unsold quote, not a problem, and tagging those would make the tag mean
+         nothing. */
+      const tag=(x.deposit&&!x.contract)?'<span class="tagred">NO SIGNED CONTRACT</span>':'';
+      /* On the deposit tab the balance alone doesn't say how much came in —
+         $700 owing reads the same whether they paid $500 or $5. */
+      const took=(SFILTER==='dep'&&x.paidTxt)?' · '+esc(x.paidTxt)+' paid':'';
+      return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+        <span class="nm">${esc(x.name)}${tag}</span>
+        <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
+        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span></div>`;
+    }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
+    return `<div class="sgH"><b>${esc(g.tab)}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
+  }).join('');
+  let head;
+  if(SFILTER==='dep'){
+    head=`${shown} quote${shown===1?'':'s'} with a payment on ${shown===1?'it':'them'}`+
+      (c.unsigned?` — <b>${c.unsigned}</b> of them still ${c.unsigned===1?'has':'have'} no signed agreement on file (tagged in red).`
+                 :' — every one of them has a signed agreement on file.');
+  }else if(SFILTER==='nodep'){
+    head=`${shown} quote${shown===1?'':'s'} with no payment yet. Unfinished quotes are left out — `+
+      'there is nothing to take a deposit on until a quote is saved.';
+  }else{
+    head=`${shown} total units on file — tap any row to open it`;
+  }
+  $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
+    (shown?body:'<div class="msg" style="padding:6px">— nothing in this view —</div>');
 }
 function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
 async function printStorage(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
-  $('printArea').innerHTML=window._sg.filter(g=>g.count>0).map(g=>`
+  /* The yard sheets follow the tab you are looking at, and SAY SO in the
+     header. A partial sheet that looks like the whole building is how a unit
+     gets missed; naming the filter on the paper is what stops that.
+     The haul-out list is deliberately not filtered — see printHaulOut. */
+  const gs=storageGroups_().filter(g=>g.count>0);
+  if(!gs.length){ toast('Nothing to print in this view.'); return; }
+  const scope=SFILTER==='all'?'winter services':'winter services · '+SFILTER_LABEL[SFILTER]+' only';
+  $('printArea').innerHTML=gs.map(g=>`
     <div class="pg">
       <div class="pgHead">
-        <h1>QUEST WATERSPORTS — ${g.tab.toUpperCase()}</h1>
-        <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · winter services</div>
+        <h1>QUEST WATERSPORTS — ${esc(g.tab).toUpperCase()}</h1>
+        <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · ${esc(scope)}</div>
       </div>
       <table class="yard">
         <tr><th style="width:38px">Done</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
         ${g.rows.map(x=>`<tr>
           <td><span class="cb"></span></td>
-          <td><span class="yn">${x.name}</span><br><span class="ysub">${x.qn}</span></td>
-          <td>${x.unit}${x.ymm?' · '+x.ymm:''}${x.dims?'<br><span class="ysub">'+x.dims+'</span>':''}</td>
-          <td>${x.keys||'—'}</td>
-          <td>${x.status}</td>
-          <td class="ybal" style="text-align:right">${x.balance}</td></tr>`).join('')}
+          <td><span class="yn">${esc(x.name)}</span><br><span class="ysub">${esc(x.qn)}</span></td>
+          <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
+          <td>${x.keys?esc(x.keys):'—'}</td>
+          <td>${esc(x.status)}${(x.deposit&&!x.contract)?'<br><span class="ysub">NO SIGNED CONTRACT</span>':''}</td>
+          <td class="ybal" style="text-align:right">${esc(x.balance)}</td></tr>`).join('')}
       </table>
       <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
     </div>`).join('');
@@ -2143,7 +2272,9 @@ async function printHaulOut(){
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
   /* One list across every storage area — haul-out order is a yard-wide
-     question, not a per-building one. */
+     question, not a per-building one. Deliberately NOT narrowed by the deposit
+     tab either: the crew hauls every unit out, paid or not, and a list that
+     quietly dropped the ones without a deposit would leave boats in the yard. */
   const all=[];
   window._sg.forEach(g=>(g.rows||[]).forEach(x=>all.push(Object.assign({tab:g.tab},x))));
   if(!all.length){ toast('Nothing to print.'); return; }

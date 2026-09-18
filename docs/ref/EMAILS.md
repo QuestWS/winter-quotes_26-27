@@ -71,6 +71,41 @@ turns on across every email from that one string.
 way.
 
 
+## The sign chase (`signreminder`)
+
+"We still need your signature" — the nudge for a quote with no signed agreement
+on file. Most often one that has already paid a deposit, which is the pairing
+the storage view tags in red (`docs/ref/STAFF-CONSOLE.md`).
+
+- **Staff-clicked, one quote at a time.** Deliberately **not** in `BULK_KINDS_`
+  and not on either automatic trigger: whether somebody has been chased enough
+  is a judgement call, and a mailshot to everyone without a contract on file
+  would reach the customers who signed a paper copy at the counter.
+- **It refuses to build rather than ship a dead button.** No `signUrlFor_`
+  link — the web form is unset — means no email at all. An "almost there, just
+  sign" with nothing to click is worse than saying nothing.
+- **A lead is never asked to sign.** No selections, no price, nothing agreed;
+  `doPost` already refuses a lead row a customer copy, and this is the same
+  boundary on the staff-clicked path.
+- **It sets no status.** Every other notice kind stamps the status column, but
+  this one says nothing about where the quote is in the money or the yard —
+  overwriting `Deposit received` with a chase note would take that off the
+  console pill and off the yard sheets somebody is holding. `adminSendEmail`
+  only writes `built.status` when there is one. The send still lands in Email
+  History, which is what staff read to answer "have we chased this one?".
+- **It asks for the slip only when we don't have one**, and only for a water
+  unit. `Slip_Number` is left editable on the Adobe side for exactly that
+  reason (`docs/adobe-webform-field-map.md`). Land units are *collected*, never
+  hauled out of the water — the same `isLandUnit_` wording rule as everywhere
+  else.
+- **Why a refusal reads the same in preview and in send:** `unbuildableMsg_` is
+  shared by `adminEmailPreview` and `adminSendEmail`. Staff who read one
+  explanation in the preview and a different one from the send assume the
+  system changed its mind.
+- `tools/check-sign-chase.js` builds it for every one of those cases and
+  asserts what came out; `verify.sh` runs it.
+
+
 ## The automatic-email pause
 
 `AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,

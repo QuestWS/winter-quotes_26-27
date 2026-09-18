@@ -2154,6 +2154,10 @@ function auditLog_(who, action) {
 =========================================================================== */
 const CACHE_CHUNK_ = 90 * 1024;          // CacheService caps a value at 100KB
 const STORAGE_VIEW_TTL_ = 120;           // seconds
+/* Bump this whenever adminStorageView's row or group shape changes, so a
+   console served from the old cache is not handed rows missing a field it
+   now renders from. Costs one cache miss at deploy time and nothing after. */
+const STORAGE_VIEW_V_ = 2;
 const QROW_TTL_ = 1800;                  // seconds
 
 function cachePutBig_(key, str, ttl) {
@@ -2761,6 +2765,11 @@ function adminLookup(token, qn) {
     })(),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
+    /* Whether there is a signing link to send at all, not the link itself —
+       the console only needs to decide whether to offer the "ask them to sign"
+       email. '' from signUrlFor_ means the web form is unset, and every caller
+       hides its button on ''; this is that rule for the console's button. */
+    canSign: !!signUrlFor_(d) && !isStartedQuote_(d),
     /* The customer's own way back into this quote — quote number and last name
        already attached, so nothing to read out over the phone. Built server-
        side by the same quoteLink_ every customer email uses, so what staff copy
@@ -2908,6 +2917,18 @@ function adminAdjust(token, qn, amt, desc, emailNow) {
   return { ok: 1, msg: 'New total ' + usd_(d.total) + '. ' + mailMsg };
 }
 
+/* Why buildEmailFor_ came back with nothing. Shared by the preview and the
+   send so the two cannot explain the same refusal differently -- staff read
+   the preview's message and then wonder why the send said something else. */
+function unbuildableMsg_(kind, d) {
+  if (kind === 'latewarn') return 'No unpaid balance — nothing to warn about.';
+  if (kind === 'signreminder') {
+    if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to sign yet.';
+    return 'No signing link for this quote — the Acrobat Sign web form is not configured.';
+  }
+  return 'Unknown email type.';
+}
+
 function recordEmail_(sh, rowNum, d, kind, by) {
   d.emailLog = d.emailLog || [];
   d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: d.email || '', by: by || '' });
@@ -2924,7 +2945,7 @@ function adminSendEmail(token, qn, kind, extra) {
   // notice kinds route through the shared builder (same HTML the preview showed)
   if (kind !== 'updated') {
     const built = buildEmailFor_(d, kind, extra, photos);
-    if (!built) return { ok: 0, error: kind === 'latewarn' ? 'No unpaid balance — nothing to warn about.' : 'Unknown email type.' };
+    if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
     const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
     const logo = getLogoBlob_();
     if (logo) opts.inlineImages = { questlogo: logo };
@@ -2936,7 +2957,11 @@ function adminSendEmail(token, qn, kind, extra) {
     }
     if (FROM_ALIAS) opts.from = FROM_ALIAS;
     GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
-    ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
+    /* Only when the kind actually has a status to set. An empty one would blank
+       the column, and a kind that says nothing about where the quote stands
+       (the sign chase) must leave the money/yard status alone rather than
+       overwrite it. The send is still recorded in Email History below. */
+    if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
     recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
     auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email);
     return { ok: 1, msg: 'Sent to ' + d.email + '.' };
@@ -4051,9 +4076,17 @@ function adminStorageView(token) {
      of each one. Two minutes of cache, dropped by any write (see the cache
      section above), is the difference between a yard sheet that opens and one
      that times out. */
+  /* The cached copy carries the shape it was built with. A deploy that adds a
+     field to these rows would otherwise be answered for the next two minutes
+     with rows that do not have it -- and the console cannot tell "no deposit"
+     from "this row predates the deposit flag", so every quote would read as
+     unpaid until the cache aged out. A version that does not match is a miss. */
   const cached = cacheGetBig_('storageView');
   if (cached) {
-    try { const r = JSON.parse(cached); if (r && r.groups) { r.cached = 1; return r; } } catch (e) {}
+    try {
+      const r = JSON.parse(cached);
+      if (r && r.groups && r.v === STORAGE_VIEW_V_) { r.cached = 1; return r; }
+    } catch (e) {}
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const groups = [];
@@ -4071,9 +4104,15 @@ function adminStorageView(token) {
       head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
-        let keys = '', slip = '', trailer = null, done = null;
+        let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false;
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
+          /* Deposit and signed contract come off the payload that is already
+             being parsed for keys and slip -- no extra column, no second read.
+             The console's money/contract filter therefore costs nothing, which
+             is the whole bar for adding anything to this call. */
+          paid = paymentsTotal_(pd);
+          contract = !!pd.contractUrl;
           /* The haul-out sheet needs what the customer actually has, so read
              the EFFECTIVE state — a boat we re-measured or relocated must
              appear on the sheet as it is now, not as they first described it.
@@ -4091,18 +4130,28 @@ function adminStorageView(token) {
           unit: r[COL.UNIT - 1] || '', ymm: r[COL.YMM - 1] || '', dims: r[COL.DIMS - 1] || '',
           status: r[COL.STATUS - 1] || '', keys: keys,
           slip: slip, trailer: trailer, seasonDone: done,
+          /* "Has money on it", not "owes nothing": a $500 deposit and a quote
+             paid in full are both on the deposit side of that line, and a quote
+             with a zero balance because it was never priced is not. */
+          deposit: paid > 0.005, paidTxt: paid > 0.005 ? usd_(paid) : '',
+          /* Signed agreement on file. Deposit taken and this still false is the
+             chase list -- the console tags those rows in red. */
+          contract: contract,
           balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
       });
     }
     rows.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-    groups.push({ tab: sh.getName(), count: rows.length, rows: rows });
+    /* Flagged here rather than matched on the tab name in the console: a lead
+       has no quote yet, so it belongs in neither deposit bucket, and the name
+       of the lead tab is this file's business. */
+    groups.push({ tab: sh.getName(), count: rows.length, lead: isStartedTab_(sh.getName()), rows: rows });
   });
   // storage areas first, No Storage last
   groups.sort(function (a, b) {
     const w = function (t) { return t === 'No Storage' ? 2 : 1; };
     return w(a.tab) - w(b.tab) || a.tab.localeCompare(b.tab);
   });
-  const out = { ok: 1, groups: groups };
+  const out = { ok: 1, v: STORAGE_VIEW_V_, groups: groups };
   cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
   return out;
 }
@@ -4763,6 +4812,71 @@ function buildEmailFor_(d, kind, extra, photos) {
       attachPdf: true
     };
   }
+  /* "We still need your signature." The chase for a quote with no signed
+     agreement on file -- most often one that has already paid a deposit, which
+     is the pairing the console tags in red on the storage view.
+
+     Staff-clicked, one quote at a time, and deliberately NOT in BULK_KINDS_ or
+     on either automatic trigger: whether somebody has been chased enough is a
+     judgement call, and a mailshot to everybody without a contract would reach
+     the customers who signed on paper at the counter.
+
+     The link is rebuilt here like every other sign link (see the "review &
+     sign" rules in docs/ref/EMAILS.md), so a slip staff typed into the console
+     weeks after the quote was saved is what reaches Adobe. */
+  if (kind === 'signreminder') {
+    const signLink = signUrlFor_(d);
+    /* No web form configured means no link, and an "almost there, just sign"
+       with nothing to click is worse than no email at all. Every caller of
+       signUrlFor_ treats '' as "no signing step"; this one refuses to build. */
+    if (!signLink) return null;
+    /* A lead has no selections, no price and nothing to agree to. doPost
+       already refuses to send a lead row a customer copy; this is the same
+       boundary on the staff-clicked path. */
+    if (isStartedQuote_(d)) return null;
+    const term = docTerm_(d).toLowerCase();
+    const land = isLandUnit_(d);
+    const paid = paymentsTotal_(d);
+    const st = effectiveState_(d) || d.state || {};
+    const haveSlip = !!String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim();
+    const unitTxt = esc_(d.unit || 'unit');
+    const collect = land ? 'collect your ' + unitTxt : 'haul your ' + unitTxt + ' out';
+
+    let intro = paid > 0.005
+      ? 'Thanks — we have your payment of <b>' + usd_(paid) + '</b> on this ' + term +
+        ', and your ' + unitTxt + ' is on our list for the winter. One thing is still ' +
+        'outstanding: we don\'t have your signed winter services agreement yet.'
+      : 'A quick nudge on your winter ' + term + ': we don\'t have your signed winter ' +
+        'services agreement yet.';
+    intro += '<br><br>We need it on file before we ' + collect +
+      ', so it\'s worth getting out of the way now rather than on the day. ' +
+      'It takes about a minute — the button below opens the agreement with your ' +
+      'quote number already filled in, so there is nothing to look up.';
+    if (!land && !haveSlip) {
+      /* Slip_Number is left editable on the Adobe side precisely so the one
+         person who definitely knows it can type it — see
+         docs/adobe-webform-field-map.md. Asked for only when we don't have it. */
+      intro += '<br><br>If your ' + unitTxt.toLowerCase() + ' is in a slip, add the slip ' +
+        'number on the form while you\'re there — it saves us a phone call.';
+    }
+    intro += '<br><br>Already signed it, or signed a paper copy with us at the shop? ' +
+      'Nothing to do — give us a call on (815) 433-2200 and we\'ll match it up.';
+
+    const btn = '<div style="margin:6px 0 10px">' +
+      buttonHtml_(signLink, 'Review &amp; sign', '#C08A22') + '</div>';
+
+    return {
+      subject: 'One thing left — your Quest winter services agreement · ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, btn, true),
+      /* Deliberately no status. Every other notice kind stamps the status
+         column, but this one says nothing about where the quote is in the
+         money or the yard — overwriting "Deposit received" with "Sign reminder
+         sent" would take that off the console pill and off the yard sheets.
+         The send is recorded in Email History either way, which is what staff
+         read to answer "have we chased this one?". */
+      status: ''
+    };
+  }
   if (kind === 'stored') {
     const land = isLandUnit_(d);
     const intro = 'Good news — your ' + esc_(d.unit) + ' is safely with us for the winter. We photograph every unit as it arrives so you have a record of its condition' + (photos ? ' — you can view your photos any time using the button below.' : '.') + ' We\'ll see you in the spring, and we\'ll be in touch before ' + (land ? 'your ' + esc_(d.unit).toLowerCase() + '\'s return.' : 'relaunch.');
@@ -4970,7 +5084,7 @@ function adminEmailPreview(token, qn, kind, extra) {
     return { ok: 1, to: d.email, subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
   }
   const built = buildEmailFor_(d, kind, extra, photos);
-  if (!built) return { ok: 0, error: kind === 'latewarn' ? 'No unpaid balance — nothing to warn about.' : 'Unknown email type.' };
+  if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
   return { ok: 1, to: d.email, subject: built.subject, html: built.html };
 }
 

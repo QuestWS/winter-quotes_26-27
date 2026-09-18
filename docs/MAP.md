@@ -89,6 +89,8 @@ symptom.
 | Old-sheet import | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply` | `previewImport`, `doImport` |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
+| Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
+| Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
@@ -125,5 +127,6 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
+| `check-sign-chase.js` | The deposit tabs sort by payment rather than balance, a lead sits outside both, and the sign nudge refuses to build rather than ship a dead button |
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

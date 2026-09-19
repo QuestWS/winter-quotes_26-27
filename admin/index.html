@@ -463,11 +463,18 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             </div>
             <div class="drop" id="drop"><b>Tap to choose from your gallery</b><br>or drag &amp; drop here — multiple at once</div>
             <div class="row2" style="margin-top:8px">
-              <button class="btn ghost sm" onclick="$('cameraInput').click()">Take photo / video</button>
+              <button class="btn ghost sm" onclick="$('cameraInput').click()">Take photo</button>
+              <button class="btn ghost sm" onclick="$('videoInput').click()">Record video</button>
               <button class="btn ghost sm" onclick="$('photoFiles').click()">Upload from gallery</button>
             </div>
+            <!-- One camera input per kind. `capture` opens the camera but cannot
+                 say which MODE, so an accept list naming both image/* and video/*
+                 is ambiguous and the browser falls back to the gallery picker —
+                 which is exactly what a single combined input did. The gallery
+                 input must never carry capture, or Android loses the gallery. -->
             <input type="file" id="photoFiles" accept="image/*,video/*" multiple class="hide">
-            <input type="file" id="cameraInput" accept="image/*,video/*" capture="environment" class="hide">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hide">
+            <input type="file" id="videoInput" accept="video/*" capture="environment" class="hide">
             <div class="bar hide" id="upbar"><i id="upbarI"></i></div>
             <div class="uplist" id="uplist"></div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
@@ -1835,6 +1842,8 @@ function wireDrop(){
   inp.onchange=()=>{queueFiles(inp.files);inp.value='';};
   const cam=$('cameraInput');
   cam.onchange=()=>{queueFiles(cam.files);cam.value='';};
+  const vid=$('videoInput');
+  vid.onchange=()=>{queueFiles(vid.files);vid.value='';};
   const cf=$('contractFile');
   cf.onchange=()=>{if(cf.files.length)uploadContract(cf.files[0]);cf.value='';};
 }

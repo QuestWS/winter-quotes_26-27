@@ -230,13 +230,23 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
       <h3>Condition photos &amp; video</h3>
       <div class="msg" id="photoCounts" style="margin-top:0">—</div>
       <div class="row2" style="margin-top:8px">
-        <button class="btn ghost" onclick="$('camIn').click()">📷 Photo / video</button>
-        <button class="btn ghost" onclick="$('galIn').click()">Choose</button>
+        <button class="btn ghost" onclick="$('camIn').click()">📷 Photo</button>
+        <button class="btn ghost" onclick="$('vidIn').click()">🎥 Video</button>
       </div>
-      <!-- `capture` forces the camera on Android and kills the gallery option,
-           so it lives on the camera button ONLY. Both take video as well as
-           stills; the size cap is what keeps that workable, see upload(). -->
-      <input type="file" id="camIn" class="hide" accept="image/*,video/*" capture="environment" multiple>
+      <button class="btn ghost wide" style="margin-top:8px" onclick="$('galIn').click()">Choose from gallery</button>
+      <!-- TWO camera inputs, one per kind, and that is not tidiness.
+           `capture` tells the phone to open the camera, but it cannot tell it
+           WHICH MODE to open in — so an accept list naming both image/* and
+           video/* is ambiguous and the browser gives up and shows the gallery
+           picker instead. That is exactly what happened when video was added
+           to a single combined input.
+           `multiple` is off both of them for the same class of reason: the
+           spec says capture implies a single file, and Chrome on Android
+           ignores capture outright when multiple is present.
+           The GALLERY input is the one that must never carry capture — on
+           Android that would force the camera and remove the gallery. -->
+      <input type="file" id="camIn" class="hide" accept="image/*" capture="environment">
+      <input type="file" id="vidIn" class="hide" accept="video/*" capture="environment">
       <input type="file" id="galIn" class="hide" accept="image/*,video/*" multiple>
       <div class="msg" id="upMsg"></div>
       <div style="margin-top:8px"><button class="btn ghost wide" id="openFolder" onclick="openFolder()">Open photo folder</button></div>
@@ -1068,6 +1078,7 @@ async function upload(files){
   upPump_();
 }
 $('camIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('vidIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
 $('galIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
 $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 

@@ -405,19 +405,45 @@ Y.ev('ROWS = ' + JSON.stringify([
    can act on, so the cap is enforced on BOTH clients and on the server. */
 {
   const adminHtml = read('admin/index.html');
-  /* By id, not by "any input that takes an image". The signed-contract upload
-     also accepts image/* — somebody photographing a signed page — and it is
-     NOT condition media: a video of a contract is not a thing. */
-  const MEDIA_INPUTS = { 'yard/index.html': ['camIn', 'galIn'],
-                         'admin/index.html': ['photoFiles', 'cameraInput'] };
-  [['yard/index.html', HTML], ['admin/index.html', adminHtml]].forEach(function (p) {
-    MEDIA_INPUTS[p[0]].forEach(function (id) {
-      const m = p[1].match(new RegExp('<input[^>]*id="' + id + '"[^>]*>'));
-      if (!m) return fail(p[0] + ' has no file input called ' + id);
-      if (!/accept="[^"]*video\//.test(m[0]))
-        fail(p[0] + ' #' + id + ' will not take video: ' + m[0].slice(0, 90));
-      else ok(p[0] + ' #' + id + ' accepts video as well as stills');
+/* CAMERA INPUTS — one per kind, and the rules that were learned the hard way.
+     `capture` tells the phone to open the camera but CANNOT say which mode; an
+     accept list naming both image/* and video/* is ambiguous, and the browser
+     resolves it by ignoring capture and showing the gallery picker instead.
+     That is exactly what a single combined input did. And `multiple` alongside
+     `capture` is its own version of the same bug: the spec says capture implies
+     one file, and Chrome on Android drops capture when multiple is present. */
+  const PAGES = [['yard/index.html', HTML], ['admin/index.html', adminHtml]];
+  /* Which input plays which role, by id — the signed-contract upload also takes
+     image/*, and it is not condition media. */
+  const ROLES = {
+    'yard/index.html':  { photo: 'camIn',       video: 'vidIn',      gallery: 'galIn' },
+    'admin/index.html': { photo: 'cameraInput', video: 'videoInput', gallery: 'photoFiles' }
+  };
+  const inputById = (html, id) => (html.match(new RegExp('<input[^>]*id="' + id + '"[^>]*>')) || [])[0];
+  PAGES.forEach(function (p) {
+    const r = ROLES[p[0]];
+    const photo = inputById(p[1], r.photo), video = inputById(p[1], r.video),
+          gal = inputById(p[1], r.gallery);
+    if (!photo || !video || !gal) return fail(p[0] + ' is missing one of the media inputs');
+    /* Each camera input names exactly ONE kind, or capture is ambiguous. */
+    if (/accept="image\/\*"/.test(photo) && !/video\//.test(photo))
+      ok(p[0] + ': the stills camera names image/* only, so capture is unambiguous');
+    else fail(p[0] + ' #' + r.photo + ' has an ambiguous accept — capture will open the gallery: ' + photo);
+    if (/accept="video\/\*"/.test(video) && !/image\//.test(video))
+      ok(p[0] + ': the video camera names video/* only');
+    else fail(p[0] + ' #' + r.video + ' has an ambiguous accept: ' + video);
+    /* Both camera inputs must actually ask for the camera. */
+    [[r.photo, photo], [r.video, video]].forEach(function (c) {
+      if (!/capture=/.test(c[1])) fail(p[0] + ' #' + c[0] + ' does not carry capture, so it opens the picker');
+      if (/multiple/.test(c[1])) fail(p[0] + ' #' + c[0] + ' has multiple alongside capture — Android drops capture');
     });
+    ok(p[0] + ': both camera inputs request the camera, neither carries multiple');
+    /* The gallery is the one that must NEVER carry capture. */
+    if (/capture=/.test(gal)) fail(p[0] + ' #' + r.gallery + ' carries capture — Android loses the gallery');
+    else ok(p[0] + ': the gallery input is free of capture');
+    /* And between them the crew can still get video in. */
+    if (/video\//.test(gal)) ok(p[0] + ': the gallery takes video as well as stills');
+    else fail(p[0] + ' #' + r.gallery + ' will not take video');
   });
   /* And the contract input must NOT have quietly been widened along with them. */
   if (/id="contractFile"[^>]*video\//.test(adminHtml))
@@ -465,12 +491,14 @@ Y.ev('ROWS = ' + JSON.stringify([
   else fail('the console uploads video with the same concurrency as stills');
 }
 {
-  const caps = (HTML.match(/capture=/g) || []).length;
-  if (caps !== 1) fail('`capture` appears ' + caps + ' times — on Android it forces the camera and ' +
-    'kills the gallery, so it belongs on the camera button ONLY');
-  else ok('capture is on the camera input only, so the gallery still works on Android');
-  if (/<input[^>]*id="galIn"[^>]*capture/.test(HTML)) fail('the gallery input carries capture');
-  else ok('the gallery input is free of capture');
+  /* The page-wide version of the same rule: nothing that takes several files
+     may ask for the camera. Counting capture was the old check and it broke the
+     moment stills and video needed their own inputs — the rule is what matters,
+     not the number. */
+  const offenders = (HTML.match(/<input[^>]*>/g) || [])
+    .filter((i) => /capture=/.test(i) && /multiple/.test(i));
+  if (offenders.length) fail('an input asks for the camera AND accepts multiple files: ' + offenders[0]);
+  else ok('no multi-file input asks for the camera');
 }
 {
   /* Add to Home Screen is the point of the page being separate. */

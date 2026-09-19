@@ -99,9 +99,14 @@ if [ -f admin/index.html ]; then
   if grep -q "prompt(" "$TMP/admin.js"; then
     echo "  FAIL trap: prompt() in console — replace with inline UI"; FAIL=1
   else echo "  OK   trap: no prompt() in console"; fi
-  if [ "$(grep -c 'capture=' admin/index.html)" != "1" ]; then
-    echo "  FAIL trap: 'capture' should appear exactly once (camera input only)"; FAIL=1
-  else echo "  OK   trap: capture attribute on camera input only"; fi
+  # `capture` is per-CAMERA-input, not per-page: there is one for stills and one
+  # for video, because capture cannot say which mode to open in and an accept
+  # list naming both is ambiguous enough that the browser shows the gallery
+  # instead. What must stay true is the rule, not the count — a gallery input
+  # (the ones with `multiple`) must never carry it, or Android loses the gallery.
+  if grep -qE '<input[^>]*multiple[^>]*capture=|<input[^>]*capture=[^>]*multiple' admin/index.html; then
+    echo "  FAIL trap: a 'multiple' input carries capture — that kills the gallery on Android"; FAIL=1
+  else echo "  OK   trap: capture never lands on a gallery (multiple) input"; fi
   # Duplicate top-level function names silently shadow each other (the later
   # declaration wins). This killed the season-done buttons once: a photo-toggle
   # setSeason(s,btn) overwrote the season-done setSeason(choice).

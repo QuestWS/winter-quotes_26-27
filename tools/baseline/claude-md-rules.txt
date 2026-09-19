@@ -177,7 +177,13 @@ console back onto `google.script.run`.
 - **Mobile Google Sheets app cannot show custom menus, ever.** Desktop web or
 Chrome's "Desktop site" toggle only. That limitation is why the console
 - **`capture` attribute on a file input forces the camera** on Android, killing
-the gallery option. Only the dedicated camera button carries it.
+the gallery option. Only the dedicated camera buttons carry it, never the
+gallery input. Two further traps come with it, and both shipped once:
+`capture` cannot say *which mode* to open, so an `accept` naming both
+`image/*` and `video/*` is ambiguous and the browser answers by showing the
+gallery instead — stills and video need **one camera input each**. And
+`multiple` alongside `capture` makes Chrome on Android drop the capture
+entirely, so a camera input never takes more than one file.
 - **Signed contracts and photo folders are "anyone with link, view."** That's
 what lets staff outside the Google account open them. Accepted tradeoff,
 documented for Chris; account-locking is a ~2-line change if ever wanted.

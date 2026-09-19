@@ -351,11 +351,28 @@ cannot send a clip to whichever boat gets opened next.
 **Winter, always, from the app.** This is used at haul-out; spring relaunch
 media goes through the console, which has the season switch.
 
-**`capture` is on the camera button only.** On Android it forces the camera and
-kills the gallery, so the two inputs are separate and `verify.sh` counts the
-attribute — exactly once, page-wide. The **signed-contract** upload is
-deliberately left alone: it takes a PDF or a photo of a signed page, and a
-video of a contract is not a thing.
+**Three inputs: stills camera, video camera, gallery.** Not tidiness — it is
+the only arrangement that actually opens the camera.
+
+`capture` tells the phone to open the camera but **cannot say which mode**. An
+`accept` naming both `image/*` and `video/*` is ambiguous, and the browser
+resolves it by ignoring `capture` and showing the gallery picker. That is
+exactly what a single combined input did when video was added: the "Photo /
+video" button opened the gallery every time.
+
+`multiple` alongside `capture` is the same class of bug — the spec says
+`capture` implies a single file, and Chrome on Android drops `capture`
+entirely when `multiple` is present. So neither camera input takes more than
+one file; the gallery keeps `multiple`.
+
+The guard used to **count** `capture` occurrences, which broke the moment
+stills and video needed separate inputs. It now asserts the rules instead:
+each camera input names exactly one kind, both carry `capture`, neither
+carries `multiple`, and the gallery carries no `capture` — because on Android
+that would remove the gallery.
+
+The **signed-contract** upload is deliberately left alone: it takes a PDF or a
+photo of a signed page, and a video of a contract is not a thing.
 
 **The console uploads video one at a time** and uses the same direct-first
 logic. Three at a time is right for stills and wrong for clips.

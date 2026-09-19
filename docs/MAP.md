@@ -92,6 +92,7 @@ symptom.
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
+| The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |
 | Old-sheet import | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply` | `previewImport`, `doImport` |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |

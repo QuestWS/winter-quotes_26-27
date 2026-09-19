@@ -403,6 +403,35 @@ function lockinCopy(){
 const QUOTE_RATE_OVERRIDES = {
   'QW-26-1991': { insideNT: 6.74 }   // negotiated inside/non-trailer rate — Sep 2026
 };
+
+/* The other half of that same one-off: QW-26-1991 is signed, paid in full and
+   its price was agreed. It is FIRM through the season below and re-prices
+   normally at the next rollover.
+
+   THIS IS ONE CUSTOMER, NOT A RULE. She was leaving for a competitor if we
+   could not lock her in, so we locked her in. Nobody else is exempt from a
+   pricing update — deposit, signature or neither. It is deliberately a single
+   quote number rather than a table, so adding a second customer takes a
+   change of shape and a conversation, not just another line.
+
+   It is here, beside the rate override, because both halves are the same
+   concession: whoever removes one should be looking straight at the other.
+
+   Why it is needed at all: the override above pins ONE rate. A season
+   re-price would still move her winterizing, shrinkwrap, retrieval and wash
+   onto the new card, and on a paid-in-full quote that takes the balance off
+   zero and bills her for a price we already settled. */
+const FIRM_QUOTE_NO = 'QW-26-1991';
+const FIRM_QUOTE_THROUGH = '2026-2027';
+/* Season labels carry an EN DASH and the line above is hyphenated, so both
+   sides are normalised — a missed match here silently does nothing, which is
+   the only failure mode that costs anybody money. Labels sort correctly as
+   text ('2026-2027' < '2027-2028'), so "not past it yet" is a plain compare. */
+function priceIsFirm_(quoteNo, ratesLabel){
+  if (String(quoteNo || '') !== FIRM_QUOTE_NO) return false;
+  const now = String(ratesLabel || '').replace(/[\u2012-\u2015\u2212]/g, '-').trim();
+  return !!now && now <= FIRM_QUOTE_THROUGH;
+}
 /* Returns the override for this exact quote + rate key, or null if this quote
    has none — callers fall back to the normal PRICES value on null. */
 function rateOverride_(s, key){
@@ -4904,6 +4933,14 @@ function repriceScan_() {
       row.beforeNum = beforeNum;
       if (!d.state) {
         row.skip = 'saved before selections were stored — re-price by hand';
+        out.push(row); return;
+      }
+      /* The one locked-in quote. Paid quotes are otherwise in scope on
+         purpose — a deposit does not hold a ball-park number — and this is
+         not a second category, it is a single customer we agreed a firm
+         price with. See FIRM_QUOTE_NO in pricing-engine.js. */
+      if (priceIsFirm_(qn, PRICING.ratesLabel)) {
+        row.skip = 'price agreed and firm through ' + FIRM_QUOTE_THROUGH + ' — signed and paid';
         out.push(row); return;
       }
       /* Price a COPY. Nothing here may touch the sheet or the live payload. */

@@ -383,6 +383,18 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **One quote is exempt, and it is one quote — not a category.** `QW-26-1991`
+  was going to a competitor unless we locked her in, so we did: signed, paid
+  in full, price agreed. `FIRM_QUOTE_NO` / `priceIsFirm_` in
+  `pricing-engine.js` hold it out of the scan, and it lapses on its own once
+  rates roll past `FIRM_QUOTE_THROUGH`. It is a single quote number rather
+  than a table on purpose — a second customer should take a change of shape
+  and a conversation. **No other quote is exempt: deposit, signature or
+  neither.** The rate override alone would not have been enough, because it
+  pins one rate while a re-price still moves winterizing, shrinkwrap,
+  retrieval and wash — which on a paid-in-full quote takes the balance off
+  zero. `check-reprice.js` asserts the exemption reaches that quote and no
+  other, and that a deposited quote is still re-priced.
 - **It re-dates as well as re-prices.** `adminRepriceApply` re-stamps
   `d.season` from the live constants, because a quote carrying this season's
   money under last season's pay-by date is wrong on the document the customer

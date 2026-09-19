@@ -85,22 +85,80 @@ when. `adminAddYardNote` is the only way in; there is no edit and no delete.
 
 ---
 
-## Dictation
+## Voice notes
 
-Isolated behind `toggleDictation` / `stopDictation` / `dictationSupported_` so
-the engine can be swapped without touching anything else on the page.
+The same method as the service tracker's mechanic app
+(`QuestWS/servicetracker`), deliberately, so the two apps behave the same way
+in the same hands:
 
-- **What is there now is the browser's own `SpeechRecognition`, and it is a
-  PLACEHOLDER.** Chris asked for the same method as the service tracker
-  mechanic app; that repo was not attached to the session this was written in,
-  so the method could not be read and copied. When it is, replace the bodies of
-  those three functions and leave every call site alone.
-- **Dictation appends, never replaces.** A half-typed note wiped by a misfired
-  button is how somebody stops using the feature altogether.
-- A browser that will not do it says so and points at the phone keyboard's own
-  mic key, rather than presenting a button that silently does nothing.
+1. the phone records with `MediaRecorder` — live seconds counter, stop,
+   play it back, discard;
+2. the audio uploads **with** the note and is filed in `Voice Notes/` inside
+   the quote's Drive folder;
+3. a **one-off time trigger a few seconds out** hands it to AssemblyAI;
+4. AssemblyAI calls a webhook back and the words appear under the entry.
 
----
+**Not on-device speech recognition.** That is the obvious guess and it is the
+wrong one: it needs a live connection while you talk, it gives up in a noisy
+yard, and it keeps nothing afterwards. **A recording is evidence.** The audio
+is the record and the transcript is the convenience — which is why the audio
+is filed first and kept whatever happens next.
+
+- **Nothing slow runs in the request the yard is waiting on.** Reading the file
+  back out of Drive and pushing it to AssemblyAI is a Drive read and two
+  uploads; the person who tapped Save is standing outside holding a phone. A
+  one-off trigger is the only way an Apps Script request can start work it does
+  not then wait for. `check-yard-app.js` fails if `adminAddYardNote` ever grows
+  a `UrlFetchApp` call.
+- **A recording on its own is a note.** No typed words required — that is the
+  whole point for somebody whose hands are full. Equally, audio that cannot be
+  filed must not lose the words that came with it, so the note saves either way
+  and says what went wrong.
+- **Nothing is scanned.** The sheet is not walked to find pending work — that
+  is the mistake that made the storage view time out. Each note carries an
+  `id`, the queue and the transcript-id → quote mapping live in Script
+  Properties, and a returning transcript goes straight to its row.
+- **Without `ASSEMBLYAI_API_KEY` it degrades, it does not break.** The
+  recording still saves, still plays, and the note says it was not typed up
+  rather than sitting on "transcribing…" for ever. That is the same way the
+  service tracker behaves, and it is why the recorder was worth shipping before
+  the key was installed.
+- **iOS needs `audio/mp4` in the mime list.** A single hardcoded `audio/webm`
+  is how an iPhone gets a record button that does nothing; the list is
+  negotiated and the guard checks it.
+
+### The webhook
+
+`WEB_APP_URL?hook=transcript&k=<secret>` — a new public door on the same
+`/exec` the customer page and the payments use. Three things make that safe
+enough to be worth it:
+
+- **It is decided first in `doGet` and `doPost`**, before anything can fall
+  through to the customer quote-loader — otherwise AssemblyAI would be told
+  *"Enter both your quote number and last name."* and read it as success.
+  Pinned by the guard.
+- **The shared secret is minted on this deployment** (`YARD_HOOK_KEY` in Script
+  Properties, generated once) and a wrong key gets `{ok:0}` and nothing else.
+- **The id rides the POST body, not the query string**, so it stays out of
+  execution logs — the same choice the service tracker made.
+
+`sweepTranscripts` (5am, on the trigger list) is the net under all of it: a
+delivery Google dropped, a deploy mid-transcription, or a queue run that never
+happened. It is named without a trailing underscore on purpose — Apps Script
+treats `_`-suffixed functions as private and they are not dependable as
+trigger handlers.
+
+### Turning it on
+
+One step, and only Chris can do it — Claude has no access to the Google
+account:
+
+1. Apps Script editor → **Project Settings** → **Script properties**
+2. **Add script property** → name `ASSEMBLYAI_API_KEY`, value: the same key
+   the service tracker uses.
+3. Save. Nothing else — the hook secret mints itself on first use.
+
+Until then, voice notes record and play; they just do not get typed up.
 
 ## Photos
 

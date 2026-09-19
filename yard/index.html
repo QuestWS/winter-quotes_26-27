@@ -179,10 +179,8 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
       <h3>Yard log</h3>
       <div id="dLog"></div>
       <textarea class="txt" id="noteText" rows="3" placeholder="What you can see from here…"></textarea>
-      <div class="row2" style="margin-top:8px">
-        <button class="btn ghost" id="micBtn" onclick="toggleDictation()">🎙 Dictate</button>
-        <button class="btn" id="noteBtn" onclick="saveNote()">Save note</button>
-      </div>
+      <div id="recBox" style="margin-top:8px"></div>
+      <button class="btn wide" id="noteBtn" style="margin-top:8px" onclick="saveNote()">Save note</button>
       <div class="msg" id="noteMsg"></div>
     </div>
     <div class="blk">
@@ -549,8 +547,9 @@ function renderSheet(r){
 
   renderLog(r.yardNotes||[]);
   const w=canWrite();
-  $('noteBtn').disabled=!w; $('micBtn').disabled=!w;
+  $('noteBtn').disabled=!w;
   $('noteText').disabled=!w;
+  drawRecorder();
   if(!w) setMsg('noteMsg','Your account cannot add yard notes. Ask an admin for the keys permission.');
   $('openFolder').classList.toggle('hide',!canPhotos());
 }
@@ -559,21 +558,46 @@ function renderLog(list){
   $('dLog').innerHTML=list.map(function(n){
     let when=String(n.ts||'');
     if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
-    return '<div class="logrow">'+esc(n.text||'')+
+    /* Typed words and dictated words are both shown, and labelled, because
+       "did I say that or type it" matters when somebody is reading it back to
+       a customer six weeks later. */
+    let body=n.text?esc(n.text):'';
+    if(n.transcript){
+      body+=(body?'<br>':'')+'<i>“'+esc(n.transcript)+'”</i>';
+    }else if(n.tstatus==='pending'){
+      body+=(body?'<br>':'')+'<span class="w">typing up the recording…</span>';
+    }else if(n.tstatus==='failed'){
+      body+=(body?'<br>':'')+'<span class="w">recording saved, but it was not typed up'+
+        (n.terror?' — '+esc(n.terror):'')+'</span>';
+    }
+    if(!body) body='<span class="w">(recording)</span>';
+    const player=n.audioUrl
+      ? '<div style="margin-top:5px"><a href="'+esc(n.audioUrl)+'" target="_blank" rel="noopener">▶ Play recording</a></div>'
+      : '';
+    return '<div class="logrow">'+body+player+
       '<div class="w">'+esc(n.by||'—')+' · '+esc(when)+'</div></div>';
   }).join('');
 }
 async function saveNote(){
   if(!CUR) return;
   const t=($('noteText').value||'').trim();
-  if(!t){ setMsg('noteMsg','Type or dictate something first.',false); return; }
-  stopDictation();
+  /* A recording on its own is a note. Somebody with cold hands should be able
+     to press record, talk, and save without typing anything. */
+  if(!t&&!RECBLOB){ setMsg('noteMsg','Record something or type something first.',false); return; }
+  if(REC){ setMsg('noteMsg','Stop the recording first.',false); return; }
   const b=$('noteBtn'); b.disabled=true; b.textContent='Saving…';
   setMsg('noteMsg','');
   try{
-    const r=await api('yardNote',[CUR.quoteNo,t]);
+    let audio=null;
+    if(RECBLOB){
+      const b64=await blobB64_(RECBLOB);
+      if(!b64){ setMsg('noteMsg','That recording could not be read. Try again, or type the note.',false); return; }
+      audio={b64:b64,mime:RECBLOB.type||'audio/webm',ext:recExt_(RECBLOB.type)};
+    }
+    const r=await api('yardNote',[CUR.quoteNo,t,audio]);
     if(!r||!r.ok){ setMsg('noteMsg',(r&&r.error)||'Could not save that.',false); return; }
     $('noteText').value='';
+    RECBLOB=null; drawRecorder();
     CUR.yardNotes=(CUR.yardNotes||[]).concat([r.note]);
     renderLog(CUR.yardNotes);
     /* Keep the list badge honest without re-fetching the whole yard. */
@@ -584,64 +608,93 @@ async function saveNote(){
 }
 
 /* ---------------------------------------------------------------------------
-   DICTATION
+   VOICE NOTES
    ---------------------------------------------------------------------------
-   Isolated behind these three functions on purpose: swapping the engine means
-   touching nothing else on the page.
+   The same method as the service tracker's mechanic app (QuestWS/servicetracker),
+   deliberately, so the two apps behave the same way in the same hands: record
+   with MediaRecorder, upload the audio WITH the note, and let the server hand
+   it to AssemblyAI and fill the words in underneath when the webhook returns.
 
-   NOTE FOR THE NEXT SESSION — this is the browser's own SpeechRecognition,
-   which is a PLACEHOLDER. Chris asked for the same method as the service
-   tracker mechanic app; that repo was not attached to the session this was
-   written in, so the method could not be read and copied. When it is, replace
-   the body of these three and leave the call sites alone.
+   NOT on-device speech recognition. That was the obvious guess and it is the
+   wrong one — it needs a live connection while you talk, it gives up in a noisy
+   yard, and it keeps nothing afterwards. A recording is evidence: it is filed
+   on the quote and stays playable whether or not anything ever types it up.
 
-   What it does do: dictation APPENDS to whatever is already in the box and
-   never replaces it, because a half-typed note being wiped by a misfired
-   button is the kind of thing that stops people using the feature at all. */
-let REC=null, RECON=false;
-function dictationSupported_(){
-  return !!(window.SpeechRecognition||window.webkitSpeechRecognition);
+   THE AUDIO IS THE RECORD, the transcript is the convenience. With no API key
+   on the deployment the recording still saves and still plays; only the text
+   is missing, and the note says so.
+--------------------------------------------------------------------------- */
+let REC=null, RECBLOB=null, RECTIMER=null, RECSECS=0;
+function recSupported_(){
+  return typeof MediaRecorder!=='undefined' &&
+         !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
 }
-function toggleDictation(){
-  if(RECON){ stopDictation(); return; }
-  if(!dictationSupported_()){
-    setMsg('noteMsg','This browser will not do dictation — use the keyboard, or the phone keyboard’s own mic key.',false);
+function recMime_(){
+  if(typeof MediaRecorder==='undefined') return undefined;
+  return ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']
+    .find(t=>MediaRecorder.isTypeSupported(t));
+}
+function recExt_(mime){
+  const m=String(mime||'');
+  if(m.indexOf('mp4')>-1) return 'm4a';
+  if(m.indexOf('ogg')>-1) return 'ogg';
+  return 'webm';
+}
+function drawRecorder(){
+  const box=$('recBox');
+  if(!box) return;
+  if(!recSupported_()){
+    box.innerHTML='<div class="msg" style="margin:0">This browser will not record audio — type the note instead.</div>';
     return;
   }
-  const Ctor=window.SpeechRecognition||window.webkitSpeechRecognition;
-  try{ REC=new Ctor(); }
-  catch(e){ setMsg('noteMsg','Could not start dictation: '+e.message,false); return; }
-  REC.lang='en-US'; REC.continuous=true; REC.interimResults=false;
-  const before=$('noteText').value;
-  REC.onresult=function(ev){
-    let add='';
-    for(let i=ev.resultIndex;i<ev.results.length;i++){
-      if(ev.results[i].isFinal) add+=ev.results[i][0].transcript;
-    }
-    if(!add) return;
-    const cur=$('noteText').value;
-    $('noteText').value=(cur?cur.replace(/\s*$/,'')+' ':'')+add.trim();
-  };
-  REC.onerror=function(ev){
-    const why=String(ev&&ev.error||'');
-    setMsg('noteMsg',why==='not-allowed'
-      ? 'Microphone permission was refused. Allow it in the browser settings, or type the note.'
-      : 'Dictation stopped'+(why?' ('+why+')':'')+'. Anything already heard is still in the box.',false);
-    stopDictation();
-  };
-  REC.onend=function(){ if(RECON) stopDictation(); };
-  try{ REC.start(); }
-  catch(e){ setMsg('noteMsg','Could not start dictation: '+e.message,false); return; }
-  RECON=true;
-  $('micBtn').classList.add('rec'); $('micBtn').textContent='■ Stop';
-  setMsg('noteMsg','Listening — it types as you talk. Tap Stop when you are done.'+
-    (before?' Adding to what is already there.':''));
+  if(RECBLOB){
+    /* Hear it back before it goes. A recording of thirty seconds of wind is
+       worth knowing about while you are still standing there. */
+    box.innerHTML='<audio controls style="width:100%" src="'+URL.createObjectURL(RECBLOB)+'"></audio>'+
+      '<button class="btn ghost wide" style="margin-top:6px" onclick="discardRec()">Discard recording</button>';
+    return;
+  }
+  box.innerHTML=REC
+    ? '<button class="btn rec wide" onclick="stopRec()">■ Stop recording ('+RECSECS+'s)</button>'
+    : '<button class="btn ghost wide" onclick="startRec()">🎙 Record a voice note</button>';
 }
+function discardRec(){ RECBLOB=null; drawRecorder(); }
+async function startRec(){
+  if(!recSupported_()){ setMsg('noteMsg','This browser cannot record audio. Type the note instead.',false); return; }
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ setMsg('noteMsg','Microphone access was blocked. Allow it for this site, or type the note instead.',false); return; }
+  const mime=recMime_(), chunks=[];
+  try{ REC=new MediaRecorder(stream,mime?{mimeType:mime}:undefined); }
+  catch(e){ setMsg('noteMsg','Could not start recording: '+e.message,false); return; }
+  REC.ondataavailable=ev=>{ if(ev.data&&ev.data.size) chunks.push(ev.data); };
+  REC.onstop=function(){
+    const blob=new Blob(chunks,{type:(REC&&REC.mimeType)||'audio/webm'});
+    if(blob.size) RECBLOB=blob;
+    stream.getTracks().forEach(t=>t.stop());
+    REC=null; clearInterval(RECTIMER); RECTIMER=null;
+    drawRecorder();
+  };
+  REC.start();
+  RECSECS=0; drawRecorder();
+  RECTIMER=setInterval(()=>{ RECSECS++; drawRecorder(); },1000);
+  setMsg('noteMsg','Recording. Say what you can see; tap Stop when you are done.');
+}
+function stopRec(){ if(REC){ try{ REC.stop(); }catch(e){} } }
+/* Called when the sheet closes, so a recording never keeps the microphone
+   open on a unit nobody is looking at any more. */
 function stopDictation(){
   if(REC){ try{ REC.stop(); }catch(e){} }
-  REC=null; RECON=false;
-  const b=$('micBtn');
-  if(b){ b.classList.remove('rec'); b.textContent='🎙 Dictate'; }
+  if(RECTIMER){ clearInterval(RECTIMER); RECTIMER=null; }
+  REC=null; RECBLOB=null; RECSECS=0;
+}
+function blobB64_(b){
+  return new Promise(res=>{
+    const rd=new FileReader();
+    rd.onload=()=>res(String(rd.result).split(',')[1]);
+    rd.onerror=()=>res(null);
+    rd.readAsDataURL(b);
+  });
 }
 
 /* ---------------------------------------------------------------------------

@@ -1440,8 +1440,17 @@ function renderYardLog(list){
   box.innerHTML=window._yard.map(n=>{
     let when=String(n.ts||'');
     if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
+    /* Typed and dictated words are both shown and labelled — "did I say that
+       or type it" matters reading it back to a customer six weeks later. */
+    let body=n.text?esc(n.text):'';
+    if(n.transcript) body+=(body?'<br>':'')+'<i>“'+esc(n.transcript)+'”</i>';
+    else if(n.tstatus==='pending') body+=(body?'<br>':'')+'<span class="hm">typing up the recording…</span>';
+    else if(n.tstatus==='failed') body+=(body?'<br>':'')+'<span class="hm">recording saved, not typed up'+
+      (n.terror?' — '+esc(n.terror):'')+'</span>';
+    if(!body) body='<span class="hm">(recording)</span>';
+    const play=n.audioUrl?' <a href="'+esc(n.audioUrl)+'" target="_blank" rel="noopener">▶ play</a>':'';
     return '<div class="histrow"><b>'+esc(n.by||'—')+'</b> <span class="hm">· '+esc(when)+
-      '</span><br>'+esc(n.text||'')+'</div>';
+      '</span>'+play+'<br>'+body+'</div>';
   }).join('');
 }
 async function addYardNote(){

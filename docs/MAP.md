@@ -106,7 +106,8 @@ symptom.
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
 | Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |
-| Dictation | — | `toggleDictation`, `stopDictation`, `dictationSupported_` |
+| Voice notes (record) | `voiceFolder_`, `adminAddYardNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
+| Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos | `adminUploadPhoto`, `adminPhotoInfo` | `upload`, `refreshPhotos` |
 | Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
 

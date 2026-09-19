@@ -32,7 +32,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
-    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" \
+    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -147,7 +147,7 @@ echo "== Yard app =="
 if [ -f yard/index.html ]; then
   extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
   sweep yard/index.html "yard" \
-    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "toggleDictation" \
+    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" \
     "uploadPhoto" "yardNote" "manifest.json" "storageView"
   # One big script here too, so the same shadowing trap applies.
   DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \

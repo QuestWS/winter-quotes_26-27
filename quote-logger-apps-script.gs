@@ -804,6 +804,18 @@ const DIM_FIELDS = {
 
 function doPost(e) {
   try {
+    /* The transcript webhook posts, and its body is AssemblyAI's shape rather
+       than ours. Decided before the payload is treated as a quote save, and
+       read from the QUERY for the key but the BODY for the id — the id is the
+       only thing worth keeping out of a URL that lands in an execution log. */
+    const hp = (e && e.parameter) || {};
+    if (String(hp.hook || '') === 'transcript') {
+      let hb = null;
+      try { hb = JSON.parse((e.postData && e.postData.contents) || '{}'); } catch (err) { hb = null; }
+      return ContentService.createTextOutput(JSON.stringify(transcriptWebhook_(hp, hb)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     let d = JSON.parse(e.postData.contents);
 
     // ---- Staff console API (the GitHub admin site posts here) ----
@@ -1047,7 +1059,7 @@ function consoleFns_(p) {
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
-    yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1]); },
+    yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1], a[2]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
@@ -1216,6 +1228,11 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(obj))
       .setMimeType(ContentService.MimeType.JSON);
   };
+  /* AssemblyAI calling back with a transcript. Before everything, for the same
+     reason the console API is: anything that reaches the bottom of doGet gets
+     answered by the customer quote-loader, and a webhook told "Enter both your
+     quote number and last name." would look to AssemblyAI like a success. */
+  if (String(p.hook || '') === 'transcript') return out(transcriptWebhook_(p, null));
   /* The console API over GET — the fallback transport, see consoleServe_.
      First thing in doGet on purpose: it must be decided before any branch that
      could fall through to the customer quote-load, which is what was answering
@@ -2661,7 +2678,17 @@ function adminKeysApply(token, qn, changes) {
    Same privacy bar as the staff note: it is never on the PDF, never in an
    email, and never returned by ?action=load. verify.sh checks all of those. */
 const YARD_NOTE_MAX_ = 1500;
-function adminAddYardNote(token, qn, text) {
+/* The recording lives beside the unit's photos, in its own subfolder, so
+   somebody opening the quote's folder in Drive finds the voice notes filed
+   rather than mixed in with the condition shots. */
+function voiceFolder_(ctx) {
+  const ff = ensurePhotoFolders_(ctx);
+  const it = ff.folder.getFoldersByName('Voice Notes');
+  const f = it.hasNext() ? it.next() : ff.folder.createFolder('Voice Notes');
+  return f;
+}
+
+function adminAddYardNote(token, qn, text, audio) {
   /* Yard work, so the yard permission — the crew who see the boat are the crew
      who write this. Same bar as keys and slip, not the money bar. */
   const who = requireAuth_(token, 'keys');
@@ -2669,20 +2696,261 @@ function adminAddYardNote(token, qn, text) {
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   const t = String(text === null || text === undefined ? '' : text).replace(/\s+/g, ' ').trim();
-  if (!t) return { ok: 0, error: 'Nothing to save — the note is empty.' };
+  const hasAudio = !!(audio && audio.b64);
+  /* A recording on its own is a note. Requiring words as well would make the
+     record button useless to the person whose hands are full, which is the
+     person it is for. */
+  if (!t && !hasAudio) return { ok: 0, error: 'Nothing to save — say something or type something.' };
   if (t.length > YARD_NOTE_MAX_) {
     return { ok: 0, error: 'That note is ' + t.length + ' characters; keep it under ' +
              YARD_NOTE_MAX_ + '. Split it into two if you need to.' };
   }
   d.yardNotes = d.yardNotes || [];
-  const entry = { ts: new Date().toISOString(), by: who.name, text: t };
+  /* An id per note, so a transcript coming back hours later lands on the right
+     one without reading the sheet to find it. */
+  const entry = { id: Utilities.getUuid(), ts: new Date().toISOString(), by: who.name, text: t };
+  if (hasAudio) {
+    try {
+      const ext = String(audio.ext || 'webm').replace(/[^a-z0-9]/gi, '').substr(0, 5) || 'webm';
+      const blob = Utilities.newBlob(Utilities.base64Decode(audio.b64),
+        String(audio.mime || 'audio/webm'), 'voice-' + Date.now() + '.' + ext);
+      const file = voiceFolder_(ctx).createFile(blob);
+      entry.audioUrl = file.getUrl();
+      entry.audioId = file.getId();
+      /* Pending BEFORE the submit is queued: if the trigger never runs, the
+         sweep still finds it, and the note says "transcribing" rather than
+         looking like a silent recording nobody asked to type up. */
+      entry.tstatus = 'pending';
+    } catch (err) {
+      /* The words matter more than the recording. Losing the audio must not
+         lose the note that came with it. */
+      entry.tstatus = 'failed';
+      entry.terror = 'The recording could not be saved: ' + String((err && err.message) || err).substr(0, 200);
+    }
+  }
   d.yardNotes.push(entry);
   /* Payload only. A note is an observation, not a change to the quote: no
      status, no re-price, no new PDF — the same rule the staff note follows. */
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
-  auditLog_(who.name, 'Yard note added to ' + d.quoteNo + ': "' +
-    (t.length > 80 ? t.slice(0, 80) + '\u2026' : t) + '"');
-  return { ok: 1, msg: 'Note saved.', note: entry, count: d.yardNotes.length };
+  /* Queued only after the row is written, so a transcript can never come back
+     for a note the sheet has not heard of yet. */
+  if (entry.audioId && entry.tstatus === 'pending') {
+    queueTranscript_(d.quoteNo, entry.id, entry.audioId);
+  }
+  auditLog_(who.name, 'Yard note added to ' + d.quoteNo +
+    (entry.audioId ? ' (voice)' : '') + ': "' +
+    (t ? (t.length > 80 ? t.slice(0, 80) + '\u2026' : t) : '[recording]') + '"');
+  return { ok: 1, msg: entry.audioId
+      ? (t ? 'Note and recording saved.' : 'Recording saved — typing it up now.')
+      : 'Note saved.',
+    note: entry, count: d.yardNotes.length };
+}
+
+
+/* =========================== VOICE NOTES ===============================
+   A yard note can be spoken instead of typed. Same method as the service
+   tracker's mechanic app (QuestWS/servicetracker), deliberately, so the two
+   apps behave the same way in the same hands:
+
+     1. the phone records with MediaRecorder and uploads the audio WITH the note;
+     2. the audio is filed in the quote's Drive folder and kept, always;
+     3. a one-off trigger a few seconds out hands it to AssemblyAI;
+     4. AssemblyAI calls a webhook back and the words are filled in underneath.
+
+   WHY A TRIGGER AND NOT INLINE. Reading the file back out of Drive and pushing
+   it to AssemblyAI is slow, and the person who just tapped Save is standing in
+   the yard holding a phone. A one-off time trigger is the only way an Apps
+   Script request can start work it does not then wait for.
+
+   WHAT HAPPENS WITHOUT A KEY. The audio is still recorded, still filed, still
+   playable. Only the typed-up text is missing, and the note says so instead of
+   sitting on "transcribing..." for ever. That is the same way the service
+   tracker degrades, and it is why the recorder is worth having before the key
+   is installed.
+
+   NO SCANNING. The sheet is not walked to find pending work — that is the
+   mistake that made the storage view time out. A note carries an id, the queue
+   and the transcript-id mapping live in Script Properties, and the webhook
+   goes straight to the row it names.
+========================================================================= */
+const TRQ_PROP_ = 'YARD_TRANSCRIPT_QUEUE';
+const TR_MAP_ = 'YTR_';                  // YTR_<assemblyId> -> {qn, noteId}
+const TR_HOOK_PROP_ = 'YARD_HOOK_KEY';
+
+function assemblyKey_() {
+  return String(props_().getProperty('ASSEMBLYAI_API_KEY') || '').trim();
+}
+/* The shared secret on the webhook URL. Minted once, on this deployment, and
+   never printed anywhere a customer could see. It is the only thing standing
+   between the public /exec and anybody who can guess a transcript id. */
+function transcriptHookKey_() {
+  const p = props_();
+  let k = p.getProperty(TR_HOOK_PROP_);
+  if (!k) { k = Utilities.getUuid().replace(/-/g, ''); p.setProperty(TR_HOOK_PROP_, k); }
+  return k;
+}
+function transcriptHookUrl_() {
+  /* Built from the WEB_APP_URL constant, never from the script service's own
+     idea of its URL: that returns the /dev address from some contexts, and a
+     /dev webhook only ever answers the owner — AssemblyAI would get a Google
+     error page and the note would sit pending for ever. (CLAUDE.md §7, and
+     verify.sh greps for the call itself, which is why it is not written here.) */
+  return WEB_APP_URL + '?hook=transcript&k=' + encodeURIComponent(transcriptHookKey_());
+}
+
+function props_() { return PropertiesService.getScriptProperties(); }
+
+/* ---- the queue -------------------------------------------------------- */
+function queueTranscript_(qn, noteId, fileId) {
+  const p = props_();
+  let q = [];
+  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || '[]'); } catch (e) { q = []; }
+  q.push({ qn: qn, noteId: noteId, fileId: fileId });
+  /* A runaway queue must not become a payload nothing can read back. */
+  if (q.length > 100) q = q.slice(-100);
+  p.setProperty(TRQ_PROP_, JSON.stringify(q));
+  /* One trigger at a time: two people recording at once want one run that
+     picks up both, not two runs against the trigger quota. */
+  try {
+    const already = ScriptApp.getProjectTriggers().some(function (t) {
+      return t.getHandlerFunction() === 'processTranscriptQueue';
+    });
+    if (!already) ScriptApp.newTrigger('processTranscriptQueue').timeBased().after(5000).create();
+  } catch (e) {
+    /* Out of triggers, or this deployment cannot install one. The note is
+       already marked pending and the queue is on disk, so sweepTranscripts
+       still gets there — late words beat a save that hangs. */
+  }
+}
+
+function processTranscriptQueue() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'processTranscriptQueue') {
+      try { ScriptApp.deleteTrigger(t); } catch (e) {}
+    }
+  });
+  submitQueuedTranscripts_();
+}
+
+function submitQueuedTranscripts_() {
+  const p = props_();
+  let q = [];
+  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || '[]'); } catch (e) { q = []; }
+  if (!q.length) return;
+  /* Taken off the queue before the work, so a run that dies on one recording
+     does not replay it for ever. The note keeps its pending mark either way,
+     and the sweep is what rescues a genuinely lost one. */
+  p.setProperty(TRQ_PROP_, '[]');
+  q.forEach(function (job) {
+    try { submitTranscript_(job.qn, job.noteId, job.fileId); }
+    catch (err) { markTranscript_(job.qn, job.noteId, 'failed', '', err); }
+  });
+}
+
+function submitTranscript_(qn, noteId, fileId) {
+  const key = assemblyKey_();
+  if (!key) {
+    markTranscript_(qn, noteId, 'failed', '',
+      'No ASSEMBLYAI_API_KEY on this deployment — the recording is saved, but nothing typed it up.');
+    return;
+  }
+  const bytes = DriveApp.getFileById(fileId).getBlob().getBytes();
+  const up = UrlFetchApp.fetch('https://api.assemblyai.com/v2/upload', {
+    method: 'post', contentType: 'application/octet-stream',
+    headers: { authorization: key }, payload: bytes, muteHttpExceptions: true
+  });
+  if (up.getResponseCode() >= 300) throw new Error('upload failed (' + up.getResponseCode() + ')');
+  const uploadUrl = JSON.parse(up.getContentText()).upload_url;
+
+  const body = { audio_url: uploadUrl, punctuate: true, format_text: true, language_code: 'en_us',
+                 webhook_url: transcriptHookUrl_() };
+  const made = UrlFetchApp.fetch('https://api.assemblyai.com/v2/transcript', {
+    method: 'post', contentType: 'application/json',
+    headers: { authorization: key }, payload: JSON.stringify(body), muteHttpExceptions: true
+  });
+  if (made.getResponseCode() >= 300) throw new Error('request failed (' + made.getResponseCode() + ')');
+  const id = String(JSON.parse(made.getContentText()).id || '');
+  if (!id) throw new Error('AssemblyAI returned no transcript id');
+  /* The mapping is how the webhook finds one row without reading the sheet. */
+  props_().setProperty(TR_MAP_ + id, JSON.stringify({ qn: qn, noteId: noteId }));
+  markTranscript_(qn, noteId, 'pending', id, '');
+}
+
+/* ---- writing the answer back onto one note ---------------------------- */
+function markTranscript_(qn, noteId, status, tid, err) {
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return;
+  const d = ctx.d;
+  const note = (d.yardNotes || []).filter(function (n) { return n.id === noteId; })[0];
+  if (!note) return;
+  note.tstatus = status;
+  if (tid) note.tid = tid;
+  if (err) note.terror = String((err && err.message) || err).substr(0, 300);
+  else delete note.terror;
+  /* Payload only. A transcript is not a change to the quote: no status, no
+     re-price, no new PDF — the same rule the note itself follows. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+}
+
+function applyTranscript_(transcriptId) {
+  const p = props_();
+  const raw = p.getProperty(TR_MAP_ + transcriptId);
+  if (!raw) return;                       // not ours, or already applied
+  let map;
+  try { map = JSON.parse(raw); } catch (e) { p.deleteProperty(TR_MAP_ + transcriptId); return; }
+  const key = assemblyKey_();
+  if (!key) return;
+  const res = UrlFetchApp.fetch('https://api.assemblyai.com/v2/transcript/' + transcriptId, {
+    method: 'get', headers: { authorization: key }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() >= 300) return;   // leave it pending; the sweep retries
+  const body = JSON.parse(res.getContentText());
+  if (body.status === 'completed') {
+    const ctx = findQuoteCtx_(map.qn);
+    if (ctx) {
+      const note = (ctx.d.yardNotes || []).filter(function (n) { return n.id === map.noteId; })[0];
+      if (note) {
+        note.transcript = String(body.text || '').substr(0, YARD_NOTE_MAX_);
+        note.tstatus = 'done';
+        delete note.terror;
+        ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(ctx.d));
+      }
+    }
+    p.deleteProperty(TR_MAP_ + transcriptId);
+  } else if (body.status === 'error') {
+    /* A transcript that errored still calls back. Recording the failure is
+       what stops a note sitting on "transcribing..." for ever. */
+    markTranscript_(map.qn, map.noteId, 'failed', transcriptId, body.error || 'Transcription failed');
+    p.deleteProperty(TR_MAP_ + transcriptId);
+  }
+  /* Anything else is still queued or processing — leave it for the sweep. */
+}
+
+/* ---- the public door -------------------------------------------------- */
+function transcriptWebhook_(params, body) {
+  /* Wrong key, or no key: say nothing useful. This is on the same /exec the
+     customer page uses, so it answers a guess exactly as it answers a probe. */
+  if (String(params.k || '') !== transcriptHookKey_()) return { ok: 0 };
+  const id = String((body && body.transcript_id) || params.transcript_id || '');
+  if (id) { try { applyTranscript_(id); } catch (e) {} }
+  return { ok: 1 };
+}
+
+/* Safety net for a webhook that never arrived — a deploy mid-transcription, a
+   delivery Google dropped, or a queue run that never happened.
+   PUBLIC NAME ON PURPOSE: a trailing underscore marks a function private in
+   Apps Script, and a private function is not dependable as a trigger handler.
+   Every other trigger entry point here (dailyReminderCheck, dailyBackup,
+   processTranscriptQueue) is named the same way for the same reason. */
+function sweepTranscripts() {
+  try { submitQueuedTranscripts_(); } catch (e) {}
+  if (!assemblyKey_()) return;
+  const p = props_();
+  const all = p.getProperties();
+  Object.keys(all).forEach(function (k) {
+    if (k.indexOf(TR_MAP_) !== 0) return;
+    try { applyTranscript_(k.substr(TR_MAP_.length)); } catch (e) {}
+  });
 }
 
 function adminSetStaffNote(token, qn, note) {
@@ -2856,7 +3124,10 @@ function adminLookup(token, qn) {
        privacy bar as the staff note: it is written standing next to the boat
        and its value is that nobody is composing it for a customer to read. */
     yardNotes: (d.yardNotes || []).map(function (n) {
-      return { ts: String(n.ts || ''), by: String(n.by || ''), text: String(n.text || '') };
+      return { id: String(n.id || ''), ts: String(n.ts || ''), by: String(n.by || ''),
+               text: String(n.text || ''), audioUrl: String(n.audioUrl || ''),
+               transcript: String(n.transcript || ''), tstatus: String(n.tstatus || ''),
+               terror: String(n.terror || '') };
     }),
     /* Keys and slip, editable on the console. Read through the effective state
        so a staff correction shows rather than the customer's original, and
@@ -5968,6 +6239,10 @@ function setupAllTriggers() {
     dailyReminderCheck: { hour: 9 },
     dailyBackup:        { hour: 18 },
     balanceReportCheck: { hour: 7 },
+    /* The net under the transcription webhook: a delivery Google dropped, or a
+       queue run that never happened, would otherwise leave a note reading
+       "transcribing" for ever. */
+    sweepTranscripts:   { hour: 5 },
     // Lunch break: people have a moment to actually deal with it.
     leadFollowUpCheck:  { hour: 12, minute: 15 }
   };

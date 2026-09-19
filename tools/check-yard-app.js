@@ -196,6 +196,86 @@ Y.ev('ROWS = ' + JSON.stringify([
   else fail('the yard app\'s API URL does not match the backend\'s: ' + mine + ' vs ' + theirs);
 }
 
+/* =====================================================================
+   5. VOICE NOTES — the recording is the record.
+   ---------------------------------------------------------------------
+   The method is the service tracker's (QuestWS/servicetracker): record with
+   MediaRecorder, upload the audio with the note, transcribe server-side, fill
+   the words in when the webhook returns. The properties that matter are the
+   ones that only show up when something goes wrong.
+   ===================================================================== */
+{
+  /* On-device speech recognition was the obvious guess and is the wrong
+     method — it keeps nothing, so there is no evidence afterwards. */
+  if (/webkitSpeechRecognition|SpeechRecognition/.test(SRC))
+    fail('the yard app still uses browser speech recognition — the service tracker records ' +
+         'audio and transcribes server-side, and a recording is evidence where a live ' +
+         'transcript is not');
+  else ok('voice notes are recorded, not live-transcribed on the device');
+  if (/MediaRecorder/.test(SRC)) ok('the app records with MediaRecorder, as the service tracker does');
+  else fail('the app does not record audio at all');
+  /* Safari will not take audio/webm. A single hardcoded mime is how iOS gets
+     a recorder button that does nothing. */
+  if (/audio\/mp4/.test(SRC)) ok('it negotiates a mime type that includes an iOS-friendly one');
+  else fail('no audio/mp4 in the mime list — the recorder would fail on iPhones');
+}
+{
+  const g = GAS;
+  /* Slow work must never run inside the request the yard is waiting on. */
+  const save = (g.match(/function adminAddYardNote\b[\s\S]*?\n}/m) || [''])[0];
+  if (/UrlFetchApp/.test(save))
+    fail('adminAddYardNote talks to AssemblyAI inline — that is a Drive read and two uploads ' +
+         'with somebody standing in the yard waiting for the button');
+  else ok('the save path does not transcribe inline; it queues');
+  if (/queueTranscript_\(/.test(save)) ok('it queues the recording for the trigger to pick up');
+  else fail('nothing queues the recording — it would never be typed up');
+  /* The note must survive the audio failing, and vice versa. */
+  if (/tstatus = 'failed'/.test(save)) ok('a recording that cannot be filed still saves the note');
+  else fail('a Drive failure on the audio would lose the note that came with it');
+
+  /* The webhook is a public door on the same /exec that takes payments. */
+  const hook = (g.match(/function transcriptWebhook_\b[\s\S]*?\n}/m) || [''])[0];
+  if (!hook) fail('there is no transcriptWebhook_');
+  else if (/transcriptHookKey_\(\)/.test(hook) && /return \{ ok: 0 \}/.test(hook))
+    ok('the webhook checks its shared secret and says nothing useful without it');
+  else fail('the transcript webhook does not check a shared secret — anyone who guessed a ' +
+            'transcript id could write onto a quote');
+  /* And it must be decided before the customer quote-loader can answer it. */
+  /* Slice to the next top-level function, not the first `\n}` — doGet contains
+     nested closures and a lazy match stops inside one. Then strip comments:
+     this is a question about the order of the CODE, and the prose around both
+     branches quotes the customer loader's message. */
+  const gi = g.indexOf('function doGet');
+  const gj = g.indexOf('\nfunction ', gi + 10);
+  const get = g.slice(gi, gj === -1 ? undefined : gj).replace(/\/\*[\s\S]*?\*\//g, '');
+  const iHook = get.indexOf("p.hook || '') === 'transcript'");
+  const iQuote = get.indexOf('quote number and last name');
+  if (iHook > -1 && (iQuote === -1 || iHook < iQuote))
+    ok('doGet answers the webhook before anything can fall through to the customer loader');
+  else fail('the transcript webhook is reachable only after the customer quote-loader — ' +
+            'AssemblyAI would be told to enter a quote number and last name');
+
+  /* Nothing may be left sitting on "transcribing..." for ever. */
+  if (/function sweepTranscripts\b/.test(g)) ok('a sweep exists for webhooks that never arrive');
+  else fail('no sweep — a dropped webhook would leave a note pending for ever');
+  if (/sweepTranscripts:\s*\{/.test(g)) ok('and it is on the trigger list');
+  else fail('sweepTranscripts is never scheduled');
+  if (/function sweepTranscripts_\b/.test(g))
+    fail('the sweep is named with a trailing underscore — Apps Script treats that as private ' +
+         'and it is not dependable as a trigger handler');
+  else ok('the sweep has a public name, so it can actually be a trigger handler');
+  /* Without a key the feature degrades; it must not break. */
+  const submit = (g.match(/function submitTranscript_\b[\s\S]*?\n}/m) || [''])[0];
+  if (/if \(!key\)/.test(submit)) ok('no API key means the audio is kept and the note says so');
+  else fail('submitTranscript_ does not handle a missing ASSEMBLYAI_API_KEY');
+  /* The lesson the storage view already taught. */
+  const apply = (g.match(/function applyTranscript_\b[\s\S]*?\n}/m) || [''])[0];
+  if (/getSheets\(\)|forEach\(function \(sh\)/.test(apply))
+    fail('applyTranscript_ walks the spreadsheet to find its note — that is what made the ' +
+         'storage view time out; the transcript id maps straight to a quote');
+  else ok('a returning transcript goes straight to its note without scanning the sheet');
+}
+
 if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the yard app'); process.exit(1); }
 console.log('yard app: renders the server\'s verdict rather than forming one, lists slip boats for ' +
             'pulling and everything for placing, and degrades safely on a bad connection');

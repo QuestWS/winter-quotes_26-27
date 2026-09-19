@@ -691,6 +691,31 @@ else
   echo "  (no deploy workflow — Apps Script is deployed by hand)"
 fi
 
+echo "== Secrets ==" 
+# NOTHING THAT AUTHENTICATES US BELONGS IN THIS REPO. The AssemblyAI key lives
+# in Script Properties, where only Chris can put it; the webhook secret mints
+# itself on the deployment. Both are 32 lowercase hex characters, which is a
+# cheap and specific thing to scan for.
+#
+# Why a guard and not a promise: the easy way to "just get transcription
+# working" is to paste the key into a constant in the .gs, and it would work,
+# and it would be in the repo for ever. Source files only — the built PDFs in
+# docs/pdf/ carry 32-hex internal ids of their own.
+SECRETS=$(git grep -nIE '\b[0-9a-f]{32}\b' -- '*.gs' '*.html' '*.js' '*.json' '*.md' '*.sh' '*.yml' '*.css' 2>/dev/null || true)
+if [ -n "$SECRETS" ]; then
+  echo "  FAIL trap: something that looks like an API key or secret is in a source file:"
+  echo "$SECRETS" | sed 's/^/         /'
+  echo "         Keys belong in Script Properties (docs/ref/YARD-APP.md), never here."
+  FAIL=1
+else echo "  OK   trap: no API keys or secrets in source files"; fi
+# The positive half: the key must be READ from Script Properties, which is the
+# only place it can live without being in the repo.
+if grep -q "getProperty('ASSEMBLYAI_API_KEY')" quote-logger-apps-script.gs; then
+  echo "  OK   trap: the AssemblyAI key is read from Script Properties, not the repo"
+else
+  echo "  FAIL trap: nothing reads ASSEMBLYAI_API_KEY from Script Properties"; FAIL=1
+fi
+
 echo "== URL sync =="
 U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null | sort -u | head -1)
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)

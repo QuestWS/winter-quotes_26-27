@@ -434,14 +434,32 @@ Y.ev('ROWS = ' + JSON.stringify([
   /* The console used to drop anything not an image on the floor, silently. */
   if (/startsWith\('video\/'\)/.test(adminHtml)) ok('the console no longer discards video before uploading it');
   else fail('the console filters uploads to image/* — video would vanish with no message');
-  /* THE SKIP HAS TO SURVIVE THE SUMMARY. The first version warned about the
-     oversized clip and then overwrote that warning with "2 uploaded" a few
-     seconds later — so the crew walked away believing a video was saved that
-     never left the phone. Silent partial success is the worst outcome here. */
-  if (/bigTxt\?' '\+bigTxt/.test(SRC) || /\+\s*\(bigTxt/.test(SRC))
-    ok('a skipped oversized file is still named in the final message');
-  else fail('the oversized-file warning is overwritten by the upload summary — the crew would ' +
-            'believe a clip saved when it never left the phone');
+  /* The skip surviving the summary is asserted by RUNNING an upload — see
+     uploadChecks() at the foot of this file. An earlier version of this check
+     pinned a variable name, which went stale the moment the uploader was
+     rewritten while the property it cared about still held. */
+  /* THE SESSION URI IS A CAPABILITY. The OAuth token is not, and must never
+     leave the script — handing it to a browser would be handing over the whole
+     Drive, not one file in one folder. */
+  const sess = (GAS.match(/function adminUploadSession\b[\s\S]*?\n}/m) || [''])[0];
+  if (!sess) fail('there is no adminUploadSession on the server');
+  else {
+    if (/return[^;]*getOAuthToken/.test(sess))
+      fail('adminUploadSession returns the OAuth token to the browser — that is the whole Drive');
+    else ok('the OAuth token never leaves the server; only the session URI does');
+    if (/requireAuth_\(token, 'photos'\)/.test(sess)) ok('minting a session needs the photos permission');
+    else fail('adminUploadSession is not permission-gated');
+    if (/parents: \[target\.getId\(\)\]/.test(sess)) ok('the session is pinned to this quote\'s folder');
+    else fail('the session does not pin a destination folder — it could write anywhere');
+  }
+  /* And it is a write, so it must not be reachable by a link. */
+  {
+    const block = (GAS.match(/const CONSOLE_GET_FNS_ = \{[\s\S]*?\n\};/) || [''])[0]
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    if (/uploadSession/.test(block))
+      fail('uploadSession is GET-able — a link that mints an upload slot can be followed twice');
+    else ok('uploadSession is POST-only, like every other write');
+  }
   /* Three large POSTs racing each other on a phone connection is not a plan. */
   if (/CONCURRENCY=files\.some/.test(adminHtml)) ok('the console uploads video one at a time');
   else fail('the console uploads video with the same concurrency as stills');
@@ -558,6 +576,113 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('a returning transcript goes straight to its note without scanning the sheet');
 }
 
-if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the yard app'); process.exit(1); }
-console.log('yard app: renders the server\'s verdict rather than forming one, lists slip boats for ' +
-            'pulling and everything for placing, and degrades safely on a bad connection');
+/* ---------------------------------------------------------------------------
+   THE UPLOADER, RUN FOR REAL
+   ---------------------------------------------------------------------------
+   Direct-to-Drive first, base64 relay second. The cases worth asserting are
+   the refusals, because that is where a file quietly fails to arrive and
+   nobody is told which one.
+--------------------------------------------------------------------------- */
+const MB_ = 1048576;
+function uploadHarness(opts) {
+  const noop = () => {};
+  const store = {}, els = {}, sent = [];
+  const mk = (id) => ({ id, textContent: '', className: '',
+    get innerHTML() { return store[id] || ''; }, set innerHTML(v) { store[id] = v; },
+    value: '', disabled: false,
+    classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
+    addEventListener: noop });
+  function FR() { this.readAsDataURL = (f) => { this.result = 'data:' + f.type + ';base64,AAAA';
+    setTimeout(() => this.onload(), 0); }; }
+  function XHR() {
+    this.upload = {}; this.open = noop; this.setRequestHeader = noop;
+    this.send = () => { sent.push('DIRECT'); setTimeout(() => {
+      /* A CORS refusal reaches the page as status 0 with no detail. That is
+         exactly the shape the fallback has to recognise. */
+      if (opts.directBlocked) { this.status = 0; this.onerror(); }
+      else { this.status = 200; this.onload(); }
+    }, 0); };
+  }
+  const ctx = {
+    console: { log: noop, error: noop }, XMLHttpRequest: XHR, FileReader: FR,
+    localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
+    document: { getElementById: (id) => (els[id] = els[id] || mk(id)),
+                addEventListener: noop, createElement: () => mk('x'), body: mk('b') },
+    setTimeout: (fn) => { fn(); return 0; }, clearTimeout: noop, scrollTo: noop,
+    fetch: async (u, o) => {
+      const b = JSON.parse(o.body); sent.push(b.fn);
+      if (b.fn === 'uploadSession') {
+        return { ok: true, status: 200, json: async () => (opts.noSession
+          ? { _api: 'console', ok: 0, error: 'no session' }
+          : { _api: 'console', ok: 1, url: 'https://www.googleapis.com/upload/x?upload_id=A' }) };
+      }
+      return { ok: true, status: 200,
+               json: async () => ({ _api: 'console', ok: 1, counts: { winter: 1, spring: 0 } }) };
+    }
+  };
+  ctx.window = ctx; ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(SRC, ctx, { filename: 'yard/index.html' });
+  vm.runInContext('ME={name:"Rex",admin:true,perms:{photos:1}};CUR={quoteNo:"QW-26-1255"}', ctx);
+  return { ctx, els, sent };
+}
+
+/* upload() returns the moment the files are queued — that is the whole point
+   of it, so the crew is not held up. The test therefore has to wait for the
+   background pump, not for upload(). */
+async function drain(h) {
+  for (let i = 0; i < 500; i++) {
+    if (!vm.runInContext('UPRUN || UPQ.length', h.ctx)) return true;
+    await new Promise((r) => setImmediate(r));
+  }
+  fail('the upload queue never drained — the pump is stuck');
+  return false;
+}
+
+async function uploadChecks() {
+  /* 1. A big clip goes straight to Drive and never touches the relay. */
+  {
+    const h = uploadHarness({});
+    await h.ctx.upload([{ name: 'clip.mov', size: 80 * MB_, type: 'video/quicktime' }]);
+    await drain(h);
+    if (h.sent.indexOf('DIRECT') > -1 && h.sent.indexOf('uploadPhoto') < 0)
+      ok('an 80 MB clip goes straight to Drive and never touches the base64 relay');
+    else fail('the direct path was not used for a large file: ' + JSON.stringify(h.sent));
+  }
+  /* 2. Direct refused + a small file: falls back, and the crew never has to care. */
+  {
+    const h = uploadHarness({ directBlocked: true });
+    await h.ctx.upload([{ name: 'photo.jpg', size: 3 * MB_, type: 'image/jpeg' }]);
+    await drain(h);
+    if (h.sent.indexOf('uploadPhoto') > -1) ok('a refused direct upload falls back to the relay');
+    else fail('nothing fell back — the file would simply not arrive: ' + JSON.stringify(h.sent));
+  }
+  /* 3. Direct refused + a big file: cannot fall back, and MUST name the file. */
+  {
+    const h = uploadHarness({ directBlocked: true });
+    await h.ctx.upload([{ name: 'big4k.mov', size: 96 * MB_, type: 'video/quicktime' }]);
+    await drain(h);
+    const msg = h.els.upMsg ? h.els.upMsg.textContent : '';
+    if (h.sent.indexOf('uploadPhoto') > -1)
+      fail('a 96 MB file was handed to the relay, which caps at 25 MB');
+    else if (msg.indexOf('big4k.mov') > -1)
+      ok('a file that could go neither way is named in the final message');
+    else fail('a file failed and the crew is not told which: ' + JSON.stringify(msg));
+  }
+  /* 4. No session at all (older backend): still falls back rather than dying. */
+  {
+    const h = uploadHarness({ noSession: true });
+    await h.ctx.upload([{ name: 'photo.jpg', size: 2 * MB_, type: 'image/jpeg' }]);
+    await drain(h);
+    if (h.sent.indexOf('uploadPhoto') > -1)
+      ok('a backend with no uploadSession endpoint still takes photos via the relay');
+    else fail('an older backend would break uploads entirely: ' + JSON.stringify(h.sent));
+  }
+}
+
+uploadChecks().then(function () {
+  if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the yard app'); process.exit(1); }
+  console.log('yard app: renders the server\'s verdict rather than forming one, lists slip boats for ' +
+              'pulling and everything for placing, uploads straight to Drive with a relay behind it, ' +
+              'and degrades safely on a bad connection');
+});

@@ -1864,13 +1864,43 @@ async function queueFiles(fileList){
      other through a connection that is often a phone's. One at a time the
      moment any video is in the batch. */
   const CONCURRENCY=files.some(f=>f.type.startsWith('video/'))?1:3;let idx=0;
+  /* Straight to Drive when the browser will allow it: no 25 MB ceiling, no
+     base64 inflation, resumable. Falls back to the relay below on any refusal
+     — including a CORS preflight, which surfaces as a bare status-0 error. */
+  function putDirect(url,file,onPct){
+    return new Promise(res=>{
+      let x; try{x=new XMLHttpRequest();}catch(e){return res({ok:0,reason:'no-xhr'});}
+      x.open('PUT',url,true);
+      x.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+      if(x.upload)x.upload.onprogress=e=>{if(e.lengthComputable&&onPct)onPct(Math.round(100*e.loaded/e.total));};
+      x.onerror=()=>res({ok:0,reason:'blocked'});
+      x.onabort=()=>res({ok:0,reason:'blocked'});
+      x.onload=()=>res(x.status>=200&&x.status<300?{ok:1}:{ok:0,reason:'http-'+x.status});
+      try{x.send(file);}catch(e){res({ok:0,reason:'blocked'});}
+    });
+  }
+  async function sendOne(f,setStatus){
+    try{
+      const sess=await api('uploadSession',[QN,SEASON,f.name,f.type||'',f.size]);
+      if(sess&&sess.ok&&sess.url){
+        const r=await putDirect(sess.url,f,p=>setStatus(p+'%'));
+        if(r.ok) return {ok:1};
+        if(String(r.reason||'').indexOf('http-')===0) return {ok:0,error:'Drive refused it ('+r.reason+')'};
+      }
+    }catch(e){}
+    if(f.size>MAX_UPLOAD_MB*1048576){
+      return {ok:0,error:'too big for the backup route ('+MAX_UPLOAD_MB+' MB cap)'};
+    }
+    const b64=await fileToB64(f);
+    return await api('uploadPhoto',[QN,SEASON,f.name,b64,f.type]);
+  }
   async function worker(){
     while(idx<files.length){
       const i=idx++;rows[i].textContent='uploading…';
-      try{const b64=await fileToB64(files[i]);
-        const r=await api('uploadPhoto',[QN,SEASON,files[i].name,b64,files[i].type]);
-        if(r.ok){rows[i].textContent='done';}
-        else{rows[i].textContent='failed — '+r.error;failed++;}
+      try{
+        const r=await sendOne(files[i],t=>{rows[i].textContent=t;});
+        if(r&&r.ok){rows[i].textContent='done';}
+        else{rows[i].textContent='failed — '+((r&&r.error)||'unknown');failed++;}
       }catch(e){rows[i].textContent='failed — '+e.message;failed++;}
       done++;setbar();
     }

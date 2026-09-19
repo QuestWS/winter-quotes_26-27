@@ -147,6 +147,11 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
 .logrow .w{font-size:12px;color:var(--muted);font-family:var(--mono)}
 .thumbs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
 .hide{display:none!important}
+.upchip{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 64px);
+  background:var(--navy);color:#fff;border-radius:10px;padding:10px 14px;font-size:13.5px;
+  z-index:70;box-shadow:0 6px 18px rgba(20,41,62,.35);display:flex;align-items:center;gap:10px}
+.upchip .bar{flex:1;height:6px;background:#2C4E73;border-radius:99px;overflow:hidden}
+.upchip .bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .2s}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 18px);
   background:var(--navy-deep);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;
   opacity:0;pointer-events:none;transition:opacity .18s;z-index:80;max-width:90vw;text-align:center}
@@ -239,6 +244,10 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
   </div>
 </div>
 
+<!-- Uploads belong to the QUOTE, not to whatever screen is open, so their
+     progress lives out here. Close the unit, go back to the list, keep
+     ticking boats off — the clip keeps going. -->
+<div class="upchip hide" id="upChip"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -957,42 +966,106 @@ function b64_(f){
    the whole difference. */
 const MAX_UPLOAD_MB=25;
 function tooBig_(f){ return f && f.size > MAX_UPLOAD_MB*1048576; }
+/* ---------------------------------------------------------------------------
+   UPLOADS DO NOT BLOCK THE APP
+   ---------------------------------------------------------------------------
+   Chris: "I dont want to slow the app down with upload times." So an upload is
+   queued against the QUOTE and pumped in the background. The sheet can close,
+   the list can be scrolled, boats can be ticked off — a 60MB clip keeps going
+   in a chip at the bottom of the screen. Only closing the app stops it.
+
+   Each file is tried DIRECT first (the phone PUTs straight to Drive, no size
+   ceiling, resumable, no base64) and falls back to the old base64-through-
+   Apps-Script path if that is refused for any reason — including a CORS
+   preflight we could not test without a staff PIN. The fallback keeps the
+   25 MB ceiling, because that path still has it, and says so plainly rather
+   than failing quietly.
+--------------------------------------------------------------------------- */
+let UPQ=[], UPRUN=false, UPDONE=0, UPFAIL=0, UPSKIP=[];
+function upChip_(txt,pct){
+  const c=$('upChip');
+  if(!c) return;
+  if(txt===null){ c.classList.add('hide'); c.innerHTML=''; return; }
+  c.classList.remove('hide');
+  c.innerHTML='<span>'+esc(txt)+'</span>'+
+    (pct===null?'':'<span class="bar"><i style="width:'+Math.max(0,Math.min(100,pct))+'%"></i></span>');
+}
+/* The direct leg. XHR rather than fetch purely for upload progress: a phone
+   pushing 60MB with no feedback looks identical to a phone doing nothing. */
+function putDirect_(url,file,onPct){
+  return new Promise(function(res){
+    let x;
+    try{ x=new XMLHttpRequest(); }catch(e){ return res({ok:0,reason:'no-xhr'}); }
+    x.open('PUT',url,true);
+    x.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+    if(x.upload) x.upload.onprogress=e=>{ if(e.lengthComputable) onPct(Math.round(100*e.loaded/e.total)); };
+    /* A CORS refusal surfaces here as a status-0 error with no detail — which
+       is exactly the case the fallback exists for, so it is not an error yet. */
+    x.onerror=()=>res({ok:0,reason:'blocked'});
+    x.onabort=()=>res({ok:0,reason:'blocked'});
+    x.onload=()=>res(x.status>=200&&x.status<300?{ok:1}:{ok:0,reason:'http-'+x.status});
+    try{ x.send(file); }catch(e){ res({ok:0,reason:'blocked'}); }
+  });
+}
+async function uploadOne_(job){
+  const f=job.file;
+  /* 1. Straight to Drive. */
+  try{
+    const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size]);
+    if(sess&&sess.ok&&sess.url){
+      const r=await putDirect_(sess.url,f,p=>upChip_(job.label,p));
+      if(r.ok) return {ok:1,how:'direct'};
+      /* Anything other than "the browser would not let us" is a real failure
+         and must not be retried down a path with a smaller ceiling. */
+      if(String(r.reason||'').indexOf('http-')===0) return {ok:0,error:'Drive refused the upload ('+r.reason+').'};
+    }
+  }catch(e){ /* fall through */ }
+  /* 2. The old path, which still has the ceiling. */
+  if(f.size>MAX_UPLOAD_MB*1048576){
+    return {ok:0,error:f.name+' ('+Math.round(f.size/1048576)+' MB) could not go direct, and the '+
+      'backup route caps at '+MAX_UPLOAD_MB+' MB. Try again on wifi, or shoot a shorter clip.'};
+  }
+  const data=await b64_(f);
+  if(!data) return {ok:0,error:'That file could not be read.'};
+  const r=await api('uploadPhoto',[job.qn,job.season,f.name||('yard-'+Date.now()+'.jpg'),data,f.type]);
+  return (r&&r.ok)?{ok:1,how:'relay'}:{ok:0,error:(r&&r.error)||'Upload failed.'};
+}
+async function upPump_(){
+  if(UPRUN) return;
+  UPRUN=true;
+  while(UPQ.length){
+    const job=UPQ.shift();
+    const left=UPQ.length;
+    job.label=job.name+(left?' (+'+left+' more)':'');
+    upChip_(job.label,0);
+    let out;
+    try{ out=await uploadOne_(job); }catch(e){ out={ok:0,error:e.message}; }
+    if(out.ok) UPDONE++; else { UPFAIL++; UPSKIP.push(out.error||'failed'); }
+    /* Keep the open unit's counts honest without reloading anything. */
+    if(CUR&&CUR.quoteNo===job.qn&&canPhotos()) refreshPhotos(job.qn);
+  }
+  UPRUN=false;
+  const bits=[];
+  if(UPDONE) bits.push(UPDONE+' uploaded');
+  if(UPFAIL) bits.push(UPFAIL+' failed');
+  upChip_(bits.join(' · ')+(UPSKIP.length?' — tap to see why':''),null);
+  if(UPSKIP.length) setMsg('upMsg',UPSKIP.join(' '),false);
+  else setMsg('upMsg',UPDONE+' uploaded.',true);
+  toast(bits.join(' · ')||'Done');
+  UPDONE=0; UPFAIL=0; UPSKIP=[];
+  setTimeout(()=>upChip_(null),6000);
+}
 async function upload(files){
   if(!CUR||!files||!files.length) return;
   if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos or video.',false); return; }
-  let list=Array.prototype.slice.call(files);
-  const big=list.filter(tooBig_);
-  list=list.filter(f=>!tooBig_(f));
-  /* Kept for the FINAL message, not just shown now. A warning that is
-     overwritten by "2 uploaded" a few seconds later is a file the crew thinks
-     they saved and did not. */
-  const bigTxt=big.length
-    ? big.map(f=>f.name+' ('+Math.round(f.size/1048576)+' MB)').join(', ')+
-      ' skipped — over the '+MAX_UPLOAD_MB+' MB limit. Shoot a shorter clip, or set the camera '+
-      'to 1080p; 4K video is four times the size.'
-    : '';
-  if(bigTxt) setMsg('upMsg',bigTxt,false);
+  const list=Array.prototype.slice.call(files);
   if(!list.length) return;
-  let done=0, failed=0;
-  const anyVideo=list.some(f=>String(f.type||'').indexOf('video/')===0);
-  setMsg('upMsg','Uploading 0 of '+list.length+'…'+(anyVideo?' Video takes a while — keep this open.':''));
-  for(const f of list){
-    const data=await b64_(f);
-    if(!data){ failed++; continue; }
-    try{
-      /* Winter: this app is used at haul-out. Spring relaunch photos go
-         through the console, which has the season switch. */
-      const r=await api('uploadPhoto',[CUR.quoteNo,'winter',f.name||('yard-'+Date.now()+'.jpg'),data,f.type]);
-      if(r&&r.ok) done++; else { failed++; if(r&&r.error) setMsg('upMsg',r.error,false); }
-    }catch(e){ failed++; }
-    setMsg('upMsg','Uploading '+(done+failed)+' of '+list.length+'…'+
-      (anyVideo?' Video takes a while — keep this open.':''));
-  }
-  const summary=done+' uploaded'+(failed?', '+failed+' failed — try those again':'')+'.'+
-    (bigTxt?' '+bigTxt:'');
-  setMsg('upMsg',summary,(failed||bigTxt)?false:true);
-  if(done) toast(done+' file'+(done===1?'':'s')+' saved'+(bigTxt?' — '+big.length+' skipped':''));
-  refreshPhotos(CUR.quoteNo);
+  /* Queued against the quote that is open NOW, so closing the sheet does not
+     send a clip to whichever boat gets opened next. */
+  const qn=CUR.quoteNo;
+  list.forEach(f=>UPQ.push({file:f,qn:qn,season:'winter',name:f.name||'file'}));
+  setMsg('upMsg',list.length+' queued — you can keep working, it uploads in the background.');
+  upPump_();
 }
 $('camIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
 $('galIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });

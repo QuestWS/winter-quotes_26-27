@@ -1080,6 +1080,9 @@ function consoleFns_(p) {
     jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
     uploadPhoto: function (a) { return adminUploadPhoto(p.token, a[0], a[1], a[2], a[3], a[4]); },
+    /* A write: it creates a Drive session. Deliberately NOT on CONSOLE_GET_FNS_
+       — a link that mints an upload slot is a link that can be followed twice. */
+    uploadSession: function (a) { return adminUploadSession(p.token, a[0], a[1], a[2], a[3], a[4]); },
     uploadContract: function (a) { return adminUploadContract(p.token, a[0], a[1], a[2], a[3]); },
     editLine:    function (a) { return adminEditLine(p.token, a[0], a[1], a[2], a[3], a[4]); },
     emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2]); },
@@ -3541,6 +3544,76 @@ function adminUploadContract(token, qn, fileName, base64Data, mimeType) {
    is a chunked upload, which is a real piece of work and not worth building
    before we know it is needed. */
 const MAX_UPLOAD_BYTES_ = 25 * 1024 * 1024;
+
+/* DIRECT-TO-DRIVE UPLOAD — the phone sends the bytes, not us.
+   ---------------------------------------------------------------------------
+   The base64 path below works and is staying, but it puts Apps Script in the
+   middle of the file: the phone base64s it (a third bigger), POSTs it here, we
+   decode it and hand it to Drive. That is the 25 MB ceiling, the wait, and the
+   memory.
+
+   Instead: we ask Drive to open a RESUMABLE SESSION and hand the browser only
+   the session URI it returns. The phone then PUTs the raw file straight to
+   Google. We never see the bytes.
+
+     - no 25 MB ceiling (the limit becomes the phone and the patience)
+     - no base64 inflation, so a third less over the air
+     - resumable, so a dropped signal in the yard continues instead of restarting
+     - nothing to wait for here, so the app is not blocked
+
+   WHAT THE BROWSER GETS IS A CAPABILITY, NOT A CREDENTIAL. The session URI is
+   good for exactly one file, into exactly one folder we chose, and expires. The
+   OAuth token never leaves this script — check-yard-app.js asserts that, because
+   handing the token out would be handing over the whole Drive.
+
+   The CORS leg was probed before building (the upload endpoint echoes our
+   origin and exposes X-GUploader-UploadID, which is only useful to a browser),
+   but a preflight against a live session could not be tested without a staff
+   PIN. So the client tries this first and falls back to the base64 path — the
+   first real video upload is the last word on it either way. */
+const MAX_DIRECT_BYTES_ = 1024 * 1024 * 1024;   // a sanity bound, not a real limit
+
+function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes) {
+  const who = requireAuth_(token, 'photos');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const size = Math.max(0, Math.floor(Number(sizeBytes) || 0));
+  if (size > MAX_DIRECT_BYTES_) {
+    return { ok: 0, error: 'That file is over ' + Math.round(MAX_DIRECT_BYTES_ / 1048576) + ' MB.' };
+  }
+  /* Drive takes the name as data, not as a path, but a newline in a filename
+     would still be a header-shaped surprise in the JSON below. */
+  const name = String(fileName || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200) ||
+    ('upload-' + Date.now());
+  const mime = String(mimeType || '').replace(/[^\w\/.+-]/g, '') || 'application/octet-stream';
+  const ff = ensurePhotoFolders_(ctx);
+  const target = seasonName === 'spring' ? ff.spring : ff.winter;
+
+  const res = UrlFetchApp.fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+      method: 'post',
+      contentType: 'application/json; charset=UTF-8',
+      headers: {
+        Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        'X-Upload-Content-Type': mime,
+        'X-Upload-Content-Length': String(size)
+      },
+      payload: JSON.stringify({ name: name, parents: [target.getId()], mimeType: mime }),
+      muteHttpExceptions: true
+    });
+  if (res.getResponseCode() >= 300) {
+    return { ok: 0, error: 'Drive would not open an upload session (' + res.getResponseCode() + ').' };
+  }
+  /* Apps Script does not promise the header's casing. */
+  const h = res.getAllHeaders() || {};
+  const url = String(h.Location || h.location || '');
+  if (url.indexOf('https://') !== 0) {
+    return { ok: 0, error: 'Drive opened a session but did not say where to send it.' };
+  }
+  auditLog_(who.name, 'Upload session opened for ' + qn + ' (' + seasonName + '): ' + name +
+    ' — ' + Math.round(size / 1048576) + ' MB');
+  return { ok: 1, url: url, name: name };
+}
 
 function adminUploadPhoto(token, qn, seasonName, fileName, base64Data, mimeType) {
   const who = requireAuth_(token, 'photos');

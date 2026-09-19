@@ -111,7 +111,7 @@ symptom.
 | Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |
 | Voice notes (record) | `voiceFolder_`, `adminAddYardNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
-| Photos | `adminUploadPhoto`, `adminPhotoInfo` | `upload`, `refreshPhotos` |
+| Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |
 | Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
 
 ### Customer page

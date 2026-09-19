@@ -287,45 +287,78 @@ Until then, voice notes record and play; they just do not get typed up.
 
 ## Condition photos and video
 
-The same Drive folders and the same endpoint the console uses
-(`adminUploadPhoto`), uploaded one at a time with a running count. **Stills and
-video both** — Drive takes any blob, so the format needed no new plumbing.
+Stills and video, into the same Drive folders the console uses. **Two
+transports, tried in order**, and an upload never blocks the app.
 
-What video needed was a **size limit**, because that is the part that actually
-breaks. A clip travels as base64 inside a POST, which inflates it by a third,
-and Apps Script drops an oversized request without explaining itself. On a
-phone in the yard that reads as a spinner followed by a failure nobody can act
-on.
+### Straight to Drive (the normal path)
 
-- **25 MB per file**, roughly half a minute of 1080p. A 4K clip of the same
-  length is four times that and is refused — and the message says exactly that,
-  by filename and by size, rather than leaving somebody to guess.
-- **Checked on both clients before the file is read**, so nothing is spent on
-  something that cannot be sent, and **again on the server**, because a client
-  is not a permission.
-- **A skipped file is named in the FINAL message, not just warned about.** The
-  first version showed the warning and then overwrote it with "2 uploaded" a
-  few seconds later, so the crew would have walked away believing a clip had
-  saved when it never left the phone. Silent partial success is the worst
-  outcome available here, and the guard pins it.
-- **The console uploads video one at a time.** Three at a time is right for
-  stills and wrong for clips — three base64 strings in memory and three large
-  POSTs racing each other through a phone's connection.
-- **The console used to discard anything that was not an image**, silently,
-  before uploading. That filter now passes video too; the guard fails if it
-  goes back.
-- **If 25 MB proves too tight**, the fix is a chunked upload. That is a real
-  piece of work and is not worth building before we know it is needed.
+`adminUploadSession` asks Drive to open a **resumable session** and returns the
+browser nothing but the session URI. The phone then PUTs the raw file directly
+to Google; Apps Script never sees the bytes.
+
+- **No 25 MB ceiling** — the limit becomes the phone and the patience
+- **No base64 inflation**, so a third less over the air
+- **Resumable**, so a dropped signal in the yard continues instead of restarting
+- Real upload progress, via `XMLHttpRequest` rather than `fetch` — a phone
+  pushing 60 MB with no feedback looks identical to a phone doing nothing
+
+**The session URI is a capability, not a credential.** It is good for one file,
+into one folder we chose, and it expires. **The OAuth token never leaves the
+script** — handing that to a browser would be handing over the whole Drive, not
+one file. The guard asserts the token is never returned, that the session pins
+a destination folder, and that minting one needs the `photos` permission.
+
+`uploadSession` is a **write**: deliberately absent from `CONSOLE_GET_FNS_`,
+because a link that mints an upload slot is a link that can be followed twice.
+
+**The CORS question, and why the fallback exists.** Probing before building
+showed Google's upload endpoint echoes our exact origin, allows PUT, and
+exposes `X-GUploader-UploadID` — a header only a browser would want. What could
+*not* be tested without a staff PIN was a preflight against a live session. So
+the client tries direct first and falls back; the first real video upload is
+the last word either way.
+
+### The base64 relay (the fallback)
+
+The original path: base64 through `adminUploadPhoto`. Still there, still capped
+at **25 MB**, used whenever the direct leg is refused — a CORS preflight, an
+older backend with no `uploadSession`, a browser with no `XMLHttpRequest`.
+
+A CORS refusal reaches the page as a bare **status 0 with no detail**, which is
+exactly the shape the fallback recognises. An HTTP error (`4xx`/`5xx`) is
+treated as a genuine refusal and is *not* retried down a path with a smaller
+ceiling.
+
+**When neither route works — a big file and no direct upload — the file is
+named in the final message.** Silent partial success is the worst outcome
+available here, and it is asserted by running an upload, not by matching the
+source. An earlier version of that check pinned a variable name and went stale
+the moment the uploader was rewritten, while the property it cared about still
+held.
+
+### Uploads do not block the app
+
+Chris: *"I dont want to slow the app down with upload times."* A file is queued
+against the **quote**, not the screen, and pumped in the background with a chip
+at the bottom. Close the unit, go back to the list, keep ticking boats off — a
+60 MB clip keeps going. Only closing the app stops it.
+
+Queued against the quote that was open when it started, so closing the sheet
+cannot send a clip to whichever boat gets opened next.
+
+### The rest
 
 **Winter, always, from the app.** This is used at haul-out; spring relaunch
-media goes through the console, which has the season switch. One less thing to
-get wrong in a hurry.
+media goes through the console, which has the season switch.
 
 **`capture` is on the camera button only.** On Android it forces the camera and
 kills the gallery, so the two inputs are separate and `verify.sh` counts the
 attribute — exactly once, page-wide. The **signed-contract** upload is
 deliberately left alone: it takes a PDF or a photo of a signed page, and a
 video of a contract is not a thing.
+
+**The console uploads video one at a time** and uses the same direct-first
+logic. Three at a time is right for stills and wrong for clips.
 
 ## Talking to the backend from the yard
 

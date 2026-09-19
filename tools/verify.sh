@@ -32,7 +32,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
-    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "YARD_STATES_" "adminSetYardState" "yardStateOf_" "adminSetYardAlert" "YARD_ALERT_MAX_" "yardAlert" \
+    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "adminUploadSession" "MAX_DIRECT_BYTES_" "uploadType=resumable" "YARD_STATES_" "adminSetYardState" "yardStateOf_" "adminSetYardAlert" "YARD_ALERT_MAX_" "yardAlert" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -78,7 +78,7 @@ if [ -f admin/index.html ]; then
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
     "setStorageFilter" "renderStorage" "storageTabs" "tagred" "em_signreminder" "signAskAllowed_" \
-    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderYardLog" "addYardNote" "yardLogCard" "keysTrailerLoc" "renderYardState" "setYardState" "yardStateCard" "alertCard" "alertbox" "palert" \
+    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderYardLog" "addYardNote" "yardLogCard" "keysTrailerLoc" "renderYardState" "setYardState" "yardStateCard" "alertCard" "alertbox" "palert" "putDirect" "sendOne" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
@@ -147,7 +147,7 @@ echo "== Yard app =="
 if [ -f yard/index.html ]; then
   extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
   sweep yard/index.html "yard" \
-    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" \
+    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" "putDirect_" "uploadOne_" "upPump_" "upChip_" "uploadSession" \
     "uploadPhoto" "yardNote" "manifest.json" "storageView"
   # One big script here too, so the same shadowing trap applies.
   DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \

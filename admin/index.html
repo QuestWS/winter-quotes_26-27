@@ -270,6 +270,11 @@ padding:10px 14px;font-weight:700;cursor:pointer;font-size:14px;font-family:var(
 .tagred,.taggold,.tagmute{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;
 font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px}
 .tagred{background:var(--red);color:#fff}
+/* The per-unit alert. Outlined rather than solid, so it does not compete with
+   the solid DO-NOT-PULL tag: that one means stop, this one means read first. */
+.alertbox{display:flex;gap:7px;align-items:flex-start;background:#FBEEE2;
+  border-left:4px solid var(--red);border-radius:6px;padding:8px 10px;margin:6px 0;
+  font-size:13.5px;font-weight:600;color:#6B3A14;line-height:1.35}
 .taggold{background:var(--gold-soft);color:#7A5714;border:1.5px solid var(--gold)}
 .tagmute{background:#fff;color:var(--muted);border:1.5px solid var(--line);font-weight:700}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
@@ -300,6 +305,10 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   tr.noauth td:first-child{border-left:4px solid #000}
   .hold{display:inline-block;border:1.5px solid #000;padding:1px 4px;font-size:9px;
     font-weight:bold;letter-spacing:.06em;white-space:nowrap}
+  /* The paper is what the crew is actually holding in the yard, so an alert
+     has to survive the trip onto it — in words and a box, never a colour. */
+  .palert{display:block;border:1.5px solid #000;padding:2px 5px;margin-top:3px;
+    font-size:10px;font-weight:bold;text-transform:uppercase}
   .rule{border:2px solid #000;padding:6px 8px;margin:6px 0 8px;font-size:11px;font-weight:bold;
     letter-spacing:.02em;text-transform:uppercase}
   .yn{font-weight:bold}
@@ -508,6 +517,24 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
                purpose: a customer driving their boat in is something the
                office sees and the yard does not, and it is what puts the unit
                on the crew's To store list. -->
+          <!-- One short line the yard crew sees on their list and at the top of
+               the unit's screen. Not the yard log (append-only history) and not
+               the staff note (the office's private reasoning). -->
+          <div class="card hide" id="alertCard">
+            <h2>Yard alert</h2>
+            <div class="msg" style="margin:0 0 6px">The one thing somebody must know
+              <b>before they touch this boat</b> — shown on the crew's list, at the top of the unit
+              in the yard app, and on the printed sheets. Keep it to one line, and
+              <b>clear it when it stops being true</b>. The customer never sees it.</div>
+            <div id="alertNow"></div>
+            <input class="txt" id="alertText" maxlength="160" placeholder="e.g. no keys — do not tow">
+            <div class="row2" style="margin-top:8px">
+              <button class="btn navy" id="alertBtn" onclick="saveAlert()">Save alert</button>
+              <button class="btn ghost" id="alertClearBtn" onclick="saveAlert('')">Clear it</button>
+            </div>
+            <div class="msg" id="alertMsg"></div>
+          </div>
+
           <div class="card hide" id="yardStateCard">
             <h2>Yard status</h2>
             <div class="msg" style="margin:0 0 6px">Drives the three lists in the yard app.
@@ -1427,6 +1454,9 @@ function renderQuote(r){
   /* Same bar as the staff note and the keys card: yard work, not money. */
   $('yardLogCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderYardLog(r.yardNotes);
+  $('alertCard').classList.toggle('hide',!P.keys);
+  window._alert=r.yardAlert||null;
+  if(P.keys) renderAlert();
   $('yardStateCard').classList.toggle('hide',!P.keys);
   window._yardState=r.yard||{state:''};
   window._yardAuth=r.yardAuth||null;
@@ -1474,6 +1504,31 @@ function renderYardLog(list){
 /* The same four states the yard app shows, named the same way — the office and
    the crew talking about different words for the same boat is how a unit ends
    up recorded twice. */
+function renderAlert(){
+  const a=window._alert;
+  const t=String((a&&a.text)||'');
+  $('alertNow').innerHTML=t
+    ? '<div class="alertbox"><span>\u26A0</span><span>'+esc(t)+
+      (a.by?'<br><span style="font-weight:400;font-size:12px">set by '+esc(a.by)+'</span>':'')+
+      '</span></div>'
+    : '<div class="msg" style="margin:0 0 6px">No alert on this unit.</div>';
+  $('alertText').value=t;
+  $('alertClearBtn').disabled=!t;
+  setMsg('alertMsg','');
+}
+async function saveAlert(force){
+  const t=force===''?'':($('alertText').value||'').trim();
+  const b=$('alertBtn'); b.disabled=true;
+  setMsg('alertMsg','Saving…');
+  try{
+    const r=await api('yardAlert',[QN,t]);
+    if(!r||!r.ok){ setMsg('alertMsg',(r&&r.error)||'Could not save that.',false); return; }
+    window._alert=r.alert||null;
+    renderAlert();
+    setMsg('alertMsg',r.msg,true); toast(r.msg);
+  }catch(e){ setMsg('alertMsg',e.message,false); }
+  finally{ b.disabled=false; }
+}
 const YSTATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
 function renderYardState(){
   const y=window._yardState||{state:''};
@@ -1901,10 +1956,13 @@ function renderStorage(){
       /* On the deposit tab the balance alone doesn't say how much came in —
          $700 owing reads the same whether they paid $500 or $5. */
       const took=(SFILTER==='dep'&&x.paidTxt)?' · '+esc(x.paidTxt)+' paid':'';
+      const al=String(x.alert||'').trim()
+        ? '<div class="alertbox" style="grid-column:1/-1;margin:6px 0 0"><span>\u26A0</span><span>'+
+          esc(x.alert)+'</span></div>' : '';
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
         <span class="nm">${esc(x.name)}${tag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
-        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span></div>`;
+        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
     return `<div class="sgH"><b>${esc(g.tab)}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
   }).join('');
@@ -1953,7 +2011,8 @@ async function printStorage(){
           <td><span class="yn">${esc(x.name)}</span><br><span class="ysub">${esc(x.qn)}</span></td>
           <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
           <td>${x.keys?esc(x.keys):'—'}</td>
-          <td>${esc(x.status)}${haulAuth_(x).state!=='cleared'?'<br><span class="hold">'+esc(haulAuth_(x).label)+'</span>':''}</td>
+          <td>${esc(x.status)}${haulAuth_(x).state!=='cleared'?'<br><span class="hold">'+esc(haulAuth_(x).label)+'</span>':''}${
+            String(x.alert||'').trim()?'<span class="palert">⚠ '+esc(x.alert)+'</span>':''}</td>
           <td class="ybal" style="text-align:right">${esc(x.balance)}</td></tr>`).join('')}
       </table>
       <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
@@ -2516,7 +2575,8 @@ async function printHaulOut(){
       <td>${c.trailer}</td>
       <td>${x.slip?esc(x.slip):'—'}</td>
       <td>${x.keys?esc(x.keys):'—'}</td>
-      <td><b>${esc(o.label)}</b>${c.note}</td></tr>`;
+      <td><b>${esc(o.label)}</b>${c.note}${
+        String(x.alert||'').trim()?'<span class="palert">⚠ '+esc(x.alert)+'</span>':''}</td></tr>`;
   }).join('');
   const planPage=plan.length?`
     <div class="pg">

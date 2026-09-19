@@ -95,6 +95,7 @@ symptom.
 | Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |
 | Keys, slip and trailer location | `KEYFIELDS_`, `KEYLABELS_`, `sanitizeKeys_`, `adminKeysApply` | `renderKeys`, `saveKeys` |
 | The yard log | `adminAddYardNote`, `YARD_NOTE_MAX_` | `renderYardLog`, `addYardNote` |
+| The per-unit alert | `adminSetYardAlert`, `YARD_ALERT_MAX_` | `renderAlert`, `saveAlert`, `alert_` |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |

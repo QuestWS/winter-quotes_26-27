@@ -215,6 +215,54 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 
 /* =====================================================================
+   2c. THE ALERT IS ON THE LIST, NOT JUST BEHIND A TAP.
+   ---------------------------------------------------------------------
+   Its entire purpose is that somebody loading the app sees which boats need
+   reading about BEFORE walking over to one. An alert only visible on the
+   detail screen is a note, and there is already a note.
+   ===================================================================== */
+{
+  const withAlert = { qn: 'A', name: 'Adams', slip: 'B-1', alert: 'no keys — do not tow',
+                      auth: { state: 'cleared' } };
+  const markup = Y.row_(withAlert, 'Slip B-1', '');
+  if (markup.indexOf('no keys — do not tow') > -1) ok('the alert is rendered on the list row itself');
+  else fail('the alert does not appear on the row — it would only be found by opening the unit');
+  if (/class="alert"/.test(markup)) ok('and it is rendered as the alert strip, not plain text');
+  else fail('the alert is not using the alert styling');
+  /* Never by colour alone: this is read outdoors, in November, on a phone. */
+  if (/\u26A0|⚠/.test(markup)) ok('it carries an icon, so it does not depend on colour');
+  else fail('the alert is carried by colour alone');
+  if (Y.row_({ qn: 'B', name: 'Baker', slip: '', auth: { state: 'cleared' } }, '', '').indexOf('class="alert"') > -1)
+    fail('a unit with no alert still renders an empty alert strip');
+  else ok('a unit with no alert renders nothing');
+  /* It must not be confusable with the thing that stops a boat moving. */
+  const held = Y.row_({ qn: 'C', name: 'Clark', slip: 'B-2', alert: 'watch the canvas',
+                        auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } },
+                      'Slip B-2', '');
+  if (/class="alert"/.test(held) && /class="badge stop"/.test(held))
+    ok('an alert and a do-not-pull stamp are separate marks on the same row');
+  else fail('the alert and the pull stamp are not distinguishable on a row that has both');
+}
+{
+  /* Short by construction, or it stops being scannable. */
+  const g = GAS;
+  const fn = (g.match(/function adminSetYardAlert\b[\s\S]*?\n}/m) || [''])[0];
+  if (!fn) fail('there is no adminSetYardAlert on the server');
+  else {
+    if (/YARD_ALERT_MAX_/.test(fn)) ok('the alert is length-capped so it stays readable at a glance');
+    else fail('nothing caps the alert length — a paragraph on every row is not an alert');
+    if (/delete d\.yardAlert/.test(fn)) ok('an empty alert clears it rather than storing a blank');
+    else fail('clearing an alert does not remove it');
+    if (/auditLog_/.test(fn)) ok('setting and clearing are both logged, since the alert itself is overwritten');
+    else fail('an alert can be set and cleared with no record that anybody was warned');
+    if (/savePdf_|recomputeTotals_/.test(fn)) fail('setting an alert re-prices or rebuilds the PDF');
+    else ok('setting an alert touches no money and no paperwork');
+  }
+  if (/if \(oldD\.yardAlert\)/.test(g)) ok('an alert survives a customer save');
+  else fail('a customer save would take a live warning down with nobody deciding to');
+}
+
+/* =====================================================================
    3. TALKING TO A BACKEND OVER A BAD CONNECTION.
    ===================================================================== */
 /* The app's retry list must be a SUBSET of what the server allows on GET —

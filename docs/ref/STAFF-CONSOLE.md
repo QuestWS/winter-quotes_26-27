@@ -164,6 +164,21 @@ it can be texted.
   started relying on is a fallback that fails the day it is needed.
 
 
+## Yard alert and yard status (console)
+
+Two cards the office owns that drive what the crew sees in the yard app,
+both gated on `keys`:
+
+- **Yard alert** — the one line somebody must know before touching the boat.
+  Shown on the crew's list, at the top of the unit in the app, and on both
+  printed sheets. Full rules: `docs/ref/YARD-APP.md` § *The alert*.
+- **Yard status** — `dropped off` starts here on purpose. A customer driving
+  their boat in is something the office sees and the yard does not, and it is
+  what puts a trailered unit on the crew's **To store** list without it ever
+  having been in the water. `pulled` is deliberately **not** offered here:
+  pulling happens with the boat in front of you and the app gates it on the
+  unit being cleared, so recording it from a desk would route around that.
+
 ## Staff notes
 
 `d.staffNote`, own card, gated on `keys`. Why a quote is the way it is —

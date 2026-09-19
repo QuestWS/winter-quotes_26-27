@@ -894,6 +894,10 @@ function doPost(e) {
          their next save, putting boats that are already in a building back on
          the crew's to-do list. */
       if (oldD.yard) d.yard = oldD.yard;
+      /* Same reason, and worse consequences: an alert wiped by a customer save
+         is a warning the crew stops seeing without anybody deciding to take it
+         down. */
+      if (oldD.yardAlert) d.yardAlert = oldD.yardAlert;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1066,6 +1070,7 @@ function consoleFns_(p) {
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1], a[2]); },
     yardState:   function (a) { return adminSetYardState(p.token, a[0], a[1]); },
+    yardAlert:   function (a) { return adminSetYardAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
@@ -2186,7 +2191,7 @@ const STORAGE_VIEW_TTL_ = 120;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 4;
+const STORAGE_VIEW_V_ = 5;
 const QROW_TTL_ = 1800;                  // seconds
 
 function cachePutBig_(key, str, ttl) {
@@ -3033,6 +3038,53 @@ function adminSetYardState(token, qn, state) {
            yard: { state: want, at: d.yard.at, by: who.name } };
 }
 
+
+/* ============================ THE ALERT ================================
+   One short, current, loud line per unit — "no keys, do not tow", "owner says
+   don't touch the canvas", "bad bunk on the trailer".
+
+   IT IS NOT THE YARD LOG AND IT IS NOT THE STAFF NOTE, and keeping the three
+   apart is the whole reason it exists:
+
+     staffNote   the office's private reasoning about a quote. One box, rewritten
+                 as understanding changes. Nobody in the yard reads it.
+     yardNotes   append-only history. What was observed, when, by whom. Never
+                 edited, so it accumulates — which is exactly what you do NOT
+                 want somebody scanning a list for.
+     yardAlert   the one thing somebody must know BEFORE they touch this boat.
+                 Set, replaced, and cleared when it stops being true.
+
+   An alert that is a paragraph is not an alert, so it is capped short enough
+   to read at a glance on a list row. An alert nobody clears becomes wallpaper,
+   so clearing it is one tap from the same place it is set.
+========================================================================= */
+const YARD_ALERT_MAX_ = 160;
+
+function adminSetYardAlert(token, qn, text) {
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const t = String(text === null || text === undefined ? '' : text).replace(/\s+/g, ' ').trim();
+  if (t.length > YARD_ALERT_MAX_) {
+    return { ok: 0, error: 'An alert has to be readable at a glance — keep it under ' +
+             YARD_ALERT_MAX_ + ' characters. Anything longer belongs in the yard log.' };
+  }
+  const had = String((d.yardAlert && d.yardAlert.text) || '');
+  if (t === had) return { ok: 0, error: 'Nothing changed.' };
+  if (t) d.yardAlert = { text: t, at: new Date().toISOString(), by: who.name };
+  else delete d.yardAlert;
+  /* Payload only — an alert says nothing about what the unit costs. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  /* The wording goes in the log on purpose: the alert itself is overwritten
+     and cleared, so without this there would be no record that anybody was
+     ever warned about the canvas. */
+  auditLog_(who.name, t ? 'Yard alert set on ' + d.quoteNo + ': "' + t + '"'
+                        : 'Yard alert cleared on ' + d.quoteNo + ' (was: "' + had + '")');
+  return { ok: 1, msg: t ? 'Alert set.' : 'Alert cleared.',
+           alert: t ? { text: t, at: d.yardAlert.at, by: who.name } : null };
+}
+
 function adminSetStaffNote(token, qn, note) {
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -3200,6 +3252,10 @@ function adminLookup(token, qn) {
     /* Where this unit is in the season — see YARD_STATES_. */
     yard: { state: yardStateOf_(d), at: String((d.yard && d.yard.at) || ''),
             by: String((d.yard && d.yard.by) || '') },
+    yardAlert: d.yardAlert
+      ? { text: String(d.yardAlert.text || ''), at: String(d.yardAlert.at || ''),
+          by: String(d.yardAlert.by || '') }
+      : null,
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
@@ -4564,7 +4620,7 @@ function adminStorageView(token) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
-            trailerLoc = '', notes = 0, yardState = '', yardAt = '';
+            trailerLoc = '', notes = 0, yardState = '', yardAt = '', alert = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -4585,6 +4641,9 @@ function adminStorageView(token) {
           trailerLoc = String((st && st.trailerLoc !== undefined ? st.trailerLoc : pd.trailerLoc) || '');
           yardState = yardStateOf_(pd);
           yardAt = String((pd.yard && pd.yard.at) || '');
+          /* Short by construction, so carrying it on every row costs nothing
+             and saves the crew opening a unit to find out it was urgent. */
+          alert = String((pd.yardAlert && pd.yardAlert.text) || '');
           /* The COUNT only. The notes themselves are the detail screen's job —
              shipping every note of every quote through the list would put this
              call straight back over the edge the payload column already pushed
@@ -4611,6 +4670,8 @@ function adminStorageView(token) {
           auth: haulAuth_(paid > 0.005, contract),
           /* Which of the yard app's three lists this unit is on. */
           yardState: yardState, yardAt: yardAt,
+          /* The one thing somebody must know before touching this boat. */
+          alert: alert,
           /* Signed agreement on file. Deposit taken and this still false is the
              chase list -- the console tags those rows in red. */
           contract: contract,

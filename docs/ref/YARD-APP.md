@@ -120,6 +120,49 @@ verdict out from `contract` and `deposit` itself.
 
 ---
 
+## The alert
+
+One short, current, loud line per unit — *"no keys, do not tow"*, *"owner says
+don't touch the canvas"*, *"bad bunk on the trailer"*. `d.yardAlert`, set and
+cleared from either the console or the app.
+
+**It is on the list row, not behind a tap.** That is the entire point: somebody
+loading the app sees which boats need reading about *before* walking over to
+one. An alert only visible on the detail screen is a note, and there is already
+a note. The guard asserts it renders on the row.
+
+**Three staff-facing texts, deliberately kept apart** — and the difference is
+why this is a third one rather than a reuse:
+
+| | What it is | Shape |
+|---|---|---|
+| `staffNote` | the office's private reasoning about a quote | one box, rewritten |
+| `yardNotes` | what was observed, when, by whom | append-only, accumulates |
+| `yardAlert` | what you must know **before touching this boat** | set, replaced, cleared |
+
+An alert that is a paragraph is not an alert, so it is capped at 160
+characters and anything longer is pushed to the yard log. An alert nobody
+clears becomes wallpaper, so clearing it is one tap from where it is set and
+the Clear button disables itself when there is nothing to clear.
+
+**Setting and clearing are both audited**, because the alert itself is
+overwritten and cleared — without the log there would be no record that anybody
+was ever warned about the canvas.
+
+**It is not the do-not-pull stamp.** That one is solid red and means *stop*;
+this is an outlined warning strip and means *read this first*. They appear
+together on the same row and must stay distinguishable, which the guard pins.
+Neither is carried by colour alone — the alert has a ⚠ and the stamp has its
+words — because this is read outdoors in November.
+
+**It rides the paper too.** Both printed sheets carry it in a bordered box in
+words, since the paper is what the crew is actually holding.
+
+**As private as the rest.** Never on the PDF, in an email, on `?action=load`,
+or in the public scan-to-sign lookup — all four checked — and carried across a
+customer save, or their next save would take a live warning down with nobody
+deciding to.
+
 ## The yard log
 
 Append-only, one entry per observation, each stamped with who wrote it and

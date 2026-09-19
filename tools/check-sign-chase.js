@@ -75,6 +75,7 @@ function consoleCtx() {
    - a quote with a deposit AND a contract       (deposit side, no tag)
    - a zero-balance quote that was never paid    ('Paid' text, no payment)
    - a CREDIT balance                            (money in, so deposit side)
+   - a SIGNED quote with nothing paid            (no deposit, but not blocked)
    - a lead row                                  (neither side, ever) */
 const GROUPS = [
   { tab: 'Building A', lead: false, count: 5, rows: [
@@ -88,7 +89,11 @@ const GROUPS = [
     /* Never priced, never paid: reads 'Paid' because the balance is zero. It is
        NOT a deposit, and reading the balance instead of the payments is exactly
        how it would end up on the wrong tab. */
-    { qn: 'QW-26-0006', name: 'Frost, Fi',   deposit: false, contract: false, balance: 'Paid' }
+    { qn: 'QW-26-0006', name: 'Frost, Fi',   deposit: false, contract: false, balance: 'Paid' },
+    /* Signed the agreement, never paid a cent. Not blocked — the liability is
+       covered — but not cleared either, and the reason is MONEY, which is a
+       different phone call from chasing a signature. */
+    { qn: 'QW-26-0009', name: 'Innes, Ir',   deposit: false, contract: true,  balance: '$980.00' }
   ] },
   { tab: 'Quote Started', lead: true, count: 2, rows: [
     { qn: 'QW-26-0007', name: 'Gray, Gi',    deposit: false, contract: false, balance: 'Paid' },
@@ -102,15 +107,16 @@ C.window._sg = GROUPS;
 const qns = () => C.storageGroups_().reduce((a, g) => a.concat(g.rows.map((r) => r.qn)), []);
 
 C.setStorageFilter('all');
-eq(qns().length, 8, 'Everyone shows every row, leads included');
+eq(qns().length, 9, 'Everyone shows every row, leads included');
 
 C.setStorageFilter('dep');
 eq(qns().join(','), 'QW-26-0001,QW-26-0002,QW-26-0003,QW-26-0005',
    'Deposit paid = every row with money on it, paid-in-full and credit included');
 
 C.setStorageFilter('nodep');
-eq(qns().join(','), 'QW-26-0004,QW-26-0006',
-   'No deposit = the unpaid quotes only, and a zero-balance unpriced quote counts as unpaid');
+eq(qns().join(','), 'QW-26-0004,QW-26-0006,QW-26-0009',
+   'No deposit = the unpaid quotes only, signed-but-unpaid included, and a zero-balance ' +
+   'unpriced quote counts as unpaid');
 
 /* The trap this exists for: a lead is not a customer who forgot to pay. */
 if (qns().some((q) => q === 'QW-26-0007' || q === 'QW-26-0008'))
@@ -118,10 +124,16 @@ if (qns().some((q) => q === 'QW-26-0007' || q === 'QW-26-0008'))
 else ok('leads are in neither deposit bucket');
 
 const counts = C.storageCounts_();
-eq(counts.all, 8, 'the Everyone count is every row');
+eq(counts.all, 9, 'the Everyone count is every row');
 eq(counts.dep, 4, 'the Deposit count matches what that tab shows');
-eq(counts.nodep, 2, 'the No-deposit count matches what that tab shows');
+eq(counts.nodep, 3, 'the No-deposit count matches what that tab shows');
 eq(counts.unsigned, 3, 'the unsigned count is deposits WITHOUT a contract, not all deposits');
+eq(counts.unpaid, 1, 'the unpaid count is signed-WITHOUT-a-deposit, counted apart from unsigned');
+eq(counts.blocked, 4, 'the blocked count is the rows with neither, leads included');
+eq(counts.held, 8, 'everything that is not cleared is counted as held');
+if (counts.unsigned + counts.unpaid + counts.blocked === counts.held)
+  ok('the three hold reasons account for every unpulled unit, with no row counted twice');
+else fail('the hold reasons do not add up to the held total — a row is double-counted or missed');
 if (counts.dep + counts.nodep === counts.all)
   fail('the two deposit tabs add up to every row — the lead rows are being counted somewhere');
 else ok('the two tabs deliberately do not add up to Everyone (leads sit outside both)');
@@ -147,35 +159,63 @@ else ok('the storage tabs have their own class, not the photo switch\'s');
    "If they don't have a contract or a deposit, we do not touch the boat. If
    they have a deposit they can be on the haul out list with a note that they
    don't have a contract so that we can plan around pulling them, but we will
-   not pull the boat without a signed contract."
+   not pull the boat without a signed contract." ...and, asked about the
+   remaining combination: "make signed but unpaid a HOLD too, but differentiate
+   that it's due to payment."
 
-   So the gate for putting hands on a unit is the SIGNATURE, never the money.
-   Getting this backwards — letting a deposit authorise a pull — is the whole
-   liability this guards, and it is one inverted condition away at all times.
+   So BOTH have to be true before a unit is pulled, and the two holds are not
+   interchangeable: one is a liability chase, the other a money chase, and they
+   are two different phone calls. Letting either gate alone authorise a pull is
+   the whole point of this guard, and it is one inverted condition away.
    ===================================================================== */
-eq(C.haulAuth_({ contract: true,  deposit: true  }).state, 'cleared', 'signed and paid: cleared to pull');
-eq(C.haulAuth_({ contract: true,  deposit: false }).state, 'cleared',
-   'signed but unpaid is STILL cleared — the signature is the gate, not the money');
+eq(C.haulAuth_({ contract: true,  deposit: true  }).state, 'cleared', 'signed AND paid: cleared to pull');
+eq(C.haulAuth_({ contract: true,  deposit: false }).state, 'hold',
+   'signed but unpaid is a HOLD — a signature alone does not release the unit');
+eq(C.haulAuth_({ contract: true,  deposit: false }).why, 'payment',
+   'and it is held for the MONEY, so the sheet can say which chase this is');
 eq(C.haulAuth_({ contract: false, deposit: true  }).state, 'hold',
    'a deposit with no signature is planning only, never a pull');
+eq(C.haulAuth_({ contract: false, deposit: true  }).why, 'signature',
+   'and that one is held for the SIGNATURE — the two holds never read the same');
 eq(C.haulAuth_({ contract: false, deposit: false }).state, 'blocked',
    'neither means we do not touch the boat at all');
+/* The single sentence underneath all four: nothing is cleared unless BOTH are
+   in. Asserted over the whole truth table rather than case by case. */
+[true, false].forEach((sig) => [true, false].forEach((pay) => {
+  const cleared = C.haulAuth_({ contract: sig, deposit: pay }).state === 'cleared';
+  if (cleared !== (sig && pay))
+    fail('cleared=' + cleared + ' for contract=' + sig + ' deposit=' + pay + ' — a unit is cleared ' +
+         'to pull if and only if it is BOTH signed and paid');
+}));
+ok('a unit is cleared if and only if it is both signed and paid');
+/* And the two holds must not print the same words. */
+{
+  const sigTxt = C.haulHoldText_(C.haulAuth_({ contract: false, deposit: true }));
+  const payTxt = C.haulHoldText_(C.haulAuth_({ contract: true,  deposit: false }));
+  if (sigTxt === payTxt) fail('both holds stamp the same text — the sheet cannot say which chase it is');
+  else if (!/DO NOT PULL/.test(sigTxt) || !/DO NOT PULL/.test(payTxt))
+    fail('a hold stamp does not say DO NOT PULL: ' + JSON.stringify([sigTxt, payTxt]));
+  else ok('the two holds stamp different words, and both say DO NOT PULL');
+}
 
 {
   const p = C.haulPartition_(GROUPS);
   const on = p.plan.map((r) => r.qn).sort().join(',');
   const off = p.blocked.map((r) => r.qn).sort().join(',');
-  eq(on, 'QW-26-0001,QW-26-0002,QW-26-0003,QW-26-0005',
+  eq(on, 'QW-26-0001,QW-26-0002,QW-26-0003,QW-26-0005,QW-26-0009',
      'the working list is exactly the units with a signature or a deposit');
   eq(off, 'QW-26-0004,QW-26-0006,QW-26-0007,QW-26-0008',
      'everything with neither is held off the working list, leads included');
-  /* The one sentence that must never stop being true. */
+  /* The two sentences that must never stop being true. */
   if (p.plan.some((r) => r.auth.state === 'cleared' && !r.contract))
     fail('a unit with no signed contract was marked cleared to pull');
   else ok('nothing without a signed contract is ever marked cleared');
+  if (p.plan.some((r) => r.auth.state === 'cleared' && !r.deposit))
+    fail('a unit with no deposit was marked cleared to pull');
+  else ok('nothing without a deposit is ever marked cleared');
   if (p.blocked.some((r) => r.deposit || r.contract))
     fail('a unit with a deposit or a contract was held off the list entirely');
-  else ok('a deposit is enough to get onto the plan, as Chris asked');
+  else ok('either a deposit or a signature is enough to get onto the plan, as Chris asked');
 }
 
 /* And the paper says so. The sheet is what the yard acts on, and shop printers
@@ -197,8 +237,13 @@ eq(C.haulAuth_({ contract: false, deposit: false }).state, 'blocked',
     else fail('there is no "do not touch" page for the units with neither');
     if (/NO SIGNED CONTRACT — DO NOT PULL/.test(html)) ok('a deposit-only row is stamped in words on the sheet');
     else fail('a deposit-only row carries no printed warning — colour alone will not survive a shop printer');
-    if (/No unit is pulled without a signed agreement on file/.test(html)) ok('the rule itself is printed on the sheet');
+    if (/NO DEPOSIT — DO NOT PULL/.test(html)) ok('a signed-but-unpaid row is stamped with its OWN reason');
+    else fail('a signed-but-unpaid row is not stamped, or is stamped as if the signature were missing');
+    if (/signed AND a deposit is in/.test(html)) ok('the rule itself is printed on the sheet');
     else fail('the sheet does not state the rule');
+    if (/awaiting a signature/.test(html) && /awaiting a deposit/.test(html))
+      ok('the header counts the two holds separately');
+    else fail('the header lumps the two holds together — it sends somebody hunting for which kind');
     /* The checkbox is the instruction to pull. A row we may not pull must not
        have one, or it is the box that gets ticked. */
     const holdRow = (html.match(/<tr class="noauth">[\s\S]*?<\/tr>/) || [''])[0];
@@ -323,8 +368,8 @@ else ok('a lead is never asked to sign');
 
 function tail() {
   if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the sign chase'); process.exit(1); }
-  console.log('sign chase: a signature is the gate for touching a unit, a deposit only buys a ' +
-              'place on the plan, the filter sorts by payment not balance, and the nudge ' +
+  console.log('sign chase: a unit is pulled only when it is BOTH signed and paid, the two holds ' +
+              'name their own reason, the filter sorts by payment not balance, and the nudge ' +
               'refuses to build rather than ship a dead button');
 }
 if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the sign chase'); process.exit(1); }

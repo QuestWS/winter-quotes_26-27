@@ -258,15 +258,19 @@ padding:10px 14px;font-weight:700;cursor:pointer;font-size:14px;font-family:var(
 .stabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.75;margin-left:5px}
 /* No signed agreement on file, so the unit may not be pulled. Two weights,
    because the two states carry different risk:
-     SOLID  — money is in, so somebody has every reason to think the unit is
-              good to go. That is the one that has to stop a person.
+     RED    — money is in but nobody has signed. Somebody has every reason to
+              think the unit is good to go, and the exposure is legal. That is
+              the one that has to stop a person.
+     GOLD   — signed, but nothing paid. A money hold, not a liability one, and
+              gold is already what this console uses for an open balance.
      QUIET  — nothing is in either. Nobody is about to pull it, and on the
-              "No deposit" tab this is every row, so shouting here would only
-              train people to stop seeing red.
-   --red is the palette's; neither is a new colour. */
-.tagred,.tagmute{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;
+              "No deposit" tab this is most of the rows, so shouting here would
+              only train people to stop seeing red.
+   All three are palette tokens; none is a new colour. */
+.tagred,.taggold,.tagmute{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;
 font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px}
 .tagred{background:var(--red);color:#fff}
+.taggold{background:var(--gold-soft);color:#7A5714;border:1.5px solid var(--gold)}
 .tagmute{background:#fff;color:var(--muted);border:1.5px solid var(--line);font-weight:700}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
 padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
@@ -1741,14 +1745,18 @@ function storageGroups_(){
   }).filter(g=>SFILTER==='all'||g.count>0);
 }
 function storageCounts_(){
-  const c={all:0,dep:0,nodep:0,unsigned:0,blocked:0};
+  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0};
   (window._sg||[]).forEach(g=>(g.rows||[]).forEach(function(x){
     c.all++;
     /* Counted for everybody, leads included: "may we touch this unit" does not
        care which tab it is on. */
-    if(!x.contract&&!x.deposit) c.blocked++;
+    const a=haulAuth_(x);
+    if(a.state==='blocked') c.blocked++;
+    if(a.state!=='cleared') c.held++;
+    if(a.why==='signature') c.unsigned++;
+    if(a.why==='payment')   c.unpaid++;
     if(g.lead) return;
-    if(x.deposit){ c.dep++; if(!x.contract) c.unsigned++; } else c.nodep++;
+    if(x.deposit) c.dep++; else c.nodep++;
   }));
   return c;
 }
@@ -1770,7 +1778,8 @@ function renderStorage(){
          about its absence. */
       const a=haulAuth_(x);
       const tag=a.state==='cleared' ? ''
-        : a.state==='hold' ? '<span class="tagred">NO CONTRACT — DO NOT PULL</span>'
+        : a.why==='signature' ? '<span class="tagred">NO CONTRACT — DO NOT PULL</span>'
+        : a.why==='payment'   ? '<span class="taggold">NO DEPOSIT — DO NOT PULL</span>'
         : '<span class="tagmute">not authorised</span>';
       /* On the deposit tab the balance alone doesn't say how much came in —
          $700 owing reads the same whether they paid $500 or $5. */
@@ -1789,12 +1798,15 @@ function renderStorage(){
                     c.unsigned===1?'it':'they'} cannot be pulled (tagged in red).`
                  :' — every one of them has a signed agreement on file.');
   }else if(SFILTER==='nodep'){
-    head='<b>None of these may be pulled</b> — no deposit and no signed agreement. '+
-      `${shown} quote${shown===1?'':'s'} with no payment yet; unfinished quotes are left out, `+
-      'since there is nothing to take a deposit on until a quote is saved.';
+    head='<b>None of these may be pulled</b> — nothing has been paid on them. '+
+      `${shown} quote${shown===1?'':'s'} with no payment yet`+
+      (c.unpaid?`, of which <b>${c.unpaid}</b> ${c.unpaid===1?'has':'have'} already signed and ${
+                  c.unpaid===1?'is':'are'} only waiting on a deposit (tagged in gold).`:'.')+
+      ' Unfinished quotes are left out, since there is nothing to take a deposit on until a quote is saved.';
   }else{
     head=`${shown} total units on file — tap any row to open it.`+
-      (c.unsigned||c.blocked?` <b>${c.unsigned+c.blocked}</b> have no signed agreement on file and cannot be pulled.`:'');
+      (c.held?` <b>${c.held}</b> cannot be pulled yet — ${c.unsigned} awaiting a signature, ${
+                c.unpaid} awaiting a deposit, ${c.blocked} with neither.`:'');
   }
   $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
     (shown?body:'<div class="msg" style="padding:6px">— nothing in this view —</div>');
@@ -1824,7 +1836,7 @@ async function printStorage(){
           <td><span class="yn">${esc(x.name)}</span><br><span class="ysub">${esc(x.qn)}</span></td>
           <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
           <td>${x.keys?esc(x.keys):'—'}</td>
-          <td>${esc(x.status)}${haulAuth_(x).state!=='cleared'?'<br><span class="hold">NO SIGNED CONTRACT</span>':''}</td>
+          <td>${esc(x.status)}${haulAuth_(x).state!=='cleared'?'<br><span class="hold">'+esc(haulAuth_(x).label)+'</span>':''}</td>
           <td class="ybal" style="text-align:right">${esc(x.balance)}</td></tr>`).join('')}
       </table>
       <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
@@ -2303,16 +2315,30 @@ function haulDate_(v){
      A deposit does NOT authorise the pull. What it does is put the unit on the
      plan, so the yard can schedule around it while the signature is chased.
 
+     A signature on its own does not release it either — that one is a MONEY
+     hold rather than a liability one, and the sheet says so, because "chase
+     the signature" and "chase the deposit" are two different phone calls to
+     two different people in the shop.
+
      Neither a deposit nor a contract means we do not touch the boat at all,
      so it is kept OFF the working list entirely and sits on its own page at
      the back, with no checkbox to tick.
 
-   Three states, and the sheet has to make the difference obvious to somebody
-   holding it in the yard rather than reading it on a screen. */
+   Four states, and `why` is what keeps the two holds from reading the same.
+   The sheet has to make all of it obvious to somebody holding it in the yard
+   rather than reading it on a screen. */
 function haulAuth_(x){
-  if(x&&x.contract) return {state:'cleared',label:'Signed'};
-  if(x&&x.deposit)  return {state:'hold',label:'NO CONTRACT'};
-  return {state:'blocked',label:'NO DEPOSIT · NO CONTRACT'};
+  const signed=!!(x&&x.contract), paid=!!(x&&x.deposit);
+  if(signed&&paid)   return {state:'cleared',why:'',         label:'Signed'};
+  if(!signed&&!paid) return {state:'blocked',why:'both',     label:'NO DEPOSIT · NO CONTRACT'};
+  /* Signed but nothing paid. The liability is covered; the money is not. */
+  if(signed)         return {state:'hold',   why:'payment',  label:'NO DEPOSIT'};
+  return               {state:'hold',   why:'signature',label:'NO CONTRACT'};
+}
+/* What the stamp says, in one place, so the paper and the screen cannot end up
+   describing the same row two different ways. */
+function haulHoldText_(a){
+  return a.why==='payment' ? 'NO DEPOSIT — DO NOT PULL' : 'NO SIGNED CONTRACT — DO NOT PULL';
 }
 /* Split the yard into the units that go on the working list (cleared to pull,
    plus the deposit-taken ones we are planning around) and the units that are
@@ -2346,6 +2372,12 @@ async function printHaulOut(){
   const plan=part.plan.sort(haulSort_), blocked=part.blocked.sort(haulSort_);
   if(!plan.length&&!blocked.length){ toast('Nothing to print.'); return; }
   const held=plan.filter(x=>x.auth.state==='hold').length;
+  const heldSig=plan.filter(x=>x.auth.why==='signature').length;
+  const heldPay=plan.filter(x=>x.auth.why==='payment').length;
+  /* Two different phone calls, so two different numbers. "3 on hold" sends
+     somebody hunting through the rows to find out which kind. */
+  const heldTxt=[heldSig?heldSig+' awaiting a signature':'',
+                 heldPay?heldPay+' awaiting a deposit':''].filter(Boolean).join(' · ');
   const cell=x=>{
     const trailer=x.trailer===true?'On trailer':x.trailer===false?'No trailer':'—';
     const note=(x.seasonDone&&x.seasonDone.note)?'<br><span class="ysub">'+esc(x.seasonDone.note)+'</span>':'';
@@ -2358,7 +2390,7 @@ async function printHaulOut(){
     return `<tr class="${hold?'noauth':''}">
       <td>${hold?'<span class="hold">HOLD</span>':'<span class="cb"></span>'}</td>
       <td><span class="yn">${esc(x.name)}</span><br><span class="ysub">${esc(x.qn)}</span>${
-        hold?'<br><span class="hold">NO SIGNED CONTRACT — DO NOT PULL</span>':''}</td>
+        hold?'<br><span class="hold">'+esc(haulHoldText_(x.auth))+'</span>':''}</td>
       <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
       <td>${esc(x.tab)}</td>
       <td>${c.trailer}</td>
@@ -2371,18 +2403,20 @@ async function printHaulOut(){
       <div class="pgHead">
         <h1>QUEST WATERSPORTS — HAUL-OUT LIST</h1>
         <div class="meta">Printed ${today}<br>${plan.length} unit${plan.length===1?'':'s'} · ordered by requested timing${
-          held?'<br>'+held+' on hold — signature outstanding':''}</div>
+          held?'<br>'+held+' on hold — '+heldTxt:''}</div>
       </div>
-      <div class="rule">No unit is pulled without a signed agreement on file. A deposit is not a signature —
-        shaded rows are planning only.${blocked.length?' '+blocked.length+' further unit'+(blocked.length===1?' is':'s are')+
-        ' held off this list entirely (see the last page).':''}</div>
+      <div class="rule">No unit is pulled until the agreement is signed AND a deposit is in.
+        A deposit is not a signature and a signature is not a deposit — every shaded row is planning
+        only, and its stamp says which one is missing.${blocked.length?' '+blocked.length+' further unit'+
+        (blocked.length===1?' is':'s are')+' held off this list entirely (see the last page).':''}</div>
       <table class="yard">
         <tr><th style="width:44px">Pull?</th><th>Customer</th><th>Unit / dims</th><th>Storage</th>
             <th>Trailer</th><th>Slip</th><th>Keys</th><th>Requested timing</th></tr>
         ${planRows}
       </table>
       <div class="pgFoot">Ordered by what the customer asked for: ready now, then stated dates, then will call, then no answer yet.
-        A shaded HOLD row has paid a deposit but has not signed — plan around it, do not pull it. Quest Watersports · (815) 433-2200</div>
+        A shaded HOLD row is missing either the signature or the deposit — plan around it, do not pull it.
+        Quest Watersports · (815) 433-2200</div>
     </div>`:'';
   /* Its own page, no checkboxes, and nothing about timing: these are not units
      we are scheduling, they are units nobody may put a hand on. It is printed

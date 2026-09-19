@@ -49,13 +49,21 @@ building back on the crew's to-do list.
 
 ### Where each transition starts
 
-- **Pulled** — from the yard, one tap on the row. Never offered on the console:
-  pulling happens with the boat in front of you, and the app gates it on the
-  unit being cleared. Recording it from a desk would route around that gate.
-- **Dropped off** — from the **console**, because a customer driving their boat
-  in is something the office sees and the yard does not. It is what puts a
-  trailered unit on the crew's To store list without it ever having been in
-  the water.
+**Every transition works from either surface.** The app is where the work
+happens, so it is where the one-tap row actions live; the console can record
+all of the same things, because at Quest the counter and the shop are the same
+people (`CLAUDE.md` §9) and *"somebody told me it is out"* is an ordinary
+Tuesday. A phone that glitched in the yard must not mean the only person who
+can record the pull is the one whose phone just failed.
+
+- **Pulled** — one tap on the row in the app, or from the console's Yard status
+  card. **Gated on both**, identically: a unit that is not cleared shows the
+  stamp instead of a button, and `adminSetYardState` re-checks `haulAuth_`
+  server-side whichever surface asked. The gate is about the boat, never about
+  who is holding the phone.
+- **Dropped off** — most naturally from the console, since a customer driving
+  their boat in is something the counter sees first. Not gated: the customer
+  drove it here, we touched nothing.
 - **Stored** — either place.
 - **Undo** — either place, any state. A mis-tap in the yard is a certainty and
   the fix must not be a phone call to somebody at a desk.

@@ -370,6 +370,15 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
   "complete files only" rule was a chat-era workaround for empty paste blocks;
   it doesn't apply when Claude Code owns the files directly. Still deliver
   whole files if Chris ever asks for one to paste manually.
+- **The counter and the shop are the same people.** There is no clean split
+  between "office" and "yard" staff at Quest — they cover for each other and
+  work together. Do **not** design a feature so that only one surface can
+  record something on the grounds that it "happens somewhere else": the boats
+  being pulled are a mile and a half away, the boats being worked on are thirty
+  feet away, and whoever hears a fact first is the one who needs to record it.
+  Gates belong on the *thing* (is this boat cleared to pull?), never on the
+  desk somebody is standing at. This assumption was built in once and had to
+  be taken back out.
 - **eBike-related customer email uses `ebikes@questwatersports.com`**, not
   chris@ — relevant if any e-bike-specific comms get added.
 - Notification/reply-to addresses live in constants at the top of the `.gs`

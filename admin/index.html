@@ -1540,9 +1540,24 @@ function renderYardState(){
   const btn=(to,label,cls)=>'<button class="btn '+(cls||'ghost')+' sm" style="margin:0 6px 6px 0" '+
     'onclick="setYardState('+JSON.stringify(to)+')">'+label+'</button>';
   let h='';
-  /* "Pulled" is not offered here. Pulling is something that happens in the
-     yard, with the boat in front of you, and the app gates it on the unit
-     being cleared to pull. Recording it from a desk would route around that. */
+  /* EVERY transition is available here, "pulled" included.
+     The counter and the shop are the same people at Quest — they cover for
+     each other, and the boats being pulled are a mile and a half away while
+     the ones being worked on are thirty feet away. So "somebody told me it is
+     out" is an ordinary Tuesday, not an exception: a phone that glitched in
+     the yard must not mean the only person who can record the pull is the one
+     whose phone just failed.
+     What does NOT relax is the gate. A unit that is not cleared cannot be
+     marked pulled from here either — the button shows why instead, and
+     adminSetYardState re-checks it server-side regardless of which surface
+     asked. The gate is about the boat, never about who is holding the phone. */
+  const a=window._yardAuth;
+  if(st!=='pulled'&&st!=='stored'){
+    h+=(a&&a.state==='cleared')
+      ? btn('pulled','Mark pulled','navy')
+      : '<button class="btn sm" style="margin:0 6px 6px 0" disabled>'+
+        esc((a&&a.stamp)||'Not confirmed — cannot mark pulled')+'</button>';
+  }
   if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
   if(st!=='stored') h+=btn('stored','Mark in storage');
   if(st) h+=btn('','Undo — back to not started');

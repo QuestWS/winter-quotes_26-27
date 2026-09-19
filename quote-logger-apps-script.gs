@@ -3252,6 +3252,11 @@ function adminLookup(token, qn) {
     /* Where this unit is in the season — see YARD_STATES_. */
     yard: { state: yardStateOf_(d), at: String((d.yard && d.yard.at) || ''),
             by: String((d.yard && d.yard.by) || '') },
+    /* Whether this unit is cleared to pull — the SAME answer the yard app and
+       the printed sheets get, from the same function, so the console can offer
+       "Mark pulled" with the gate on it rather than working the gate out for
+       itself or going without. */
+    yardAuth: haulAuth_(paid > 0.005, !!d.contractUrl),
     yardAlert: d.yardAlert
       ? { text: String(d.yardAlert.text || ''), at: String(d.yardAlert.at || ''),
           by: String(d.yardAlert.by || '') }

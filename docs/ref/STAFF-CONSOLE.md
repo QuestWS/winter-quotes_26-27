@@ -172,12 +172,17 @@ both gated on `keys`:
 - **Yard alert** — the one line somebody must know before touching the boat.
   Shown on the crew's list, at the top of the unit in the app, and on both
   printed sheets. Full rules: `docs/ref/YARD-APP.md` § *The alert*.
-- **Yard status** — `dropped off` starts here on purpose. A customer driving
-  their boat in is something the office sees and the yard does not, and it is
-  what puts a trailered unit on the crew's **To store** list without it ever
-  having been in the water. `pulled` is deliberately **not** offered here:
-  pulling happens with the boat in front of you and the app gates it on the
-  unit being cleared, so recording it from a desk would route around that.
+- **Yard status** — every transition, including `pulled`. `dropped off` is
+  most naturally recorded here, since a customer driving their boat in is
+  something the counter sees first, and it is what puts a trailered unit on the
+  crew's **To store** list without it ever having been in the water. `pulled`
+  is here too because the counter and the shop are the same people
+  (`CLAUDE.md` §9) — when somebody's phone glitches in the yard and they say it
+  is out, the person they told has to be able to record it.
+  **The gate does not relax for the console**: a unit that is not cleared shows
+  the stamp instead of a button, and `adminSetYardState` re-checks `haulAuth_`
+  server-side whichever surface asked. The gate is about the boat, never about
+  who is holding the phone.
 
 ## Staff notes
 

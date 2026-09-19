@@ -208,6 +208,23 @@ Y.ev('ROWS = ' + JSON.stringify([
            'not a change to what the customer owes');
     else ok('moving a boat touches no money and no paperwork');
   }
+  /* EVERY transition works from either surface. The counter and the shop are
+     the same people (CLAUDE.md §9) — a phone that glitched in the yard must not
+     mean the only person who can record the pull is the one whose phone failed.
+     This was built the other way once and had to be taken back out. */
+  const adminHtml = read('admin/index.html');
+  if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just the app');
+  else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches in the ' +
+            'yard, the person they tell has to be able to record it');
+  /* But the gate does not relax for it. */
+  if (/_yardAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
+    ok('and the console gates that button on the same cleared/not-cleared answer');
+  else fail('the console offers "Mark pulled" without checking whether the unit is cleared');
+  /* Which means the server has to send it that answer. */
+  if (/yardAuth: haulAuth_\(/.test(gas)) ok('adminLookup ships the pull verdict to the console');
+  else fail('adminLookup does not return yardAuth, so the console is gating on undefined — ' +
+            'it would either always block or always allow');
+
   /* It has to survive the customer's next save like the rest of the yard state. */
   const carry = (gas.match(/if \(oldD\.yard\)/) || [''])[0];
   if (carry) ok('yard progress survives a customer save');

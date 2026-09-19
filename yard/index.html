@@ -293,6 +293,17 @@ let ROWS=[], TAB='pull', CUR=null, PHOTOURL='';
 
 function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
   .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+/* A JS string literal safe to drop inside a DOUBLE-QUOTED HTML attribute.
+   ---------------------------------------------------------------------------
+   JSON.stringify emits double quotes. Put that straight into onclick="..." and
+   the first one ENDS THE ATTRIBUTE: the browser is left with the handler
+   `openQuote(` — a syntax error — and the tap silently does nothing.
+
+   Every row tap and every action button in this app shipped dead because of
+   exactly that. Nothing threw, nothing logged, the markup looked right in the
+   source; it only showed up as "tapping names does not load anything".
+   Use this for any value going into an on*= handler. */
+function jsArg_(v){ return JSON.stringify(String(v)).replace(/"/g,'&quot;'); }
 function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'),2800); }
 function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
@@ -558,7 +569,7 @@ function notes_(x){
    and a button inside a button is invalid and behaves differently in every
    browser. Keyboard access is kept explicitly. */
 function row_(x,right,action){
-  const qn=JSON.stringify(String(x.qn));
+  const qn=jsArg_(x.qn);
   return '<div class="card" role="button" tabindex="0" onclick="openQuote('+qn+')" '+
     'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openQuote('+qn+');}">'+
     '<div class="ln"><span class="nm">'+esc(x.name)+'</span>'+
@@ -577,7 +588,7 @@ function act_(x,to,label){
     return '<button class="act" disabled title="'+esc(a.stamp)+'">'+esc(a.stamp)+'</button>';
   }
   return '<button class="act" onclick="event.stopPropagation();markState('+
-    JSON.stringify(String(x.qn))+','+JSON.stringify(to)+')">'+esc(label)+'</button>';
+    jsArg_(x.qn)+','+jsArg_(to)+')">'+esc(label)+'</button>';
 }
 function render(){
   const counts={pull:0,store:0,stored:0};
@@ -712,7 +723,7 @@ function renderState(){
     ((CUR.yard&&CUR.yard.by)?' · '+esc(CUR.yard.by):'')+'</b></div>';
   if(canWrite()){
     const btn=(to,label,cls)=>'<button class="btn '+(cls||'')+' wide" style="margin-top:8px" '+
-      'onclick="markState('+JSON.stringify(String(CUR.quoteNo))+','+JSON.stringify(to)+')">'+label+'</button>';
+      'onclick="markState('+jsArg_(CUR.quoteNo)+','+jsArg_(to)+')">'+label+'</button>';
     if(st!=='pulled'&&st!=='stored'){
       h+=a.state==='cleared'
         ? btn('pulled','Mark pulled')

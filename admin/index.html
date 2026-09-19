@@ -1538,7 +1538,7 @@ function renderYardState(){
   setMsg('yardStateNow','Right now: '+(YSTATE_LABEL[st]||st)+
     (when?' · '+when+(y.by?' · '+y.by:''):''));
   const btn=(to,label,cls)=>'<button class="btn '+(cls||'ghost')+' sm" style="margin:0 6px 6px 0" '+
-    'onclick="setYardState('+JSON.stringify(to)+')">'+label+'</button>';
+    'onclick="setYardState('+JSON.stringify(to).replace(/"/g,'&quot;')+')">'+label+'</button>';
   let h='';
   /* EVERY transition is available here, "pulled" included.
      The counter and the shop are the same people at Quest — they cover for

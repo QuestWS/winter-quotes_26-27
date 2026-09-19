@@ -280,6 +280,55 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 
 /* =====================================================================
+   2d. EVERY GENERATED HANDLER MUST ACTUALLY PARSE.
+   ---------------------------------------------------------------------
+   The row taps and every action button in this app shipped DEAD, and no test
+   caught it, because the markup looked right to a regex. JSON.stringify emits
+   double quotes; dropped into onclick="..." the first one ends the attribute
+   and the browser is left with `openQuote(` — a syntax error that throws
+   nothing, logs nothing, and just does not fire.
+
+   So: pull every on*= handler out of the real generated markup and run it
+   through the JS parser. A handler that will not parse is a control that does
+   nothing when somebody taps it, in the yard, with no error to go on.
+   ===================================================================== */
+{
+  const rows = [
+    { qn: 'QW-26-1255', name: "O'Brien, Pat", unit: 'Boat', slip: 'B-14', alert: 'no keys',
+      auth: { state: 'cleared' } },
+    { qn: 'QW-26-0002', name: 'Baker, Bo', unit: 'Boat', slip: 'A-3',
+      auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } }
+  ];
+  let markup = '';
+  rows.forEach(function (r) {
+    markup += Y.row_(r, 'Slip ' + r.slip, Y.act_(r, 'pulled', 'Pulled'));
+    markup += Y.row_(r, '', Y.act_(r, 'stored', 'Stored'));
+  });
+  /* Attribute values are double-quoted, so the value is everything up to the
+     next double quote — which is precisely why a raw quote inside it breaks. */
+  const handlers = markup.match(/\son[a-z]+="[^"]*"/g) || [];
+  if (handlers.length < 4) fail('expected several generated handlers to check, found ' + handlers.length);
+  let broken = 0;
+  handlers.forEach(function (h) {
+    const body = h.slice(h.indexOf('"') + 1, -1)
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+    try { new Function('event', body); }
+    catch (e) { broken++; fail('a generated handler is not valid JavaScript — it will do nothing ' +
+      'when tapped: ' + h.trim().slice(0, 90) + '  (' + e.message + ')'); }
+  });
+  if (!broken) ok('every generated on*= handler parses as JavaScript (' + handlers.length + ' checked)');
+  /* The specific shape of the original bug, named so the message is useful. */
+  if (/on[a-z]+="[^"]*"[A-Za-z0-9_-]/.test(markup))
+    fail('an attribute value is terminated early by a raw double quote — use jsArg_()');
+  else ok('no handler is cut short by an unescaped quote');
+  /* And the helper has to exist and do the escaping, or the next person will
+     reach for JSON.stringify again. */
+  if (/JSON\.stringify/.test(Y.ev('String(row_)') + Y.ev('String(act_)')))
+    fail('row_/act_ use JSON.stringify directly in markup — that is the bug');
+  else ok('the row builders go through the escaping helper, not JSON.stringify');
+}
+
+/* =====================================================================
    3. TALKING TO A BACKEND OVER A BAD CONNECTION.
    ===================================================================== */
 /* The app's retry list must be a SUBSET of what the server allows on GET —

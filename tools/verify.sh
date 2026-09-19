@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Quest winter system — syntax + feature sweep. Run AFTER every edit, BEFORE deploying.
 # Usage: bash tools/verify.sh        (requires node)
-set -uo pipefail
+# NO pipefail, deliberately. Nearly every check here is `producer | grep -q`,
+# and `grep -q` exits the instant it matches — the producer (awk, or another
+# grep) is then killed by SIGPIPE and exits 141. With pipefail that becomes the
+# pipeline's status, so a check FAILS precisely because its pattern WAS found,
+# and only when the producer still had output left to write. That made the
+# result depend on how long the function being checked happened to be: adding
+# a comment to adminImportApply was enough to turn a passing trap red. Each
+# check's verdict is grep's own exit status, which is what we actually want.
+set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 TMP="$(mktemp -d)"; FAIL=0
@@ -61,8 +69,11 @@ else echo "  (quote-logger-apps-script.gs not present)"; fi
 echo "== Customer page =="
 if [ -f index.html ]; then
   extract_scripts index.html "$TMP/page.js"; check_js "$TMP/page.js" "index.html"
+  # lateRetrievalFee is no longer written inline here: the payload's season
+  # stamp comes from the engine's seasonStamp(), which check-season-stamp.js
+  # EXECUTES and checks field by field — a stronger test than this grep was.
   sweep index.html "page" "keyLoc" "hhoAddr" "tDocTerm" "CREDIT DUE TO YOU" "quoteLogUrl" \
-    "lateRetrievalFee" "jump start"
+    "seasonStamp" "reserveQuoteNo_" "jump start"
 else echo "  (index.html not present)"; fi
 
 echo "== Staff console =="
@@ -486,6 +497,24 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: re-price rules hold"
   else
     echo "  FAIL gate: re-price rules broken"; sed 's/^/       /' "$TMP/rp.txt"; FAIL=1
+  fi
+  # SEASON STAMP. The dates a quote prints (d.season) are written by three
+  # paths now — the customer page, the importer and the re-price — and a
+  # re-priced quote showing last season's pay-by date beside this season's
+  # money is wrong on the document a customer pays from. Also covers the
+  # reminder hold that stops a batch import auto-emailing hundreds of people.
+  if node tools/check-season-stamp.js > "$TMP/ss.txt" 2>&1; then
+    echo "  OK   gate: season dates follow a re-price, and imports are held back"
+  else
+    echo "  FAIL gate: season stamp / import hold broken"; sed 's/^/       /' "$TMP/ss.txt"; FAIL=1
+  fi
+  # QUOTE NUMBERS. saveQuoteRow_ writes by number and savePdf_ replaces by
+  # number, so a duplicate is one customer's row and PDF overwritten by
+  # another's — silently. Executed against a nearly-full number space.
+  if node tools/check-quote-numbers.js > "$TMP/qn.txt" 2>&1; then
+    echo "  OK   gate: minted quote numbers cannot collide"
+  else
+    echo "  FAIL gate: quote numbers can collide"; sed 's/^/       /' "$TMP/qn.txt"; FAIL=1
   fi
   # Preview must read and report. If it ever writes, "see what would change"
   # becomes "change everything", which is the opposite of the point.

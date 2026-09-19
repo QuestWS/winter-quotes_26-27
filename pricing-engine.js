@@ -661,13 +661,50 @@ const DIM_FIELDS = {
   golf:   [],
   ebike:  []
 };
+
+/* ----------------------------------------------------------------------------
+   THE SEASON STAMP that rides in every payload as `d.season`.
+   ----------------------------------------------------------------------------
+   The dates a quote was written under, frozen into the payload so the PDF and
+   the emails can print them without re-reading the live constants. `sn.payBy`,
+   `sn.lateStart` and `sn.payByShort` are what the PDF's totals block and fine
+   print render, and pricesValidSentence() takes `sn.payBy` deliberately so a
+   quote that is genuinely still last season's keeps the date it was quoted
+   under.
+
+   It lives in the engine because THREE places now write it and they must write
+   the same shape: the customer page on every save, the old-sheet importer, and
+   the season re-price. It used to be built inline on the page alone, which was
+   true while a customer save was the only way a quote came into being — and it
+   is why an imported quote had no `season` at all (a PDF reading "Total — ...
+   by " with nothing after it) and why a re-priced quote kept last season's
+   dates against this season's prices.
+
+   `pricingProvisional` / `ratesLabel` are a RECORD of what the customer was
+   shown, so a quote written while rates were provisional can be told apart
+   later. Nothing renders from them — every surface reads the live engine flag,
+   which is what makes the disclaimer clear everywhere at the rollover. */
+function seasonStamp(){
+  return {
+    label:              SEASON.seasonLabel,
+    payBy:              SEASON.payByDate,
+    payByShort:         SEASON.payByShort,
+    lateStart:          SEASON.lateChargeStart,
+    storageStart:       SEASON.storageStart,
+    storageEnd:         SEASON.storageEnd,
+    lateRetrievalFee:   PRICES.lateRetrieval,
+    lateRetrievalLabel: 'Late retrieval surcharge (after ' + SEASON.payByShort + ')',
+    pricingProvisional: !!PRICING.provisional,
+    ratesLabel:         PRICING.ratesLabel
+  };
+}
 // ENGINE-END
 
   const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
                 pricingNotice, lockinCopy, pricesValidSentence, signUrlFor, normalizeQuoteNo,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
-                depositBaseFor, lwtFromOverhang, rateOverride_ };
+                depositBaseFor, lwtFromOverhang, rateOverride_, seasonStamp };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

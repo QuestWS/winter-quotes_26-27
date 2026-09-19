@@ -31,7 +31,7 @@ symptom.
 | Entry | Handles |
 |---|---|
 | `doPost` | Customer saves, and **every** console API call (the action is dispatched from a table inside it) |
-| `doGet` | `?action=load` (customer reload), `?action=findlead`, `?action=signlookup` (scan-to-sign), `?action=launchpref`, `?action=seasondone`, `?page=admin` (legacy console) |
+| `doGet` | `?action=load` (customer reload), `?action=findlead`, `?action=newquoteno` (a number set aside for a quote about to be built), `?action=signlookup` (scan-to-sign), `?action=launchpref`, `?action=seasondone`, `?page=admin` (legacy console) |
 
 ## Feature → where to start
 
@@ -39,6 +39,9 @@ symptom.
 | Feature | Entry point | File |
 |---|---|---|
 | The rules themselves | `computeQuote` | `pricing-engine.js` |
+| The dates a quote prints (`d.season`) | `seasonStamp` | `pricing-engine.js` |
+| A quote number nothing else is using | `uniqueQuoteNo_`, `takenQuoteNos_`, `readReservations_` | `.gs` |
+| The page asking for one before it saves | `reserveQuoteNo_` (page), `?action=newquoteno` (`doGet`) | `index.html`, `.gs` |
 | Estimate disclaimer while rates are last season's | `pricingNotice`, `lockinCopy`, `pricesValidSentence` (switched by `PRICING`) | `pricing-engine.js` |
 | Where the page puts that disclaimer | `applyPricingNotice` | `index.html` |
 | Which storage tab a quote belongs on | `storageTabFor` | `pricing-engine.js` |
@@ -70,6 +73,7 @@ symptom.
 | The "review & sign" link | `signUrlFor` (engine), `signUrlFor_` (`.gs` wrapper) | both |
 | Send, and record in Email History | `adminSendEmail`, `recordEmail_` | `.gs` |
 | The two automatic sends | `dailyReminderCheck`, `leadFollowUpCheck` | `.gs` |
+| Holding the reminder off an imported quote | `isImportHoldMark_`, `isImportSentMark_`, `importSentAt_`, `releaseImportHold_` | `.gs` |
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | Spreadsheet-menu sends | `menuSendKind_`, `menuBulkSend_` | `.gs` |
@@ -151,4 +155,6 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-yard-app.js` | The yard app renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, and its GET retry list is a subset of the server's |
 | `check-sign-chase.js` | A unit is cleared to pull if and only if it is BOTH signed and paid, and the two holds name their own reason; the deposit tabs sort by payment rather than balance; a lead sits outside both; the sign nudge refuses to build rather than ship a dead button |
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
+| `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |
+| `check-quote-numbers.js` | A minted quote number is never one already on the sheet or reserved, and minting rewrites nothing |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

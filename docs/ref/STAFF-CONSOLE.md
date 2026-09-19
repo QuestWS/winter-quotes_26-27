@@ -383,6 +383,10 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **It re-dates as well as re-prices.** `adminRepriceApply` re-stamps
+  `d.season` from the live constants, because a quote carrying this season's
+  money under last season's pay-by date is wrong on the document the customer
+  pays from. See the season stamp in `docs/ref/DATA-AND-MONEY.md`.
 - **Applied in batches of 15** from the console. Regenerating a quote PDF takes
   seconds and Apps Script stops a call at six minutes; a whole season in one
   request would time out mid-write with no record of where it stopped.
@@ -426,6 +430,17 @@ pricing" template. This reads one and makes a quote here.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
   imported quote must re-price like every other. Preview writes nothing; the
   import emails nobody; `verify.sh` asserts all three.
+- **Import after the new rate card, not before.** An import prices at whatever
+  is live, so importing first means pricing the whole batch at last season's
+  rates and then re-pricing all of it. Importing afterwards prices it right
+  once.
+- **Its quote number is minted server-side** by `uniqueQuoteNo_`, against what
+  is already on the sheet. A batch is precisely the shape that makes a blind
+  random draw collide — `docs/ref/DATA-AND-MONEY.md`.
+- **It holds the automatic reminder off the new row** so a batch import cannot
+  turn into an unattended mailshot ten days later —
+  `docs/ref/EMAILS.md`. Nothing marks which files have already been
+  imported, so track that yourself if the job spans more than one sitting.
 - `tools/check-legacy-import.js` executes eighteen groups over all three file
   states, a mismatched master, comparison sheets, multi-unit sheets and the
   live engine. Fixtures are invented names over the real layout — **no customer

@@ -106,6 +106,33 @@ the storage view tags in red (`docs/ref/STAFF-CONSOLE.md`).
   asserts what came out; `verify.sh` runs it.
 
 
+## An imported quote is held back from the automatic reminder
+
+`dailyReminderCheck` sends to any quote with an email address, no payment, no
+reminder marker and a timestamp older than `REMINDER_AFTER_DAYS`. **An imported
+quote is all four, ten days after it lands.** That email opens "Your Quest
+Watersports winter quote is waiting" — so a batch import of last season's
+customers would, with nobody's finger on it, send that to several hundred
+people who never built a quote.
+
+- **The import writes `IMPORT_HOLD_MARK` into the reminder column**, which is
+  the marker `dailyReminderCheck` already honours, so the hold needs no special
+  case in the sweep itself.
+- **`releaseImportHold_` is called from `recordEmail_`**, not from the console
+  path alone: every send site goes through the recorder, so the sheet menu
+  clears the hold exactly as the console does — the standing menu/console
+  parity rule. It only ever rewrites the hold marker, which is what makes it
+  safe to call from the shared recorder; a `Reminder sent …` or a lead marker
+  is left untouched.
+- **The ten days then run from the send, not from the import.** The release
+  writes `IMPORT_SENT_MARK` plus an **ISO** date, and `importSentAt_` parses it
+  back. Without that the clock would run from the row's creation date and the
+  nudge would arrive the morning after the quote finally went out.
+- **An unparseable marker reads as "say nothing".** A corrupt date must never
+  become a reason to email somebody.
+- `tools/check-season-stamp.js` runs the real sweep over all of these,
+  including that an ordinary old quote is still reminded exactly as before.
+
 ## The automatic-email pause
 
 `AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,

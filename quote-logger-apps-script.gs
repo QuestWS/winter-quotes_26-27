@@ -100,6 +100,48 @@ function autoPauseState_() {
 }
 function autoEmailsPaused_() { return autoPauseState_().on; }
 const REMINDER_AFTER_DAYS = 10;
+/* THE REMINDER COLUMN ON AN IMPORTED QUOTE.
+   ---------------------------------------------------------------------------
+   dailyReminderCheck sends to any quote with an email address, no payment, no
+   reminder marker and a timestamp older than REMINDER_AFTER_DAYS. An imported
+   quote is all four, ten days after it lands — so a batch import would, with
+   nobody's finger on it, mail "Your Quest Watersports winter quote is waiting"
+   to several hundred people who never built a quote.
+
+   So an import writes HOLD into the reminder column, which stops that send the
+   same way an already-sent reminder does. When a human actually emails the
+   customer, releaseImportHold_ swaps it for SENT plus an ISO date, and
+   dailyReminderCheck reads that date as the start of the ten days — the clock
+   runs from the day we contacted them, not the day the row was created, so
+   the nudge does not arrive the morning after the quote finally went out.
+
+   ISO on the SENT marker on purpose: it is parsed, not just read. The HOLD
+   marker is only ever looked at, so it carries a local date for whoever is
+   scanning the column.  */
+const IMPORT_HOLD_MARK = 'Imported — not yet sent ';
+const IMPORT_SENT_MARK = 'Imported — sent ';
+function isImportHoldMark_(v) { return String(v || '').indexOf(IMPORT_HOLD_MARK) === 0; }
+function isImportSentMark_(v) { return String(v || '').indexOf(IMPORT_SENT_MARK) === 0; }
+/* The send date out of a SENT marker, or null if this is not one / is corrupt.
+   Unparseable must read as "no date", and the caller then leaves the quote
+   alone — a broken marker must never become a reason to email somebody. */
+function importSentAt_(v) {
+  if (!isImportSentMark_(v)) return null;
+  const t = Date.parse(String(v).slice(IMPORT_SENT_MARK.length).trim());
+  return isNaN(t) ? null : t;
+}
+/* Called from recordEmail_, so every human send site releases the hold —
+   console, sheet menu and quote page alike. It only ever rewrites the HOLD
+   marker, which is what makes it safe to call from the shared recorder: a
+   "Reminder sent ..." or a lead marker is left exactly as it was. */
+function releaseImportHold_(sh, rowNum) {
+  if (!sh || !rowNum) return;
+  try {
+    const cell = sh.getRange(rowNum, COL.REM);
+    if (!isImportHoldMark_(cell.getValue())) return;
+    cell.setValue(IMPORT_SENT_MARK + new Date().toISOString());
+  } catch (e) { /* never let bookkeeping fail a send that already went out */ }
+}
 // Daily backup: full spreadsheet emailed as an Excel file. Run
 // setupBackupTrigger() once from the editor to activate (6pm daily).
 const BACKUP_EMAIL = 'chris@questwatersports.com';
@@ -800,6 +842,43 @@ const DIM_FIELDS = {
   golf:   [],
   ebike:  []
 };
+
+/* ----------------------------------------------------------------------------
+   THE SEASON STAMP that rides in every payload as `d.season`.
+   ----------------------------------------------------------------------------
+   The dates a quote was written under, frozen into the payload so the PDF and
+   the emails can print them without re-reading the live constants. `sn.payBy`,
+   `sn.lateStart` and `sn.payByShort` are what the PDF's totals block and fine
+   print render, and pricesValidSentence() takes `sn.payBy` deliberately so a
+   quote that is genuinely still last season's keeps the date it was quoted
+   under.
+
+   It lives in the engine because THREE places now write it and they must write
+   the same shape: the customer page on every save, the old-sheet importer, and
+   the season re-price. It used to be built inline on the page alone, which was
+   true while a customer save was the only way a quote came into being — and it
+   is why an imported quote had no `season` at all (a PDF reading "Total — ...
+   by " with nothing after it) and why a re-priced quote kept last season's
+   dates against this season's prices.
+
+   `pricingProvisional` / `ratesLabel` are a RECORD of what the customer was
+   shown, so a quote written while rates were provisional can be told apart
+   later. Nothing renders from them — every surface reads the live engine flag,
+   which is what makes the disclaimer clear everywhere at the rollover. */
+function seasonStamp(){
+  return {
+    label:              SEASON.seasonLabel,
+    payBy:              SEASON.payByDate,
+    payByShort:         SEASON.payByShort,
+    lateStart:          SEASON.lateChargeStart,
+    storageStart:       SEASON.storageStart,
+    storageEnd:         SEASON.storageEnd,
+    lateRetrievalFee:   PRICES.lateRetrieval,
+    lateRetrievalLabel: 'Late retrieval surcharge (after ' + SEASON.payByShort + ')',
+    pricingProvisional: !!PRICING.provisional,
+    ratesLabel:         PRICING.ratesLabel
+  };
+}
 // ENGINE-END
 
 function doPost(e) {
@@ -1274,6 +1353,15 @@ function doGet(e) {
      It must never be widened to real quote tabs: that would turn an email
      address into a way to pull somebody's priced quote, which today needs the
      quote number. */
+  /* A quote number set aside for a customer who is about to start building.
+     Writes nothing to the spreadsheet and reveals nothing about it: the reply
+     is one number that is, by construction, NOT in use. The page asks for this
+     at the contact gate because its save POST is no-cors and cannot be told a
+     number afterwards (see reserveQuoteNo_ in index.html). */
+  if (p.action === 'newquoteno') {
+    try { return out({ ok: 1, quoteNo: uniqueQuoteNo_('') }); }
+    catch (err) { return out({ ok: 0 }); }
+  }
   if (p.action === 'findlead') {
     try {
       const em = String(p.email || '').trim().toLowerCase();
@@ -1473,6 +1561,130 @@ function findQuoteRowFrom_(sh, quoteNo, startRow) {
     if (String(col[i][0]) === String(quoteNo)) return i + startRow;
   }
   return -1;
+}
+
+/* ============ QUOTE NUMBERS THAT CANNOT COLLIDE ============
+   ---------------------------------------------------------------------------
+   Every write path finds a quote BY ITS NUMBER: saveQuoteRow_ overwrites the
+   row findQuoteRow_ returns, and savePdf_ replaces the Drive file whose title
+   contains it. So two quotes sharing a number is not a cosmetic clash — the
+   second customer silently overwrites the first, and takes their PDF with them.
+
+   The old number was four random digits drawn on the page: 9,000 slots, no
+   check against anything. That held up while quotes arrived a few a day, and
+   stops holding up the moment a batch is created at once — importing a couple
+   of hundred of last season's customers is about a 90% chance of at least one
+   collision, and nothing would announce it.
+
+   EXISTING NUMBERS ARE NEVER TOUCHED. This only governs numbers minted from
+   here on: it reads what is already taken and picks something that is not.
+
+   Two things can be taken, and both are checked:
+     - a number on the sheet, read from the Quote # column only. Never the
+       payload column: that is kilobytes a row, and reading it to mint a number
+       is exactly the kind of full-payload scan that made the storage view time
+       out (CLAUDE.md section 7).
+     - a number RESERVED minutes ago by a customer who is still filling in the
+       form and has not saved yet. Held in Script Properties with a timestamp
+       and expired after RESERVE_TTL_MIN_, so an abandoned quote releases its
+       number instead of burning it forever.
+
+   Serialized with LockService, because two customers passing the contact gate
+   in the same second is the case this exists to stop. Failing to get the lock
+   is not fatal — the caller still gets a number, just one drawn without the
+   guarantee, which is exactly where we were before. */
+const QNO_RESERVE_KEY_ = 'QNO_RESERVATIONS';
+const QNO_RESERVE_TTL_MIN_ = 90;
+const QNO_LOCK_MS_ = 8000;
+
+/* Every quote number currently on the spreadsheet, as a lookup object.
+   Quote # is column 3 on every quote tab (COL.QN), which is also how a tab is
+   recognised as a quote tab at all. */
+function takenQuoteNos_() {
+  const taken = {};
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;   // not a quote tab
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
+      const qn = String(r[0] || '').trim();
+      if (qn) taken[qn.toUpperCase()] = 1;
+    });
+  });
+  return taken;
+}
+
+/* The unexpired reservations, pruned. Returns {map, changed} so the caller can
+   avoid writing the property back when nothing aged out. */
+function readReservations_() {
+  const props = PropertiesService.getScriptProperties();
+  let raw = {};
+  try { raw = JSON.parse(props.getProperty(QNO_RESERVE_KEY_) || '{}') || {}; } catch (e) { raw = {}; }
+  const cutoff = Date.now() - QNO_RESERVE_TTL_MIN_ * 60 * 1000;
+  const live = {};
+  let changed = false;
+  Object.keys(raw).forEach(function (qn) {
+    if (Number(raw[qn] || 0) >= cutoff) live[qn] = raw[qn]; else changed = true;
+  });
+  return { map: live, changed: changed };
+}
+
+/* Mint a quote number nothing else is using.
+   `proposed` is honoured when it is free — that is what lets a caller that
+   already has a number (an import carrying one, a retry) keep it rather than
+   churn a new one. Anything not free is replaced.
+
+   Four digits first, so numbers stay the short thing staff read down a phone.
+   If the four-digit space is genuinely crowded the draw widens to five, which
+   normalizeQuoteNo already accepts on both sides (it matches 3 to 5 digits),
+   so a wider number round-trips through the customer page and the console
+   without any other change. */
+function uniqueQuoteNo_(proposed) {
+  const yy = String(new Date().getFullYear()).slice(2);
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(QNO_LOCK_MS_); } catch (e) { locked = false; }
+  try {
+    const taken = takenQuoteNos_();
+    const res = readReservations_();
+    const free = function (qn) {
+      const k = qn.toUpperCase();
+      return !taken[k] && !res.map[k];
+    };
+
+    let pick = normalizeQuoteNo(proposed || '', new Date().getFullYear());
+    if (!pick || !free(pick)) {
+      pick = '';
+      /* 400 draws at four digits. With the whole 9,000 free this lands first
+         try; it only runs long when the space is nearly full, and that is the
+         case the widening below exists for. */
+      for (let i = 0; i < 400 && !pick; i++) {
+        const c = 'QW-' + yy + '-' + String(Math.floor(1000 + Math.random() * 9000));
+        if (free(c)) pick = c;
+      }
+      for (let i = 0; i < 400 && !pick; i++) {
+        const c = 'QW-' + yy + '-' + String(Math.floor(10000 + Math.random() * 90000));
+        if (free(c)) pick = c;
+      }
+      /* Both spaces exhausted is not survivable by guessing — walk the
+         five-digit range in order and take the first gap. */
+      for (let n = 10000; n < 100000 && !pick; n++) {
+        const c = 'QW-' + yy + '-' + String(n);
+        if (free(c)) pick = c;
+      }
+    }
+    if (!pick) throw new Error('no free quote number in QW-' + yy + '-*');
+
+    res.map[pick.toUpperCase()] = Date.now();
+    try {
+      PropertiesService.getScriptProperties()
+        .setProperty(QNO_RESERVE_KEY_, JSON.stringify(res.map));
+    } catch (e) { /* the reservation is an optimisation; the sheet scan is the guarantee */ }
+    return pick;
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e) {} }
+  }
 }
 
 function findQuoteRow_(sh, quoteNo) {
@@ -3459,6 +3671,10 @@ function recordEmail_(sh, rowNum, d, kind, by) {
   d.emailLog = d.emailLog || [];
   d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: d.email || '', by: by || '' });
   if (sh) sh.getRange(rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  /* Every send site calls this, which is exactly why the import hold is
+     released here rather than in the console path alone — the sheet menu can
+     send the same emails, and menu/console parity is a standing rule. */
+  releaseImportHold_(sh, rowNum);
 }
 
 function adminSendEmail(token, qn, kind, extra) {
@@ -4347,8 +4563,10 @@ function adminImportApply(token, state, meta) {
   st.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
   st.quoteNo = '';
 
-  const yy = String(new Date().getFullYear()).slice(2);
-  const qn = 'QW-' + yy + '-' + String(Math.floor(1000 + Math.random() * 9000));
+  /* Minted server-side against what is already on the sheet. An import runs
+     in a batch — hundreds in a sitting — which is precisely the shape that
+     makes a blind random draw collide (see uniqueQuoteNo_). */
+  const qn = uniqueQuoteNo_('');
 
   const d = {
     status: 'Imported from ' + (meta.file || 'a previous sheet') + ' — not yet sent',
@@ -4362,6 +4580,11 @@ function adminImportApply(token, state, meta) {
     hasTrailer: st.hasTrailer ? 1 : 0,
     depositBase: depositBaseFor(st),
     payMode: 'deposit', payments: [], emailLog: [],
+    /* The dates this quote is written under. Without it the PDF prints
+       "Total — ... by " and "a service charge beginning " with nothing after
+       them, because that block reads d.season and an imported quote never had
+       one — the stamp used to be built on the customer page alone. */
+    season: seasonStamp(),
     state: st, lines: [], total: '0.00',
     /* Why this quote exists and what it came from, in the staff note — which
        is exactly the "what was I thinking" record Chris asked for. */
@@ -4399,6 +4622,18 @@ function adminImportApply(token, state, meta) {
   sh.getRange(ctx.rowNum, COL.DIMS).setValue(d.dims || '');
   sh.getRange(ctx.rowNum, COL.NOTES).setValue(d.notes);
   saveQuoteRow_(ctx, d.status);
+  /* HOLD THE AUTOMATIC REMINDER OFF AN IMPORTED QUOTE.
+     dailyReminderCheck mails any quote older than REMINDER_AFTER_DAYS that has
+     no reminder marker, no payment and an email address — which an imported
+     row is, ten days after it is created. That email opens "Your Quest
+     Watersports winter quote is waiting", and it would be going, unprompted
+     and with nobody's finger on it, to people who never built a quote.
+
+     The marker in the reminder column is what dailyReminderCheck already
+     honours, so this needs no change there. adminSendEmail clears it the
+     moment a human actually sends this customer something — the same
+     write-a-marker, drop-it-on-graduation pattern the lead follow-up uses. */
+  sh.getRange(ctx.rowNum, COL.REM).setValue(IMPORT_HOLD_MARK + new Date().toLocaleDateString());
 
   auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
     d.unit + ', ' + tabName + ', ' + usd_(Number(d.total || 0)) +
@@ -4672,6 +4907,19 @@ function adminRepriceApply(token, only, first) {
       const cross = rebuildLinesFromState_(d);
       if (!cross.rebuilt) throw new Error(cross.reason || 'could not be priced');
       applyManualOps_(d);
+      /* RE-PRICED MEANS RE-DATED. The prices this quote now carries are this
+         season's, so the dates printed beside them have to be too. d.season is
+         what the PDF's totals block and fine print read — the pay-by date, the
+         date late charges start, the season label — and it was only ever
+         written by the customer page. Leaving it alone here is how a quote
+         ends up quoting 2026-2027 money against a "balance due by November 15,
+         2025" and a service charge starting "Dec 1, 2025".
+
+         This is the one place that overrides pricesValidSentence's habit of
+         keeping a quote's original date, and deliberately: that rule exists so
+         an OLD quote keeps the terms it was quoted under, which stops being
+         the right answer at the moment we re-price it into a new season. */
+      d.season = seasonStamp();
       /* If the tab moved between preview and now, stop rather than write a
          quote onto the wrong sheet. */
       if ((d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
@@ -6577,7 +6825,12 @@ function dailyReminderCheck() {
          came back, which is exactly the set whose stored link predates the
          web form. See signUrlFor_. */
       try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
-      if (reminder) return;                                   // already reminded
+      /* An imported quote that a human has since emailed restarts its ten
+         days from THAT send. Every other marker still means "done, say no
+         more" — including the HOLD on an import nobody has contacted yet. */
+      const sentAt = importSentAt_(reminder);
+      if (reminder && sentAt === null) return;                // already reminded, or held
+      if (sentAt !== null && sentAt > cutoff) return;         // contacted too recently
       if (!email) return;                                     // nowhere to send
       if (status.indexOf('Signed & paying') === 0) return;    // already moving forward
       if (status.indexOf('Adjusted after signing') === 0) return; // signed, then tweaked

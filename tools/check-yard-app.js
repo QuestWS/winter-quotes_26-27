@@ -328,6 +328,25 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('the row builders go through the escaping helper, not JSON.stringify');
 }
 
+/* The alert is READ ONLY in the yard. Setting it lives on the console, so
+   the loud thing stays under one pair of eyes instead of being rewritten by
+   whoever is standing nearest the boat. */
+{
+  if (/function saveAlert|api\('yardAlert'/.test(SRC))
+    fail('the yard app can still write an alert — alerts are set on the console only');
+  else ok('the yard app only displays alerts, it cannot set them');
+  if (/id="alertText"/.test(HTML))
+    fail('the yard app still carries an alert editor, which shows an empty box on every unit');
+  else ok('there is no alert editor in the yard app');
+  /* And nothing renders at all when there is no alert to show. */
+  if (Y.alert_({ alert: '' }) !== '') fail('an empty alert still renders a strip');
+  else if (Y.alert_({ alert: '   ' }) !== '') fail('a whitespace-only alert still renders a strip');
+  else if (Y.alert_({}) !== '') fail('a unit with no alert field renders a strip');
+  else ok('nothing renders unless an alert has actually been entered');
+  if (Y.alert_({ alert: 'no keys' }).indexOf('no keys') > -1) ok('and a real alert does render');
+  else fail('a real alert does not render');
+}
+
 /* =====================================================================
    3. TALKING TO A BACKEND OVER A BAD CONNECTION.
    ===================================================================== */

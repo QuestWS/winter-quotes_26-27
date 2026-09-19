@@ -131,13 +131,26 @@ verdict out from `contract` and `deposit` itself.
 ## The alert
 
 One short, current, loud line per unit — *"no keys, do not tow"*, *"owner says
-don't touch the canvas"*, *"bad bunk on the trailer"*. `d.yardAlert`, set and
-cleared from either the console or the app.
+don't touch the canvas"*, *"bad bunk on the trailer"*. `d.yardAlert`.
+
+**Set and cleared on the console only. The yard app displays it and cannot
+touch it.** Chris's call, and it is the one place the app is deliberately
+read-only: the alert is the loud thing, and it stays under one pair of eyes
+rather than being rewritten by whoever is standing nearest the boat. The guard
+fails if the app grows a `saveAlert` or an alert editor — note that an editor
+is not harmless even unused, because an empty box on every unit is exactly
+what it must not have (below).
 
 **It is on the list row, not behind a tap.** That is the entire point: somebody
 loading the app sees which boats need reading about *before* walking over to
 one. An alert only visible on the detail screen is a note, and there is already
 a note. The guard asserts it renders on the row.
+
+**Nothing renders unless something was actually entered** — no empty strip, no
+empty heading, on the row or on the detail screen. An empty warning on every
+unit is how people stop seeing the one that matters. Whitespace counts as
+empty, since a cleared field can leave a space behind and a strip containing
+one space is still a strip on every row. All four cases are asserted.
 
 **Three staff-facing texts, deliberately kept apart** — and the difference is
 why this is a third one rather than a reuse:

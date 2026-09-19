@@ -211,18 +211,6 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
   <div id="dAlert"></div>
   <div class="wrap">
     <div id="dCall"></div>
-    <div class="blk">
-      <h3>Alert</h3>
-      <div class="msg" style="margin-top:0">One short line the crew sees on the list and at the top
-        of this screen. Clear it when it stops being true.</div>
-      <textarea class="txt" id="alertText" rows="2" maxlength="160"
-        placeholder="e.g. no keys — do not tow"></textarea>
-      <div class="row2" style="margin-top:8px">
-        <button class="btn ghost" id="alertClearBtn" onclick="saveAlert('')">Clear</button>
-        <button class="btn" id="alertBtn" onclick="saveAlert()">Save alert</button>
-      </div>
-      <div class="msg" id="alertMsg"></div>
-    </div>
     <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
     <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
     <div class="blk">
@@ -559,6 +547,8 @@ function badge_(x){
 /* On the row, not just behind a tap. The whole point is that somebody loading
    the app sees which boats need reading about before they walk over to one. */
 function alert_(x){
+  /* Trimmed before the test: a cleared field can leave whitespace behind, and
+     a strip containing one space is still a strip on every row. */
   const t=String((x&&x.alert)||'').trim();
   return t?'<div class="alert"><span class="i">\u26A0</span><span>'+esc(t)+'</span></div>':'';
 }
@@ -679,34 +669,20 @@ async function markState(qn,to){
     toast(e.message);
   }
 }
+/* READ ONLY HERE. Alerts are set and cleared on the console, never from the
+   yard — Chris's call, and it keeps the loud thing under one pair of eyes
+   rather than letting whoever is standing nearest the boat rewrite it.
+
+   Renders NOTHING when there is no alert: an empty warning strip on every
+   unit is how people stop seeing the strip that matters. */
 function renderAlert(){
   const a=CUR&&CUR.yardAlert;
-  const t=String((a&&a.text)||'');
+  const t=String((a&&a.text)||'').trim();
   $('dAlert').innerHTML=t
     ? '<div class="alert"><span class="i">\u26A0</span><span>'+esc(t)+
       (a.by?'<br><span style="font-weight:400;font-size:12px">set by '+esc(a.by)+'</span>':'')+
       '</span></div>'
     : '';
-  $('alertText').value=t;
-  const w=canWrite();
-  $('alertBtn').disabled=!w; $('alertClearBtn').disabled=!w||!t;
-  $('alertText').disabled=!w;
-}
-async function saveAlert(force){
-  if(!CUR) return;
-  const t=force===''?'':($('alertText').value||'').trim();
-  const b=$('alertBtn'); b.disabled=true;
-  setMsg('alertMsg','Saving…');
-  try{
-    const r=await api('yardAlert',[CUR.quoteNo,t]);
-    if(!r||!r.ok){ setMsg('alertMsg',(r&&r.error)||'Could not save that.',false); return; }
-    CUR.yardAlert=r.alert||null;
-    /* The list is what this is for, so keep it honest without a round trip. */
-    ROWS.forEach(x=>{ if(x.qn===CUR.quoteNo) x.alert=t; });
-    renderAlert(); render();
-    setMsg('alertMsg',r.msg,true); toast(r.msg);
-  }catch(e){ setMsg('alertMsg',e.message,false); }
-  finally{ b.disabled=!canWrite(); }
 }
 const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
 function renderState(){
@@ -746,7 +722,7 @@ async function openQuote(qn){
   $('sheet').classList.remove('hide');
   $('dName').textContent='Loading…'; $('dQn').textContent=qn;
   $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
-  $('dAlert').innerHTML=''; $('alertText').value=''; setMsg('alertMsg','');
+  $('dAlert').innerHTML='';
   $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
   $('photoCounts').textContent='—';
   window.scrollTo(0,0);

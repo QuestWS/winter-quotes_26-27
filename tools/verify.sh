@@ -147,7 +147,7 @@ echo "== Yard app =="
 if [ -f yard/index.html ]; then
   extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
   sweep yard/index.html "yard" \
-    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "saveAlert" "dAlert" \
+    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" \
     "uploadPhoto" "yardNote" "manifest.json" "storageView"
   # One big script here too, so the same shadowing trap applies.
   DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \

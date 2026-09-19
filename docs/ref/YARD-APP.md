@@ -49,30 +49,41 @@ building back on the crew's to-do list.
 
 ### Where each transition starts
 
-**Every transition works from either surface.** The app is where the work
-happens, so it is where the one-tap row actions live; the console can record
-all of the same things, because at Quest the counter and the shop are the same
-people (`CLAUDE.md` §9) and *"somebody told me it is out"* is an ordinary
-Tuesday. A phone that glitched in the yard must not mean the only person who
-can record the pull is the one whose phone just failed.
+The console can record **every** transition, because at Quest the counter and
+the shop are the same people (`CLAUDE.md` §9) and *"somebody told me it is
+out"* is an ordinary Tuesday. A phone that glitched in the yard must not mean
+the only person who can record the pull is the one whose phone just failed.
 
-- **Pulled** — one tap on the row in the app, or from the console's Yard status
-  card. **Gated on both**, identically: a unit that is not cleared shows the
-  stamp instead of a button, and `adminSetYardState` re-checks `haulAuth_`
-  server-side whichever surface asked. The gate is about the boat, never about
-  who is holding the phone.
-- **Dropped off** — most naturally from the console, since a customer driving
-  their boat in is something the counter sees first. Not gated: the customer
-  drove it here, we touched nothing.
-- **Stored** — either place.
-- **Undo** — either place, any state. A mis-tap in the yard is a certainty and
-  the fix must not be a phone call to somebody at a desk.
+| Transition | In the app | On the console | Gated? |
+|---|---|---|---|
+| **Pulled** | button on the **opened unit** only | Yard status card | yes, identically |
+| **Dropped off** | — | Yard status card | no |
+| **Stored** | one tap on the To store row, or the opened unit | Yard status card | no |
+| **Undo** | opened unit, any state | Yard status card | no |
+
+Two of those placements are deliberate and were changed after the first build:
+
+- **Pulling is not a row action.** It is the act the whole liability rule
+  exists for, so it is made with the unit **open** — its alert, its
+  authorisation banner and its notes all on the screen at the time. The pull
+  list's rows open a unit and record nothing. Putting an already-pulled boat
+  into a building carries none of that weight and is done a row at a time down
+  a list, so `Stored ✓` stays on the row.
+- **Dropped off is console-only.** It records that a customer drove their own
+  boat in, which is something the *counter* hears; the yard never sees it
+  happen. The app must still **read** the state — it is how a unit reaches the
+  To store list without ever having been in the water — it just cannot set it.
+
+`check-yard-app.js` asserts both from the rendered markup rather than from the
+helpers, because a row action is a two-line thing to reinstate by hand and the
+helper is still sitting there. It also asserts the console kept "Mark dropped
+off", since the app gave it up on that understanding.
 
 ### The pull gate follows the boat
 
 Marking a unit **pulled** is a claim that we put hands on it and took it out of
-the water, so it is refused for anything not `cleared` — in the app the tick
-button is disabled and shows the stamp instead, and `adminSetYardState`
+the water, so it is refused for anything not `cleared` — in the app the opened
+unit shows the stamp where the button would be, and `adminSetYardState`
 re-checks `haulAuth_` server-side, because a client is not a permission.
 Otherwise the app becomes the place a rule violation gets written down.
 
@@ -92,12 +103,13 @@ the order the customers asked for, and re-sorting it would throw that away.
 
 ### The row action
 
-Each row on To pull and To store carries its own button — `Pulled ✓`,
-`Stored ✓` — so a crew member can work down twenty boats without opening
-twenty detail sheets. Two things make that safe: it is its own tap target with
-real padding and a divider above it, and it calls `stopPropagation`, or the
-tick would also open the detail sheet and slide a panel over the list they were
-working down. The guard asserts both.
+Rows on **To store** carry a `Stored ✓` button, so a crew member can work down
+twenty boats without opening twenty detail sheets. Two things make that safe:
+it is its own tap target with real padding and a divider above it, and it calls
+`stopPropagation`, or the tick would also open the detail sheet and slide a
+panel over the list they were working down. The guard asserts both.
+
+**To pull rows carry no button** — see *Where each transition starts*.
 
 Lead rows never appear on any list. A quote nobody finished is not a unit we
 are holding.
@@ -207,6 +219,60 @@ when. `adminAddYardNote` is the only way in; there is no edit and no delete.
 - Written from the app or from the console's **Yard log** card; both go through
   the same endpoint, gated on the `keys` permission — recording what a unit
   looks like is yard work, the same bar as keys and slip.
+
+---
+
+## Measurements
+
+*"We should have the ability to update dimensions in the yard app."* The tape
+measure is in the yard, so the correction is made in the yard. The card sits on
+the opened unit, under **Measurements**, and runs the same two endpoints the
+console's dimension editor does — `adminDimsPreview` then `adminDimsApply` —
+so a re-measure taken at the ramp is journalled, audited and re-priced exactly
+like one taken at the desk. Everything in `docs/ref/STAFF-CONSOLE.md`
+§ *The dimension editor* and `docs/ref/DATA-AND-MONEY.md` about
+`manual.measured` applies unchanged.
+
+Three things are different here, and all three are the sort that get quietly
+relaxed later:
+
+- **It is its own permission — `measure`, not `keys` and not `adjust`.**
+  Writing a yard note must never buy the ability to re-price a quote, and
+  inventing a charge (`adjust`) is a different act from reading a tape over a
+  hull. An unset `measure` falls back to `adjust`, so **deploying this changes
+  nobody's access on the day**: Chris and Jeff can re-measure because they
+  already could, and John, Rex, Jess and Marina cannot until an admin turns it
+  on for them — one tap per person in the console's **Staff** panel, the
+  button marked *Re-measure*. `canMeasure_` in the `.gs` is the one answer;
+  `canMeasure()` in the app and `permsOf()` in the console mirror its fallback
+  because `ME` is cached in localStorage and a session opened before the
+  deploy carries a perms object with no `measure` key in it.
+- **Preview and apply are two separate taps.** `dimsPreview` writes nothing
+  and says what the change costs — line by line, the new total, the new
+  balance, any storage move, and any flag the engine raises (*too wide for
+  inside*). `dimsApply` is a second deliberate act. That matters more here
+  than at the desk: the person making it is holding a phone in one hand and a
+  bow line in the other.
+- **The app sends measurements only.** The console's editor can also change
+  motor counts and override the storage location; those are specification
+  changes made at a desk with the customer on the phone, and they stay there.
+  The yard sends the engine's own `DIM_FIELDS` plus *stored on its trailer*.
+  A storage move still happens — it just *follows from* the measurements
+  rather than being chosen, and the diff says so before the tap.
+
+Because the field list comes from the server (`DIM_FIELDS` in the engine), a
+dimension that starts mattering to the price appears in the yard without this
+file or `yard/index.html` changing.
+
+Applying reloads the list **before** re-opening the unit: the row's dimensions,
+total and possibly its storage tab have all just changed, and re-opening
+against the cached row would put the old figures back on screen a second after
+the toast said otherwise. Nothing is emailed — the customer finds out from the
+counter, as with every other re-price.
+
+A deposit does not stop a re-measure. The real workflow *is* quote → deposit →
+pull → measure → re-bill, and `verify.sh` fails if the customer-side payment
+lock ever spreads to these two endpoints.
 
 ---
 
@@ -412,3 +478,8 @@ The `keys` permission gates writing. `canWrite()` mirrors `canKeys_`'s fallback
 for roster entries written before that permission existed — `ME` is cached in
 localStorage, and a session opened before the deploy would otherwise lose the
 note box on an action the server would still accept.
+
+`measure` gates the one thing in the app that moves money, and `canMeasure()`
+mirrors `canMeasure_` for the same reason. Without it the Measurements card is
+**absent, not disabled**: a permanently dead control is something people learn
+to tap anyway.

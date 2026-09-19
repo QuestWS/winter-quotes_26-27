@@ -11,7 +11,7 @@ every request. The rules are unchanged — this text was moved verbatim, and
 
 ## Permissions
 Roster in Script Properties `STAFF`. Perms: `pay`, `adjust`, `email`,
-`photos`, `keys`, plus `admin`. `requireAuth_(token, perm)` gates every console
+`photos`, `keys`, `measure`, plus `admin`. `requireAuth_(token, perm)` gates every console
 endpoint; sessions are 12h tokens; 10 failed PINs → 15-minute lockout + alert
 email. Every console action writes to the **Activity Log** sheet tab.
 
@@ -259,7 +259,8 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
 
 ## Re-measuring and relocating (console)
 
-`Unit details & storage` card, gated on the `adjust` permission. Edit LOA /
+`Unit details & storage` card, gated on the **`measure` permission** (it used
+to be `adjust`; see *Who can re-measure* below). Edit LOA /
 beam / LWT (or stored L×W for a jet ski), toggle the trailer, **correct the
 motor type / count / service level**, and/or pick a new storage location →
 **Preview the change** → server re-prices with the shared engine and returns a
@@ -412,7 +413,31 @@ a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
   the console. Push-only first, run it, then deploy (CLAUDE.md §2, step 3).
 
 Current roster intent: Chris & Jeff admin (full); John, Rex, Jess →
-pay+email+photos; Marina → photos only.
+pay+email+photos+keys; Marina → photos only. Nobody outside the two admins has
+`measure` yet — see below.
+
+### Who can re-measure
+
+`adminDimsPreview` / `adminDimsApply` are gated on **`measure`**, not `adjust`.
+They were on `adjust` until the yard app grew a Measurements card, and that
+would have meant the only people who could correct a dimension were the two who
+never hold the tape.
+
+- **It is not `keys`.** Writing a yard note or recording a key location must
+  never buy the ability to re-price a quote.
+- **It is not `adjust`.** `adjust` is inventing a charge out of nothing.
+  Measuring is reading a tape over a hull. They are different acts and they
+  deserve different answers.
+- **Unset falls back to `adjust`** (`canMeasure_`), so introducing it changed
+  nobody's access on the day it deployed: the two admins could already
+  re-measure, and everybody else still cannot until an admin says so. An
+  explicit setting always wins, including turning it OFF for somebody who can
+  adjust. `permsOf()` in the console and `canMeasure()` in the yard app mirror
+  the fallback, because `ME` is cached in localStorage.
+  `tools/check-perms-pause.js` runs the real roster through it.
+- **To grant it:** Admin → Staff → the *Re-measure* button on that person's
+  row. It takes effect on their next sign-in (the console reads `ME` from the
+  cached session), so have them sign out and back in if they are already on.
 
 ---
 

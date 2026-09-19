@@ -153,13 +153,38 @@ if [ -f yard/index.html ]; then
   extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
   sweep yard/index.html "yard" \
     "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" "putDirect_" "uploadOne_" "upPump_" "upChip_" "uploadSession" \
-    "uploadPhoto" "yardNote" "manifest.json" "storageView"
+    "uploadPhoto" "yardNote" "manifest.json" "storageView" \
+    "renderDims" "previewDims" "applyDims" "collectDims" "canMeasure" "dimsBlk" "dimsPreview" "dimsApply"
   # One big script here too, so the same shadowing trap applies.
   DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \
          | grep -oE '[A-Za-z0-9_$]+$' | sort | uniq -d)
   if [ -n "$DUPY" ]; then
     echo "  FAIL trap: duplicate function name(s) in the yard app:"; echo "$DUPY" | sed 's/^/         /'; FAIL=1
   else echo "  OK   trap: no duplicate function names in the yard app"; fi
+  # Re-measuring is a money act on a yard phone, so it is its own permission
+  # and it never travels on `keys`. Checked here as well as in the gate because
+  # this is the grep somebody runs when wiring a new endpoint up to the app.
+  for f in adminDimsApply adminDimsPreview; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'measure')"; then
+      echo "  OK   trap: $f is gated on the measure permission"
+    else
+      echo "  FAIL trap: $f is not gated on 'measure' — writing a yard note would buy a re-price"; FAIL=1
+    fi
+  done
+  # Dropped off is what the COUNTER hears; the yard never sees it happen. And
+  # pulling is made with the unit open, under its alert and its authorisation
+  # banner, so the pull list records nothing from the row.
+  if grep -q "act_(x,'pulled'" yard/index.html; then
+    echo "  FAIL trap: the pull list ticks a boat off from the row — pulling is a button on the opened unit"; FAIL=1
+  else echo "  OK   trap: the pull list records nothing from the row"; fi
+  if grep -q "'Mark dropped off'" yard/index.html; then
+    echo "  FAIL trap: the yard app offers 'Mark dropped off' — that is console-only"; FAIL=1
+  else echo "  OK   trap: 'Mark dropped off' is console-only"; fi
+  if grep -q "'Mark dropped off'" admin/index.html; then
+    echo "  OK   trap: and the console still has it"
+  else
+    echo "  FAIL trap: nothing can mark a unit dropped off — the To store list depends on it"; FAIL=1
+  fi
   # The pull rule belongs to the server. Three surfaces ask it; one answers.
   if node tools/check-yard-app.js > "$TMP/yardapp.txt" 2>&1; then
     echo "  OK   gate: yard app renders the server's verdict and degrades safely"

@@ -32,10 +32,10 @@ const PropertiesService={getScriptProperties:()=>({
   deleteProperty:k=>{delete store[k];}})};
 
 const B=new Function('PropertiesService',[
-  fn('canKeys_'), fn('resolvedPerms_'),
+  fn('canKeys_'), fn('canMeasure_'), fn('resolvedPerms_'),
   "const AUTO_PAUSE_KEY_='AUTO_EMAIL_PAUSED';",
   fn('autoPauseState_'), fn('autoEmailsPaused_'),
-  'return {canKeys_,resolvedPerms_,autoPauseState_,autoEmailsPaused_};'
+  'return {canKeys_,canMeasure_,resolvedPerms_,autoPauseState_,autoEmailsPaused_};'
 ].join('\n'))(PropertiesService);
 
 let fails=0;
@@ -63,13 +63,36 @@ check('0 as a string is still OFF',     B.canKeys_({admin:false,perms:{pay:1,key
 check('empty string falls back',        B.canKeys_({admin:false,perms:{pay:1,keys:''}})===true);
 check('nobody at all',                  B.canKeys_(null)===false);
 
+console.log('\n=== 2b. who can re-measure, on TODAY\'S roster (no `measure` field yet) ===');
+/* A re-measure re-prices the quote, so it is NOT the `keys` bar — writing a
+   yard note must never buy it. It is not `adjust` either: adjusting is
+   inventing a charge, measuring is reading a tape over a hull. Unset falls
+   back to `adjust`, which is what makes deploying this a no-op: nobody's
+   access changes on the day, and Chris grants it per person afterwards.
+   These are the real people and their real current permissions. */
+const wantM={Chris:true,Jeff:true,John:false,Rex:false,Jess:false,Marina:false};
+for(const n of Object.keys(roster))
+  check(n.padEnd(7)+' can re-measure', B.canMeasure_(roster[n])===wantM[n],
+        'got '+B.canMeasure_(roster[n])+' want '+wantM[n]);
+check('a yard account with `keys` alone cannot re-measure',
+      B.canMeasure_({admin:false,perms:{keys:1,photos:1}})===false);
+check('granting `measure` is enough on its own',
+      B.canMeasure_({admin:false,perms:{keys:1,measure:1}})===true);
+check('and it can be taken away from somebody who can adjust',
+      B.canMeasure_({admin:false,perms:{adjust:1,measure:0}})===false);
+check('0 as a string is still OFF',  B.canMeasure_({admin:false,perms:{adjust:1,measure:'0'}})===false);
+check('empty string falls back',     B.canMeasure_({admin:false,perms:{adjust:1,measure:''}})===true);
+check('an admin cannot be locked out',B.canMeasure_({admin:true,perms:{measure:0}})===true);
+check('nobody at all',               B.canMeasure_(null)===false);
+
 console.log('\n=== 3. the console is told the resolved answer ===');
 for(const n of ['John','Marina']){
   const p=B.resolvedPerms_(roster[n]);
   check(n+' resolvedPerms_.keys matches canKeys_', !!p.keys===want[n], JSON.stringify(p));
+  check(n+' resolvedPerms_.measure matches canMeasure_', !!p.measure===wantM[n], JSON.stringify(p));
 }
 check('other permissions survive untouched',
-  JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0}));
+  JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0,measure:0}));
 
 console.log('\n=== 4. the pause ===');
 store={};

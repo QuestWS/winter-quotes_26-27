@@ -656,6 +656,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <label class="chk"><input type="checkbox" id="np_email"> Emails</label>
               <label class="chk"><input type="checkbox" id="np_photos" checked> Photos</label>
               <label class="chk"><input type="checkbox" id="np_keys" checked> Keys &amp; slip</label>
+              <label class="chk"><input type="checkbox" id="np_measure"> Re-measure &amp; re-price</label>
               <label class="chk"><input type="checkbox" id="np_admin"> Admin (full access)</label>
             </div>
           </div>
@@ -970,6 +971,10 @@ function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');
 function permsOf(me){
   const p=Object.assign({},(me&&me.perms)||{});
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
+  /* Mirrors canMeasure_ in the .gs. ME is cached, so a session opened before
+     this permission existed must resolve the same way the server does rather
+     than reading `undefined` as "no". */
+  if(p.measure===undefined||p.measure===null||p.measure==='') p.measure=p.adjust?1:0;
   return p;
 }
 /* My own permissions, admin's blanket grant included. One place, because the
@@ -977,7 +982,7 @@ function permsOf(me){
    re-rendered after an upload with a narrower set than the one renderQuote had
    just used, so a button could come back missing on a page that had shown it a
    second earlier. */
-function myPerms_(){ return ME&&ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1}:permsOf(ME); }
+function myPerms_(){ return ME&&ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1,measure:1}:permsOf(ME); }
 /* Tolerant of a missing target: some of these live inside panels that get
    re-rendered, so the element a caller is writing to may already be gone. */
 function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
@@ -1448,8 +1453,8 @@ function renderQuote(r){
   if(P.adjust) renderPenalties(r.penalties);
   /* Re-measuring moves money, so it sits behind the same permission as any
      other adjustment. */
-  $('dimsCard').classList.toggle('hide',!P.adjust);
-  if(P.adjust) renderDims(r.dims);
+  $('dimsCard').classList.toggle('hide',!P.measure);
+  if(P.measure) renderDims(r.dims);
   /* Keys and slip write into the same journal and re-run the engine (the slip
      number appears in the Heritage Harbor line), so same permission. */
   /* Keys and slip are yard work, not a price change — own permission, so the
@@ -2699,13 +2704,13 @@ async function loadStaff(){
   const r=await api('listStaff',[]);
   if(!r.ok){toast(r.error);return;}
   STAFF=r.staff||[];
-  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',keys:'Keys & slip',admin:'Admin'};
+  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',keys:'Keys & slip',measure:'Re-measure',admin:'Admin'};
   $('staffList').innerHTML=STAFF.map((st,i)=>{
     const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm(${i},'${p}',${on?0:1})">${names[p]}</button></span>`;
     const isMe=ME&&ME.name===st.name;
     return `<div class="staffrow"><div class="nm">${esc(st.name)}${st.admin?' · admin':''}${isMe?' <span style="font-weight:400;color:var(--muted)">(you)</span>':''}
       <span class="prm rm">${isMe?'':`<button onclick="removeStaff(${i})">Remove</button>`}</span></div>
-      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('keys',st.perms.keys)}${btn('admin',st.admin)}
+      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('keys',st.perms.keys)}${btn('measure',st.perms.measure)}${btn('admin',st.admin)}
       <span class="prm"><button onclick="resetPin(${i})">Reset PIN</button></span></div>`;
   }).join('');
 }
@@ -2735,7 +2740,7 @@ async function addStaff(){
   if(!name){setMsg('staffMsg','Enter a name first.',false);return;}
   const perms={pay:$('np_pay').checked?1:0,adjust:$('np_adjust').checked?1:0,
                email:$('np_email').checked?1:0,photos:$('np_photos').checked?1:0,
-               keys:$('np_keys').checked?1:0};
+               keys:$('np_keys').checked?1:0,measure:$('np_measure').checked?1:0};
   const isAdmin=$('np_admin').checked?1:0;
   const b=$('addStaffBtn'); b.disabled=true; b.textContent='Creating…';
   try{
@@ -2744,7 +2749,7 @@ async function addStaff(){
     setMsg('staffMsg','','');
     showPin_(r.name,r.pin);
     $('newStaffName').value='';
-    ['np_pay','np_adjust','np_email','np_admin'].forEach(id=>{$(id).checked=false;});
+    ['np_pay','np_adjust','np_email','np_admin','np_measure'].forEach(id=>{$(id).checked=false;});
     $('np_photos').checked=true; $('np_keys').checked=true;
     toast(r.name+' added');
     loadStaff();

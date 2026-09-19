@@ -176,20 +176,77 @@ Y.ev('ROWS = ' + JSON.stringify([
   eq(Y.ev('storeList_("store").length'), 1, 'search ignores case');
   Y.ev('document.getElementById("q").value = ""');
 }
-/* The liability gate follows the boat onto the new control. */
+/* WHERE the pull is recorded, and the gate that follows it there.
+   ---------------------------------------------------------------------
+   Chris moved this deliberately: the pull list has no one-tap tick any more,
+   because pulling is the act the whole liability rule exists for and it should
+   be made with the unit OPEN — its alert, its authorisation banner and its
+   notes all on the screen at the time. Putting an already-pulled boat into a
+   building carries none of that, so "Stored ✓" stays on the row.
+
+   Asserted from the rendered markup rather than from act_, because a row
+   action is a two-line thing to reinstate by hand and the helper would still
+   be sitting there ready. */
 {
-  const held = { qn: 'H', slip: 'B-1', auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } };
-  Y.ev('ME = {name:"Rex",admin:true,perms:{}}');
-  const markup = Y.act_(held, 'pulled', 'Pulled ✓');
-  if (/disabled/.test(markup)) ok('a unit that is not cleared cannot be ticked off as pulled');
-  else fail('the pull tick is offered on a unit nobody may touch — the app would be where the ' +
-            'rule violation gets written down');
-  const okRow = { qn: 'C', slip: 'B-2', auth: { state: 'cleared' } };
-  if (/disabled/.test(Y.act_(okRow, 'pulled', 'Pulled ✓'))) fail('a cleared unit cannot be ticked off');
-  else ok('a cleared unit can be ticked off in one tap');
-  if (/stopPropagation/.test(Y.act_(okRow, 'pulled', 'Pulled ✓')))
-    ok('ticking a row does not also open its detail sheet');
+  Y.ev('ME = {name:"Rex",admin:true,perms:{keys:1}}');
+  Y.ev('ROWS = ' + JSON.stringify([
+    { qn: 'H', name: 'Held',  slip: 'B-1', tab: 'Building A', unit: 'Boat',
+      auth: { state: 'hold', why: 'signature', label: 'NO CONTRACT',
+              stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } },
+    { qn: 'C', name: 'Clear', slip: 'B-2', tab: 'Building A', unit: 'Boat',
+      auth: { state: 'cleared' } },
+    { qn: 'S', name: 'Stow',  slip: '',    tab: 'Building A', unit: 'Boat',
+      yardState: 'pulled', auth: { state: 'cleared' } }
+  ]));
+  Y.ev('TAB = "pull"; render()');
+  const pullMarkup = Y.ev('document.getElementById("list").innerHTML');
+  if (/markState\(/.test(pullMarkup))
+    fail('the pull list still records a pull from the row — it has to be a button on the ' +
+         'opened unit, so the alert and the authorisation banner are on screen when ' +
+         'somebody decides to touch a boat');
+  else ok('the pull list records nothing from the row');
+  if (/openQuote\(/.test(pullMarkup)) ok('the pull row opens the unit instead');
+  else fail('the pull rows do not open anything — the list is now inert');
+
+  /* The store list keeps its tick, and it still must not fire the row tap. */
+  Y.ev('TAB = "store"; render()');
+  const storeMarkup = Y.ev('document.getElementById("list").innerHTML');
+  if (/markState\([^)]*stored/.test(storeMarkup)) ok('putting a boat away is still one tap');
+  else fail('the To store list lost its one-tap tick — that is a row-at-a-time job');
+  if (/stopPropagation/.test(storeMarkup)) ok('and ticking it does not also open the sheet');
   else fail('the row action will also fire the row tap — the list jumps out from under the crew');
+
+  /* The opened unit: the gate, and the transitions it offers. */
+  const stateOf = (qn, st) => {
+    Y.ev('CUR = {quoteNo:' + JSON.stringify(qn) + ', yard:{state:' + JSON.stringify(st || '') + '}}');
+    Y.ev('renderState()');
+    return Y.ev('document.getElementById("dState").innerHTML');
+  };
+  const held = stateOf('H');
+  if (/markState\([^)]*pulled/.test(held))
+    fail('the opened unit offers Mark pulled on a boat nobody may touch — the app would be ' +
+         'where the rule violation gets written down');
+  else ok('an opened unit that is not cleared offers no Mark pulled');
+  if (/disabled/.test(held) && /DO NOT PULL/.test(held))
+    ok('it shows the server\'s stamp in place of the button, so the crew knows why');
+  else fail('the blocked unit does not say why it cannot be pulled: ' + held);
+  const clear = stateOf('C');
+  if (/markState\([^)]*pulled/.test(clear)) ok('a cleared unit can be marked pulled once opened');
+  else fail('a cleared unit cannot be marked pulled from anywhere in the app');
+
+  /* "Mark dropped off" is a console act. It records that a customer drove in,
+     which is something the counter hears — the yard never sees it happen. */
+  ['', 'pulled', 'stored'].forEach(function (st) {
+    if (/markState\([^)]*dropped/.test(stateOf('C', st)))
+      fail('the yard app still offers "Mark dropped off" (state ' + JSON.stringify(st) + ') — ' +
+           'Chris asked for that to be console-only');
+  });
+  ok('the yard app never offers "Mark dropped off", in any state');
+  /* But the app must still READ it, because the console sets it. */
+  eq(Y.ev('listOf_({yardState:"dropped",slip:"B-9"})'), 'store',
+     'a unit the console dropped off still reaches the To store list');
+  eq(Y.ev('STATE_LABEL.dropped'), 'Dropped off',
+     'and the app can still name that state when it opens one');
 }
 /* And the server refuses it too, because a client is not a permission. */
 {
@@ -216,6 +273,10 @@ Y.ev('ROWS = ' + JSON.stringify([
   if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just the app');
   else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches in the ' +
             'yard, the person they tell has to be able to record it');
+  /* And it is the ONLY surface that can, since the app gave it up. */
+  if (/btn\('dropped'/.test(adminHtml)) ok('the console can mark a unit dropped off');
+  else fail('nothing can mark a unit dropped off any more — the app gave that up on the ' +
+            'understanding the console kept it, and the To store list depends on it');
   /* But the gate does not relax for it. */
   if (/_yardAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
     ok('and the console gates that button on the same cleared/not-cleared answer');
@@ -345,6 +406,140 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('nothing renders unless an alert has actually been entered');
   if (Y.alert_({ alert: 'no keys' }).indexOf('no keys') > -1) ok('and a real alert does render');
   else fail('a real alert does not render');
+}
+
+
+/* =====================================================================
+   2e. RE-MEASURING FROM THE YARD.
+   ---------------------------------------------------------------------
+   The tape measure is in the yard, so the correction is made in the yard. But
+   a re-measure is the one thing the app does that MOVES MONEY: it re-prices
+   the quote and can move the boat to a different building. So three rules,
+   and all three are the sort that get quietly relaxed later.
+
+     1. It is its own permission, not `keys` and not `adjust`. Writing a note
+        must never buy a re-price, and inventing a charge is a different act
+        from reading a tape.
+     2. Preview and apply are two separate taps. The crew sees what it costs
+        before it costs it.
+     3. The app sends measurements only. Motors and storage-location overrides
+        are specification changes made at a desk, and they stay on the console.
+   ===================================================================== */
+{
+  /* --- 1. the permission --- */
+  const measureFns = ['adminDimsPreview', 'adminDimsApply'];
+  measureFns.forEach(function (name) {
+    const fn = (GAS.match(new RegExp('function ' + name + '\\b[\\s\\S]*?\\n}', 'm')) || [''])[0];
+    if (!fn) { fail('there is no ' + name + ' on the server'); return; }
+    if (/requireAuth_\(token, 'measure'\)/.test(fn)) ok(name + ' is gated on the measure permission');
+    else if (/requireAuth_\(token, 'keys'\)/.test(fn))
+      fail(name + ' is gated on `keys` — writing a yard note would then buy the ability to ' +
+           're-price a quote, which is not what anybody granted');
+    else fail(name + ' is not gated on the measure permission: ' +
+              (fn.match(/requireAuth_\([^)]*\)/) || ['(no requireAuth_ at all)'])[0]);
+  });
+  const gate = (GAS.match(/function canMeasure_\b[\s\S]*?\n}/m) || [''])[0];
+  if (!gate) fail('there is no canMeasure_ on the server');
+  else {
+    if (/p\.adjust/.test(gate)) ok('an unset `measure` falls back to `adjust`, so no roster entry ' +
+                                   'silently gains it the day this deploys');
+    else fail('canMeasure_ has no fallback — every roster entry written before this permission ' +
+              'existed would read as undefined, and the answer to that must not be "sure"');
+  }
+  if (/p\.measure = canMeasure_\(st\)/.test(GAS))
+    ok('and the resolved permission set ships it, so no client re-implements the fallback');
+  else fail('resolvedPerms_ does not resolve `measure` — the app and the server would disagree ' +
+            'about who can re-measure');
+
+  /* The app's copy of that fallback has to agree with the server's, because ME
+     is cached in localStorage: a session opened before the deploy carries a
+     perms object with no `measure` key in it. */
+  Y.ev('ME = {name:"Rex",admin:false,perms:{keys:1,photos:1}}');
+  if (Y.ev('canMeasure()') === false) ok('a yard account with notes and photos cannot re-measure');
+  else fail('the `keys` permission is buying a re-price in the app');
+  Y.ev('ME = {name:"Chris",admin:false,perms:{keys:1,adjust:1}}');
+  if (Y.ev('canMeasure()') === true) ok('an account that could already adjust money still can');
+  else fail('the fallback does not match canMeasure_ — somebody who could re-measure yesterday ' +
+            'cannot today');
+  Y.ev('ME = {name:"Jess",admin:false,perms:{keys:1,adjust:0,measure:1}}');
+  if (Y.ev('canMeasure()') === true) ok('and the permission grants it on its own');
+  else fail('granting `measure` does nothing in the app');
+  Y.ev('ME = {name:"Marina",admin:false,perms:{photos:1,adjust:1,measure:0}}');
+  if (Y.ev('canMeasure()') === false) ok('an explicit no beats the fallback');
+  else fail('turning `measure` off does not turn it off');
+
+  /* --- 2. preview then apply, never one tap --- */
+  const src = SRC.replace(/\/\*[\s\S]*?\*\//g, '');
+  const prev = (src.match(/async function previewDims\b[\s\S]*?\n}/m) || [''])[0];
+  const appl = (src.match(/async function applyDims\b[\s\S]*?\n}/m) || [''])[0];
+  if (!prev || !appl) fail('previewDims/applyDims are not both in the yard app');
+  else {
+    if (/dimsApply/.test(prev))
+      fail('previewDims applies the change — the point of a preview is that it writes nothing');
+    else ok('previewDims writes nothing; it only prices');
+    if (/PENDING/.test(appl) && /if\s*\(\s*!CUR\s*\|\|\s*!PENDING\s*\)/.test(appl))
+      ok('applyDims refuses to run without a preview behind it');
+    else fail('applyDims can fire without a preview — a mistyped beam would re-price a quote ' +
+              'with nobody having seen the number');
+  }
+  /* The server is the one that must actually enforce it, since the app is not
+     a permission. sanitizeMeasured_ is that gate. */
+  const apply = (GAS.match(/function adminDimsApply\b[\s\S]*?\n}/m) || [''])[0];
+  if (/sanitizeMeasured_/.test(apply)) ok('the server sanitises the measurements it is handed');
+  else fail('adminDimsApply takes the app\'s numbers at face value');
+  if (/m\.customerState/.test(apply))
+    ok('and it snapshots what the customer originally told us before overwriting it');
+  else fail('a re-measure would erase the customer\'s own figures, which is the exact thing ' +
+            'asked about when a measurement is disputed');
+
+  /* --- 3. measurements only --- */
+  const collect = (src.match(/function collectDims\b[\s\S]*?\n}/m) || [''])[0];
+  if (!collect) fail('there is no collectDims in the yard app');
+  else {
+    if (/engines/.test(collect))
+      fail('the yard app sends motor changes — that is a specification change made at a desk');
+    else ok('the yard app sends no motor changes');
+    if (/\bstorage\b/.test(collect))
+      fail('the yard app sends a storage-location override — where a boat is STORED follows ' +
+           'from its size, and overriding it is a console decision');
+    else ok('the yard app sends no storage override; a move follows from the measurements');
+    if (/DIMS\.fields/.test(collect) && /hasTrailer/.test(collect))
+      ok('it sends the engine\'s own dimension fields, plus whether it is on its trailer');
+    else fail('collectDims does not read the server-supplied field list — a dimension added to ' +
+              'DIM_FIELDS would not appear in the yard');
+  }
+  /* Every key the yard can send has to be one the server will actually take.
+     A field in DIM_FIELDS that is not in MEASURABLE_NUM_ renders an input in
+     the yard, is dropped silently by sanitizeMeasured_, and comes back as
+     "Nothing changed." with no explanation of which box was ignored. */
+  {
+    const eng = read('pricing-engine.js');
+    const blk = (eng.match(/const DIM_FIELDS = \{[\s\S]*?\n\};/) || [''])[0];
+    const keys = (blk.match(/\['([a-zA-Z]+)',/g) || []).map(function (m) { return m.slice(2, -2); });
+    const accepted = (GAS.match(/const MEASURABLE_NUM_ = \[([^\]]*)\]/) || ['', ''])[1]
+      .split(',').map(function (t) { return t.replace(/['"\s]/g, ''); }).filter(Boolean);
+    if (!keys.length || !accepted.length) fail('could not read DIM_FIELDS / MEASURABLE_NUM_ — the field check cannot run');
+    else {
+      const orphan = keys.filter(function (k) { return accepted.indexOf(k) < 0; });
+      if (orphan.length)
+        fail('DIM_FIELDS offers ' + orphan.join(', ') + ' but MEASURABLE_NUM_ does not accept ' +
+             'it — the yard would render that box, drop what was typed in it, and answer ' +
+             '"Nothing changed."');
+      else ok('every dimension the yard can render (' + keys.length + ') is one the server accepts');
+    }
+  }
+  /* It has to render nothing at all for somebody who cannot use it. A dead
+     control is something people learn to tap anyway. */
+  const rend = (src.match(/function renderDims\b[\s\S]*?\n}/m) || [''])[0];
+  if (/if\s*\(\s*!canMeasure\(\)\s*\)/.test(rend)) ok('the card is absent, not disabled, without the permission');
+  else fail('renderDims does not check canMeasure() first');
+
+  /* And the payment lock must not have followed it here: staff have to be able
+     to re-measure a boat AFTER a deposit — that is when it gets measured. */
+  if (/lockedMsg_|isLocked_|payments\.length/.test(apply))
+    fail('the payment lock has spread to adminDimsApply — a boat is measured at drop-off, ' +
+         'which is after the deposit by definition');
+  else ok('a deposit does not stop a re-measure');
 }
 
 /* =====================================================================

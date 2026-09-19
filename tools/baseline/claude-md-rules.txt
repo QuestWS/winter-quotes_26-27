@@ -436,7 +436,7 @@ looked unacceptable; all console inputs are inline UI now).
 Everything reachable from `admin/index.html`: who may do what, and the
 invariant behind each card and panel.
 Roster in Script Properties `STAFF`. Perms: `pay`, `adjust`, `email`,
-`photos`, `keys`, plus `admin`. `requireAuth_(token, perm)` gates every console
+`photos`, `keys`, `measure`, plus `admin`. `requireAuth_(token, perm)` gates every console
 endpoint; sessions are 12h tokens; 10 failed PINs → 15-minute lockout + alert
 email. Every console action writes to the **Activity Log** sheet tab.
 Admins can **create and remove accounts** from the console (`adminAddStaff` /
@@ -511,7 +511,7 @@ sent the answer, while also corrupting the photo upload target. "Set date…"
 kept working (different name, `openSeasonDate`), which is why it hid for so
 long. `verify.sh` now fails on any duplicate function name in the console.
 Name console handlers for their feature (`setSeasonDoneChoice`), not the
-`Unit details & storage` card, gated on the `adjust` permission. Edit LOA /
+`Unit details & storage` card, gated on the **`measure` permission** (it used
 beam / LWT (or stored L×W for a jet ski), toggle the trailer, **correct the
 motor type / count / service level**, and/or pick a new storage location →
 **Preview the change** → server re-prices with the shared engine and returns a
@@ -641,7 +641,7 @@ uses **new OAuth scopes** (`SpreadsheetApp.openById` + the Drive upload API).
 so a scope waiting on approval can take the **customer page** down, not just
 the console. Push-only first, run it, then deploy (CLAUDE.md §2, step 3).
 Current roster intent: Chris & Jeff admin (full); John, Rex, Jess →
-pay+email+photos; Marina → photos only.
+pay+email+photos+keys; Marina → photos only. Nobody outside the two admins has
 `printHaulOut()` on the storage card — one yard-wide sheet, not one per
 building, because haul-out order is a yard-wide question. Sorted ready-now →
 stated dates ascending → will call → not answered, and it carries what the crew

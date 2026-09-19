@@ -2062,12 +2062,12 @@ function initStaff() {
   if (props.getProperty('STAFF')) { console.log('STAFF already exists — use the console Admin screen to manage. Delete the STAFF property first if you truly want to re-seed.'); return; }
   const mkpin = function () { return String(Math.floor(1000 + Math.random() * 9000)); };
   const roster = {
-    'Chris':  { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1 } },
-    'Jeff':   { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1 } },
-    'John':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
-    'Rex':    { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
-    'Jess':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1 } },
-    'Marina': { pin: mkpin(), admin: false, perms: { pay: 0, adjust: 0, email: 0, photos: 1, keys: 0 } }
+    'Chris':  { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1, measure: 1 } },
+    'Jeff':   { pin: mkpin(), admin: true,  perms: { pay: 1, adjust: 1, email: 1, photos: 1, keys: 1, measure: 1 } },
+    'John':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1, measure: 0 } },
+    'Rex':    { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1, measure: 0 } },
+    'Jess':   { pin: mkpin(), admin: false, perms: { pay: 1, adjust: 0, email: 1, photos: 1, keys: 1, measure: 0 } },
+    'Marina': { pin: mkpin(), admin: false, perms: { pay: 0, adjust: 0, email: 0, photos: 1, keys: 0, measure: 0 } }
   };
   props.setProperty('STAFF', JSON.stringify(roster));
   Object.keys(roster).forEach(function (n) { console.log(n + ' — PIN: ' + roster[n].pin); });
@@ -2120,12 +2120,27 @@ function canKeys_(st) {
   if (p.keys !== undefined && p.keys !== null && p.keys !== '') return !!Number(p.keys);
   return !!(p.adjust || p.pay);
 }
+/* Re-measuring is its own permission because it is its own act. It re-prices
+   a quote, so it is not `keys` -- but it is also not `adjust`, which is the
+   permission to invent a charge out of nothing. Measuring is reading a tape
+   over a hull, and the person holding the tape is standing in the yard.
+   Unset falls back to `adjust`, so the roster as it stands today behaves
+   exactly as it did before this existed and nobody silently gains it; an
+   admin turns it on per person from the console's Staff panel. */
+function canMeasure_(st) {
+  if (!st) return false;
+  if (st.admin) return true;
+  const p = st.perms || {};
+  if (p.measure !== undefined && p.measure !== null && p.measure !== '') return !!Number(p.measure);
+  return !!p.adjust;
+}
 /* The resolved permission set, so the console never has to re-implement the
    fallback above and then disagree with the server about it. */
 function resolvedPerms_(st) {
   const p = {};
   Object.keys((st && st.perms) || {}).forEach(function (k) { p[k] = st.perms[k]; });
   p.keys = canKeys_(st) ? 1 : 0;
+  p.measure = canMeasure_(st) ? 1 : 0;
   return p;
 }
 
@@ -2141,7 +2156,9 @@ function requireAuth_(token, perm) {
   const st = roster[sess.name];
   if (!st) throw new Error('Account removed.');
   if (perm && perm !== 'view' && !st.admin) {
-    const ok = (perm === 'keys') ? canKeys_(st) : !!(st.perms && st.perms[perm]);
+    const ok = (perm === 'keys') ? canKeys_(st)
+             : (perm === 'measure') ? canMeasure_(st)
+             : !!(st.perms && st.perms[perm]);
     if (!ok) throw new Error('Your account doesn\'t have permission for that — ask Chris or Jeff.');
   }
   return { name: sess.name, admin: !!st.admin, perms: resolvedPerms_(st) };
@@ -2578,7 +2595,7 @@ function lineDiff_(before, after) {
 }
 
 function adminDimsPreview(token, qn, changes) {
-  requireAuth_(token, 'adjust');
+  requireAuth_(token, 'measure');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   try { return dimsProposal_(ctx.d, changes); }
@@ -3112,7 +3129,7 @@ function adminSetStaffNote(token, qn, note) {
 }
 
 function adminDimsApply(token, qn, changes, note) {
-  const who = requireAuth_(token, 'adjust');
+  const who = requireAuth_(token, 'measure');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
@@ -5258,7 +5275,7 @@ function adminAddStaff(token, name, perms, isAdmin) {
     pin: pin,
     admin: !!isAdmin,
     perms: { pay: p.pay ? 1 : 0, adjust: p.adjust ? 1 : 0, email: p.email ? 1 : 0,
-             photos: p.photos ? 1 : 0, keys: p.keys ? 1 : 0 }
+             photos: p.photos ? 1 : 0, keys: p.keys ? 1 : 0, measure: p.measure ? 1 : 0 }
   };
   saveStaff_(roster);
   auditLog_(who.name, 'Added staff account "' + clean + '"' + (isAdmin ? ' (admin)' : '') +

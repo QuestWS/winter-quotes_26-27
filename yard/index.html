@@ -143,6 +143,25 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .row2{display:flex;gap:8px}.row2>*{flex:1}
 textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
   border-radius:9px;background:#fff;color:var(--ink);resize:vertical}
+/* 16px is not a taste. Anything smaller and iOS zooms the page in when the
+   field takes focus, which on a phone held one-handed beside a boat means the
+   next tap lands somewhere else entirely. */
+input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--ink)}
+.fld{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);margin-bottom:4px}
+.chk{display:flex;align-items:center;gap:9px;font-size:15px;color:var(--ink);padding:9px 0}
+.chk input{width:21px;height:21px;accent-color:var(--navy)}
+.dfrow{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:5px 0;
+  border-bottom:1px dashed var(--line)}
+.dfrow:last-child{border-bottom:0}
+.dfrow .dl{color:var(--ink)}
+.dfrow .da{font-family:var(--mono);white-space:nowrap;color:var(--muted)}
+.dfrow.add .dl{color:var(--ok)}
+.dfrow.rem .dl{color:var(--warn);text-decoration:line-through}
+.dbox{background:var(--frost-soft);border:1px solid var(--frost);border-radius:9px;padding:11px;margin-top:10px}
+.dbox .tot{display:flex;justify-content:space-between;font-weight:700;color:var(--navy);
+  font-size:15px;margin-top:8px;padding-top:8px;border-top:1px solid var(--frost)}
 .logrow{border-left:3px solid var(--frost);padding:7px 0 7px 10px;margin-bottom:8px;font-size:14.5px}
 .logrow .w{font-size:12px;color:var(--muted);font-family:var(--mono)}
 .thumbs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
@@ -218,6 +237,18 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
     <div id="dCall"></div>
     <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
     <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
+    <div class="blk hide" id="dimsBlk">
+      <h3>Measurements</h3>
+      <div class="msg" id="dimsNow" style="margin-top:0"></div>
+      <div id="dimsFields"></div>
+      <div id="dimsNoteWrap" class="hide" style="margin-top:8px">
+        <label class="fld" for="dimsNote">Why (optional)</label>
+        <input class="txt" id="dimsNote" placeholder="Measured at the ramp">
+      </div>
+      <button class="btn wide" id="dimsPrevBtn" style="margin-top:10px" onclick="previewDims()">Price the change</button>
+      <div id="dimsDiff" class="hide"></div>
+      <div class="msg" id="dimsMsg"></div>
+    </div>
     <div class="blk">
       <h3>Yard log</h3>
       <div id="dLog"></div>
@@ -338,7 +369,7 @@ function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
    API_GET_OK must stay a SUBSET of the server's CONSOLE_GET_FNS_ — the server
    refuses a GET naming a write, so a wrong entry here is a retry that can only
    ever fail. tools/check-yard-app.js asserts the subset by reading both. */
-const API_GET_OK={auth:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1};
+const API_GET_OK={auth:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
 function terr_(m,c){ const e=new Error(m); e.transport=(c===undefined?0:c); return e; }
 function isTerr_(e){ return !!(e&&e.transport!==undefined); }
 function wait_(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -455,6 +486,17 @@ function canWrite(){
   return !!p.keys;
 }
 function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
+/* Re-measuring re-prices, so it is not the same bar as writing a note. Mirrors
+   canMeasure_ in the .gs INCLUDING its fallback: ME is cached in localStorage,
+   so a session opened before the permission existed must read `undefined` the
+   way the server does rather than as a flat no. */
+function canMeasure(){
+  if(!ME) return false;
+  if(ME.admin) return true;
+  const p=ME.perms||{};
+  if(p.measure===undefined||p.measure===null||p.measure==='') return !!p.adjust;
+  return !!p.measure;
+}
 
 function showApp(){
   $('login').classList.add('hide');
@@ -588,9 +630,16 @@ function row_(x,right,action){
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
     alert_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
 }
-/* The one-tap move along the line. stopPropagation matters: without it the tap
-   also opens the detail sheet, and the crew member watches a panel slide over
-   the list they were working down. */
+/* The one-tap move along the line, used by the To store list only. The pull
+   list deliberately has no such button: pulling a boat is the act the whole
+   liability rule exists for, so it is made with the unit open, underneath its
+   authorisation banner and its alert. Putting an already-pulled boat into a
+   building carries none of that, and it is done a row at a time down a list.
+
+   stopPropagation matters: without it the tap also opens the detail sheet, and
+   the crew member watches a panel slide over the list they were working down.
+   The `pulled` guard below stays even though no caller passes it any more —
+   it is the kind of thing a later edit re-introduces by hand. */
 function act_(x,to,label){
   if(!canWrite()) return '';
   const a=auth_(x);
@@ -610,9 +659,9 @@ function render(){
   if(TAB==='pull'){
     const pull=pullList_();
     setMsg('listMsg',pull.length
-      ? pull.length+' still in the water, in the order they asked for. Tick one off when it is out.'
+      ? pull.length+' still in the water, in the order they asked for. Open one to mark it pulled.'
       : 'Nothing left in the water — every boat with a slip has been pulled.');
-    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip),act_(x,'pulled','Pulled ✓'))).join('');
+    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip))).join('');
     return;
   }
 
@@ -704,6 +753,152 @@ function renderAlert(){
       '</span></div>'
     : '';
 }
+
+/* ---------------------------------------------------------------------------
+   MEASUREMENTS
+   ---------------------------------------------------------------------------
+   The tape measure is in the yard, so the correction belongs in the yard. What
+   is NOT here is everything else the console's dimension editor can do: no
+   motor counts, no storage-location override. Those are specification changes
+   made at a desk with the customer on the phone. This is "the hull is 26 feet,
+   not 24".
+
+   Two acts, never one. `dimsPreview` writes nothing and says what the change
+   would cost; `dimsApply` is a separate deliberate tap. That matters more here
+   than on the console -- a re-measure moves money, and the person making it is
+   holding a phone in one hand and a bow line in the other.
+
+   Field list comes from the server (DIM_FIELDS in the engine), so a dimension
+   that starts mattering to the price appears here without this file changing.
+--------------------------------------------------------------------------- */
+let DIMS=null;
+function renderDims(d){
+  DIMS=d||null;
+  const blk=$('dimsBlk');
+  /* No card at all rather than a disabled one: a permanently dead control is
+     something people learn to tap anyway. */
+  if(!canMeasure()){ blk.classList.add('hide'); return; }
+  blk.classList.remove('hide');
+  $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
+  setMsg('dimsMsg',''); PENDING=null;
+  $('dimsNote').value='';
+  if(!DIMS||!DIMS.editable){
+    $('dimsFields').innerHTML='';
+    $('dimsNoteWrap').classList.add('hide');
+    $('dimsPrevBtn').classList.add('hide');
+    $('dimsNow').textContent=(DIMS&&DIMS.why)||'This quote cannot be re-priced automatically.';
+    return;
+  }
+  $('dimsPrevBtn').classList.remove('hide');
+  $('dimsNoteWrap').classList.remove('hide');
+  /* Say plainly whose numbers these are. "They told us 24" and "we measured
+     26" are the same two figures and completely different conversations. */
+  const measured=DIMS.measured&&Object.keys(DIMS.measured).length;
+  $('dimsNow').innerHTML=measured
+    ? 'On file: <b>'+esc(DIMS.text||'—')+'</b> — Quest-measured.<br>The customer originally gave '+
+      esc(DIMS.customerText||'—')+'.'
+    : 'On file: <b>'+esc(DIMS.text||'—')+'</b> — as the customer entered it.';
+  const rows=(DIMS.fields||[]).map(f=>
+    '<div><label class="fld">'+esc(f.label)+'</label>'+
+    '<input class="txt dimf" data-key="'+esc(f.key)+'" inputmode="decimal" value="'+
+    esc(String(f.value))+'"></div>').join('');
+  const trailer=DIMS.unitKind==='boat'
+    ? '<label class="chk"><input type="checkbox" id="dimsTrailer"'+(DIMS.hasTrailer?' checked':'')+
+      '> Stored on its trailer</label>'
+    : '';
+  $('dimsFields').innerHTML=(rows?'<div class="row2" style="margin-top:8px">'+rows+'</div>':'')+trailer;
+}
+/* Send only what actually differs, so the journal records a measurement
+   somebody changed rather than every field on the form. */
+function collectDims(){
+  const out={};
+  if(!DIMS||!DIMS.editable) return out;
+  Array.prototype.forEach.call(document.querySelectorAll('#dimsFields .dimf'),function(el){
+    const k=el.getAttribute('data-key'), v=String(el.value||'').trim();
+    const was=(DIMS.fields.filter(f=>f.key===k)[0]||{}).value;
+    if(v!==''&&String(v)!==String(was)) out[k]=v;
+  });
+  const tr=$('dimsTrailer');
+  if(tr&&!!tr.checked!==!!DIMS.hasTrailer) out.hasTrailer=tr.checked?1:0;
+  return out;
+}
+let PENDING=null;
+async function previewDims(){
+  if(!CUR) return;
+  const changes=collectDims();
+  if(!Object.keys(changes).length){
+    setMsg('dimsMsg','Change a measurement first.',false);
+    $('dimsDiff').classList.add('hide'); return;
+  }
+  const b=$('dimsPrevBtn'); b.disabled=true; b.textContent='Pricing…';
+  setMsg('dimsMsg','');
+  try{
+    const r=await api('dimsPreview',[CUR.quoteNo,changes]);
+    if(!r||!r.ok){
+      setMsg('dimsMsg',(r&&r.error)||'Could not price that.',false);
+      $('dimsDiff').classList.add('hide'); return;
+    }
+    PENDING=changes;
+    drawDiff(r);
+  }catch(e){ setMsg('dimsMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Price the change'; }
+}
+function drawDiff(r){
+  const lines=(r.diff||[]).map(function(x){
+    const cls=x.kind==='added'?' add':x.kind==='removed'?' rem':'';
+    const amt=x.kind==='changed'?esc(x.was)+' → '+esc(x.now):esc(x.now||x.was||'');
+    return '<div class="dfrow'+cls+'"><span class="dl">'+esc(x.label)+'</span>'+
+           '<span class="da">'+amt+'</span></div>';
+  }).join('');
+  const moved=r.beforeTab!==r.afterTab
+    ? '<div class="dfrow"><span class="dl">Storage</span><span class="da">'+
+      esc(r.beforeTab)+' → '+esc(r.afterTab)+'</span></div>' : '';
+  const dims=r.beforeDims!==r.afterDims
+    ? '<div class="dfrow"><span class="dl">Dimensions</span><span class="da">'+
+      esc(r.beforeDims)+' → '+esc(r.afterDims)+'</span></div>' : '';
+  /* Flags are the reason a beam is worth measuring twice: the server says "too
+     wide for inside" and a human decides, here as on the console. */
+  const flags=(r.flags||[]).map(f=>'<div class="alert"><span class="i">⚠</span><span>'+
+    esc(f)+'</span></div>').join('');
+  $('dimsDiff').innerHTML='<div class="dbox">'+dims+moved+
+    (lines||'<div class="dfrow"><span class="dl">No line items change</span><span class="da"></span></div>')+
+    '<div class="tot"><span>'+esc(r.beforeTotal)+' → '+esc(r.afterTotal)+'</span>'+
+    '<span>'+esc(r.delta)+'</span></div>'+
+    '<div class="dfrow"><span class="dl">New balance</span><span class="da">'+esc(r.newBalance)+'</span></div>'+
+    '</div>'+flags+
+    '<button class="btn wide gold" id="dimsApplyBtn" style="margin-top:9px" onclick="applyDims()">Apply this change</button>'+
+    '<button class="btn ghost wide" style="margin-top:7px" onclick="cancelDims()">Cancel</button>'+
+    '<div class="msg">Nothing is emailed. Tell the counter if the customer needs to know.</div>';
+  $('dimsDiff').classList.remove('hide');
+}
+function cancelDims(){ PENDING=null; $('dimsDiff').classList.add('hide'); setMsg('dimsMsg',''); }
+async function applyDims(){
+  if(!CUR||!PENDING) return;
+  const qn=CUR.quoteNo;
+  const b=$('dimsApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
+  try{
+    const r=await api('dimsApply',[qn,PENDING,String($('dimsNote').value||'').trim()]);
+    if(!r||!r.ok){
+      setMsg('dimsMsg',(r&&r.error)||'Could not apply that.',false);
+      if(b){ b.disabled=false; b.textContent='Apply this change'; }
+      return;
+    }
+    PENDING=null;
+    toast(r.msg||'Re-priced');
+    /* The row's dimensions, its total and possibly its storage tab all just
+       changed, so the cached list is wrong. Reload it BEFORE re-opening the
+       unit -- the sheet reads the row for dims, tab and the pull
+       authorisation, and re-opening against a stale row would show the old
+       figures back again a second after the toast said otherwise. */
+    await loadList();
+    await openQuote(qn);
+    if(r.flags&&r.flags.length) toast(r.flags[0]);
+  }catch(e){
+    setMsg('dimsMsg',e.message,false);
+    if(b){ b.disabled=false; b.textContent='Apply this change'; }
+  }
+}
+
 const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
 function renderState(){
   const box=$('dState');
@@ -725,7 +920,6 @@ function renderState(){
         ? btn('pulled','Mark pulled')
         : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
     }
-    if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','ghost');
     if(st!=='stored') h+=btn('stored','Mark in storage','gold');
     /* Reversible on purpose: a mis-tap in the yard is certain, and the fix
        must not be a phone call to somebody at a desk. */
@@ -743,6 +937,9 @@ async function openQuote(qn){
   $('dName').textContent='Loading…'; $('dQn').textContent=qn;
   $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
   $('dAlert').innerHTML='';
+  $('dimsBlk').classList.add('hide'); $('dimsFields').innerHTML='';
+  $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
+  setMsg('dimsMsg',''); DIMS=null; PENDING=null;
   $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
   $('photoCounts').textContent='—';
   window.scrollTo(0,0);
@@ -796,6 +993,7 @@ function renderSheet(r){
 
   renderAlert();
   renderState();
+  renderDims(r.dims);
   renderLog(r.yardNotes||[]);
   const w=canWrite();
   $('noteBtn').disabled=!w;

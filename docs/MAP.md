@@ -17,7 +17,7 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
-| `yard/index.html` | ~700 | The yard app: two lists, one unit at a time, the yard log, dictation and photos. One big `<script>`, same no-duplicate-names rule as the console |
+| `yard/index.html` | ~900 | The yard app: three lists, one unit at a time, the yard log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
@@ -78,7 +78,7 @@ symptom.
 | Feature | Entry point (server) | Entry point (console) |
 |---|---|---|
 | Sign in, sessions, lockout | `adminAuth`, `requireAuth_` | `doLogin` |
-| Permissions incl. the `keys` fallback | `resolvedPerms_`, `canKeys_` | `permsOf` |
+| Permissions incl. the `keys` and `measure` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_` | `permsOf`, `myPerms_` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
@@ -104,10 +104,11 @@ symptom.
 | Feature | Entry point (server) | Entry point (app) |
 |---|---|---|
 | The three lists | `adminStorageView` | `listOf_`, `pullList_`, `storeList_`, `render`, `setTab` |
-| Moving a unit along (pulled / dropped off / stored) | `YARD_STATES_`, `adminSetYardState`, `yardStateOf_` | `markState`, `renderState`, `act_` |
+| Moving a unit along (pulled / dropped off / stored) | `YARD_STATES_`, `adminSetYardState`, `yardStateOf_` | `markState`, `renderState`, `act_` (dropped off is console-only; pulled is on the opened unit, not the row) |
 | Search and sort in the yard | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
+| Re-measuring from the yard | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
 | Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |
 | Voice notes (record) | `voiceFolder_`, `adminAddYardNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |

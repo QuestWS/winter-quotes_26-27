@@ -2187,8 +2187,14 @@ function renderImport(r){
   const lines=(r.picked||[]).map(x=>
     '<div class="bkrow"><span>'+String(x.qty)+' × '+esc(x.label)+
     (x.recovered?' <span class="q">(recovered)</span>':'')+'</span><span class="q">'+esc(x.was||'—')+'</span></div>').join('');
+  /* The calc is what shows the working — "12×5 sqft × $5.29" is how staff can
+     see WHICH numbers off the old sheet a dimension-priced line was built from,
+     which matters most on a jet ski, whose stored size is read across from the
+     sheet's length-with-trailer and beam. */
   const now=(r.priced&&r.priced.lines||[]).map(x=>
-    '<div class="bkrow"><span>'+esc(x.label)+'</span><span class="q">'+esc(x.amt)+'</span></div>').join('');
+    '<div class="bkrow"><span>'+esc(x.label)+
+    (x.calc?' <span class="q">'+esc(x.calc)+'</span>':'')+
+    '</span><span class="q">'+esc(x.amt)+'</span></div>').join('');
   const needs=(r.priced&&r.priced.needs||[]).length
     ? '<div class="bkwarn"><b>Still needs:</b> '+r.priced.needs.map(esc).join(', ')+'</div>' : '';
 

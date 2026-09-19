@@ -427,6 +427,21 @@ pricing" template. This reads one and makes a quote here.
 - **Jet skis and golf carts got tagged onto boat sheets** because fewer files
   was better then. Here one quote per unit is what makes the storage tabs, the
   haul-out list and re-pricing work, so extras are reported for separating.
+- **A jet ski's size is read across, not copied.** The old sheet has one set of
+  dimension boxes whatever the unit is — LOA, beam, length with trailer — and
+  the engine prices a ski from `skiLen`/`skiWid`. A ski is stored on its
+  trailer, so the stored footprint is **LWT × beam**; LOA stands in only when
+  the sheet has no LWT, and the import says when it did that, because the hull
+  is shorter than the ski sits. Copying the boat fields straight across is what
+  made every jet ski import read *"still needs stored length & width"* with its
+  storage priced at nothing, off a sheet that plainly had the measurements. The
+  boat boxes are then left empty: no jet ski surface prints them.
+- **What a jet ski cannot be quoted is named, never zeroed.** The engine's jet
+  ski branch prices winterizing, detailing, inside-on-trailer storage and the
+  late surcharge, and silently ignores anything else in the state. So the
+  importer will not hand it one: outside storage is dropped, premium inside
+  falls back to the standard inside rate, shrinkwrap and powerwash come off,
+  and each lands in *Priced differently here* for staff to add back as a line.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
   imported quote must re-price like every other. Preview writes nothing; the
   import emails nobody; `verify.sh` asserts all three.
@@ -441,9 +456,9 @@ pricing" template. This reads one and makes a quote here.
   turn into an unattended mailshot ten days later —
   `docs/ref/EMAILS.md`. Nothing marks which files have already been
   imported, so track that yourself if the job spans more than one sitting.
-- `tools/check-legacy-import.js` executes eighteen groups over all three file
-  states, a mismatched master, comparison sheets, multi-unit sheets and the
-  live engine. Fixtures are invented names over the real layout — **no customer
+- `tools/check-legacy-import.js` executes twenty-one groups over all three file
+  states, a mismatched master, comparison sheets, multi-unit sheets, jet ski
+  dimensions and storage, and the live engine. Fixtures are invented names over the real layout — **no customer
   data in this repo**.
 
 

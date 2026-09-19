@@ -4751,7 +4751,7 @@ function adminImportApply(token, state, meta) {
 function legacyToState_(parsed, pick) {
   const q = {};
   (parsed.picked || []).forEach(function (x) { q[x.key] = (q[x.key] || 0) + x.qty; });
-  const notes = [];
+  const notes = [], unmapped = [];
 
   /* Which storage did they take? */
   const STORAGE_MAP_ = { outside: 'outside', insideNT: 'inside', insideT: 'inside',
@@ -4779,12 +4779,59 @@ function legacyToState_(parsed, pick) {
   if (!boaty && pwcQty) unit = 'jetski';
   else if (!boaty && !pwcQty && q.golf) unit = 'golf';
 
+  /* Dimensions. The old sheet has one set of boxes whatever the unit is — LOA,
+     beam, and length with trailer — but the engine reads a jet ski's size from
+     skiLen/skiWid and never looks at the boat fields. Copying the numbers
+     across unchanged is what made every jet ski import say "still needs stored
+     length & width" and price its storage at nothing, with the measurements
+     sitting right there on the sheet in front of you.
+
+     A jet ski is stored and serviced on its trailer, so its stored footprint is
+     the trailer length × the width at the widest point — which is exactly what
+     the quote page asks for in those two boxes ("tip of the trailer tongue to
+     the rearmost point"), and exactly what the old sheet's LWT and beam hold.
+     LOA is the hull alone. It stands in when the sheet carries no LWT, and says
+     so when it does, because a ski on its trailer takes up more room than its
+     hull length. */
+  let loa = parsed.loa || 0, beam = parsed.beam || 0, lwt = parsed.lwt || 0;
+  let skiLen = 0, skiWid = 0;
+  let storage = storageKey ? STORAGE_MAP_[storageKey] : 'none';
+  if (unit === 'jetski') {
+    skiLen = lwt || loa;
+    skiWid = beam;
+    if (skiLen && skiWid) {
+      notes.push('stored size read as ' + skiLen + ' × ' + skiWid + ' ft from the sheet\'s ' +
+        (lwt ? 'length with trailer × beam'
+             : 'LOA × beam — the sheet carried no length with trailer, so that is the ' +
+               'hull alone, and on its trailer it takes up more room than that') +
+        '. Check it against the unit before saving.');
+    }
+    /* Nothing on a jet ski quote reads the boat boxes and its dimension line
+       cannot show them, so leaving them set would put numbers on the row that
+       no surface would ever print. */
+    loa = 0; beam = 0; lwt = 0;
+    hasTrailer = true;          // the quote page forces this too: no trailer, no winter service
+    /* Inside, on its trailer, is the only storage a jet ski can be quoted here.
+       An old sheet that stored one outside, or in premium inside, has no
+       equivalent — and the engine prices a storage choice it does not recognise
+       at nothing, silently, which is the whole failure mode this guards. */
+    if (storage === 'insidePrem') {
+      storage = 'inside';
+      unmapped.push('premium inside storage for a jet ski — priced here at the standard ' +
+        'inside-on-trailer rate');
+    } else if (storage !== 'inside' && storage !== 'none') {
+      unmapped.push(storage + ' storage for a jet ski — jet skis are stored inside on their ' +
+        'trailers here, so no storage has been carried over');
+      storage = 'none';
+    }
+  }
+
   const st = {
     unit: unit,
     firstName: '', lastName: '', phone: fmtPhone(parsed.phone || ''), email: parsed.email || '',
     ymm: parsed.ymm || '', notes: parsed.notes || '',
-    loa: parsed.loa || 0, beam: parsed.beam || 0, lwt: parsed.lwt || 0,
-    skiLen: 0, skiWid: 0, skiDetail: 0,
+    loa: loa, beam: beam, lwt: lwt,
+    skiLen: skiLen, skiWid: skiWid, skiDetail: 0,
     hasTrailer: hasTrailer,
     engines: { inboard: { qty: 0, level: 'basic' }, io: { qty: 0, level: 'basic' },
                outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' } },
@@ -4792,7 +4839,7 @@ function legacyToState_(parsed, pick) {
     ballast: q.ballast || 0, addlHeads: q.addlHeads || 0,
     waterCold: !!q.waterCold, waterHead: !!q.waterHead, pumpout: !!q.pumpout,
     ac: !!q.ac, genBasic: !!q.genBasic, genFull: !!q.genOil,
-    storage: storageKey ? STORAGE_MAP_[storageKey] : 'none',
+    storage: storage,
     retrieval: 'none',
     wrap: !!(q.wrapLabor || q.wrapUpto20 || q.wrapUpto24 || q.wrapMaterials),
     inWater: !!q.wrapInWater,
@@ -4845,13 +4892,25 @@ function legacyToState_(parsed, pick) {
   }
 
   /* Things the old menu had that the new one prices differently or not at all. */
-  const unmapped = [];
   if (q.wrapUpto20 || q.wrapUpto24) {
     unmapped.push('a flat-rate shrinkwrap total — the new engine prices wrap per foot, so the ' +
       'figure will differ');
   }
   if (q.golf && unit !== 'golf') unmapped.push('golf cart storage (needs its own quote)');
   if (pwcQty && unit !== 'jetski') unmapped.push(pwcQty + ' jet ski winterization(s) (need their own quote)');
+  if (unit === 'jetski') {
+    /* The jet ski price list is winterizing, detailing, inside storage and the
+       late surcharge — and nothing else. Anything else the old sheet charged
+       lands in a field the engine's jet ski branch never reads, so it would
+       come out as a quote quietly short by that amount rather than as an error. */
+    const dropped = [];
+    if (st.wrap || st.inWater) { dropped.push('shrinkwrap'); st.wrap = false; st.inWater = false; }
+    if (st.powerwash) { dropped.push('powerwash'); st.powerwash = false; }
+    if (dropped.length) {
+      unmapped.push(dropped.join(' and ') + ' on a jet ski — not on the jet ski price list here, ' +
+        'so it has been left off; add it as a staff line if they still want it');
+    }
+  }
 
   return { state: st, notes: notes, unmapped: unmapped, storageKey: storageKey };
 }

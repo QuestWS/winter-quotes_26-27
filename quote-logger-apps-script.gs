@@ -872,6 +872,11 @@ function doPost(e) {
       if (oldD.staffNote) d.staffNote = oldD.staffNote;
       if (oldD.staffNoteBy) d.staffNoteBy = oldD.staffNoteBy;
       if (oldD.staffNoteAt) d.staffNoteAt = oldD.staffNoteAt;
+      /* The yard log lives only on this side too, and it is append-only — so a
+         customer save that dropped it would destroy observations nobody can
+         reconstruct, silently, at the worst possible moment (they re-save right
+         after we photograph a crack). Carried across exactly like the note. */
+      if (oldD.yardNotes && oldD.yardNotes.length) d.yardNotes = oldD.yardNotes;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1042,6 +1047,7 @@ function consoleFns_(p) {
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
+    yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
@@ -2157,7 +2163,7 @@ const STORAGE_VIEW_TTL_ = 120;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 2;
+const STORAGE_VIEW_V_ = 3;
 const QROW_TTL_ = 1800;                  // seconds
 
 function cachePutBig_(key, str, ttl) {
@@ -2402,7 +2408,16 @@ function sanitizeEngines_(e, st) {
    A blank field REMOVES the override rather than storing an empty string, so
    clearing a mistake falls back to whatever the customer told us instead of
    permanently blanking it. */
-const KEYFIELDS_ = ['keyLoc', 'slipNo'];
+/* The yard fields staff correct from the console: journalled into
+   manual.measured, overlaid by effectiveState_, never written into d.state.
+   Adding one here is all it takes — sanitizeKeys_, adminKeysApply's audit line
+   and both top-level sync loops are all driven off this list, which is the
+   point. `trailerLoc` is WHERE THE TRAILER IS, which is not the same question
+   as whether the unit has one (state.hasTrailer): Heritage Harbor customers
+   routinely store a trailer with us while the boat sits in a slip, and come
+   spring the crew has to find the trailer before it can splash anything. */
+const KEYFIELDS_ = ['keyLoc', 'slipNo', 'trailerLoc'];
+const KEYLABELS_ = { keyLoc: 'key location', slipNo: 'slip number', trailerLoc: 'trailer location' };
 function sanitizeKeys_(changes) {
   const out = {}, clear = [];
   changes = changes || {};
@@ -2410,7 +2425,7 @@ function sanitizeKeys_(changes) {
     if (changes[k] === undefined || changes[k] === null) return;   // not offered — leave alone
     const v = String(changes[k]).replace(/\s+/g, ' ').trim();
     if (v === '') { clear.push(k); return; }
-    if (v.length > 120) throw new Error('Keep the ' + (k === 'slipNo' ? 'slip number' : 'key location') + ' under 120 characters.');
+    if (v.length > 120) throw new Error('Keep the ' + (KEYLABELS_[k] || k) + ' under 120 characters.');
     out[k] = v;
   });
   return { set: out, clear: clear };
@@ -2556,7 +2571,11 @@ function adminKeysApply(token, qn, changes) {
   }
 
   const before = effectiveState_(d) || {};
-  const beforeKey = String(before.keyLoc || ''), beforeSlip = String(before.slipNo || '');
+  /* Snapshot every yard field, not two named ones. The audit line used to name
+     keys and slip explicitly, so a field added to KEYFIELDS_ later would change
+     silently and leave nothing in the log saying who moved it. */
+  const beforeVals = {};
+  KEYFIELDS_.forEach(function (k) { beforeVals[k] = String(before[k] || ''); });
   /* This re-runs the engine, which prices at whatever rates are live NOW. In a
      season where the rates have moved, recording a key location would otherwise
      change what a customer owes with nothing in the log saying why. Capture the
@@ -2587,18 +2606,17 @@ function adminKeysApply(token, qn, changes) {
 
   const after = effectiveState_(d) || d;
   const bits = [];
-  if (String(after.keyLoc || '') !== beforeKey) {
-    bits.push('keys: ' + (beforeKey || '(blank)') + ' → ' + (String(after.keyLoc || '') || '(blank)'));
-  }
-  if (String(after.slipNo || '') !== beforeSlip) {
-    bits.push('slip: ' + (beforeSlip || '(blank)') + ' → ' + (String(after.slipNo || '') || '(blank)'));
-  }
+  KEYFIELDS_.forEach(function (k) {
+    const now = String(after[k] || '');
+    if (now === beforeVals[k]) return;
+    bits.push(KEYLABELS_[k] + ': ' + (beforeVals[k] || '(blank)') + ' \u2192 ' + (now || '(blank)'));
+  });
   const afterTotal = Number(d.total || 0);
   const moved = Math.abs(afterTotal - beforeTotal) > 0.005;
   const priceNote = moved
     ? ' · RE-PRICED at current rates: ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal)
     : '';
-  auditLog_(who.name, 'Keys/slip updated on ' + d.quoteNo +
+  auditLog_(who.name, 'Yard details updated on ' + d.quoteNo +
     (bits.length ? ': ' + bits.join(' · ') : '') + priceNote);
 
   return {
@@ -2610,6 +2628,7 @@ function adminKeysApply(token, qn, changes) {
     repriced: moved ? 1 : 0,
     keyLoc: String(after.keyLoc || ''),
     slipNo: String(after.slipNo || ''),
+    trailerLoc: String(after.trailerLoc || ''),
     missing: missingHaulInfo_(d)
   };
 }
@@ -2625,6 +2644,47 @@ function adminKeysApply(token, qn, changes) {
    email, and not returned by the customer-facing load endpoint. verify.sh
    enforces that, because the whole value of a candid note is that it is
    candid. */
+/* THE YARD LOG — append only.
+   ---------------------------------------------------------------------------
+   Deliberately NOT the staff note. That one is a single box the office rewrites
+   as its understanding of a quote changes; this is a stream of observations
+   made standing next to the boat, each one stamped with who saw it and when.
+
+   Append-only is the whole point, twice over:
+   - Two people in the yard on two phones cannot clobber each other. A
+     read-modify-write of one text box would lose whichever save landed second,
+     and neither person would ever know.
+   - "Gelcoat crack on the port side, 12 Oct" stops being true the moment
+     somebody edits the box, and a season later nobody can tell what was
+     observed from what was concluded.
+
+   Same privacy bar as the staff note: it is never on the PDF, never in an
+   email, and never returned by ?action=load. verify.sh checks all of those. */
+const YARD_NOTE_MAX_ = 1500;
+function adminAddYardNote(token, qn, text) {
+  /* Yard work, so the yard permission — the crew who see the boat are the crew
+     who write this. Same bar as keys and slip, not the money bar. */
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const t = String(text === null || text === undefined ? '' : text).replace(/\s+/g, ' ').trim();
+  if (!t) return { ok: 0, error: 'Nothing to save — the note is empty.' };
+  if (t.length > YARD_NOTE_MAX_) {
+    return { ok: 0, error: 'That note is ' + t.length + ' characters; keep it under ' +
+             YARD_NOTE_MAX_ + '. Split it into two if you need to.' };
+  }
+  d.yardNotes = d.yardNotes || [];
+  const entry = { ts: new Date().toISOString(), by: who.name, text: t };
+  d.yardNotes.push(entry);
+  /* Payload only. A note is an observation, not a change to the quote: no
+     status, no re-price, no new PDF — the same rule the staff note follows. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Yard note added to ' + d.quoteNo + ': "' +
+    (t.length > 80 ? t.slice(0, 80) + '\u2026' : t) + '"');
+  return { ok: 1, msg: 'Note saved.', note: entry, count: d.yardNotes.length };
+}
+
 function adminSetStaffNote(token, qn, note) {
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -2792,6 +2852,12 @@ function adminLookup(token, qn) {
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
+    /* The yard log — append-only, one entry per observation, newest last. Same
+       privacy bar as the staff note: it is written standing next to the boat
+       and its value is that nobody is composing it for a customer to read. */
+    yardNotes: (d.yardNotes || []).map(function (n) {
+      return { ts: String(n.ts || ''), by: String(n.by || ''), text: String(n.text || '') };
+    }),
     /* Keys and slip, editable on the console. Read through the effective state
        so a staff correction shows rather than the customer's original, and
        report what is still missing so the console can say so out loud — it is
@@ -2801,6 +2867,13 @@ function adminLookup(token, qn) {
       return {
         keyLoc: String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || ''),
         slipNo: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || ''),
+        /* Where the trailer is parked. Read the same way as the other two, so a
+           staff correction wins over whatever the customer's browser last
+           posted. Offered for anything that could be on a trailer — an e-bike
+           could not. */
+        trailerLoc: String((st.trailerLoc !== undefined ? st.trailerLoc : d.trailerLoc) || ''),
+        hasTrailer: !!st.hasTrailer,
+        needsTrailerLoc: !isBike_(d),
         needsKeys: !isBike_(d),
         /* Owning a trailer does not mean the boat is on it — see
            missingHaulInfo_. Every water unit gets a slip field. */
@@ -4070,6 +4143,38 @@ function adminRepriceApply(token, only, first) {
   };
 }
 
+/* MAY WE PUT HANDS ON THIS UNIT?
+   ---------------------------------------------------------------------------
+   Chris's rule: a unit is pulled only when the agreement is SIGNED and a
+   deposit is IN. A deposit is not a signature and a signature is not a deposit;
+   either one alone is a hold, and the two holds are different chases — one
+   legal, one financial, usually two different people in the shop.
+
+   THIS LIVES ON THE SERVER because three surfaces now ask the question: the
+   staff console, the printed haul-out sheet, and the yard app. A copy per
+   surface is a liability rule that can go stale on two of them without anybody
+   noticing, and the one that goes stale is the one that clears a boat it
+   should not have. The clients read the answer; none of them computes it.
+
+   `stamp` is the wording the paper and the screens print, so a hold cannot be
+   described two different ways in two places. */
+function haulAuth_(hasDeposit, hasContract) {
+  if (hasContract && hasDeposit) {
+    return { state: 'cleared', why: '', label: 'Signed', stamp: '' };
+  }
+  if (!hasContract && !hasDeposit) {
+    return { state: 'blocked', why: 'both', label: 'NO DEPOSIT \u00b7 NO CONTRACT',
+             stamp: 'NO DEPOSIT \u00b7 NO CONTRACT' };
+  }
+  if (hasContract) {
+    /* Signed, nothing paid. The liability is covered; the money is not. */
+    return { state: 'hold', why: 'payment', label: 'NO DEPOSIT',
+             stamp: 'NO DEPOSIT \u2014 DO NOT PULL' };
+  }
+  return { state: 'hold', why: 'signature', label: 'NO CONTRACT',
+           stamp: 'NO SIGNED CONTRACT \u2014 DO NOT PULL' };
+}
+
 function adminStorageView(token) {
   requireAuth_(token, 'view');
   /* The heaviest read in the console — every row of every tab, and the payload
@@ -4104,7 +4209,8 @@ function adminStorageView(token) {
       head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
-        let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false;
+        let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
+            trailerLoc = '', notes = 0;
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -4122,6 +4228,12 @@ function adminStorageView(token) {
           const st = effectiveState_(pd) || pd.state || null;
           keys = String((st && st.keyLoc !== undefined ? st.keyLoc : pd.keyLoc) || '');
           slip = String((st && st.slipNo !== undefined ? st.slipNo : pd.slipNo) || '');
+          trailerLoc = String((st && st.trailerLoc !== undefined ? st.trailerLoc : pd.trailerLoc) || '');
+          /* The COUNT only. The notes themselves are the detail screen's job —
+             shipping every note of every quote through the list would put this
+             call straight back over the edge the payload column already pushed
+             it over once. */
+          notes = (pd.yardNotes || []).length;
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
         } catch (e) {}
@@ -4134,6 +4246,13 @@ function adminStorageView(token) {
              paid in full are both on the deposit side of that line, and a quote
              with a zero balance because it was never priced is not. */
           deposit: paid > 0.005, paidTxt: paid > 0.005 ? usd_(paid) : '',
+          /* Formatted here, like every other phone number in the system — the
+             list is a place staff read one off and dial it, and a second format
+             is how the one-format rule dies. COL.PHONE is inside the 1..DIMS
+             range already being read, so this costs no extra sheet traffic. */
+          trailerLoc: trailerLoc, notes: notes, phone: fmtPhone(String(r[COL.PHONE - 1] || '')),
+          /* Decided here, once, and read by every client. See haulAuth_. */
+          auth: haulAuth_(paid > 0.005, contract),
           /* Signed agreement on file. Deposit taken and this still false is the
              chase list -- the console tags those rows in red. */
           contract: contract,

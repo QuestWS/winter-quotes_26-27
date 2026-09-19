@@ -474,6 +474,11 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <input class="txt" id="keysKeyLoc" placeholder="e.g. in the glove box / at the front desk"></div>
             <div id="keysSlipWrap" style="margin-top:8px"><label class="fld">Slip number</label>
               <input class="txt" id="keysSlipNo" placeholder="e.g. B-14"></div>
+            <!-- WHERE the trailer is, which is a different question from whether
+                 there is one. A Heritage Harbor customer can have the boat in a
+                 slip and the trailer in our lot all season. -->
+            <div id="keysTrailerWrap" style="margin-top:8px"><label class="fld">Trailer location</label>
+              <input class="txt" id="keysTrailerLoc" placeholder="e.g. back lot, row 3 / customer took it home"></div>
             <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
               told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
             <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
@@ -497,6 +502,19 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <button class="btn navy" id="dimsPrevBtn" onclick="previewDims()">Preview the change</button>
             <div id="dimsDiff" class="hide" style="margin-top:10px"></div>
             <div class="msg" id="dimsMsg"></div>
+          </div>
+
+          <div class="card hide" id="yardLogCard">
+            <h2>Yard log</h2>
+            <div class="msg" style="margin:0 0 6px">Observations from the yard, newest last —
+              written from the yard app or here. <b>Append-only:</b> entries are never edited or
+              deleted, so two people can log the same boat without overwriting each other.
+              The customer never sees this.</div>
+            <div id="yardLogList"></div>
+            <textarea class="txt" id="yardNoteText" rows="3"
+              placeholder="e.g. gelcoat crack starboard bow, photographed"></textarea>
+            <button class="btn navy" id="yardNoteBtn" onclick="addYardNote()">Add to the log</button>
+            <div class="msg" id="yardNoteMsg"></div>
           </div>
 
           <div class="card hide" id="noteCard">
@@ -1177,12 +1195,14 @@ function renderKeys(k){
   if(!k){ c.classList.add('hide'); return; }
   $('keysKeyWrap').classList.toggle('hide',!k.needsKeys);
   $('keysSlipWrap').classList.toggle('hide',!k.needsSlip);
-  /* An e-bike has no keys and a trailered boat has no slip — with neither
-     field to show there is nothing to edit, so don't show an empty card. */
-  if(!k.needsKeys&&!k.needsSlip){ c.classList.add('hide'); return; }
+  $('keysTrailerWrap').classList.toggle('hide',!k.needsTrailerLoc);
+  /* An e-bike has no keys, no slip and no trailer — with nothing to edit there
+     is nothing to show, so don't render an empty card. */
+  if(!k.needsKeys&&!k.needsSlip&&!k.needsTrailerLoc){ c.classList.add('hide'); return; }
   c.classList.remove('hide');
   $('keysKeyLoc').value=k.keyLoc||'';
   $('keysSlipNo').value=k.slipNo||'';
+  $('keysTrailerLoc').value=k.trailerLoc||'';
   const miss=(k.missing||[]);
   if(miss.length){
     const words=miss.map(m=>m==='keys'?'a key location':'a slip number');
@@ -1199,12 +1219,14 @@ async function saveKeys(){
   const changes={};
   if(KEYS.needsKeys) changes.keyLoc=$('keysKeyLoc').value;
   if(KEYS.needsSlip) changes.slipNo=$('keysSlipNo').value;
+  if(KEYS.needsTrailerLoc) changes.trailerLoc=$('keysTrailerLoc').value;
   const b=$('keysBtn'); b.disabled=true; b.textContent='Saving…';
   setMsg('keysMsg','');
   try{
     const r=await api('keysApply',[QN,changes]);
     if(!r||!r.ok){ setMsg('keysMsg',(r&&r.error)||'Could not save that.',false); return; }
-    renderKeys(Object.assign({},KEYS,{keyLoc:r.keyLoc,slipNo:r.slipNo,missing:r.missing||[]}));
+    renderKeys(Object.assign({},KEYS,{keyLoc:r.keyLoc,slipNo:r.slipNo,
+      trailerLoc:r.trailerLoc,missing:r.missing||[]}));
     setMsg('keysMsg',r.msg,true);
     toast('Saved');
   }catch(e){ setMsg('keysMsg',e.message,false); }
@@ -1388,6 +1410,9 @@ function renderQuote(r){
      keys and slip. */
   $('noteCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderStaffNote(r.staffNote);
+  /* Same bar as the staff note and the keys card: yard work, not money. */
+  $('yardLogCard').classList.toggle('hide',!P.keys);
+  if(P.keys) renderYardLog(r.yardNotes);
   $('keysCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
@@ -1399,6 +1424,39 @@ function renderQuote(r){
   syncSignAsk_(P);
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
+}
+/* The yard log. Rendered newest LAST, the way a log reads — the newest entry
+   is the one you just wrote, and scrolling to it is how you confirm it landed.
+   Entries are never editable here: append-only is the guarantee, and an edit
+   box would quietly break it. */
+function renderYardLog(list){
+  window._yard=list||[];
+  const box=$('yardLogList');
+  if(!box) return;
+  if(!window._yard.length){
+    box.innerHTML='<div class="msg" style="padding:4px">Nothing logged yet.</div>';
+    return;
+  }
+  box.innerHTML=window._yard.map(n=>{
+    let when=String(n.ts||'');
+    if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
+    return '<div class="histrow"><b>'+esc(n.by||'—')+'</b> <span class="hm">· '+esc(when)+
+      '</span><br>'+esc(n.text||'')+'</div>';
+  }).join('');
+}
+async function addYardNote(){
+  const t=($('yardNoteText').value||'').trim();
+  if(!t){ setMsg('yardNoteMsg','Type a note first.',false); return; }
+  const b=$('yardNoteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('yardNoteMsg','');
+  try{
+    const r=await api('yardNote',[QN,t]);
+    if(!r||!r.ok){ setMsg('yardNoteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('yardNoteText').value='';
+    renderYardLog((window._yard||[]).concat([r.note]));
+    setMsg('yardNoteMsg',r.msg,true); toast('Logged');
+  }catch(e){ setMsg('yardNoteMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Add to the log'; }
 }
 /* Read-only: which terms version this customer accepted, and when. Quotes
    saved before terms acceptance existed show as not recorded rather than
@@ -2327,19 +2385,22 @@ function haulDate_(v){
    Four states, and `why` is what keeps the two holds from reading the same.
    The sheet has to make all of it obvious to somebody holding it in the yard
    rather than reading it on a screen. */
+/* THE CONSOLE DOES NOT DECIDE THIS. The server does (haulAuth_ in the .gs),
+   because the console, the printed sheet and the yard app all ask the same
+   question and a copy per surface is a liability rule free to go stale on two
+   of them. These are accessors, not the rule.
+
+   The fallback matters as much as the rule: a row with no `auth` on it — an
+   older backend, a half-written cache entry — must read as BLOCKED. Defaulting
+   the other way would have a deploy-ordering accident clear a boat nobody
+   signed for. It fails towards not touching the boat. */
 function haulAuth_(x){
-  const signed=!!(x&&x.contract), paid=!!(x&&x.deposit);
-  if(signed&&paid)   return {state:'cleared',why:'',         label:'Signed'};
-  if(!signed&&!paid) return {state:'blocked',why:'both',     label:'NO DEPOSIT · NO CONTRACT'};
-  /* Signed but nothing paid. The liability is covered; the money is not. */
-  if(signed)         return {state:'hold',   why:'payment',  label:'NO DEPOSIT'};
-  return               {state:'hold',   why:'signature',label:'NO CONTRACT'};
+  const a=x&&x.auth;
+  if(a&&a.state) return a;
+  return {state:'blocked',why:'both',label:'NO DEPOSIT · NO CONTRACT',
+          stamp:'NOT CONFIRMED — DO NOT PULL'};
 }
-/* What the stamp says, in one place, so the paper and the screen cannot end up
-   describing the same row two different ways. */
-function haulHoldText_(a){
-  return a.why==='payment' ? 'NO DEPOSIT — DO NOT PULL' : 'NO SIGNED CONTRACT — DO NOT PULL';
-}
+function haulHoldText_(a){ return (a&&a.stamp)||'DO NOT PULL'; }
 /* Split the yard into the units that go on the working list (cleared to pull,
    plus the deposit-taken ones we are planning around) and the units that are
    held off it entirely. Kept separate from the printing so the rule can be

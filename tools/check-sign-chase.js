@@ -101,6 +101,16 @@ const GROUPS = [
   ] }
 ];
 
+/* The server owns the rule, so load it first and let it stamp the fixtures the
+   same way adminStorageView does. Rows that carried a hand-written `auth`
+   would prove nothing about the function that really fills it in. */
+function backend(src) {
+  return new Function(src + '\nreturn { buildEmailFor_, signUrlFor_, haulAuth_, SIGNING };')();
+}
+const gasSrc = fs.readFileSync(GAS, 'utf8');
+const B = backend(gasSrc);
+GROUPS.forEach((g) => g.rows.forEach((r) => { r.auth = B.haulAuth_(!!r.deposit, !!r.contract); }));
+
 const C = consoleCtx();
 C.window._sg = GROUPS;
 
@@ -168,34 +178,47 @@ else ok('the storage tabs have their own class, not the photo switch\'s');
    are two different phone calls. Letting either gate alone authorise a pull is
    the whole point of this guard, and it is one inverted condition away.
    ===================================================================== */
-eq(C.haulAuth_({ contract: true,  deposit: true  }).state, 'cleared', 'signed AND paid: cleared to pull');
-eq(C.haulAuth_({ contract: true,  deposit: false }).state, 'hold',
+/* THE RULE ITSELF IS THE SERVER'S. Run it there. */
+eq(B.haulAuth_(true,  true ).state, 'cleared', 'signed AND paid: cleared to pull');
+eq(B.haulAuth_(false, true ).state, 'hold',
    'signed but unpaid is a HOLD — a signature alone does not release the unit');
-eq(C.haulAuth_({ contract: true,  deposit: false }).why, 'payment',
+eq(B.haulAuth_(false, true ).why, 'payment',
    'and it is held for the MONEY, so the sheet can say which chase this is');
-eq(C.haulAuth_({ contract: false, deposit: true  }).state, 'hold',
+eq(B.haulAuth_(true,  false).state, 'hold',
    'a deposit with no signature is planning only, never a pull');
-eq(C.haulAuth_({ contract: false, deposit: true  }).why, 'signature',
+eq(B.haulAuth_(true,  false).why, 'signature',
    'and that one is held for the SIGNATURE — the two holds never read the same');
-eq(C.haulAuth_({ contract: false, deposit: false }).state, 'blocked',
+eq(B.haulAuth_(false, false).state, 'blocked',
    'neither means we do not touch the boat at all');
 /* The single sentence underneath all four: nothing is cleared unless BOTH are
    in. Asserted over the whole truth table rather than case by case. */
-[true, false].forEach((sig) => [true, false].forEach((pay) => {
-  const cleared = C.haulAuth_({ contract: sig, deposit: pay }).state === 'cleared';
+[true, false].forEach((pay) => [true, false].forEach((sig) => {
+  const cleared = B.haulAuth_(pay, sig).state === 'cleared';
   if (cleared !== (sig && pay))
-    fail('cleared=' + cleared + ' for contract=' + sig + ' deposit=' + pay + ' — a unit is cleared ' +
+    fail('cleared=' + cleared + ' for deposit=' + pay + ' contract=' + sig + ' — a unit is cleared ' +
          'to pull if and only if it is BOTH signed and paid');
 }));
 ok('a unit is cleared if and only if it is both signed and paid');
 /* And the two holds must not print the same words. */
 {
-  const sigTxt = C.haulHoldText_(C.haulAuth_({ contract: false, deposit: true }));
-  const payTxt = C.haulHoldText_(C.haulAuth_({ contract: true,  deposit: false }));
+  const sigTxt = B.haulAuth_(true, false).stamp;
+  const payTxt = B.haulAuth_(false, true).stamp;
   if (sigTxt === payTxt) fail('both holds stamp the same text — the sheet cannot say which chase it is');
   else if (!/DO NOT PULL/.test(sigTxt) || !/DO NOT PULL/.test(payTxt))
     fail('a hold stamp does not say DO NOT PULL: ' + JSON.stringify([sigTxt, payTxt]));
   else ok('the two holds stamp different words, and both say DO NOT PULL');
+}
+/* THE FAIL-SAFE. A row the server did not stamp — an older backend, a cache
+   entry written before this deploy — must read as blocked on every client.
+   Defaulting the other way lets a deploy-ordering accident clear a boat. */
+{
+  const bare = C.haulAuth_({ deposit: true, contract: true });   // no .auth on it
+  if (bare.state === 'cleared')
+    fail('an unstamped row read as CLEARED on the console — a backend that has not ' +
+         'deployed yet would authorise pulling boats nobody signed for');
+  else ok('an unstamped row reads as blocked, not cleared (it fails towards not touching the boat)');
+  if (/DO NOT PULL/.test(C.haulHoldText_(bare))) ok('and it still stamps DO NOT PULL');
+  else fail('the unstamped fallback does not say DO NOT PULL: ' + C.haulHoldText_(bare));
 }
 
 {
@@ -257,12 +280,6 @@ ok('a unit is cleared if and only if it is both signed and paid');
 /* =====================================================================
    2. THE NUDGE EMAIL, built for real.
    ===================================================================== */
-function backend(src) {
-  return new Function(src + '\nreturn { buildEmailFor_, signUrlFor_, SIGNING };')();
-}
-const gasSrc = fs.readFileSync(GAS, 'utf8');
-const B = backend(gasSrc);
-
 const quote = (over) => Object.assign({
   quoteNo: 'QW-26-1255', firstName: 'Fixture', lastName: 'Owner', unit: 'Boat',
   email: 'fixture@example.com', total: 1200, payments: [{ amt: 500 }],

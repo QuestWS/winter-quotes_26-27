@@ -32,7 +32,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
-    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" \
+    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -78,7 +78,7 @@ if [ -f admin/index.html ]; then
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
     "setStorageFilter" "renderStorage" "storageTabs" "tagred" "em_signreminder" "signAskAllowed_" \
-    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" \
+    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderYardLog" "addYardNote" "yardLogCard" "keysTrailerLoc" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
   # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
@@ -142,6 +142,26 @@ if [ -f admin/index.html ]; then
     echo "  FAIL trap: .txt textareas are not covered by the .txt width rule"; FAIL=1
   else echo "  OK   trap: .txt textareas fill their card"; fi
 else echo "  (admin/index.html not present)"; fi
+
+echo "== Yard app =="
+if [ -f yard/index.html ]; then
+  extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
+  sweep yard/index.html "yard" \
+    "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "toggleDictation" \
+    "uploadPhoto" "yardNote" "manifest.json" "storageView"
+  # One big script here too, so the same shadowing trap applies.
+  DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \
+         | grep -oE '[A-Za-z0-9_$]+$' | sort | uniq -d)
+  if [ -n "$DUPY" ]; then
+    echo "  FAIL trap: duplicate function name(s) in the yard app:"; echo "$DUPY" | sed 's/^/         /'; FAIL=1
+  else echo "  OK   trap: no duplicate function names in the yard app"; fi
+  # The pull rule belongs to the server. Three surfaces ask it; one answers.
+  if node tools/check-yard-app.js > "$TMP/yardapp.txt" 2>&1; then
+    echo "  OK   gate: yard app renders the server's verdict and degrades safely"
+  else
+    echo "  FAIL gate: yard app"; sed 's/^/       /' "$TMP/yardapp.txt"; FAIL=1
+  fi
+else echo "  (yard/index.html not present)"; fi
 
 echo "== Pricing engine parity =="
 if [ -f pricing-engine.js ]; then
@@ -229,11 +249,27 @@ if [ -f quote-logger-apps-script.gs ]; then
     if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
       echo "  FAIL trap: $f can show the staff note to a customer"; FAIL=1
     else echo "  OK   trap: $f cannot leak the staff note"; fi
+    # The yard log is written standing next to the boat and its whole value is
+    # that nobody is composing it for a customer to read. Same bar, same paths.
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'yardNotes'; then
+      echo "  FAIL trap: $f can show the yard log to a customer"; FAIL=1
+    else echo "  OK   trap: $f cannot leak the yard log"; fi
   done
   # ...nor the endpoint the customer's own page reads.
   if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
     echo "  FAIL trap: the load endpoint returns the staff note to the customer page"; FAIL=1
   else echo "  OK   trap: staff note never reaches the customer page"; fi
+  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'yardNotes'; then
+    echo "  FAIL trap: the load endpoint returns the yard log to the customer page"; FAIL=1
+  else echo "  OK   trap: yard log never reaches the customer page"; fi
+  # Append-only is the guarantee. Nothing may rewrite or drop an entry.
+  if grep -qE 'yardNotes\s*=\s*\[\]|yardNotes\.splice|yardNotes\.shift|yardNotes\.pop' quote-logger-apps-script.gs; then
+    echo "  FAIL trap: something truncates or edits the yard log — it is append-only"; FAIL=1
+  else echo "  OK   trap: the yard log is only ever appended to"; fi
+  # It exists only on this side, so a customer save has to be made to carry it.
+  if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.yardNotes'; then
+    echo "  OK   trap: yard log survives a customer save"
+  else echo "  FAIL trap: a customer save would wipe the yard log"; FAIL=1; fi
   # It exists only on this side, so a customer save must be made to carry it.
   if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.staffNote'; then
     echo "  OK   trap: staff note survives a customer save"
@@ -648,8 +684,9 @@ U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null |
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)
 U_ADM=$(grep -o 'AKfycb[A-Za-z0-9_-]*' admin/index.html 2>/dev/null | sort -u | head -1)
 U_SIGN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' sign.html 2>/dev/null | sort -u | head -1)
-echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"
-if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ]; }; then
+U_YARD=$(grep -o 'AKfycb[A-Za-z0-9_-]*' yard/index.html 2>/dev/null | sort -u | head -1)
+echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  yard:  ${U_YARD:-none}"
+if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_YARD:-$U_GAS}" != "$U_GAS" ]; }; then
   echo "  FAIL: deployment URLs do not match across files"; FAIL=1
 else echo "  OK   all present URLs match"; fi
 

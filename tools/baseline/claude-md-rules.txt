@@ -38,7 +38,7 @@ page with no icon, and **resolves each href against the page that carries it**
 from `script.google.com`, so it cannot reference a repo file and shows Google's
 icon; that one is outside the rule.
 https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec
-It appears in **four places that must stay in sync**:
+It appears in **five places that must stay in sync**:
 1. `quote-logger-apps-script.gs` → `const WEB_APP_URL`
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`

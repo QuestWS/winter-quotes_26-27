@@ -1,0 +1,201 @@
+#!/usr/bin/env node
+/* The yard app: what it must never decide for itself, and what must survive a
+   phone with two bars.
+   ---------------------------------------------------------------------------
+   yard/index.html is the third surface to ask "may we pull this boat?" — after
+   the staff console and the printed haul-out sheet. The answer is the SERVER's
+   (haulAuth_ in the .gs) and is shipped on every storage row. This guard exists
+   because the cheap thing to do, the next time somebody adds a field, is to
+   work the rule out locally from `deposit` and `contract`; two of the three
+   copies would then be free to go stale, and the one that goes stale is the one
+   that clears a boat nobody signed for.
+
+   It also pins the things that only fail in the yard, where nobody is watching
+   a console: the GET fallback naming a function the server refuses, the
+   lost-POST fingerprint drifting from the string it matches, and `capture`
+   spreading to the gallery input and killing the gallery on Android.
+
+   Run by tools/verify.sh. */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.join(__dirname, '..');
+const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const HTML = read('yard/index.html');
+const GAS = read('quote-logger-apps-script.gs');
+
+let bad = 0;
+const fail = (m) => { console.error('  FAIL ' + m); bad++; };
+const ok = (m) => console.log('  ok: ' + m);
+const eq = (got, want, what) => {
+  if (got === want) ok(what);
+  else fail(what + ' — got ' + JSON.stringify(got) + ', expected ' + JSON.stringify(want));
+};
+
+/* ---- run the real page script ---- */
+const SRC = (HTML.match(/<script>([\s\S]*?)<\/script>/g) || [])
+  .map((b) => b.replace(/^<script>/, '').replace(/<\/script>$/, '')).join('\n;\n');
+
+function load() {
+  const noop = () => {};
+  const el = { textContent: '', className: '', innerHTML: '', value: '', disabled: false,
+               classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
+               addEventListener: noop, click: noop };
+  const ctx = {
+    console,
+    localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
+    document: { getElementById: () => el, addEventListener: noop, createElement: () => el, body: el },
+    setTimeout: (fn) => { fn(); return 0; }, clearTimeout: noop,
+    fetch: async () => { throw new Error('this guard makes no requests'); },
+    scrollTo: noop
+  };
+  ctx.window = ctx; ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(SRC, ctx, { filename: 'yard/index.html' });
+  /* `function` declarations land on the context object, but top-level `let`
+     and `const` live in the realm's global LEXICAL scope and never become
+     properties of it. Reaching them means evaluating an expression in the same
+     realm rather than reading ctx.FOO — which would silently be undefined and
+     make this guard pass by testing nothing. */
+  ctx.ev = (expr) => vm.runInContext(expr, ctx, { filename: 'guard-probe' });
+  return ctx;
+}
+const Y = load();
+
+/* =====================================================================
+   1. THE APP DECIDES NOTHING ABOUT PULLING.
+   ===================================================================== */
+/* Whatever the server stamped is what the app shows — including a state the
+   app has never heard of, which it must not quietly downgrade to "fine". */
+eq(Y.auth_({ deposit: true, contract: true, auth: { state: 'cleared' } }).state, 'cleared',
+   'a row the server cleared reads as cleared');
+eq(Y.auth_({ deposit: true, contract: true, auth: { state: 'hold', why: 'payment' } }).why, 'payment',
+   'the app reports the server\'s reason, it does not recompute one');
+/* THE FAIL-SAFE, and the reason this file exists. A row with no stamp on it —
+   an older backend, a cache entry from before the deploy — must read as
+   blocked on the phone, exactly as it does on the console. */
+{
+  const bare = Y.auth_({ deposit: true, contract: true });
+  if (bare.state === 'cleared') {
+    fail('an unstamped row reads as CLEARED in the yard app — a backend that has not deployed ' +
+         'yet would authorise pulling boats nobody signed for');
+  } else ok('an unstamped row reads as blocked (it fails towards not touching the boat)');
+  if (/DO NOT PULL/.test(String(bare.stamp || ''))) ok('and it still stamps DO NOT PULL');
+  else fail('the unstamped fallback does not say DO NOT PULL: ' + JSON.stringify(bare.stamp));
+}
+/* The rule itself must not be in this file. Anything that turns `contract` and
+   `deposit` into a verdict here is a second copy by definition. */
+{
+  const js = SRC.replace(/\/\*[\s\S]*?\*\//g, '');      // comments may discuss it
+  if (/cleared[\s\S]{0,80}(contract|deposit)/.test(js) && !/a\.state/.test(js)) {
+    fail('the yard app looks like it is working the pull rule out from contract/deposit');
+  } else ok('the yard app carries no rule of its own — it renders what the server stamped');
+}
+
+/* =====================================================================
+   2. THE TWO LISTS ARE WHAT CHRIS ASKED FOR.
+   ===================================================================== */
+Y.ev('ROWS = ' + JSON.stringify([
+  { qn: 'A', name: 'Adams', slip: 'B-14', tab: 'Building A', seasonDone: { choice: 'now' } },
+  { qn: 'B', name: 'Baker', slip: '',     tab: 'Building A', seasonDone: { choice: 'now' } },
+  { qn: 'C', name: 'Clark', slip: '   ',  tab: 'Outside',    seasonDone: null },
+  { qn: 'D', name: 'Dunn',  slip: 'C-2',  tab: 'Outside',    seasonDone: { choice: 'call' } },
+  { qn: 'E', name: 'Ewing', slip: 'A-1',  tab: 'Building A', seasonDone: { choice: 'date', date: '2026-10-20' } }
+]));
+{
+  const pull = Y.ev('pullList_().map(function(r){return r.qn;})');
+  eq(pull.join(','), 'A,E,D', '"To pull" is slip boats only, in haul-out order (now, date, will call)');
+  if (pull.indexOf('C') > -1) fail('a whitespace-only slip counted as a slip — that boat is not in the water');
+  else ok('a whitespace-only slip is not a slip');
+  if (pull.indexOf('B') > -1) fail('a boat with no slip is on the pull list');
+  else ok('a boat with no slip never reaches the pull list');
+}
+
+/* =====================================================================
+   3. TALKING TO A BACKEND OVER A BAD CONNECTION.
+   ===================================================================== */
+/* The app's retry list must be a SUBSET of what the server allows on GET —
+   the server refuses a GET naming a write, so a wrong entry here is a retry
+   that can only ever fail, in the yard, with nobody to explain it. */
+{
+  const block = (GAS.match(/const CONSOLE_GET_FNS_ = \{[\s\S]*?\n\};/) || [''])[0];
+  if (!block) fail('could not find CONSOLE_GET_FNS_ in the .gs — the subset check cannot run');
+  /* Comments in that block name functions in prose, and several entries share
+     a line, so strip the comments and scan the whole block rather than
+     line-starts. An under-read here would make this check pass by comparing
+     against almost nothing. */
+  const allowed = {};
+  block.replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/([A-Za-z][A-Za-z0-9_]*)\s*:\s*1/g, (m, n) => { allowed[n] = 1; return m; });
+  if (Object.keys(allowed).length < 5)
+    fail('only read ' + Object.keys(allowed).length + ' entries out of CONSOLE_GET_FNS_ — ' +
+         'the subset check would pass against almost nothing');
+  else ok('read ' + Object.keys(allowed).length + ' functions the server answers on GET');
+  const GETOK = Y.ev('API_GET_OK') || {};
+  const mine = Object.keys(GETOK);
+  if (!mine.length) fail('the yard app has no GET allow-list at all');
+  const rogue = mine.filter((f) => !allowed[f]);
+  if (rogue.length) fail('the yard app would retry over GET: ' + rogue.join(', ') +
+    ' — the server refuses those on GET, so the retry can only fail');
+  else ok('every function the app retries over GET is one the server answers there (' + mine.length + ')');
+  /* And the writes must NOT be on it. */
+  ['yardNote', 'uploadPhoto', 'keysApply'].forEach((w) => {
+    if (GETOK[w]) fail(w + ' is on the app\'s GET list — a link that changes something can be followed twice');
+  });
+  ok('the app never tries to send a write as a GET');
+}
+/* The lost-POST fingerprint is matched on wording, which is fragile, so pin it
+   against the string doGet actually returns. */
+{
+  const real = (GAS.match(/Enter both your quote number and last name\.?/) || [''])[0];
+  if (!real) fail('could not find the customer loader\'s message in the .gs to pin against');
+  else if (Y.lost_({ ok: 0, error: real })) ok('the app recognises the customer loader answering a staff call');
+  else fail('the lost-POST detector no longer matches the customer loader\'s real wording: ' + real);
+  if (Y.lost_({ _api: 'console', ok: 0, error: real }))
+    fail('a properly stamped console reply was mistaken for a lost call');
+  else ok('a stamped console reply is never mistaken for a lost one');
+  if (Y.lost_({ ok: 0, error: 'Quote not found.' }))
+    fail('an ordinary server error was mistaken for a lost call');
+  else ok('an ordinary error is not mistaken for a lost call');
+}
+
+/* =====================================================================
+   4. THE PHONE ITSELF.
+   ===================================================================== */
+{
+  const caps = (HTML.match(/capture=/g) || []).length;
+  if (caps !== 1) fail('`capture` appears ' + caps + ' times — on Android it forces the camera and ' +
+    'kills the gallery, so it belongs on the camera button ONLY');
+  else ok('capture is on the camera input only, so the gallery still works on Android');
+  if (/<input[^>]*id="galIn"[^>]*capture/.test(HTML)) fail('the gallery input carries capture');
+  else ok('the gallery input is free of capture');
+}
+{
+  /* Add to Home Screen is the point of the page being separate. */
+  const man = JSON.parse(read('yard/manifest.json'));
+  eq(man.display, 'standalone', 'the manifest asks for a standalone window');
+  if (String(man.start_url || '').startsWith('/')) {
+    fail('manifest start_url is absolute — this deploys under /winter-quotes_26-27/yard/ on Pages, ' +
+         'so an absolute path installs an app that opens the wrong site');
+  } else ok('manifest start_url is relative, so it survives the Pages subpath');
+  if (!/<link rel="manifest"/.test(HTML)) fail('the page does not link its manifest');
+  else ok('the page links its manifest');
+  (man.icons || []).forEach((i) => {
+    const p = path.join(ROOT, 'yard', i.src);
+    if (!fs.existsSync(p)) fail('manifest icon ' + i.src + ' does not resolve from /yard/');
+  });
+  ok('every manifest icon resolves from /yard/');
+}
+{
+  /* Same deployment as everything else, or the app talks to an orphan. */
+  const mine = (HTML.match(/AKfycb[A-Za-z0-9_-]*/) || [''])[0];
+  const theirs = (GAS.match(/AKfycb[A-Za-z0-9_-]*/) || [''])[0];
+  if (mine && theirs && mine === theirs) ok('the app points at the same /exec deployment as the backend');
+  else fail('the yard app\'s API URL does not match the backend\'s: ' + mine + ' vs ' + theirs);
+}
+
+if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the yard app'); process.exit(1); }
+console.log('yard app: renders the server\'s verdict rather than forming one, lists slip boats for ' +
+            'pulling and everything for placing, and degrades safely on a bad connection');

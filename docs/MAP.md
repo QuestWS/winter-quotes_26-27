@@ -17,6 +17,7 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
+| `yard/index.html` | ~700 | The yard app: two lists, one unit at a time, the yard log, dictation and photos. One big `<script>`, same no-duplicate-names rule as the console |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
@@ -91,10 +92,23 @@ symptom.
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
-| Whether a unit may be pulled at all | — | `haulAuth_`, `haulHoldText_`, `haulPartition_`, `haulSort_` |
+| Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |
+| Keys, slip and trailer location | `KEYFIELDS_`, `KEYLABELS_`, `sanitizeKeys_`, `adminKeysApply` | `renderKeys`, `saveKeys` |
+| The yard log | `adminAddYardNote`, `YARD_NOTE_MAX_` | `renderYardLog`, `addYardNote` |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
+
+### Yard app
+| Feature | Entry point (server) | Entry point (app) |
+|---|---|---|
+| The two lists | `adminStorageView` | `pullList_`, `render`, `setTab` |
+| May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
+| One unit | `adminLookup` | `openQuote`, `renderSheet` |
+| Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |
+| Dictation | — | `toggleDictation`, `stopDictation`, `dictationSupported_` |
+| Photos | `adminUploadPhoto`, `adminPhotoInfo` | `upload`, `refreshPhotos` |
+| Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
 
 ### Customer page
 | Feature | Entry point |
@@ -128,6 +142,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
+| `check-yard-app.js` | The yard app renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, and its GET retry list is a subset of the server's |
 | `check-sign-chase.js` | A unit is cleared to pull if and only if it is BOTH signed and paid, and the two holds name their own reason; the deposit tabs sort by payment rather than balance; a lead sits outside both; the sign nudge refuses to build rather than ship a dead button |
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

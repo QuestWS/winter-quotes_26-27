@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quest Yard — Haul-Out</title>
+<!-- Staff-only, PIN-gated, and of no use to anybody who lands on it by
+     accident. It should never turn up in a search result. -->
+<meta name="robots" content="noindex, nofollow">
+<!-- One Quest mark for the whole site: favicon.png at the repo root. From
+     /yard/ that is one level up — the failure this rule exists to catch is a
+     path that is right from the root and 404s from a subfolder. -->
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../favicon.png">
+<!-- Add to Home Screen is the whole reason this is a separate page rather than
+     another console card: the crew opens it like an app, one tap, no browser
+     chrome, already signed in. -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14293E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quest Yard">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- The shared Quest palette. Linked, not re-typed — same bargain sign.html
+     makes, and tools/check-design-tokens.js holds every copy to this file. -->
+<link rel="stylesheet" href="../quest.css">
+<style>
+/* Everything below is specific to this page. Anything another Quest page would
+   also want belongs in quest.css instead.
+
+   DESIGNED FOR A GLOVE AND A GLARE. Every tap target is at least 44px, the
+   type does not go below 14px, and nothing important is carried by colour
+   alone — this is used outdoors, in November, by somebody holding a phone in
+   one hand and a set of keys in the other. */
+*{-webkit-tap-highlight-color:transparent}
+body{background:var(--ice);overscroll-behavior-y:none}
+
+/* ---- top bar ---- */
+.bar{position:sticky;top:0;z-index:40;background:var(--navy);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 10px) 14px 0;box-shadow:0 2px 10px rgba(20,41,62,.25)}
+.bar .row1{display:flex;align-items:center;gap:10px;min-height:34px}
+.bar .ttl{font-family:var(--disp);font-size:21px;letter-spacing:.04em;font-weight:700;
+  text-transform:uppercase;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .who{font-size:12px;color:#B9CDDD;white-space:nowrap}
+.bar .out{background:none;border:1px solid #2C4E73;color:#B9CDDD;border-radius:8px;
+  padding:7px 10px;font-size:12px;font-family:var(--body);cursor:pointer;min-height:34px}
+/* Tabs live in the bar so they survive the list scrolling under them. */
+.tabs{display:flex;margin-top:10px}
+.tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;color:#9FC3DC;
+  font-family:var(--body);font-size:14px;font-weight:700;padding:11px 4px;cursor:pointer;min-height:46px}
+.tabs button.on{color:#fff;border-bottom-color:var(--gold)}
+.tabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.8;margin-left:5px}
+
+.wrap{max-width:720px;margin:0 auto;padding:12px 12px calc(env(safe-area-inset-bottom) + 28px)}
+.msg{font-size:13.5px;color:var(--muted);margin:6px 2px}
+.msg.err{color:var(--warn)}
+.msg.ok{color:var(--ok)}
+
+/* ---- list ---- */
+.grp{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;color:var(--navy);
+  font-size:17px;margin:16px 2px 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)}
+.grp:first-child{margin-top:4px}
+.grp .c{float:right;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:0}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 13px;margin-bottom:8px;cursor:pointer;display:block;width:100%;text-align:left;
+  font-family:var(--body);font-size:15px;color:var(--ink);min-height:56px}
+.card:active{background:var(--frost-soft)}
+.card .nm{font-weight:700;color:var(--navy);font-size:16px}
+.card .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.card .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.slip{font-family:var(--mono);font-weight:600;color:var(--navy);white-space:nowrap}
+.badge{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;
+  margin-top:6px;letter-spacing:.03em}
+.badge.stop{background:var(--warn);color:#fff}
+.badge.money{background:var(--gold-soft);color:#7A5714;border:1px solid var(--gold)}
+.badge.none{background:#fff;color:var(--muted);border:1px solid var(--line)}
+.badge.note{background:var(--frost-soft);color:var(--navy);margin-left:6px}
+
+/* ---- detail sheet ---- */
+.sheet{position:fixed;inset:0;z-index:60;background:var(--ice);overflow-y:auto;
+  -webkit-overflow-scrolling:touch}
+.sheet.hide{display:none}
+.shead{position:sticky;top:0;background:var(--navy);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;display:flex;align-items:flex-start;gap:10px}
+.shead .t{flex:1;min-width:0}
+.shead .t b{font-family:var(--disp);font-size:20px;letter-spacing:.03em;display:block}
+.shead .t span{font-family:var(--mono);font-size:12px;color:#B9CDDD}
+.shead .x{background:none;border:1px solid #2C4E73;color:#fff;border-radius:8px;
+  font-size:18px;line-height:1;padding:9px 13px;cursor:pointer;min-height:44px;min-width:44px}
+.auth{padding:12px 14px;font-weight:700;font-size:14.5px;letter-spacing:.02em}
+.auth.stop{background:var(--warn);color:#fff}
+.auth.money{background:var(--gold-soft);color:#7A5714;border-bottom:2px solid var(--gold)}
+.auth.go{background:var(--ok-bg);color:var(--ok);border-bottom:2px solid var(--ok)}
+.auth small{display:block;font-weight:400;font-size:12.5px;margin-top:3px;opacity:.9}
+.blk{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:13px;margin-bottom:10px}
+.blk h3{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;font-size:15px;
+  color:var(--navy);margin-bottom:8px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line);
+  font-size:14.5px}
+.kv:last-child{border-bottom:0}
+.kv span{color:var(--muted);flex:0 0 auto}
+.kv b{color:var(--ink);text-align:right;word-break:break-word}
+.kv b.miss{color:var(--warn);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:9px;
+  border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-family:var(--body);
+  font-size:15px;font-weight:700;padding:12px 16px;cursor:pointer;text-decoration:none;min-height:48px}
+.btn.ghost{background:#fff;color:var(--navy)}
+.btn.gold{background:var(--gold);border-color:var(--gold)}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.55}
+.btn.rec{background:var(--warn);border-color:var(--warn)}
+.row2{display:flex;gap:8px}.row2>*{flex:1}
+textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--ink);resize:vertical}
+.logrow{border-left:3px solid var(--frost);padding:7px 0 7px 10px;margin-bottom:8px;font-size:14.5px}
+.logrow .w{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.thumbs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.hide{display:none!important}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 18px);
+  background:var(--navy-deep);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;
+  opacity:0;pointer-events:none;transition:opacity .18s;z-index:80;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+
+/* ---- login ---- */
+.login{max-width:340px;margin:12vh auto 0;padding:0 20px;text-align:center}
+.login h1{font-family:var(--disp);text-transform:uppercase;letter-spacing:.06em;color:var(--navy);
+  font-size:27px;margin-bottom:4px}
+.login p{color:var(--muted);font-size:14px;margin-bottom:18px}
+.pin{width:100%;font-family:var(--mono);font-size:26px;letter-spacing:.35em;text-align:center;
+  padding:14px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--navy)}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login" class="login">
+  <h1>Quest Yard</h1>
+  <p>Haul-out list. Same PIN as the staff console.</p>
+  <input class="pin" id="pin" type="tel" inputmode="numeric" autocomplete="off"
+         maxlength="8" placeholder="••••" aria-label="Staff PIN">
+  <button class="btn wide" id="loginBtn" style="margin-top:12px" onclick="doLogin()">Sign in</button>
+  <div class="msg" id="loginMsg"></div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app" class="hide">
+  <div class="bar">
+    <div class="row1">
+      <div class="ttl">Quest Yard</div>
+      <div class="who" id="who"></div>
+      <button class="out" onclick="signOut()">Sign out</button>
+    </div>
+    <div class="tabs">
+      <button id="tabPull" class="on" onclick="setTab('pull')">To pull<span class="n" id="nPull"></span></button>
+      <button id="tabAll" onclick="setTab('all')">All storage<span class="n" id="nAll"></span></button>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="msg" id="listMsg">Loading…</div>
+    <div id="list"></div>
+    <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
+  </div>
+</div>
+
+<!-- ===================== DETAIL ===================== -->
+<div id="sheet" class="sheet hide">
+  <div class="shead">
+    <div class="t"><b id="dName"></b><span id="dQn"></span></div>
+    <button class="x" onclick="closeSheet()" aria-label="Close">✕</button>
+  </div>
+  <div id="dAuth"></div>
+  <div class="wrap">
+    <div id="dCall"></div>
+    <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
+    <div class="blk">
+      <h3>Yard log</h3>
+      <div id="dLog"></div>
+      <textarea class="txt" id="noteText" rows="3" placeholder="What you can see from here…"></textarea>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn ghost" id="micBtn" onclick="toggleDictation()">🎙 Dictate</button>
+        <button class="btn" id="noteBtn" onclick="saveNote()">Save note</button>
+      </div>
+      <div class="msg" id="noteMsg"></div>
+    </div>
+    <div class="blk">
+      <h3>Condition photos</h3>
+      <div class="msg" id="photoCounts" style="margin-top:0">—</div>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn ghost" onclick="$('camIn').click()">📷 Take photos</button>
+        <button class="btn ghost" onclick="$('galIn').click()">Choose</button>
+      </div>
+      <!-- `capture` forces the camera on Android and kills the gallery option,
+           so it lives on the camera button ONLY. -->
+      <input type="file" id="camIn" class="hide" accept="image/*" capture="environment" multiple>
+      <input type="file" id="galIn" class="hide" accept="image/*" multiple>
+      <div class="msg" id="upMsg"></div>
+      <div style="margin-top:8px"><button class="btn ghost wide" id="openFolder" onclick="openFolder()">Open photo folder</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===========================================================================
+   QUEST YARD — the haul-out list as an app
+   ---------------------------------------------------------------------------
+   Two lists, because the yard asks two different questions on the same day:
+
+     TO PULL      every unit with a slip number — the boats literally coming
+                  out of the water, in the order the customer asked for.
+     ALL STORAGE  everything we are storing, grouped by building, because the
+                  crew towing a boat up the hill needs to know where it goes.
+
+   It is a separate page rather than another console card because it is used
+   with one hand, outdoors, in November: big targets, no horizontal scrolling,
+   nothing important carried by colour alone, and Add to Home Screen so it
+   opens like an app instead of a bookmark.
+
+   IT DECIDES NOTHING. Whether a unit may be pulled is the server's answer
+   (haulAuth_ in the .gs), shipped on every row; this page renders it. Three
+   surfaces now ask that question — the console, the printed sheet and this —
+   and a copy per surface is a liability rule free to go stale on two of them.
+=========================================================================== */
+const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+const $=id=>document.getElementById(id);
+/* Same storage keys as the staff console, deliberately: both are served from
+   the same origin, so signing in on one signs you in on the other. One PIN
+   entry per phone per shift instead of two. */
+let T=localStorage.getItem('qwtok')||'', ME=null;
+try{ ME=JSON.parse(localStorage.getItem('qwme')||'null'); }catch(e){ ME=null; }
+let ROWS=[], TAB='pull', CUR=null, PHOTOURL='';
+
+function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2800); }
+function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
+  m.className='msg '+(ok===true?'ok':ok===false?'err':''); }
+
+/* ---------------------------------------------------------------------------
+   TALKING TO THE BACKEND
+   ---------------------------------------------------------------------------
+   The yard is where the dropped-POST problem was found in the first place, so
+   this page cannot pretend it does not exist. Apps Script answers a POST with
+   a redirect to a one-shot URL, and on a phone with two bars that leg comes
+   back 404 — a transport failure, which is NOT the server saying no.
+
+   This is a deliberately small subset of the staff console's transport, not a
+   copy of it. The hard half lives on the SERVER and is shared: the GET
+   allow-list is enforced there, and a write's request id is claimed there, so
+   asking twice replays one answer instead of doing the work twice. What is
+   here is only the client's side of that contract:
+
+     reads   POST, and on a transport failure retry over GET.
+     writes  POST carrying a rid; on a transport failure ask jobStatus over GET
+             what actually became of it, rather than guessing.
+
+   API_GET_OK must stay a SUBSET of the server's CONSOLE_GET_FNS_ — the server
+   refuses a GET naming a write, so a wrong entry here is a retry that can only
+   ever fail. tools/check-yard-app.js asserts the subset by reading both. */
+const API_GET_OK={auth:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1};
+function terr_(m,c){ const e=new Error(m); e.transport=(c===undefined?0:c); return e; }
+function isTerr_(e){ return !!(e&&e.transport!==undefined); }
+function wait_(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function rid_(){
+  try{ if(window.crypto&&window.crypto.randomUUID) return window.crypto.randomUUID(); }catch(e){}
+  return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+}
+/* The fingerprint of a lost call: doGet's customer quote-loader answering a
+   question it was never asked. Matched on wording, which is fragile, so
+   check-yard-app.js pins it against the .gs's real string. */
+function lost_(j){
+  return !!(j&&!j._api&&Number(j.ok)===0&&typeof j.error==='string'&&
+            /quote number and last name/i.test(j.error));
+}
+async function read_(res){
+  if(!res.ok) throw terr_('Network error ('+res.status+')',res.status);
+  try{ return await res.json(); }
+  catch(e){ throw terr_('The server’s reply could not be read.',res.status); }
+}
+async function post_(body){
+  let res;
+  try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(body)}); }
+  catch(e){ throw terr_('Could not reach the server.',0); }
+  return read_(res);
+}
+async function get_(body){
+  const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
+    '&token='+encodeURIComponent(body.token||'')+
+    '&args='+encodeURIComponent(JSON.stringify(body.args||[]))+'&t='+Date.now();
+  if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
+  let res;
+  try{ res=await fetch(u,{method:'GET',redirect:'follow'}); }
+  catch(e){ throw terr_('Could not reach the server.',0); }
+  return read_(res);
+}
+/* A write whose answer went missing. Never re-send it — the reply cannot prove
+   whether it ran. Ask instead, over GET, because POST is the route that broke. */
+async function settle_(rid){
+  toast('Connection dropped — checking whether that saved…');
+  let unknown=0;
+  for(let i=0;i<10;i++){
+    await wait_(i?2500:1500);
+    let s=null;
+    try{ s=await get_({fn:'jobStatus',token:T,args:[rid]}); }catch(e){ continue; }
+    if(!s||!s._api||Number(s.ok)!==1) continue;
+    if(s.state==='done') return {reply:s.reply};
+    if(s.state==='running'){ unknown=0; continue; }
+    if(++unknown>=4) return {never:true};
+  }
+  return {};
+}
+async function api(fn,args){
+  const isRead=!!API_GET_OK[fn];
+  const body={api:'console',fn:fn,token:T,args:args||[]};
+  if(!isRead) body.rid=rid_();
+  let dropped=null;
+  try{
+    const j=await post_(body);
+    if(!lost_(j)) return j;
+    dropped=terr_('The request never reached the console API.',0);
+  }catch(e){
+    if(!isTerr_(e)) throw e;
+    dropped=e;
+  }
+  if(isRead){
+    /* The route the customer page has used all season. Worth one retry. */
+    const j=await get_(body);
+    if(!lost_(j)) return j;
+    throw dropped;
+  }
+  const out=await settle_(body.rid);
+  if(out.reply) return out.reply;
+  if(out.never) return {ok:0,error:'That did not reach the server — nothing was saved. Try again.'};
+  /* Neither confirmed nor refuted. Say exactly that: telling somebody it
+     failed is how the same note gets written twice, or a real one gets lost. */
+  return {ok:0,error:'The connection dropped and the server has not said what happened. '+
+    'Do NOT send it again — pull down to refresh in a moment and check whether it is there.'};
+}
+
+/* ---------------------------------------------------------------------------
+   SIGN IN
+--------------------------------------------------------------------------- */
+async function doLogin(){
+  const pin=($('pin').value||'').trim();
+  if(!pin){ setMsg('loginMsg','Enter your PIN.',false); return; }
+  const b=$('loginBtn'); b.disabled=true; b.textContent='Checking…';
+  setMsg('loginMsg','');
+  try{
+    const r=await api('auth',[pin]);
+    if(!r||!r.ok){ setMsg('loginMsg',(r&&r.error)||'Could not sign in.',false); return; }
+    T=r.token; ME={name:r.name,admin:!!r.admin,perms:r.perms||{}};
+    try{ localStorage.setItem('qwtok',T); localStorage.setItem('qwme',JSON.stringify(ME)); }catch(e){}
+    showApp();
+  }catch(e){ setMsg('loginMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Sign in'; }
+}
+function signOut(){
+  T=''; ME=null;
+  try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); }catch(e){}
+  $('app').classList.add('hide'); $('sheet').classList.add('hide');
+  $('login').classList.remove('hide'); $('pin').value='';
+}
+/* The `keys` permission is what lets somebody record yard facts — the same bar
+   the console puts on keys, slip and the staff note. Mirrors canKeys_'s
+   fallback for roster entries written before that permission existed, because
+   ME is cached in localStorage and a session opened before it would otherwise
+   lose the note box on an action the server still accepts. */
+function canWrite(){
+  if(!ME) return false;
+  if(ME.admin) return true;
+  const p=ME.perms||{};
+  if(p.keys===undefined||p.keys===null||p.keys==='') return !!(p.adjust||p.pay);
+  return !!p.keys;
+}
+function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
+
+function showApp(){
+  $('login').classList.add('hide');
+  $('app').classList.remove('hide');
+  $('who').textContent=(ME&&ME.name)||'';
+  loadList();
+}
+
+/* ---------------------------------------------------------------------------
+   THE TWO LISTS
+--------------------------------------------------------------------------- */
+async function loadList(force){
+  setMsg('listMsg','Loading the yard…');
+  if(force) $('list').innerHTML='';
+  try{
+    const r=await api('storageView',[]);
+    if(!r||!r.ok){
+      /* An expired session is the overwhelmingly likely cause out here. */
+      if(/sign in|session|token/i.test(String(r&&r.error||''))){ signOut(); return; }
+      setMsg('listMsg',(r&&r.error)||'Could not load the yard.',false); return;
+    }
+    ROWS=[];
+    (r.groups||[]).forEach(function(g){
+      if(g.lead) return;                 // a lead has no unit with us
+      (g.rows||[]).forEach(function(x){ ROWS.push(Object.assign({tab:g.tab},x)); });
+    });
+    render();
+  }catch(e){ setMsg('listMsg',e.message,false); }
+}
+/* Ready now → stated dates → will call → not answered. Same order the printed
+   haul-out sheet uses, so the app and the paper agree about what is next. */
+function order_(x){
+  const sd=x.seasonDone||null;
+  if(!sd||!sd.choice) return {rank:3,label:'Not answered',key:''};
+  if(sd.choice==='now') return {rank:0,label:'Ready now',key:''};
+  if(sd.choice==='date') return {rank:1,label:dateTxt_(sd.date),key:String(sd.date||'')};
+  return {rank:2,label:'Will call',key:''};
+}
+function dateTxt_(v){
+  const s=String(v||''), m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return s||'Date given';
+  const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  return isNaN(d)?s:d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+function sort_(a,b){
+  const A=order_(a),B=order_(b);
+  if(A.rank!==B.rank) return A.rank-B.rank;
+  if(A.key&&B.key) return A.key.localeCompare(B.key);
+  return String(a.name).localeCompare(String(b.name));
+}
+/* The server stamps every row; this only reads it, and an unstamped row reads
+   as blocked. Failing the other way would let a backend that has not deployed
+   yet clear a boat nobody signed for. */
+function auth_(x){
+  const a=x&&x.auth;
+  if(a&&a.state) return a;
+  return {state:'blocked',why:'both',label:'NOT CONFIRMED',stamp:'NOT CONFIRMED — DO NOT PULL'};
+}
+function pullList_(){ return ROWS.filter(x=>String(x.slip||'').trim()).sort(sort_); }
+
+function setTab(t){
+  TAB=t;
+  $('tabPull').classList.toggle('on',t==='pull');
+  $('tabAll').classList.toggle('on',t==='all');
+  render();
+}
+function badge_(x){
+  const a=auth_(x);
+  if(a.state==='cleared') return '';
+  const cls=a.why==='signature'?'stop':a.why==='payment'?'money':'none';
+  return '<span class="badge '+cls+'">'+esc(a.stamp||a.label)+'</span>';
+}
+function notes_(x){
+  return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';
+}
+function row_(x,right){
+  return '<button class="card" onclick="openQuote('+JSON.stringify(String(x.qn))+')">'+
+    '<div class="ln"><span class="nm">'+esc(x.name)+'</span>'+
+    '<span class="slip">'+esc(right||'')+'</span></div>'+
+    '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
+      (x.dims?' · '+esc(x.dims):'')+'</div>'+
+    badge_(x)+notes_(x)+'</button>';
+}
+function render(){
+  const pull=pullList_();
+  $('nPull').textContent=pull.length;
+  $('nAll').textContent=ROWS.length;
+  if(TAB==='pull'){
+    setMsg('listMsg',pull.length
+      ? pull.length+' boat'+(pull.length===1?'':'s')+' in a slip, in the order they asked for.'
+      : 'No units have a slip number recorded, so there is nothing to pull out of the water yet.');
+    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip))).join('');
+    return;
+  }
+  /* Grouped by building: the question this tab answers is "where does it go?" */
+  const by={};
+  ROWS.forEach(function(x){ (by[x.tab]=by[x.tab]||[]).push(x); });
+  const tabs=Object.keys(by).sort(function(a,b){
+    const w=t=>t==='No Storage'?2:1;
+    return w(a)-w(b)||a.localeCompare(b);
+  });
+  setMsg('listMsg',ROWS.length+' unit'+(ROWS.length===1?'':'s')+' on file, grouped by where they go.');
+  $('list').innerHTML=tabs.map(function(t){
+    const rows=by[t].slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+    return '<div class="grp">'+esc(t)+'<span class="c">'+rows.length+'</span></div>'+
+      rows.map(x=>row_(x,String(x.slip||'').trim()?'Slip '+String(x.slip):'')).join('');
+  }).join('');
+}
+
+/* ---------------------------------------------------------------------------
+   ONE UNIT
+--------------------------------------------------------------------------- */
+async function openQuote(qn){
+  CUR=null; PHOTOURL='';
+  $('sheet').classList.remove('hide');
+  $('dName').textContent='Loading…'; $('dQn').textContent=qn;
+  $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML='';
+  $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
+  $('photoCounts').textContent='—';
+  window.scrollTo(0,0);
+  try{
+    const r=await api('lookup',[qn]);
+    if(!r||!r.ok){ $('dName').textContent='Not found'; setMsg('noteMsg',(r&&r.error)||'Could not open that quote.',false); return; }
+    CUR=r; renderSheet(r);
+    if(canPhotos()) refreshPhotos(qn);
+  }catch(e){ $('dName').textContent='Error'; setMsg('noteMsg',e.message,false); }
+}
+function closeSheet(){ $('sheet').classList.add('hide'); stopDictation(); }
+function renderSheet(r){
+  const listRow=ROWS.filter(x=>x.qn===r.quoteNo)[0]||{};
+  $('dName').textContent=r.name||r.quoteNo;
+  $('dQn').textContent=r.quoteNo+(r.unit?' · '+r.unit:'');
+
+  /* THE FIRST THING ON THE SCREEN is whether this boat may be touched. */
+  const a=auth_(listRow);
+  const box=a.state==='cleared'
+    ? '<div class="auth go">CLEARED TO PULL<small>Signed agreement and a deposit both on file.</small></div>'
+    : a.state==='hold'
+      ? '<div class="auth '+(a.why==='payment'?'money':'stop')+'">'+esc(a.stamp)+
+        '<small>'+(a.why==='payment'
+          ? 'They have signed, but nothing has been paid. Plan around it — do not pull it.'
+          : 'A deposit is in, but nobody has signed. Plan around it — do not pull it.')+'</small></div>'
+      : '<div class="auth stop">DO NOT TOUCH — NOT AUTHORISED<small>No deposit and no signed agreement. '+
+        'Not a unit to move, work on or pull.</small></div>';
+  $('dAuth').innerHTML=box;
+
+  const phone=String(r.phone||'');
+  const tel=phone.replace(/[^0-9]/g,'');
+  $('dCall').innerHTML=tel
+    ? '<a class="btn wide gold" href="tel:'+esc(tel)+'">📞 Call '+esc(r.name||'')+' — '+esc(phone)+'</a>'
+    : '<div class="msg">No phone number on this quote.</div>';
+
+  const o=order_(listRow);
+  const kv=(k,v,miss)=>'<div class="kv"><span>'+k+'</span><b'+(miss?' class="miss"':'')+'>'+v+'</b></div>';
+  const or=t=>t?esc(t):'<span class="miss">— not recorded —</span>';
+  const keys=r.keys||{};
+  const trailerTxt=keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
+  $('dFacts').innerHTML=
+    kv('Unit',esc(r.unit||'')+(r.ymm?' · '+esc(r.ymm):''))+
+    (listRow.dims?kv('Dimensions',esc(listRow.dims)):'')+
+    kv('Storage',esc(listRow.tab||'—'))+
+    kv('Slip',or(keys.slipNo))+
+    kv('Keys',or(keys.keyLoc))+
+    kv('On a trailer',trailerTxt)+
+    (keys.needsTrailerLoc?kv('Trailer is',or(keys.trailerLoc)):'')+
+    kv('Requested timing',esc(o.label))+
+    kv('Balance',esc(r.balance||''));
+
+  renderLog(r.yardNotes||[]);
+  const w=canWrite();
+  $('noteBtn').disabled=!w; $('micBtn').disabled=!w;
+  $('noteText').disabled=!w;
+  if(!w) setMsg('noteMsg','Your account cannot add yard notes. Ask an admin for the keys permission.');
+  $('openFolder').classList.toggle('hide',!canPhotos());
+}
+function renderLog(list){
+  if(!list.length){ $('dLog').innerHTML='<div class="msg" style="margin-top:0">Nothing logged yet.</div>'; return; }
+  $('dLog').innerHTML=list.map(function(n){
+    let when=String(n.ts||'');
+    if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
+    return '<div class="logrow">'+esc(n.text||'')+
+      '<div class="w">'+esc(n.by||'—')+' · '+esc(when)+'</div></div>';
+  }).join('');
+}
+async function saveNote(){
+  if(!CUR) return;
+  const t=($('noteText').value||'').trim();
+  if(!t){ setMsg('noteMsg','Type or dictate something first.',false); return; }
+  stopDictation();
+  const b=$('noteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('noteMsg','');
+  try{
+    const r=await api('yardNote',[CUR.quoteNo,t]);
+    if(!r||!r.ok){ setMsg('noteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('noteText').value='';
+    CUR.yardNotes=(CUR.yardNotes||[]).concat([r.note]);
+    renderLog(CUR.yardNotes);
+    /* Keep the list badge honest without re-fetching the whole yard. */
+    ROWS.forEach(x=>{ if(x.qn===CUR.quoteNo) x.notes=(x.notes||0)+1; });
+    setMsg('noteMsg','Saved.',true); toast('Logged');
+  }catch(e){ setMsg('noteMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save note'; }
+}
+
+/* ---------------------------------------------------------------------------
+   DICTATION
+   ---------------------------------------------------------------------------
+   Isolated behind these three functions on purpose: swapping the engine means
+   touching nothing else on the page.
+
+   NOTE FOR THE NEXT SESSION — this is the browser's own SpeechRecognition,
+   which is a PLACEHOLDER. Chris asked for the same method as the service
+   tracker mechanic app; that repo was not attached to the session this was
+   written in, so the method could not be read and copied. When it is, replace
+   the body of these three and leave the call sites alone.
+
+   What it does do: dictation APPENDS to whatever is already in the box and
+   never replaces it, because a half-typed note being wiped by a misfired
+   button is the kind of thing that stops people using the feature at all. */
+let REC=null, RECON=false;
+function dictationSupported_(){
+  return !!(window.SpeechRecognition||window.webkitSpeechRecognition);
+}
+function toggleDictation(){
+  if(RECON){ stopDictation(); return; }
+  if(!dictationSupported_()){
+    setMsg('noteMsg','This browser will not do dictation — use the keyboard, or the phone keyboard’s own mic key.',false);
+    return;
+  }
+  const Ctor=window.SpeechRecognition||window.webkitSpeechRecognition;
+  try{ REC=new Ctor(); }
+  catch(e){ setMsg('noteMsg','Could not start dictation: '+e.message,false); return; }
+  REC.lang='en-US'; REC.continuous=true; REC.interimResults=false;
+  const before=$('noteText').value;
+  REC.onresult=function(ev){
+    let add='';
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      if(ev.results[i].isFinal) add+=ev.results[i][0].transcript;
+    }
+    if(!add) return;
+    const cur=$('noteText').value;
+    $('noteText').value=(cur?cur.replace(/\s*$/,'')+' ':'')+add.trim();
+  };
+  REC.onerror=function(ev){
+    const why=String(ev&&ev.error||'');
+    setMsg('noteMsg',why==='not-allowed'
+      ? 'Microphone permission was refused. Allow it in the browser settings, or type the note.'
+      : 'Dictation stopped'+(why?' ('+why+')':'')+'. Anything already heard is still in the box.',false);
+    stopDictation();
+  };
+  REC.onend=function(){ if(RECON) stopDictation(); };
+  try{ REC.start(); }
+  catch(e){ setMsg('noteMsg','Could not start dictation: '+e.message,false); return; }
+  RECON=true;
+  $('micBtn').classList.add('rec'); $('micBtn').textContent='■ Stop';
+  setMsg('noteMsg','Listening — it types as you talk. Tap Stop when you are done.'+
+    (before?' Adding to what is already there.':''));
+}
+function stopDictation(){
+  if(REC){ try{ REC.stop(); }catch(e){} }
+  REC=null; RECON=false;
+  const b=$('micBtn');
+  if(b){ b.classList.remove('rec'); b.textContent='🎙 Dictate'; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHOTOS — the same folders and the same endpoint the console uses
+--------------------------------------------------------------------------- */
+async function refreshPhotos(qn){
+  try{
+    const r=await api('photoInfo',[qn]);
+    if(r&&r.ok){
+      PHOTOURL=r.url||'';
+      $('photoCounts').textContent='Winter: '+r.counts.winter+' · Spring: '+r.counts.spring+' on file';
+    }
+  }catch(e){}
+}
+function openFolder(){ if(PHOTOURL) window.open(PHOTOURL,'_blank'); else toast('No photo folder yet.'); }
+function b64_(f){
+  return new Promise(res=>{
+    const rd=new FileReader();
+    rd.onload=()=>res(String(rd.result).split(',')[1]);
+    rd.onerror=()=>res(null);
+    rd.readAsDataURL(f);
+  });
+}
+async function upload(files){
+  if(!CUR||!files||!files.length) return;
+  if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos.',false); return; }
+  const list=Array.prototype.slice.call(files);
+  let done=0, failed=0;
+  setMsg('upMsg','Uploading 0 of '+list.length+'…');
+  for(const f of list){
+    const data=await b64_(f);
+    if(!data){ failed++; continue; }
+    try{
+      /* Winter: this app is used at haul-out. Spring relaunch photos go
+         through the console, which has the season switch. */
+      const r=await api('uploadPhoto',[CUR.quoteNo,'winter',f.name||('yard-'+Date.now()+'.jpg'),data,f.type]);
+      if(r&&r.ok) done++; else failed++;
+    }catch(e){ failed++; }
+    setMsg('upMsg','Uploading '+(done+failed)+' of '+list.length+'…');
+  }
+  setMsg('upMsg',done+' uploaded'+(failed?', '+failed+' failed — try those again':'')+'.',failed?false:true);
+  if(done) toast(done+' photo'+(done===1?'':'s')+' saved');
+  refreshPhotos(CUR.quoteNo);
+}
+$('camIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('galIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+/* A cached token may be hours old and already expired; loadList finds out and
+   drops back to the PIN screen rather than showing an empty yard. */
+if(T&&ME) showApp(); else $('login').classList.remove('hide');
+</script>
+</body>
+</html>

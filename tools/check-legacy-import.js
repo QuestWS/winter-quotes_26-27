@@ -218,6 +218,8 @@ console.log('\n=== 10. a jet ski tagged onto a boat sheet ===');
   console.log('   extras:',JSON.stringify(p.extraUnits));
   check('extra units detected',!!p.extraUnits);
   check('it counts the jet skis',/2 jet ski/.test((p.extraUnits||[]).join(' ')));
+  check('skis on a BOAT sheet are still told to separate',
+    /need separating/.test(p.warnings.join(' ')));
   check('it says why separating matters',/one quote per unit/.test(p.warnings.join(' ')));
   check('single storage is not flagged as a comparison',!p.storageChoice);
 }
@@ -307,9 +309,93 @@ console.log('\n=== 17. a jet ski sheet becomes a jet ski quote ===');
   const m=B.legacyToState_(B.parseLegacyGrid_(g),'insideNT');
   check('unit is a jet ski',m.state.unit==='jetski',m.state.unit);
   check('its winterizing carried over',m.state.engines.pwc.qty===1&&m.state.engines.pwc.level==='full');
+  /* With no length-with-trailer on the sheet the hull LOA stands in, and says
+     so — a ski on its trailer is longer than its hull. */
+  check('LOA stands in for the stored length',m.state.skiLen===12&&m.state.skiWid===4,
+    m.state.skiLen+'x'+m.state.skiWid);
+  check('and the stand-in is declared',/hull alone/.test(m.notes.join(' ')),JSON.stringify(m.notes));
+  check('the boat boxes are left empty on a jet ski',
+    !m.state.loa&&!m.state.beam&&!m.state.lwt);
+  check('a ski is always on its trailer',m.state.hasTrailer===true);
 }
 
-console.log('\n=== 18. things the new engine prices differently are named ===');
+console.log('\n=== 18. LWT + beam are enough to price a jet ski\'s storage ===');
+{
+  /* The shape Chris kept hitting: no LOA on the sheet, but beam and length with
+     trailer both there — which is precisely what inside jet ski storage is
+     priced from. It used to import as "still needs stored length & width" with
+     the storage line at $0. */
+  const g=grid({owner:'X',phone:'',email:'',ymm:'Wave Runner',loa:'',beam:5,lwt:12,labels:true},
+    [[3,2,222]],[[12,1,0]]);                 // 2 x PWC basic + inside (on trailer)
+  const p=B.parseLegacyGrid_(g);
+  const m=B.legacyToState_(p,'insideT');
+  const st=m.state;
+  console.log('   stored size:',st.skiLen+' x '+st.skiWid,' storage:',st.storage);
+  check('stored length is the length with trailer',st.skiLen===12,String(st.skiLen));
+  check('stored width is the beam',st.skiWid===5,String(st.skiWid));
+  check('nothing is still needed',P.computeQuote(st).need.length===0,
+    JSON.stringify(P.computeQuote(st).need));
+  const storageLine=P.computeQuote(st).lines.filter(l=>l.sec==='Storage')[0];
+  check('and the storage line prices',!!storageLine&&storageLine.amt>0,
+    JSON.stringify(storageLine));
+  check('it says where the two numbers came from',
+    /length with trailer/.test(m.notes.join(' ')),JSON.stringify(m.notes));
+  /* Two skis and no boat is a tandem trailer until somebody says otherwise: one
+     quote, count 2, one footprint. It must NOT be told to split, because a
+     unit here is a stored footprint rather than a hull. */
+  check('both skis ride on the one quote',st.engines.pwc.qty===2,String(st.engines.pwc.qty));
+  check('it is not reported as units needing separating',!p.extraUnits,
+    JSON.stringify(p.extraUnits));
+  check('nothing tells staff to split it',!/need separating/.test(p.warnings.join(' ')));
+  check('it asks which way round it is',
+    /ONE trailer/.test(p.warnings.join(' '))&&/separate trailers/.test(p.warnings.join(' ')),
+    JSON.stringify(p.warnings));
+  check('and says what two trailers would cost them',
+    /half the space/.test(p.warnings.join(' ')));
+  /* One ski on its own asks nothing at all. */
+  const solo=B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:'',beam:5,lwt:12,labels:true},
+      [[3,1,111]],[[12,1,0]]));
+  check('a single ski raises none of it',
+    !/ONE trailer/.test(solo.warnings.join(' '))&&!solo.extraUnits,
+    JSON.stringify(solo.warnings));
+}
+
+console.log('\n=== 19. storage a jet ski cannot have here is named, not zeroed ===');
+{
+  /* Outside storage and premium inside are boat options. The jet ski branch of
+     the engine prices neither, so an import that carried one through would come
+     out short with nothing on screen to say why. */
+  const out=B.legacyToState_(B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:'',beam:5,lwt:12,labels:true},
+      [[3,1,111]],[[3,1,300]])),'outside');          // outside storage
+  check('outside is dropped rather than priced at nothing',out.state.storage==='none',
+    out.state.storage);
+  check('and it says so',/jet ski/.test(out.unmapped.join(' ')),JSON.stringify(out.unmapped));
+  const prem=B.legacyToState_(B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:'',beam:5,lwt:12,labels:true},
+      [[3,1,111]],[[10,1,600]])),'premInsideT');     // premium inside, on trailer
+  check('premium inside falls back to the standard inside rate',prem.state.storage==='inside',
+    prem.state.storage);
+  check('and that is declared too',/premium inside/.test(prem.unmapped.join(' ')),
+    JSON.stringify(prem.unmapped));
+}
+
+console.log('\n=== 20. boat-only extras on a jet ski sheet are not silently kept ===');
+{
+  const m=B.legacyToState_(B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:'',beam:5,lwt:12,labels:true},
+      [[3,1,111]],[[4,1,300],[14,1,90],[12,1,0]])),'insideT');   // wrap + powerwash + inside
+  check('shrinkwrap is turned off on a jet ski',m.state.wrap===false);
+  check('powerwash is turned off on a jet ski',m.state.powerwash===false);
+  check('both are named',/shrinkwrap and powerwash/.test(m.unmapped.join(' ')),
+    JSON.stringify(m.unmapped));
+  check('a boat keeps them',B.legacyToState_(B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:29,beam:8,lwt:'',labels:true},
+      [[5,1,502]],[[4,1,300],[14,1,90],[11,1,1459]])),'insideNT').state.wrap===true);
+}
+
+console.log('\n=== 21. things the new engine prices differently are named ===');
 {
   const g=grid({owner:'X',phone:'',email:'',ymm:'',loa:19,beam:7,lwt:'',labels:true},
     [[5,1,502]],[[7,1,325],[11,1,900]]);    // flat-rate wrap up to 20'

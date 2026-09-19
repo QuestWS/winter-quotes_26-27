@@ -624,9 +624,9 @@ haul-out list and re-pricing work, so extras are reported for separating.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
 imported quote must re-price like every other. Preview writes nothing; the
 import emails nobody; `verify.sh` asserts all three.
-- `tools/check-legacy-import.js` executes eighteen groups over all three file
-states, a mismatched master, comparison sheets, multi-unit sheets and the
-live engine. Fixtures are invented names over the real layout — **no customer
+- `tools/check-legacy-import.js` executes twenty-one groups over all three file
+states, a mismatched master, comparison sheets, multi-unit sheets, jet ski
+dimensions and storage, and the live engine. Fixtures are invented names over the real layout — **no customer
 Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
 a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
 - **A restore never deletes a live quote.** It only writes rows the backup

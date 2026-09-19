@@ -86,6 +86,7 @@ function build(ss) {
   return new Function('SpreadsheetApp', 'PropertiesService', 'LockService', 'normalizeQuoteNo', [
     decl('COL'),
     decl('QNO_RESERVE_KEY_'), decl('QNO_RESERVE_TTL_MIN_'), decl('QNO_LOCK_MS_'),
+    decl('DELETED_TAB'),
     fn('takenQuoteNos_'), fn('readReservations_'), fn('uniqueQuoteNo_'),
     'return {uniqueQuoteNo_, takenQuoteNos_, readReservations_};'
   ].join('\n'))(SpreadsheetApp, PropertiesService, LockService, E.normalizeQuoteNo);
@@ -115,6 +116,29 @@ console.log('=== a number already on the sheet is never reissued ===');
   else ok('9 mints into a sheet holding 8,991 of the 9,000 four-digit numbers, no collision');
   if (sheetWrites) fail('minting wrote to the spreadsheet ' + sheetWrites + ' time(s) — existing rows must not be touched');
   else ok('minting wrote nothing to the spreadsheet');
+}
+
+/* ============ a DELETED number is still taken ============ */
+console.log('=== a deleted quote\'s number is never handed out again ===');
+{
+  props = {}; sheetWrites = 0;
+  /* The archive tab deliberately fails the 'Quote #' header probe, so that
+     every sheet sweep skips it. The minter is the one place that must still
+     read it: reissuing the number would have savePdf_ replace one customer's
+     PDF with another's, and the archive and the Activity Log would describe
+     two different people under one number. */
+  const live = [];
+  for (let n = 1000; n <= 9998; n++) live.push(Q(String(n)));
+  const gone = Q('9999');
+  const api = build(makeSSExact([
+    { name: 'Inside', rows: live },
+    { name: 'Deleted Quotes', rows: [gone], notQuote: true }
+  ]));
+  if (!api.takenQuoteNos_()[gone]) fail('the archived number is not counted as taken');
+  else ok('the archive is read by the minter even though it is not a quote tab');
+  const got = api.uniqueQuoteNo_(gone);
+  if (got === gone) fail('the minter handed back a deleted quote\'s number');
+  else ok('asked for the deleted number by name, the minter widened instead (' + got + ')');
 }
 
 /* ================= the space filling up widens rather than fails ============ */

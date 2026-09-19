@@ -447,6 +447,72 @@ pricing" template. This reads one and makes a quote here.
   data in this repo**.
 
 
+## Deleting a quote (console)
+
+`Delete this quote`, last card on the quote, **admin-only** — today that is
+Chris and Jeff. Customers build the same quote twice (a save that went in on a
+bad signal, a second go at the same boat) and every season starts with a few
+deliberate test rows. A duplicate is not cosmetic: it is a second haul-out
+row, a second reminder email and a second line in every count. Before this the
+only way to remove one was opening the spreadsheet on a desktop and deleting
+the row by hand, which is exactly what this system tells you never to do —
+the payload, the PDF and the money columns go out of step with each other.
+
+- **`who.admin`, not a list of names.** The roster *is* Quest's record of who
+  is trusted with something irreversible, so the gate reads it rather than
+  hardcoding two people who might change job. To hand it to somebody else,
+  make them an admin; there is no separate `delete` permission, deliberately —
+  a third permission nobody can see the effect of is worse than the bar being
+  obvious.
+- **Nothing is destroyed.** Every copy of the row is written to a
+  **`Deleted Quotes`** tab first — all 23 columns, payload included — followed
+  by when, who, why and which tab it came off. An undo is a paste of columns
+  A–W back onto the storage tab.
+- **That tab must never look like a quote tab.** Seventeen sweeps in the `.gs`
+  decide what is a quote tab by reading `'Quote #'` out of column 3, and the
+  9am auto-reminder is one of them. So the archive's header says
+  **`Quote # (deleted)`** there, and the quote number stays in its own column
+  for the paste-back. Get that wrong and deleting a quote puts the customer
+  back on the reminder run and back on the haul-out list.
+- **The number is never reissued.** `takenQuoteNos_` reads the archive as well
+  as the live tabs — matched by tab name, since the header probe deliberately
+  misses it. A recycled number would have the Activity Log, the archive and a
+  live row describing different customers under one number, and `savePdf_`
+  would replace one customer's PDF with another's (`docs/ref/DATA-AND-MONEY.md`
+  — quote numbers cannot collide).
+- **Every copy goes, not just the one on screen.** A quote mid-relocation can
+  sit on two tabs; deleting the one staff were looking at and leaving the other
+  is how a deleted quote reappears on the haul-out list. Rows are removed
+  bottom-up, because deleting one moves the row number of everything under it.
+- **The quote number is typed, and a reason is required.** A tick box next to a
+  loaded quote is one mis-tap away from deleting whatever is on screen, and
+  once the row is gone the reason is the only record of why. Money or a signed
+  contract on the quote needs a second, explicit confirmation on top — the
+  server refuses without it (`needsForce`) and the console reveals the box it
+  is asking for rather than just printing the refusal.
+- **The PDF is trashed; photos and the signed contract are not.** A quote PDF
+  in the season folder for a row that no longer exists is the one artifact that
+  could still be handed to a customer. Photos and contracts are evidence, they
+  are linked from the archived row, and an unused folder costs nothing. Drive's
+  bin holds the PDF for 30 days either way.
+- **Nobody is emailed**, and the deletion is written to the Activity Log with
+  the quote, the customer, the total, the payment count, the tabs and the
+  reason.
+- **A customer with the page still open can re-save the quote back into
+  existence.** Their browser holds the whole payload and `doPost` finds no row
+  to update, so it creates one — under the same number, since the archive keeps
+  it reserved. Nothing stops that by design: the alternative is a blocklist that
+  turns a legitimate re-quote into a silent failure. If a customer is actively
+  quoting, delete the duplicate after they are done.
+- **A backup restore can bring a deleted quote back**, because the nightly
+  `.xlsx` predates the deletion and its default mode restores what is *missing*
+  from the live sheet. That is the recovery path working as designed, not a
+  bug — but it is worth knowing before restoring a backup taken before a purge.
+- `tools/check-delete-quote.js` executes all of it against a fake spreadsheet:
+  a non-admin refused before any row moves, each confirmation gating, both
+  copies archived with the payload intact, the archive failing the quote-tab
+  probe, the number still taken afterwards, and the call refused on GET.
+
 ## Restoring from a backup
 Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
 a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:

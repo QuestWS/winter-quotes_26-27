@@ -46,6 +46,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
     "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml" \
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
+    "adminDeleteQuote" "DELETED_TAB" "deletedHeaders_" "deletedSheet_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
     "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
@@ -85,6 +86,7 @@ if [ -f admin/index.html ]; then
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
+    "renderDeleteQuote" "doDeleteQuote" "deleteCard" "delForce" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
@@ -554,6 +556,24 @@ if [ -f quote-logger-apps-script.gs ]; then
   # A slow write whose answer is dropped must not be reported as a failure —
   # Chris was told a payment failed while its receipt was already sent. The
   # request id makes asking again safe; both halves are executed, not grepped.
+  # The only console action that removes a row. Admin-only, archived, and
+  # invisible to every sheet sweep afterwards — all executed against a fake
+  # spreadsheet, because a grep cannot tell an archived row from a lost one.
+  if node tools/check-delete-quote.js > "$TMP/del.txt" 2>&1; then
+    echo "  OK   gate: quote delete (admins only, archived, number never reissued)"
+  else
+    echo "  FAIL gate: quote delete rules broken"; sed 's/^/       /' "$TMP/del.txt"; FAIL=1
+  fi
+  # It must not email anyone. A deletion is an internal act; the customer is
+  # told by a person, if at all.
+  if awk '/^function adminDeleteQuote/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
+    echo "  FAIL trap: deleting a quote emails somebody"; FAIL=1
+  else echo "  OK   trap: deleting a quote emails nobody"; fi
+  # The archive header must NOT read 'Quote #' in column 3, or every sheet
+  # sweep — the 9am reminder included — would treat deleted quotes as live.
+  if grep -q "h\[COL.QN - 1\] = 'Quote # (deleted)'" quote-logger-apps-script.gs; then
+    echo "  OK   trap: the deleted-quotes archive is not a quote tab"
+  else echo "  FAIL trap: the archive's header no longer hides it from the quote-tab sweeps"; FAIL=1; fi
   if node tools/check-idempotent-writes.js > "$TMP/idem.txt" 2>&1; then
     echo "  OK   gate: writes run once per request id and can answer twice"
   else

@@ -1174,6 +1174,9 @@ function consoleFns_(p) {
     resetPin:    function (a) { return adminResetPin(p.token, a[0]); },
     addStaff:    function (a) { return adminAddStaff(p.token, a[0], a[1], a[2]); },
     removeStaff: function (a) { return adminRemoveStaff(p.token, a[0]); },
+    /* Admin-only and irreversible from inside the console — deliberately NOT on
+       CONSOLE_GET_FNS_, so it can only ever arrive as a POST carrying a rid. */
+    deleteQuote: function (a) { return adminDeleteQuote(p.token, a[0], a[1], a[2], a[3]); },
     backupPreview: function (a) { return adminBackupPreview(p.token, a[0], a[1]); },
     backupRestore: function (a) { return adminBackupRestore(p.token, a[0], a[1], a[2]); },
     bulkPreview: function (a) { return adminBulkPreview(p.token, a[0]); },
@@ -1604,7 +1607,14 @@ function takenQuoteNos_() {
   const taken = {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;   // not a quote tab
+    /* Quote tabs, plus the deleted-quote archive. A number that has been used
+       once is never handed out again: reissuing one would have the Activity
+       Log, the archive and a live row all describing a different customer
+       under the same number, and savePdf_ would replace one customer's PDF
+       with another's. The archive's header row says 'Quote # (deleted)' in
+       column 3 precisely so every OTHER sweep skips it, which is why it is
+       matched here by name rather than by that header. */
+    if (sh.getRange(1, 3).getValue() !== 'Quote #' && sh.getName() !== DELETED_TAB) return;
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
@@ -3547,6 +3557,12 @@ function adminLookup(token, qn) {
        email. '' from signUrlFor_ means the web form is unset, and every caller
        hides its button on ''; this is that rule for the console's button. */
     canSign: !!signUrlFor_(d) && !isStartedQuote_(d),
+    /* For the delete card: whether this viewer may delete at all, and what is
+       on the quote that warrants a second confirmation. The console knows its
+       own admin flag, but ME is cached in localStorage — the server is the one
+       that decides, the same way canSign does. */
+    canDelete: !!who.admin,
+    payCount: (d.payments || []).length,
     /* The customer's own way back into this quote — quote number and last name
        already attached, so nothing to read out over the phone. Built server-
        side by the same quoteLink_ every customer email uses, so what staff copy
@@ -5613,6 +5629,157 @@ function adminBackupRestore(token, fileId, mode, quoteNos) {
     restored: restored,
     snapshotUrl: snap.getUrl()
   };
+}
+
+/* ===========================================================================
+   DELETING A QUOTE — admins only, and archived rather than destroyed
+   ---------------------------------------------------------------------------
+   Customers sometimes build the same quote twice (a phone that lost signal
+   mid-save, a second go at the same boat), and the season starts with a few
+   deliberate test rows. Those have to be able to leave the sheet: a duplicate
+   is a second haul-out row, a second reminder email and a second line in every
+   count, and there was no way to remove one without opening the spreadsheet on
+   a desktop and hand-editing a row — which is exactly what `docs/ref/
+   DATA-AND-MONEY.md` says never to do, because the payload, the PDF and the
+   money columns go out of step with each other.
+
+   Four rules, each of them the answer to something that could go wrong here:
+
+   - **Admins only.** `who.admin` rather than a list of names, because the
+     roster IS the record of who Quest trusts with an irreversible action, and
+     a name in the code stops being true the day somebody changes jobs. Today
+     that resolves to exactly Chris and Jeff.
+   - **Nothing is destroyed.** Every copy of the row is copied onto the
+     `Deleted Quotes` tab first, payload column and all, so an undo is a
+     copy-and-paste of columns A-W back onto the storage tab. The archive's
+     header row deliberately does NOT read 'Quote #' in column 3, which is how
+     all seventeen "is this a quote tab" sweeps — the 9am reminder among them —
+     skip straight past it. Get that wrong and deleting a quote would put the
+     customer back on the reminder run.
+   - **The number is never handed out again.** `takenQuoteNos_` reads the
+     archive too. A reissued number would mean the Activity Log, the archive
+     and a live row all disagreeing about whose quote it is, and `savePdf_`
+     replacing one customer's PDF with another's (`docs/ref/DATA-AND-MONEY.md`
+     — quote numbers cannot collide).
+   - **The quote number has to be typed, and a reason given.** This is the one
+     control in the console that removes a row, and it is one tap away from a
+     card that is otherwise all safe actions. Money or a signed contract on the
+     quote needs a second, explicit confirmation on top — those are the two
+     quotes nobody deletes by accident and means to.
+
+   It emails nobody, and it never touches the photo folder or the signed
+   contract in Drive: those are evidence, they are linked from the archived
+   row, and an empty folder costs nothing. The quote's PDF IS trashed, because
+   a PDF in the season folder for a quote that no longer exists is the one
+   thing that could be handed to a customer by mistake. Drive's bin holds it
+   for 30 days either way. */
+const DELETED_TAB = 'Deleted Quotes';
+const DELETED_META_ = ['Deleted', 'Deleted by', 'Why', 'From tab'];
+const DELETE_WHY_MAX_ = 200;
+
+/* The live headers with ONE word changed, then the four metadata columns.
+   Keeping the original 23 in their original order is what makes an undo a
+   paste rather than a reconstruction; renaming column 3 is what keeps every
+   sheet sweep out of here. */
+function deletedHeaders_() {
+  const h = HEADERS.slice();
+  h[COL.QN - 1] = 'Quote # (deleted)';
+  return h.concat(DELETED_META_);
+}
+
+function deletedSheet_(ss) {
+  let sh = ss.getSheetByName(DELETED_TAB);
+  if (sh) return sh;
+  sh = ss.insertSheet(DELETED_TAB);
+  const h = deletedHeaders_();
+  sh.appendRow(h);
+  sh.getRange(1, 1, 1, h.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function adminDeleteQuote(token, qn, confirmText, why, force) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only — deleting a quote is Chris or Jeff.' };
+
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = String(d.quoteNo || qn).trim().toUpperCase();
+
+  /* Typed, not ticked. A checkbox next to a loaded quote is a mis-tap away
+     from deleting whatever happens to be on screen. */
+  if (String(confirmText || '').trim().toUpperCase() !== want) {
+    return { ok: 0, error: 'Type the quote number exactly — ' + want + ' — to confirm.' };
+  }
+  const reason = String(why || '').trim().replace(/\s+/g, ' ').slice(0, DELETE_WHY_MAX_);
+  if (reason.length < 3) {
+    return { ok: 0, error: 'Say why in a few words — once the row is gone this is the only record of the reason.' };
+  }
+
+  const payCount = ((d.payments || []).length);
+  const hasContract = !!d.contractUrl;
+  if ((payCount || hasContract) && !Number(force)) {
+    const bits = [];
+    if (payCount) bits.push(payCount + ' payment' + (payCount > 1 ? 's' : '') + ' totalling ' + usd_(paymentsTotal_(d)));
+    if (hasContract) bits.push('a signed contract on file');
+    return { ok: 0, needsForce: 1,
+      what: bits.join(' and '),
+      error: 'This quote has ' + bits.join(' and ') + '. Tick the box to say you mean to delete it anyway.' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  /* Every copy, not just the one findQuoteCtx_ landed on. A quote that moved
+     storage tab mid-save can sit on two of them (doPost sweeps the stale ones
+     on the next save) — deleting the copy staff were looking at and leaving
+     the other is how a "deleted" quote comes back on the haul-out list. */
+  const copies = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    let r = findQuoteRow_(sh, want);
+    while (r > 0) { copies.push({ sheet: sh, row: r }); r = findQuoteRowFrom_(sh, want, r + 1); }
+  });
+  if (!copies.length) return { ok: 0, error: 'Quote not found.' };
+
+  /* Archive BEFORE deleting, every copy of the row, so a failure halfway
+     through leaves a duplicate row rather than a missing one. */
+  const arch = deletedSheet_(ss);
+  const stamp = new Date();
+  const width = HEADERS.length;
+  const tabs = [];
+  copies.forEach(function (c) {
+    const row = c.sheet.getRange(c.row, 1, 1, width).getValues()[0];
+    arch.appendRow(row.concat([stamp, who.name, reason, c.sheet.getName()]));
+    if (tabs.indexOf(c.sheet.getName()) < 0) tabs.push(c.sheet.getName());
+  });
+
+  /* Bottom-up, so deleting one row cannot move another out from under its own
+     row number. Rows on different tabs are independent, so one descending sort
+     across all of them is enough. */
+  copies.slice().sort(function (a, b) { return b.row - a.row; })
+    .forEach(function (c) { c.sheet.deleteRow(c.row); });
+
+  trashQuotePdfs_(want);
+  /* The cached (tab,row) index would now point at whatever moved up into that
+     row. It is verified before it is trusted, so a stale entry only costs a
+     miss — dropping it anyway keeps the next lookup honest and cheap. */
+  try { CacheService.getScriptCache().remove(qrowKey_(want)); } catch (e) {}
+  /* The storage view's cache is NOT dropped here on purpose: consoleServe_
+     does it for every function that is not on the read-only allow-list, and
+     that one place is what stops a write added later from forgetting. */
+
+  auditLog_(who.name, 'DELETED quote ' + want + ' — ' +
+    [d.firstName, d.lastName].filter(Boolean).join(' ') + ', ' + (d.unit || 'unit') + ', ' +
+    usd_(d.total || 0) + ', ' + payCount + ' payment(s)' + (hasContract ? ', signed contract on file' : '') +
+    ' — from ' + tabs.join(' + ') + '. Reason: ' + reason +
+    '. Row archived on "' + DELETED_TAB + '"; PDF trashed.');
+
+  let archiveUrl = '';
+  try { archiveUrl = ss.getUrl() + '#gid=' + arch.getSheetId(); } catch (e) {}
+  return { ok: 1, removed: copies.length, archiveUrl: archiveUrl,
+    msg: want + ' deleted from ' + tabs.join(' + ') + '. The whole row is on the "' + DELETED_TAB +
+         '" tab — paste columns A–W back onto its storage tab to undo. The PDF is in Drive\'s bin; ' +
+         'photos and any signed contract are untouched.' };
 }
 
 function adminAddStaff(token, name, perms, isAdmin) {

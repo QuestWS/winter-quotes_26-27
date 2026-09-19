@@ -103,6 +103,7 @@ symptom.
 | The yard log | `adminAddYardNote`, `YARD_NOTE_MAX_` | `renderYardLog`, `addYardNote` |
 | The per-unit alert (set: console only) | `adminSetYardAlert`, `YARD_ALERT_MAX_` | console `renderAlert`/`saveAlert`; yard app `alert_`/`renderAlert` display only |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
+| Deleting a quote (admins only) | `adminDeleteQuote`, `deletedSheet_`, `deletedHeaders_`, `DELETED_TAB` | `renderDeleteQuote`, `doDeleteQuote` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
 

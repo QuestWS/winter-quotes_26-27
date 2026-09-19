@@ -115,6 +115,13 @@ border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);backgro
 .inlineEd input,.inlineEd textarea{width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--disp)}
 .feewarn{display:none;background:#FBEEE2;border:1px solid #E4B48F;color:var(--red);border-radius:8px;padding:9px 11px;font-size:12.5px;margin-top:8px}
 .feewarn.show{display:block}
+/* The one control in the console that removes a row. It is the only card that
+   looks like a warning because it is the only card you cannot undo from here,
+   and it must not read like the gold "money is owed" styling used everywhere
+   else — that one means chase somebody, this one means gone. */
+.danger{border:1.5px solid #E4B48F;background:#FDF2EA}
+.danger h2{color:var(--red)}
+.btn.red{background:var(--red);color:#fff}.btn.red:hover{filter:brightness(1.06)}
 /* Before/after diff for a re-measure. Money that moves has to be readable at
    arm's length in the yard, so the amounts are monospaced and aligned and the
    direction of the change is carried by colour AND by the +/- sign. */
@@ -638,6 +645,23 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             </div>
             <button class="btn gold" id="em_upnext" onclick="sendUpNext()">Send "You're up next"</button>
             <div class="msg" id="emailMsg"></div>
+          </div>
+
+          <!-- Admins only, and last on the page on purpose: everything above it
+               is an action you can take back. The quote number has to be typed
+               out, and a quote carrying money or a signed contract asks again. -->
+          <div class="card danger hide" id="deleteCard">
+            <h2>Delete this quote</h2>
+            <div class="msg" id="delWhat" style="margin:0 0 8px"></div>
+            <div class="row2">
+              <div><label class="fld">Type the quote number to confirm</label>
+                <input class="txt" id="delConfirm" autocomplete="off" spellcheck="false" placeholder="QW-26-0000"></div>
+              <div><label class="fld">Why — kept with the archived row</label>
+                <input class="txt" id="delWhy" autocomplete="off" placeholder="Duplicate of QW-26-0000 / test quote"></div>
+            </div>
+            <label class="chk hide" id="delForceRow"><input type="checkbox" id="delForce"> <span id="delForceTxt"></span></label>
+            <button class="btn red" id="delBtn" onclick="doDeleteQuote()">Delete this quote</button>
+            <div class="msg" id="delMsg"></div>
           </div>
         </div>
       </div>
@@ -1495,6 +1519,67 @@ function renderQuote(r){
   syncSignAsk_(P);
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
+  /* Deleting is admin-only. The SERVER decides that (canDelete), not the
+     cached ME — same rule the sign button follows, and for the same reason:
+     ME lives in localStorage and can be older than the roster. */
+  renderDeleteQuote(r);
+}
+/* ---------------------------------------------------------------------------
+   DELETING A QUOTE — the only control here that removes a row
+   ---------------------------------------------------------------------------
+   Duplicates happen (a save that went in twice on a bad signal, a customer
+   who quoted the same boat again) and the season starts with a few test rows.
+   Both have to be able to leave the sheet, because a duplicate is a second
+   haul-out row and a second reminder email.
+
+   Three things the UI is responsible for, on top of the server's own checks:
+   the quote number is TYPED rather than ticked, so a mis-tap on a phone cannot
+   delete whatever quote happens to be open; the reason is asked for while the
+   quote is still on screen to be read; and when the server comes back saying
+   there is money or a contract on the quote, the extra confirmation it is
+   asking for is revealed rather than just its refusal being printed. */
+function renderDeleteQuote(r){
+  const card=$('deleteCard');
+  if(!card) return;
+  card.classList.toggle('hide',!r.canDelete);
+  if(!r.canDelete) return;
+  $('delConfirm').value='';$('delConfirm').placeholder=r.quoteNo;
+  $('delWhy').value='';
+  $('delForce').checked=false;
+  setMsg('delMsg','');
+  const bits=[];
+  if(r.payCount) bits.push(r.payCount+' payment'+(r.payCount>1?'s':'')+' totalling '+r.paid);
+  if(r.contractUrl) bits.push('a signed contract on file');
+  $('delForceRow').classList.toggle('hide',!bits.length);
+  if(bits.length) $('delForceTxt').textContent='This quote has '+bits.join(' and ')+' — delete it anyway';
+  $('delWhat').textContent='Removes '+r.quoteNo+' from the sheet and trashes its PDF. The whole row is '+
+    'archived on the "Deleted Quotes" tab, so it can be pasted back. Photos and any signed contract stay '+
+    'in Drive, and nobody is emailed.';
+}
+async function doDeleteQuote(){
+  const b=$('delBtn'),qn=QN;
+  const typed=$('delConfirm').value.trim(),why=$('delWhy').value.trim();
+  const force=$('delForce').checked?1:0;
+  if(!typed){setMsg('delMsg','Type '+qn+' to confirm.',false);return;}
+  if(!why){setMsg('delMsg','Say why in a few words — it is the only record once the row is gone.',false);return;}
+  b.disabled=true;setMsg('delMsg','Deleting '+qn+'…');
+  try{
+    const r=await api('deleteQuote',[qn,typed,why,force]);
+    if(!r.ok){
+      if(r.needsForce) $('delForceRow').classList.remove('hide');
+      setMsg('delMsg',r.error,false);
+      b.disabled=false;return;
+    }
+    toast(qn+' deleted');
+    closeQuote();
+    /* Said where it went, not just that it went: the undo is a paste and the
+       person who needs to know that is the person who just did this. */
+    setMsg('lookupMsg',r.msg,true);
+    /* The overview is the list this row was cluttering. Its cache was dropped
+       by the write, so a reload actually shows the change. */
+    if(!$('storageCard').classList.contains('hide')) loadStorage();
+  }catch(e){setMsg('delMsg',e.message,false);}
+  b.disabled=false;
 }
 /* The yard log. Rendered newest LAST, the way a log reads — the newest entry
    is the one you just wrote, and scrolling to it is how you confirm it landed.

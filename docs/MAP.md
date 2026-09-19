@@ -90,6 +90,7 @@ symptom.
 | Old-sheet import | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply` | `previewImport`, `doImport` |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
+| Whether to ask/show where the trailer is | `needsTrailerLoc_` (editor), `showTrailerLoc_` (reader), `trailerAsked` | `renderKeys`, `keysNoTrailer`; yard app `renderSheet` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
 | Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |

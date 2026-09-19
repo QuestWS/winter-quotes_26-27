@@ -241,6 +241,46 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   the trailer flag so the answer cannot start depending on it again. The wording
   covers the genuinely-not-in-the-water boat instead, by inviting them to say
   where it is.
+- **But "where is the trailer" is only a question when there is one.**
+  `needsTrailerLoc_` decides, on the server, and both the console's field and
+  the yard app's row follow it — neither client may work it out again. It
+  started life as `!isBike_(d)`, which put an unanswerable row on every boat
+  blocked on stands; the yard app renders an unanswered field in its
+  missing-information red, so a settled fact read as a gap somebody forgot to
+  fill in. Chris reported it from the yard. Three rules, and the middle one is
+  the subtle one:
+  - **Boat or jet ski → follow `hasTrailer`.** The quote page puts the trailer
+    question to these two and nobody else (`#trailerFs`), so for them the flag
+    is the *customer's own answer* — "No trailer, boat is blocked on stands".
+  - **Golf cart → always ask.** It is never shown that question, so its flag
+    sits at the default `false`, which is not an answer. Carts do arrive on
+    trailers, and reading the default as a "no" would delete the only place to
+    write that down. The same reasoning stops the yard app printing
+    *"On a trailer: No"* for one — `trailerAsked` says which units were asked,
+    and an unasked unit shows `—`.
+  - **E-bike → never**, like keys and slip.
+  - **A recorded location always wins**, whatever the flag says. That is the
+    safety valve: if the flag is wrong, the field stays visible and editable
+    rather than orphaning a value nobody can read, change or clear.
+
+  **The console and the yard app get different answers, on purpose.** The
+  console is an EDITOR: it offers the input wherever a location could be
+  recorded (`needsTrailerLoc_`), including the golf cart nobody was asked
+  about. The yard app is a READER: it shows the row only where there is
+  something to say (`showTrailerLoc_`) — a location already recorded, or a
+  trailer we know exists whose location is still missing, which is a real gap
+  and should be red. An empty row costs them different things: in an editor an
+  empty field is the point, while in the yard it claims somebody should go and
+  find this out. `showTrailerLoc_` is asserted never to be wider than
+  `needsTrailerLoc_`, or the crew would see a row the console cannot fill in.
+
+  Note the coupling this creates: for a boat whose quote says no trailer and
+  where nothing has been recorded, the only way to get the field back is to
+  tick **Stored on its trailer** in the dimension editor — which **re-prices**,
+  because on-trailer and blocked-on-stands are different storage rates. That is
+  correct rather than awkward: if the boat really is on a trailer the quote is
+  wrong. The console says so where the field used to be, so a missing input is
+  a rule rather than a bug report.
 - **Every close control closes.** Panels (storage, staff, matches, quote) each
   need a working ✕. Users noticed when one didn't.
 - **No duplicate top-level function names in the console.** `admin/index.html`

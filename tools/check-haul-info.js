@@ -38,10 +38,11 @@ const B=new Function([
   'function usd_(n){n=Number(n||0);return "$"+Math.abs(n).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g,",").replace(/^/, n<0?"-":"");}',
   decl('KEYFIELDS_'),
   fn('sanitizeKeys_'), fn('effectiveState_'), fn('isLandUnit_'), fn('isBike_'),
-  fn('missingHaulInfo_'), fn('serverPrice_'), fn('linesTotal_'),
+  fn('missingHaulInfo_'), fn('needsTrailerLoc_'), fn('showTrailerLoc_'),
+  fn('serverPrice_'), fn('linesTotal_'),
   fn('rebuildLinesFromState_'), fn('ensureManual_'), fn('applyManualOps_'),
   fn('recomputeTotals_'), fn('paymentsTotal_'),
-  'return {sanitizeKeys_,effectiveState_,missingHaulInfo_,rebuildLinesFromState_,ensureManual_,applyManualOps_,computeQuote};'
+  'return {sanitizeKeys_,effectiveState_,missingHaulInfo_,needsTrailerLoc_,showTrailerLoc_,rebuildLinesFromState_,ensureManual_,applyManualOps_,computeQuote};'
 ].join('\n'))();
 
 const states=JSON.parse(execSync('node tools/price-fixtures.js --dump-states',{cwd:ROOT,maxBuffer:1e8}));
@@ -175,5 +176,94 @@ console.log('\n=== 6. pricing is untouched by a keys edit ===');
   B.rebuildLinesFromState_(d); B.applyManualOps_(d);
   check('total unmoved', Math.abs(Number(d.total)-before)<0.005, before.toFixed(2)+' -> '+Number(d.total).toFixed(2));
 }
+
+console.log('\n=== 6b. "where is the trailer" is only asked when there is one ===');
+/* Asking it of a boat blocked on stands is not a harmless extra row: the yard
+   app renders an unanswered field as "— not recorded —" in the colour it uses
+   for missing information, so the crew reads a settled fact as a gap. Chris
+   reported exactly that.
+   The subtlety is WHOSE answer `hasTrailer` is. The quote page only shows the
+   trailer question to boats and jet skis, so a golf cart's flag sits at the
+   default false and is not an answer at all. */
+{
+  const unit=(u)=>({unit:u});
+  const T={hasTrailer:true}, F={hasTrailer:false};
+  const row=(label,got,want)=>check(label,got===want,'got '+got+' want '+want);
+
+  row('boat with a trailer: ask where it is',    B.needsTrailerLoc_(unit('Boat'),T,''), true);
+  row('boat on stands: do not ask',              B.needsTrailerLoc_(unit('Boat'),F,''), false);
+  row('jet ski (always trailered): ask',         B.needsTrailerLoc_(unit('Jet Ski'),T,''), true);
+  /* Never asked on the quote page, so the flag means nothing. Carts do turn up
+     on trailers, and reading a default as a "no" would remove the only place
+     to write that down. */
+  row('golf cart: ask anyway, it was never asked on the quote',
+      B.needsTrailerLoc_(unit('Golf Cart'),F,''), true);
+  row('e-bike: no keys, no slip, no trailer',    B.needsTrailerLoc_(unit('E-Bike'),F,''), false);
+  row('e-bike stays out even with a value on it',B.needsTrailerLoc_(unit('E-Bike'),F,'back lot'), false);
+  /* THE SAFETY VALVE. If the flag is wrong and somebody has already written
+     down where the trailer is, the field must stay visible — otherwise the
+     value is orphaned where nobody can read it, edit it or clear it. */
+  row('a recorded location beats the flag',      B.needsTrailerLoc_(unit('Boat'),F,'back lot, row 3'), true);
+  row('whitespace is not a recorded location',   B.needsTrailerLoc_(unit('Boat'),F,'   '), false);
+  row('a missing state is not a trailer',        B.needsTrailerLoc_(unit('Boat'),null,''), false);
+
+  /* THE EDITOR AND THE READER WANT DIFFERENT ANSWERS. The console offers the
+     input wherever a location could be recorded; the yard app shows the row
+     only where there is something to say, because it renders an unfilled value
+     in the colour that means "go and find this out". A chase with no quarry is
+     the same noise, just aimed at a different unit. */
+  const showsFor=(u,st,loc)=>B.showTrailerLoc_(unit(u),st,loc);
+  row('cart with nothing recorded: editable, but no row in the yard',
+      showsFor('Golf Cart',F,''), false);
+  check('and the console still offers the field for it',
+        B.needsTrailerLoc_(unit('Golf Cart'),F,'')===true);
+  row('cart with a location recorded: the crew sees it',
+      showsFor('Golf Cart',F,'back lot'), true);
+  row('boat that HAS a trailer but no location: a real gap, show it red',
+      showsFor('Boat',T,''), true);
+  row('boat on stands: nothing either way',       showsFor('Boat',F,''), false);
+  row('e-bike: nothing either way',               showsFor('E-Bike',F,''), false);
+  /* Never wider than the field it qualifies, or the yard would show a row the
+     console cannot fill in. */
+  [['Boat',T,''],['Boat',F,''],['Boat',F,'lot'],['Jet Ski',T,''],
+   ['Golf Cart',F,''],['Golf Cart',F,'lot'],['E-Bike',F,''],['E-Bike',F,'lot']]
+    .forEach(function(c){
+      const need=B.needsTrailerLoc_(unit(c[0]),c[1],c[2]);
+      const show=B.showTrailerLoc_(unit(c[0]),c[1],c[2]);
+      if(show&&!need) check('shown but not editable: '+c[0],false,JSON.stringify(c));
+    });
+  check('the yard never shows a row the console cannot fill in',true);
+
+  /* And it must not have crept into the customer chase: we never email anybody
+     asking where their trailer is. */
+  const d=quoteFrom('boat-twin-inboard-full');
+  d.state.hasTrailer=false; d.state.keyLoc=''; d.state.slipNo='';
+  const need=B.missingHaulInfo_(d);
+  check('the chase list still asks only for keys and slip',
+        need.every(n=>n==='keys'||n==='slip'), JSON.stringify(need));
+}
+
+console.log('\n=== 6c. both clients read that one answer ===');
+{
+  const yard=fs.readFileSync(path.join(ROOT,'yard/index.html'),'utf8');
+  const admin=fs.readFileSync(path.join(ROOT,'admin/index.html'),'utf8');
+  check('the yard app gates the trailer row on the server\'s show answer',
+        /showTrailerLoc[\s\S]{0,120}kv\('Trailer is'/.test(yard));
+  check('the console gates its trailer input on the same field',
+        /keysTrailerWrap'\)\.classList\.toggle\('hide',!k\.needsTrailerLoc\)/.test(admin));
+  /* Neither client may work the rule out for itself — that is how two copies
+     drift and one of them starts asking again. */
+  [['yard/index.html',yard],['admin/index.html',admin]].forEach(function(pair){
+    const js=pair[1].replace(/\/\*[\s\S]*?\*\//g,'').replace(/<!--[\s\S]*?-->/g,'');
+    check(pair[0]+' does not re-derive it from hasTrailer',
+          !/needsTrailerLoc\s*=[^=]/.test(js)&&!/showTrailerLoc\s*=[^=]/.test(js));
+  });
+  /* "On a trailer: No" must not be printed from a flag nobody set. */
+  check('the yard app will not claim "No" for a unit never asked',
+        /trailerAsked/.test(yard));
+  check('and the server tells it which units were asked',
+        /trailerAsked: !isLandUnit_\(d\)/.test(gas));
+}
+
 console.log(fails?fails+' haul-info violation(s)':'haul info holds: only the applicable question is asked, and a staff entry survives the customer re-saving');
 process.exit(fails?1:0);

@@ -161,6 +161,30 @@ if [ -f yard/index.html ]; then
   if [ -n "$DUPY" ]; then
     echo "  FAIL trap: duplicate function name(s) in the yard app:"; echo "$DUPY" | sed 's/^/         /'; FAIL=1
   else echo "  OK   trap: no duplicate function names in the yard app"; fi
+  # "Where is the trailer" is only a question when there is a trailer. Asking
+  # it of a boat blocked on stands renders as "— not recorded —" in the yard
+  # app's missing-information red, so a settled fact reads as a gap. One answer,
+  # on the server; neither client may work it out again.
+  if grep -q "needsTrailerLoc: needsTrailerLoc_(" quote-logger-apps-script.gs; then
+    echo "  OK   trap: the trailer question is gated on there being a trailer"
+  else
+    echo "  FAIL trap: needsTrailerLoc is not coming from needsTrailerLoc_ — a boat on stands"; FAIL=1
+    echo "       would be asked where its trailer is"
+  fi
+  for f in yard/index.html admin/index.html; do
+    if grep -qE "(needs|show)TrailerLoc *=[^=]" "$f"; then
+      echo "  FAIL trap: $f re-derives the trailer rule — that is a second copy of it"; FAIL=1
+    else echo "  OK   trap: $f renders the server's trailer answer"; fi
+  done
+  # The reader's answer must never be wider than the editor's, or the yard shows
+  # a row the console has no field for. Executed in check-haul-info.js; named
+  # here because this is the grep somebody runs when adding a unit type.
+  if grep -q "function showTrailerLoc_" quote-logger-apps-script.gs; then
+    echo "  OK   trap: the yard's trailer row has its own, narrower answer"
+  else
+    echo "  FAIL trap: showTrailerLoc_ is gone — the yard would show an empty row on every"; FAIL=1
+    echo "       golf cart, in the colour that means somebody should go and find it out"
+  fi
   # Re-measuring is a money act on a yard phone, so it is its own permission
   # and it never travels on `keys`. Checked here as well as in the gate because
   # this is the grep somebody runs when wiring a new endpoint up to the app.

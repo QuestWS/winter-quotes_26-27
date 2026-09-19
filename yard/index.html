@@ -979,7 +979,13 @@ function renderSheet(r){
   const kv=(k,v,miss)=>'<div class="kv"><span>'+k+'</span><b'+(miss?' class="miss"':'')+'>'+v+'</b></div>';
   const or=t=>t?esc(t):'<span class="miss">— not recorded —</span>';
   const keys=r.keys||{};
-  const trailerTxt=keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
+  /* "No" only when somebody actually said no. The quote page asks the trailer
+     question of boats and jet skis and nobody else, so a golf cart's flag is a
+     default sitting at false — printing "No" from it would be telling the crew
+     something that was never established. trailerAsked says which it is; an
+     older backend that does not send it falls back to the flag, as before. */
+  const asked=keys.trailerAsked===undefined?true:!!keys.trailerAsked;
+  const trailerTxt=!asked?'—':keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
   $('dFacts').innerHTML=
     kv('Unit',esc(r.unit||'')+(r.ymm?' · '+esc(r.ymm):''))+
     (listRow.dims?kv('Dimensions',esc(listRow.dims)):'')+
@@ -987,7 +993,16 @@ function renderSheet(r){
     kv('Slip',or(keys.slipNo))+
     kv('Keys',or(keys.keyLoc))+
     kv('On a trailer',trailerTxt)+
-    (keys.needsTrailerLoc?kv('Trailer is',or(keys.trailerLoc)):'')+
+    /* showTrailerLoc, NOT needsTrailerLoc — the console offers the field
+       wherever one could be recorded, this shows the row only where there is
+       something to say. An unfilled value renders in the missing-information
+       red, which claims somebody should go and find it out; on a boat blocked
+       on stands, or a golf cart nobody was ever asked about, that is a chase
+       with no quarry. The row above already says whether there is a trailer.
+       An older backend sends no showTrailerLoc, so fall back to the wider
+       field rather than hiding a location it did send. */
+    ((keys.showTrailerLoc===undefined?keys.needsTrailerLoc:keys.showTrailerLoc)
+      ?kv('Trailer is',or(keys.trailerLoc)):'')+
     kv('Requested timing',esc(o.label))+
     kv('Balance',esc(r.balance||''));
 

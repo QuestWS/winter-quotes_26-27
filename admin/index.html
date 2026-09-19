@@ -492,9 +492,13 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <input class="txt" id="keysSlipNo" placeholder="e.g. B-14"></div>
             <!-- WHERE the trailer is, which is a different question from whether
                  there is one. A Heritage Harbor customer can have the boat in a
-                 slip and the trailer in our lot all season. -->
+                 slip and the trailer in our lot all season. Hidden when the
+                 quote says there is no trailer at all — see needsTrailerLoc_. -->
             <div id="keysTrailerWrap" style="margin-top:8px"><label class="fld">Trailer location</label>
               <input class="txt" id="keysTrailerLoc" placeholder="e.g. back lot, row 3 / customer took it home"></div>
+            <div class="msg hide" id="keysNoTrailer" style="margin:8px 0 0">This quote says no trailer, so
+              there is nowhere to record. If it does have one, tick <b>Stored on its trailer</b> in
+              <b>Unit details &amp; storage</b> — that changes the storage rate, so it re-prices.</div>
             <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
               told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
             <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
@@ -1249,6 +1253,11 @@ function renderKeys(k){
   $('keysKeyWrap').classList.toggle('hide',!k.needsKeys);
   $('keysSlipWrap').classList.toggle('hide',!k.needsSlip);
   $('keysTrailerWrap').classList.toggle('hide',!k.needsTrailerLoc);
+  /* Say where the field went, and how to get it back. An input that silently
+     disappears is a bug report; one that explains itself is a rule. Only for
+     units the trailer question was actually put to — a golf cart keeps the
+     field, so there is nothing to explain. */
+  $('keysNoTrailer').classList.toggle('hide',!(k.trailerAsked&&!k.needsTrailerLoc));
   /* An e-bike has no keys, no slip and no trailer — with nothing to edit there
      is nothing to show, so don't render an empty card. */
   if(!k.needsKeys&&!k.needsSlip&&!k.needsTrailerLoc){ c.classList.add('hide'); return; }

@@ -3299,16 +3299,24 @@ function adminLookup(token, qn) {
        the same list the haul-out "up next" email asks for. */
     keys: (function () {
       const st = effectiveState_(d) || d.state || {};
+      /* Where the trailer is parked. Read the same way as the other two, so a
+         staff correction wins over whatever the customer's browser last
+         posted. */
+      const trailerLoc = String((st.trailerLoc !== undefined ? st.trailerLoc : d.trailerLoc) || '');
       return {
         keyLoc: String((st.keyLoc !== undefined ? st.keyLoc : d.keyLoc) || ''),
         slipNo: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || ''),
-        /* Where the trailer is parked. Read the same way as the other two, so a
-           staff correction wins over whatever the customer's browser last
-           posted. Offered for anything that could be on a trailer — an e-bike
-           could not. */
-        trailerLoc: String((st.trailerLoc !== undefined ? st.trailerLoc : d.trailerLoc) || ''),
+        trailerLoc: trailerLoc,
         hasTrailer: !!st.hasTrailer,
-        needsTrailerLoc: !isBike_(d),
+        /* Whether that flag is an ANSWER or just a default — the quote page
+           only asks boats and jet skis. A client showing "On a trailer: No"
+           for a golf cart would be stating something nobody established. */
+        trailerAsked: !isLandUnit_(d),
+        /* Can staff RECORD a trailer location here (the console's input)? */
+        needsTrailerLoc: needsTrailerLoc_(d, st, trailerLoc),
+        /* Is there a trailer fact worth SHOWING the crew (the yard app's row)?
+           Narrower on purpose — see showTrailerLoc_. */
+        showTrailerLoc: showTrailerLoc_(d, st, trailerLoc),
         needsKeys: !isBike_(d),
         /* Owning a trailer does not mean the boat is on it — see
            missingHaulInfo_. Every water unit gets a slip field. */
@@ -6662,6 +6670,50 @@ function isLandUnit_(d) {
   return u.indexOf('golf') > -1 || u.indexOf('bike') > -1;
 }
 function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') > -1; }
+
+/* Is there a trailer for the crew to go and find?
+   Asking that of a boat blocked on stands is not a harmless extra row: it
+   renders as "— not recorded —" in the yard app's missing-information red, so
+   the crew reads a settled fact as a gap somebody forgot to fill in.
+
+   Whose answer `hasTrailer` is depends on the unit, and that is the whole
+   subtlety. The quote page only shows the trailer question for boats and jet
+   skis (`#trailerFs`), so for those it is the customer's own answer — "No
+   trailer, boat is blocked on stands" — and can be trusted. A GOLF CART is
+   never asked, so its flag sits at the default `false`, which is not an answer
+   and must not be read as one; carts do turn up on trailers. An e-bike has no
+   keys, no slip and no trailer, as everywhere else.
+
+   And a location somebody has already written down always wins, whatever the
+   flag says. That is the safety valve: if the flag is wrong, the field stays
+   visible and editable rather than orphaning a value nobody can see or clear. */
+function needsTrailerLoc_(d, st, trailerLoc) {
+  if (isBike_(d)) return false;
+  if (String(trailerLoc || '').trim()) return true;
+  if (isLandUnit_(d)) return true;              // golf cart: never asked, so don't assume
+  return !!(st && st.hasTrailer);               // boat / jet ski: they answered it
+}
+
+/* The console and the yard app want different answers, because one is an
+   EDITOR and the other is a READER, and an empty row costs them different
+   things.
+
+   An editor offers an empty field: that is what a field is for, and the golf
+   cart nobody was asked about needs somewhere to write "came in on a trailer,
+   it is in the back lot". A reader showing an empty row is making a claim —
+   the yard app renders an unfilled value in its missing-information red, which
+   says *somebody should go and find this out*. On a cart whose trailer status
+   nobody ever established, that is a chase with no quarry, and it is the same
+   noise Chris reported on boats blocked on stands.
+
+   So the crew only sees the row when there is something to say: a location
+   already recorded, or a trailer we KNOW exists whose location is still
+   missing — which is a real gap and should be red. */
+function showTrailerLoc_(d, st, trailerLoc) {
+  if (!needsTrailerLoc_(d, st, trailerLoc)) return false;
+  if (String(trailerLoc || '').trim()) return true;
+  return !isLandUnit_(d) && !!(st && st.hasTrailer);
+}
 
 /* What the haul-out crew still doesn't know about this unit.
    Only ever asks for what actually applies:

@@ -504,6 +504,20 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="dimsMsg"></div>
           </div>
 
+          <!-- Where the unit is in the season. "Dropped off" starts here on
+               purpose: a customer driving their boat in is something the
+               office sees and the yard does not, and it is what puts the unit
+               on the crew's To store list. -->
+          <div class="card hide" id="yardStateCard">
+            <h2>Yard status</h2>
+            <div class="msg" style="margin:0 0 6px">Drives the three lists in the yard app.
+              Mark a unit <b>dropped off</b> when the customer brings it in — that is what puts it
+              on the crew's <b>To store</b> list without it ever having been in the water.</div>
+            <div class="msg" id="yardStateNow" style="margin:0 0 8px"></div>
+            <div id="yardStateBtns"></div>
+            <div class="msg" id="yardStateMsg"></div>
+          </div>
+
           <div class="card hide" id="yardLogCard">
             <h2>Yard log</h2>
             <div class="msg" style="margin:0 0 6px">Observations from the yard, newest last —
@@ -1413,6 +1427,10 @@ function renderQuote(r){
   /* Same bar as the staff note and the keys card: yard work, not money. */
   $('yardLogCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderYardLog(r.yardNotes);
+  $('yardStateCard').classList.toggle('hide',!P.keys);
+  window._yardState=r.yard||{state:''};
+  window._yardAuth=r.yardAuth||null;
+  if(P.keys) renderYardState();
   $('keysCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
@@ -1452,6 +1470,38 @@ function renderYardLog(list){
     return '<div class="histrow"><b>'+esc(n.by||'—')+'</b> <span class="hm">· '+esc(when)+
       '</span>'+play+'<br>'+body+'</div>';
   }).join('');
+}
+/* The same four states the yard app shows, named the same way — the office and
+   the crew talking about different words for the same boat is how a unit ends
+   up recorded twice. */
+const YSTATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+function renderYardState(){
+  const y=window._yardState||{state:''};
+  const st=String(y.state||'');
+  let when=String(y.at||'');
+  if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
+  setMsg('yardStateNow','Right now: '+(YSTATE_LABEL[st]||st)+
+    (when?' · '+when+(y.by?' · '+y.by:''):''));
+  const btn=(to,label,cls)=>'<button class="btn '+(cls||'ghost')+' sm" style="margin:0 6px 6px 0" '+
+    'onclick="setYardState('+JSON.stringify(to)+')">'+label+'</button>';
+  let h='';
+  /* "Pulled" is not offered here. Pulling is something that happens in the
+     yard, with the boat in front of you, and the app gates it on the unit
+     being cleared to pull. Recording it from a desk would route around that. */
+  if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
+  if(st!=='stored') h+=btn('stored','Mark in storage');
+  if(st) h+=btn('','Undo — back to not started');
+  $('yardStateBtns').innerHTML=h;
+}
+async function setYardState(to){
+  setMsg('yardStateMsg','Saving…');
+  try{
+    const r=await api('yardState',[QN,to]);
+    if(!r||!r.ok){ setMsg('yardStateMsg',(r&&r.error)||'Could not record that.',false); return; }
+    window._yardState=r.yard||{state:to};
+    renderYardState();
+    setMsg('yardStateMsg',r.msg,true); toast(r.msg);
+  }catch(e){ setMsg('yardStateMsg',e.message,false); }
 }
 async function addYardNote(){
   const t=($('yardNoteText').value||'').trim();

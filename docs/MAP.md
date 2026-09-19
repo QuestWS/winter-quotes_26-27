@@ -102,7 +102,9 @@ symptom.
 ### Yard app
 | Feature | Entry point (server) | Entry point (app) |
 |---|---|---|
-| The two lists | `adminStorageView` | `pullList_`, `render`, `setTab` |
+| The three lists | `adminStorageView` | `listOf_`, `pullList_`, `storeList_`, `render`, `setTab` |
+| Moving a unit along (pulled / dropped off / stored) | `YARD_STATES_`, `adminSetYardState`, `yardStateOf_` | `markState`, `renderState`, `act_` |
+| Search and sort in the yard | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
 | Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |

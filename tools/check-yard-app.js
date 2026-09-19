@@ -114,6 +114,107 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 
 /* =====================================================================
+   2b. THE THREE LISTS ARE ONE FIELD READ THREE WAYS.
+   ---------------------------------------------------------------------
+   A unit must be on exactly one list. On two, and the crew does the same job
+   twice; on none, and a boat sits in the water until somebody notices.
+   ===================================================================== */
+{
+  const cases = [
+    ['',        'B-14', 'pull',   'in the water and not yet pulled'],
+    ['',        '',     '',       'no slip and nothing done: not the crew\'s problem yet'],
+    ['pulled',  'B-14', 'store',  'pulled leaves the pull list for the store list'],
+    ['dropped', '',     'store',  'dropped off reaches the store list without ever being in the water'],
+    ['dropped', 'B-14', 'store',  'and a slip does not drag it back onto the pull list'],
+    ['stored',  'B-14', 'stored', 'stored is stored, slip or no slip'],
+    ['stored',  '',     'stored', 'stored is stored for a trailered unit too']
+  ];
+  cases.forEach(function (c) {
+    eq(Y.listOf_({ yardState: c[0], slip: c[1] }), c[2], c[3]);
+  });
+  /* The property underneath all of it, asserted rather than reasoned about. */
+  const lists = ['pull', 'store', 'stored'];
+  let clean = true;
+  ['', 'pulled', 'dropped', 'stored'].forEach(function (st) {
+    ['', 'B-14'].forEach(function (slip) {
+      const row = { yardState: st, slip: slip };
+      const on = lists.filter(function (L) { return Y.listOf_(row) === L; });
+      if (on.length > 1) { clean = false; fail('state ' + JSON.stringify(st) + ' appears on ' + on.join(' and ')); }
+    });
+  });
+  if (clean) ok('no unit is ever on two lists at once');
+  /* An unknown state must not vanish a boat. */
+  const odd = Y.listOf_({ yardState: 'teleported', slip: 'B-14' });
+  if (odd === '') fail('an unrecognised state made a boat disappear from every list');
+  else ok('an unrecognised state falls back to a real list rather than vanishing (' + odd + ')');
+}
+/* Search and sort, on the two lists that have them. */
+{
+  Y.ev('ROWS = ' + JSON.stringify([
+    { qn: 'QW-1', name: 'Zeller, Zoe', slip: '', tab: 'Building B', unit: 'Boat', yardState: 'pulled' },
+    { qn: 'QW-2', name: 'Adams, Al',   slip: '', tab: 'Outside',    unit: 'Boat', yardState: 'dropped' },
+    { qn: 'QW-3', name: 'Moss, Mo',    slip: '', tab: 'Building B', unit: 'Jet Ski', yardState: 'pulled' },
+    { qn: 'QW-4', name: 'Quinn, Qi',   slip: '', tab: 'Building B', unit: 'Boat', yardState: 'stored' }
+  ]));
+  Y.ev('SORT = "location"');
+  /* Building B before Outside, and inside Building B "Moss" before "Zeller". */
+  eq(Y.ev('storeList_("store").map(function(r){return r.qn;}).join(",")'), 'QW-3,QW-1,QW-2',
+     'by location groups Building B before Outside, and sorts by name inside each');
+  Y.ev('SORT = "name"');
+  eq(Y.ev('storeList_("store").map(function(r){return r.qn;}).join(",")'), 'QW-2,QW-3,QW-1',
+     'by name ignores location entirely');
+  eq(Y.ev('storeList_("stored").map(function(r){return r.qn;}).join(",")'), 'QW-4',
+     'the stored list holds only stored units');
+  /* Search has to find a unit by whatever the person happens to know. */
+  Y.ev('document.getElementById("q").value = "jet"');
+  eq(Y.ev('storeList_("store").length'), 1, 'search matches the unit type');
+  Y.ev('document.getElementById("q").value = "QW-2"');
+  eq(Y.ev('storeList_("store").length'), 1, 'search matches the quote number');
+  Y.ev('document.getElementById("q").value = "outside"');
+  eq(Y.ev('storeList_("store").length'), 1, 'search matches the location');
+  Y.ev('document.getElementById("q").value = "ZELL"');
+  eq(Y.ev('storeList_("store").length'), 1, 'search ignores case');
+  Y.ev('document.getElementById("q").value = ""');
+}
+/* The liability gate follows the boat onto the new control. */
+{
+  const held = { qn: 'H', slip: 'B-1', auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } };
+  Y.ev('ME = {name:"Rex",admin:true,perms:{}}');
+  const markup = Y.act_(held, 'pulled', 'Pulled ✓');
+  if (/disabled/.test(markup)) ok('a unit that is not cleared cannot be ticked off as pulled');
+  else fail('the pull tick is offered on a unit nobody may touch — the app would be where the ' +
+            'rule violation gets written down');
+  const okRow = { qn: 'C', slip: 'B-2', auth: { state: 'cleared' } };
+  if (/disabled/.test(Y.act_(okRow, 'pulled', 'Pulled ✓'))) fail('a cleared unit cannot be ticked off');
+  else ok('a cleared unit can be ticked off in one tap');
+  if (/stopPropagation/.test(Y.act_(okRow, 'pulled', 'Pulled ✓')))
+    ok('ticking a row does not also open its detail sheet');
+  else fail('the row action will also fire the row tap — the list jumps out from under the crew');
+}
+/* And the server refuses it too, because a client is not a permission. */
+{
+  const gas = GAS;
+  const fn = (gas.match(/function adminSetYardState\b[\s\S]*?\n}/m) || [''])[0];
+  if (!fn) fail('there is no adminSetYardState on the server');
+  else {
+    if (/haulAuth_\(/.test(fn) && /'pulled'/.test(fn))
+      ok('the server re-checks the pull gate rather than trusting the app');
+    else fail('adminSetYardState does not gate "pulled" on haulAuth_ — a crafted request could ' +
+              'record a pull nobody was cleared for');
+    if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the yard permission');
+    else fail('adminSetYardState is not gated on the keys permission');
+    if (/savePdf_|recomputeTotals_|rebuildLinesFromState_/.test(fn))
+      fail('moving a boat re-prices it or rebuilds its PDF — it is a fact about a day\'s work, ' +
+           'not a change to what the customer owes');
+    else ok('moving a boat touches no money and no paperwork');
+  }
+  /* It has to survive the customer's next save like the rest of the yard state. */
+  const carry = (gas.match(/if \(oldD\.yard\)/) || [''])[0];
+  if (carry) ok('yard progress survives a customer save');
+  else fail('a customer save would wipe the season\'s yard progress');
+}
+
+/* =====================================================================
    3. TALKING TO A BACKEND OVER A BAD CONNECTION.
    ===================================================================== */
 /* The app's retry list must be a SUBSET of what the server allows on GET —

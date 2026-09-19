@@ -68,6 +68,23 @@ body{background:var(--ice);overscroll-behavior-y:none}
   padding:12px 13px;margin-bottom:8px;cursor:pointer;display:block;width:100%;text-align:left;
   font-family:var(--body);font-size:15px;color:var(--ink);min-height:56px}
 .card:active{background:var(--frost-soft)}
+/* The row's own action — "Pulled", "Stored". Its own tap target with real
+   padding and a divider above it, because a crew member ticking twenty boats
+   in a row must not open a detail sheet by accident, and must not tick the
+   wrong boat by accident either. */
+.card .act{display:block;width:100%;margin-top:10px;padding:12px;border-radius:9px;
+  border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-family:var(--body);
+  font-size:14.5px;font-weight:700;cursor:pointer;min-height:46px}
+.card .act.done{background:#fff;color:var(--navy)}
+.card .act[disabled]{background:#fff;color:var(--muted);border-color:var(--line);cursor:not-allowed}
+/* Search and sort, shown only on the lists where there are enough units for
+   either to matter. */
+.filter{display:flex;gap:8px;margin:4px 0 8px}
+.filter input{flex:1;min-width:0;font-family:var(--body);font-size:16px;padding:10px 12px;
+  border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);min-height:44px}
+.filter button{flex:0 0 auto;font-family:var(--body);font-size:13.5px;font-weight:700;
+  padding:10px 13px;border-radius:9px;border:1.5px solid var(--navy);background:#fff;
+  color:var(--navy);cursor:pointer;min-height:44px;white-space:nowrap}
 .card .nm{font-weight:700;color:var(--navy);font-size:16px}
 .card .sub{color:var(--muted);font-size:13px;margin-top:2px}
 .card .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
@@ -153,12 +170,20 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
       <div class="who" id="who"></div>
       <button class="out" onclick="signOut()">Sign out</button>
     </div>
+    <!-- The three states a unit moves through, in the order it moves through
+         them. Left to right is the season. -->
     <div class="tabs">
       <button id="tabPull" class="on" onclick="setTab('pull')">To pull<span class="n" id="nPull"></span></button>
-      <button id="tabAll" onclick="setTab('all')">All storage<span class="n" id="nAll"></span></button>
+      <button id="tabStore" onclick="setTab('store')">To store<span class="n" id="nStore"></span></button>
+      <button id="tabStored" onclick="setTab('stored')">Stored<span class="n" id="nStored"></span></button>
     </div>
   </div>
   <div class="wrap">
+    <div class="filter hide" id="filterBar">
+      <input id="q" type="search" placeholder="Search name, quote # or slip"
+             autocomplete="off" autocapitalize="none" oninput="render()" aria-label="Search">
+      <button id="sortBtn" onclick="toggleSort()">Location</button>
+    </div>
     <div class="msg" id="listMsg">Loading…</div>
     <div id="list"></div>
     <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
@@ -174,6 +199,7 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
   <div id="dAuth"></div>
   <div class="wrap">
     <div id="dCall"></div>
+    <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
     <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
     <div class="blk">
       <h3>Yard log</h3>
@@ -206,12 +232,21 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
 /* ===========================================================================
    QUEST YARD — the haul-out list as an app
    ---------------------------------------------------------------------------
-   Two lists, because the yard asks two different questions on the same day:
+   Three lists, and they are one field read three ways (YARD_STATES_ in the
+   .gs). Left to right is the season:
 
-     TO PULL      every unit with a slip number — the boats literally coming
-                  out of the water, in the order the customer asked for.
-     ALL STORAGE  everything we are storing, grouped by building, because the
-                  crew towing a boat up the hill needs to know where it goes.
+     TO PULL   every unit with a slip number that has not been pulled yet —
+               the boats still in the water, in the order the customer asked
+               for. Ticking one off moves it along and it leaves this list.
+     TO STORE  everything waiting for a spot: the ones we pulled, and the ones
+               the customer drove in themselves (marked dropped off on the
+               console). This is the crew's actual work queue.
+     STORED    in its spot, done. Kept rather than hidden, because "did we
+               already put that one away" is a question people ask.
+
+   The two storage lists are searchable and sort by location or by name; the
+   pull list is not, because its order IS the information — it is the order the
+   customers asked for and re-sorting it would lose that.
 
    It is a separate page rather than another console card because it is used
    with one hand, outdoors, in November: big targets, no horizontal scrolling,
@@ -435,12 +470,49 @@ function auth_(x){
   if(a&&a.state) return a;
   return {state:'blocked',why:'both',label:'NOT CONFIRMED',stamp:'NOT CONFIRMED — DO NOT PULL'};
 }
-function pullList_(){ return ROWS.filter(x=>String(x.slip||'').trim()).sort(sort_); }
+/* One field, three lists. A row's state decides which list it is on; nothing
+   else does, so a unit can never be on two at once or fall off all three. */
+function state_(x){ return String((x&&x.yardState)||''); }
+function listOf_(x){
+  const st=state_(x);
+  if(st==='stored') return 'stored';
+  if(st==='pulled'||st==='dropped') return 'store';
+  /* Nothing has happened yet: it is only on the crew's radar if it is in the
+     water. A trailered boat nobody has dropped off yet is not their problem. */
+  return String(x.slip||'').trim() ? 'pull' : '';
+}
+function pullList_(){ return ROWS.filter(x=>listOf_(x)==='pull').sort(sort_); }
+/* Location first, then name — "which building am I standing in" is the
+   question, and within a building a name is how you find the row. Sorting by
+   name alone is for when somebody at the counter has a customer on the phone. */
+function byLocation_(a,b){
+  return String(a.tab||'').localeCompare(String(b.tab||''))||
+         String(a.name||'').localeCompare(String(b.name||''));
+}
+function byName_(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); }
+function storeList_(which){
+  const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
+  const hit=ROWS.filter(x=>listOf_(x)===which).filter(function(x){
+    if(!q) return true;
+    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
+  });
+  return hit.sort(SORT==='name'?byName_:byLocation_);
+}
 
+let SORT='location';
 function setTab(t){
   TAB=t;
   $('tabPull').classList.toggle('on',t==='pull');
-  $('tabAll').classList.toggle('on',t==='all');
+  $('tabStore').classList.toggle('on',t==='store');
+  $('tabStored').classList.toggle('on',t==='stored');
+  /* Search and sort belong to the two storage lists. The pull list's order is
+     the information, so it gets neither. */
+  $('filterBar').classList.toggle('hide',t==='pull');
+  render();
+}
+function toggleSort(){
+  SORT=SORT==='location'?'name':'location';
+  $('sortBtn').textContent=SORT==='location'?'Location':'Name';
   render();
 }
 function badge_(x){
@@ -452,38 +524,148 @@ function badge_(x){
 function notes_(x){
   return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';
 }
-function row_(x,right){
-  return '<button class="card" onclick="openQuote('+JSON.stringify(String(x.qn))+')">'+
+/* A div rather than a <button>, because the row carries its own action button
+   and a button inside a button is invalid and behaves differently in every
+   browser. Keyboard access is kept explicitly. */
+function row_(x,right,action){
+  const qn=JSON.stringify(String(x.qn));
+  return '<div class="card" role="button" tabindex="0" onclick="openQuote('+qn+')" '+
+    'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openQuote('+qn+');}">'+
     '<div class="ln"><span class="nm">'+esc(x.name)+'</span>'+
     '<span class="slip">'+esc(right||'')+'</span></div>'+
     '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
-    badge_(x)+notes_(x)+'</button>';
+    badge_(x)+notes_(x)+(action||'')+'</div>';
+}
+/* The one-tap move along the line. stopPropagation matters: without it the tap
+   also opens the detail sheet, and the crew member watches a panel slide over
+   the list they were working down. */
+function act_(x,to,label){
+  if(!canWrite()) return '';
+  const a=auth_(x);
+  if(to==='pulled'&&a.state!=='cleared'){
+    return '<button class="act" disabled title="'+esc(a.stamp)+'">'+esc(a.stamp)+'</button>';
+  }
+  return '<button class="act" onclick="event.stopPropagation();markState('+
+    JSON.stringify(String(x.qn))+','+JSON.stringify(to)+')">'+esc(label)+'</button>';
 }
 function render(){
-  const pull=pullList_();
-  $('nPull').textContent=pull.length;
-  $('nAll').textContent=ROWS.length;
+  const counts={pull:0,store:0,stored:0};
+  ROWS.forEach(function(x){ const l=listOf_(x); if(counts[l]!==undefined) counts[l]++; });
+  $('nPull').textContent=counts.pull;
+  $('nStore').textContent=counts.store;
+  $('nStored').textContent=counts.stored;
+
   if(TAB==='pull'){
+    const pull=pullList_();
     setMsg('listMsg',pull.length
-      ? pull.length+' boat'+(pull.length===1?'':'s')+' in a slip, in the order they asked for.'
-      : 'No units have a slip number recorded, so there is nothing to pull out of the water yet.');
-    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip))).join('');
+      ? pull.length+' still in the water, in the order they asked for. Tick one off when it is out.'
+      : 'Nothing left in the water — every boat with a slip has been pulled.');
+    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip),act_(x,'pulled','Pulled ✓'))).join('');
     return;
   }
-  /* Grouped by building: the question this tab answers is "where does it go?" */
+
+  const rows=storeList_(TAB);
+  const q=String(($('q')&&$('q').value)||'').trim();
+  if(!rows.length){
+    setMsg('listMsg',q?'Nothing matches “'+q+'”.'
+      :TAB==='store'?'Nothing waiting for a spot. Boats appear here once they are pulled, or marked dropped off on the console.'
+      :'Nothing put away yet.');
+    $('list').innerHTML='';
+    return;
+  }
+  setMsg('listMsg',rows.length+' unit'+(rows.length===1?'':'s')+
+    (q?' matching “'+q+'”':'')+
+    (TAB==='store'?' waiting for a spot.':' put away.')+
+    (SORT==='location'?' Sorted by location.':' Sorted by name.'));
+
+  if(SORT==='name'){
+    $('list').innerHTML=rows.map(x=>row_(x,rowRight_(x),
+      TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
+    return;
+  }
+  /* By location means grouped by it — a heading you can find by eye beats a
+     column you have to read on every row. */
   const by={};
-  ROWS.forEach(function(x){ (by[x.tab]=by[x.tab]||[]).push(x); });
-  const tabs=Object.keys(by).sort(function(a,b){
+  rows.forEach(function(x){ (by[x.tab||'—']=by[x.tab||'—']||[]).push(x); });
+  $('list').innerHTML=Object.keys(by).sort(function(a,b){
     const w=t=>t==='No Storage'?2:1;
     return w(a)-w(b)||a.localeCompare(b);
-  });
-  setMsg('listMsg',ROWS.length+' unit'+(ROWS.length===1?'':'s')+' on file, grouped by where they go.');
-  $('list').innerHTML=tabs.map(function(t){
-    const rows=by[t].slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-    return '<div class="grp">'+esc(t)+'<span class="c">'+rows.length+'</span></div>'+
-      rows.map(x=>row_(x,String(x.slip||'').trim()?'Slip '+String(x.slip):'')).join('');
+  }).map(function(t){
+    return '<div class="grp">'+esc(t)+'<span class="c">'+by[t].length+'</span></div>'+
+      by[t].map(x=>row_(x,rowRight_(x),TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
   }).join('');
+}
+/* What the right-hand column says depends on what you are looking for: on the
+   way in it is where the boat came from, once away it is where it went. */
+function rowRight_(x){
+  /* Grouped by location the heading already says where it is, so repeating it
+     on every row is noise. Sorted by name there are no headings, so it is the
+     only way to know. */
+  if(TAB==='stored') return SORT==='location' ? '' : String(x.tab||'');
+  const st=state_(x);
+  return st==='pulled' ? 'Pulled' : st==='dropped' ? 'Dropped off' : '';
+}
+
+/* Move a unit along the line. Called from a row and from the detail sheet, so
+   it updates whichever of the two is on screen and never re-fetches the whole
+   yard for one tick — the crew is working down a list and a full reload would
+   scroll them back to the top. */
+async function markState(qn,to){
+  const row=ROWS.filter(x=>x.qn===qn)[0];
+  const before=row?state_(row):'';
+  if(row) row.yardState=to;                       // optimistic: the list moves now
+  if(CUR&&CUR.quoteNo===qn) CUR.yard={state:to};
+  render();
+  if(TAB!=='pull'&&CUR&&CUR.quoteNo===qn) renderState();
+  try{
+    const r=await api('yardState',[qn,to]);
+    if(!r||!r.ok){
+      if(row) row.yardState=before;               // put it back where it was
+      if(CUR&&CUR.quoteNo===qn) CUR.yard={state:before};
+      render(); if(CUR&&CUR.quoteNo===qn) renderState();
+      toast((r&&r.error)||'Could not record that.');
+      return;
+    }
+    if(row){ row.yardState=to; row.yardAt=(r.yard&&r.yard.at)||''; }
+    if(CUR&&CUR.quoteNo===qn) CUR.yard=r.yard||{state:to};
+    render(); if(CUR&&CUR.quoteNo===qn) renderState();
+    toast(r.msg||'Recorded');
+  }catch(e){
+    if(row) row.yardState=before;
+    if(CUR&&CUR.quoteNo===qn) CUR.yard={state:before};
+    render(); if(CUR&&CUR.quoteNo===qn) renderState();
+    toast(e.message);
+  }
+}
+const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+function renderState(){
+  const box=$('dState');
+  if(!box||!CUR) return;
+  const st=String((CUR.yard&&CUR.yard.state)||'');
+  const when=String((CUR.yard&&CUR.yard.at)||'');
+  let whenTxt='';
+  if(when){ const d=new Date(when); whenTxt=isNaN(d)?when:d.toLocaleString(); }
+  const row=ROWS.filter(x=>x.qn===CUR.quoteNo)[0]||{};
+  const a=auth_(row);
+  let h='<div class="kv"><span>Right now</span><b>'+esc(STATE_LABEL[st]||st)+'</b></div>';
+  if(whenTxt) h+='<div class="kv"><span>Recorded</span><b>'+esc(whenTxt)+
+    ((CUR.yard&&CUR.yard.by)?' · '+esc(CUR.yard.by):'')+'</b></div>';
+  if(canWrite()){
+    const btn=(to,label,cls)=>'<button class="btn '+(cls||'')+' wide" style="margin-top:8px" '+
+      'onclick="markState('+JSON.stringify(String(CUR.quoteNo))+','+JSON.stringify(to)+')">'+label+'</button>';
+    if(st!=='pulled'&&st!=='stored'){
+      h+=a.state==='cleared'
+        ? btn('pulled','Mark pulled')
+        : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
+    }
+    if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','ghost');
+    if(st!=='stored') h+=btn('stored','Mark in storage','gold');
+    /* Reversible on purpose: a mis-tap in the yard is certain, and the fix
+       must not be a phone call to somebody at a desk. */
+    if(st) h+=btn('','Undo — back to not started','ghost');
+  }
+  box.innerHTML=h;
 }
 
 /* ---------------------------------------------------------------------------
@@ -493,7 +675,7 @@ async function openQuote(qn){
   CUR=null; PHOTOURL='';
   $('sheet').classList.remove('hide');
   $('dName').textContent='Loading…'; $('dQn').textContent=qn;
-  $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML='';
+  $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
   $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
   $('photoCounts').textContent='—';
   window.scrollTo(0,0);
@@ -545,6 +727,7 @@ function renderSheet(r){
     kv('Requested timing',esc(o.label))+
     kv('Balance',esc(r.balance||''));
 
+  renderState();
   renderLog(r.yardNotes||[]);
   const w=canWrite();
   $('noteBtn').disabled=!w;

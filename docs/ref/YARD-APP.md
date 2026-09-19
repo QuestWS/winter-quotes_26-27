@@ -12,26 +12,87 @@ goes missing.*
 
 ## What it is for
 
-Two lists, because the yard asks two different questions on the same day:
+Three lists, and they are **one field read three ways**. Left to right is the
+season, and a unit moves along it as the work gets done:
 
 | Tab | Shows | The question it answers |
 |---|---|---|
-| **To pull** | every unit with a **slip number**, in requested-timing order | which boats are coming out of the water, and in what order |
-| **All storage** | everything we store, grouped by building | where does this one go once it is on the trailer |
+| **To pull** | slip boats not yet pulled, in requested-timing order | what is still in the water, and in what order |
+| **To store** | everything pulled, plus everything marked dropped off | what is sitting here waiting for a spot |
+| **Stored** | everything put away | did we already deal with that one |
 
-Chris's words for why it is two and not one: *"boats to pull which is just slip
-numbers so boats literally being pulled, and then all storage boats so they can
-figure out which storage the boat goes in."*
+Chris's shape for it: *"leave pull as is, but store should be boats that are
+either flagged as pulled (a flag from the pull list which also removes them
+from the pull list) or marked as dropped off on the admin page… once something
+is brought to storage it should be moved to a 3rd list."*
 
-A slip number is the whole test for the pull list — a unit with no slip is not
-in the water, so there is nothing to pull it out of. A **whitespace-only** slip
-is not a slip; `check-yard-app.js` pins that, because `' '` is what a cleared
-field can leave behind and it would put a trailered boat on the water list.
+### The state, and why it is a plain field
 
-Lead rows never appear on either list. A quote nobody finished is not a unit
-we are holding.
+`d.yard = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'` or
+`'stored'` (`YARD_STATES_`). One field decides the list, so a unit can never be
+on two at once or fall off all three — `check-yard-app.js` walks every
+state × slip combination and asserts exactly that, plus that an unrecognised
+state falls back to a real list rather than making a boat disappear.
 
----
+It is **not** in the manual-ops journal that keys, slip and trailer location
+use. Those are corrections to what the customer told us: they feed
+`effectiveState_` and they re-run the pricing engine. This is not a correction
+and not an input to a price — it is a fact about a day's work. Journalling it
+would put a re-price in the path of somebody tapping "stored" with cold hands,
+for nothing. The guard fails if `adminSetYardState` ever grows a
+`savePdf_`/`recomputeTotals_`/`rebuildLinesFromState_` call.
+
+It **is** carried across a customer save, like the payments and the yard log.
+The customer's browser has never heard of it, so their next save would
+otherwise wipe the season's progress and put boats that are already in a
+building back on the crew's to-do list.
+
+### Where each transition starts
+
+- **Pulled** — from the yard, one tap on the row. Never offered on the console:
+  pulling happens with the boat in front of you, and the app gates it on the
+  unit being cleared. Recording it from a desk would route around that gate.
+- **Dropped off** — from the **console**, because a customer driving their boat
+  in is something the office sees and the yard does not. It is what puts a
+  trailered unit on the crew's To store list without it ever having been in
+  the water.
+- **Stored** — either place.
+- **Undo** — either place, any state. A mis-tap in the yard is a certainty and
+  the fix must not be a phone call to somebody at a desk.
+
+### The pull gate follows the boat
+
+Marking a unit **pulled** is a claim that we put hands on it and took it out of
+the water, so it is refused for anything not `cleared` — in the app the tick
+button is disabled and shows the stamp instead, and `adminSetYardState`
+re-checks `haulAuth_` server-side, because a client is not a permission.
+Otherwise the app becomes the place a rule violation gets written down.
+
+`dropped` is deliberately **not** gated: the customer drove it here themselves,
+we touched nothing, and refusing to record a boat that is visibly sitting in
+the yard would only mean it goes unrecorded.
+
+### Search and sort
+
+The two storage lists are searchable (name, quote number, slip, unit, location)
+and sort by **location** or **name**. Sorted by location they are *grouped* by
+it — a heading you find by eye beats a column you read on every row — and the
+per-row location is dropped, since the heading already says it.
+
+The pull list has neither, on purpose: **its order is the information.** It is
+the order the customers asked for, and re-sorting it would throw that away.
+
+### The row action
+
+Each row on To pull and To store carries its own button — `Pulled ✓`,
+`Stored ✓` — so a crew member can work down twenty boats without opening
+twenty detail sheets. Two things make that safe: it is its own tap target with
+real padding and a divider above it, and it calls `stopPropagation`, or the
+tick would also open the detail sheet and slide a panel over the list they were
+working down. The guard asserts both.
+
+Lead rows never appear on any list. A quote nobody finished is not a unit we
+are holding.
 
 ## THE APP DECIDES NOTHING ABOUT PULLING
 

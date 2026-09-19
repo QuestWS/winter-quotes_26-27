@@ -889,6 +889,11 @@ function doPost(e) {
          reconstruct, silently, at the worst possible moment (they re-save right
          after we photograph a crack). Carried across exactly like the note. */
       if (oldD.yardNotes && oldD.yardNotes.length) d.yardNotes = oldD.yardNotes;
+      /* A season's worth of yard progress — pulled, dropped off, stored — that
+         the customer's browser has never heard of and would otherwise wipe on
+         their next save, putting boats that are already in a building back on
+         the crew's to-do list. */
+      if (oldD.yard) d.yard = oldD.yard;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1060,6 +1065,7 @@ function consoleFns_(p) {
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1], a[2]); },
+    yardState:   function (a) { return adminSetYardState(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
@@ -2180,7 +2186,7 @@ const STORAGE_VIEW_TTL_ = 120;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 3;
+const STORAGE_VIEW_V_ = 4;
 const QROW_TTL_ = 1800;                  // seconds
 
 function cachePutBig_(key, str, ttl) {
@@ -2953,6 +2959,80 @@ function sweepTranscripts() {
   });
 }
 
+
+/* ======================= WHERE A UNIT IS IN THE SEASON ==================
+   One field, four states, and the yard app's three lists are just this field
+   read three ways:
+
+     ''        nothing has happened yet. A boat in a slip is on TO PULL.
+     'pulled'  we took it out of the water. Off the pull list, onto TO STORE.
+     'dropped' the customer brought it to us. Onto TO STORE without ever
+               having been on the pull list — most trailered units arrive
+               this way and were never in the water at all.
+     'stored'  it is in its spot. Onto STORED, and off the crew's back.
+
+   WHY A PLAIN TOP-LEVEL FIELD and not the manual-ops journal that keys, slip
+   and trailer location use: those are corrections to what the customer told
+   us, they feed effectiveState_ and they re-run the pricing engine. This is
+   not a correction and it is not an input to a price — it is a fact about a
+   day's work. Journalling it would put a re-price in the path of a crew member
+   tapping "stored" with cold hands, for no reason at all.
+
+   It is carried across a customer save like the payments and the yard log,
+   because the customer's browser has never heard of it and would otherwise
+   wipe the season's progress on their next save.
+========================================================================= */
+const YARD_STATES_ = {
+  '':        { label: 'Not started',     list: 'pull'  },
+  'pulled':  { label: 'Pulled',          list: 'store' },
+  'dropped': { label: 'Dropped off',     list: 'store' },
+  'stored':  { label: 'In storage',      list: 'stored' }
+};
+
+function yardStateOf_(d) {
+  const st = String((d && d.yard && d.yard.state) || '');
+  return YARD_STATES_[st] ? st : '';
+}
+
+function adminSetYardState(token, qn, state) {
+  /* Yard work, so the yard permission — the crew who move the boat are the
+     crew who record that they moved it. */
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = String(state || '');
+  if (!YARD_STATES_.hasOwnProperty(want)) return { ok: 0, error: 'Unknown yard state.' };
+  const had = yardStateOf_(d);
+  if (had === want) return { ok: 0, error: 'Already ' + (YARD_STATES_[want].label.toLowerCase()) + '.' };
+
+  /* THE LIABILITY GATE, and the only state it applies to. "Pulled" is a claim
+     that we put hands on the unit and took it out of the water, so it cannot
+     be recorded for a unit that was never cleared to be touched — that would
+     turn the app into the place a rule violation gets written down.
+
+     'dropped' is deliberately NOT gated: the customer drove it here
+     themselves, we touched nothing, and refusing to record a boat that is
+     visibly sitting in the yard would just mean it goes unrecorded. */
+  if (want === 'pulled') {
+    const auth = haulAuth_(paymentsTotal_(d) > 0.005, !!d.contractUrl);
+    if (auth.state !== 'cleared') {
+      return { ok: 0, error: 'This unit is not cleared to pull — ' + auth.stamp +
+        '. Sort that out first; nothing is pulled until it is both signed and paid.' };
+    }
+  }
+
+  d.yard = { state: want, at: new Date().toISOString(), by: who.name,
+             prev: had, prevAt: String((d.yard && d.yard.at) || '') };
+  /* Payload only. Moving a boat is not a change to what it costs: no status,
+     no re-price, no new PDF. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Yard state on ' + d.quoteNo + ': ' +
+    (YARD_STATES_[had].label) + ' → ' + YARD_STATES_[want].label);
+  return { ok: 1, msg: YARD_STATES_[want].label + ' — recorded.',
+           yard: { state: want, at: d.yard.at, by: who.name } };
+}
+
 function adminSetStaffNote(token, qn, note) {
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -3117,6 +3197,9 @@ function adminLookup(token, qn) {
       at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
     },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
+    /* Where this unit is in the season — see YARD_STATES_. */
+    yard: { state: yardStateOf_(d), at: String((d.yard && d.yard.at) || ''),
+            by: String((d.yard && d.yard.by) || '') },
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
@@ -4481,7 +4564,7 @@ function adminStorageView(token) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
-            trailerLoc = '', notes = 0;
+            trailerLoc = '', notes = 0, yardState = '', yardAt = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -4500,6 +4583,8 @@ function adminStorageView(token) {
           keys = String((st && st.keyLoc !== undefined ? st.keyLoc : pd.keyLoc) || '');
           slip = String((st && st.slipNo !== undefined ? st.slipNo : pd.slipNo) || '');
           trailerLoc = String((st && st.trailerLoc !== undefined ? st.trailerLoc : pd.trailerLoc) || '');
+          yardState = yardStateOf_(pd);
+          yardAt = String((pd.yard && pd.yard.at) || '');
           /* The COUNT only. The notes themselves are the detail screen's job —
              shipping every note of every quote through the list would put this
              call straight back over the edge the payload column already pushed
@@ -4524,6 +4609,8 @@ function adminStorageView(token) {
           trailerLoc: trailerLoc, notes: notes, phone: fmtPhone(String(r[COL.PHONE - 1] || '')),
           /* Decided here, once, and read by every client. See haulAuth_. */
           auth: haulAuth_(paid > 0.005, contract),
+          /* Which of the yard app's three lists this unit is on. */
+          yardState: yardState, yardAt: yardAt,
           /* Signed agreement on file. Deposit taken and this still false is the
              chase list -- the console tags those rows in red. */
           contract: contract,

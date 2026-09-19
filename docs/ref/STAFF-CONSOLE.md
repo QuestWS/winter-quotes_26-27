@@ -785,7 +785,13 @@ nothing had checked. Four rules came out of it:
   quotes already lost come back by carrying on with the batch rather than
   waiting for anybody to open the script editor. `repairImportedRows()` does
   the same across every tab from the editor and reports what it found,
-  duplicate quote numbers included.
+  duplicate quote numbers included. `importAudit()` runs that repair and then
+  reconciles every `IMPORTED …` line in the Activity Log against what is
+  findable on the sheet, so the quotes overwritten before the fix are a list
+  rather than a hunt. Nothing about those customers is lost — the old
+  per-customer sheet is still on Drive and the PDF that import filed is still
+  in the season folder; it is the row that went, so re-importing is the whole
+  of the fix.
 
 `tools/check-import-write.js` executes all of it against a sheet fake with Apps
 Script's real behaviour — an empty string is not content, `appendRow` writes

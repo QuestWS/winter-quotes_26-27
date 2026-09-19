@@ -94,6 +94,7 @@ symptom.
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | Old-sheet import | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply` | `previewImport`, `doImport` |
 | Where an appended row goes (and the header-row rescue) | `nextQuoteRow_`, `rescueClobberedHeader_`, `quoteTabFor_`, `rescueAllQuoteTabs_`, `repairImportedRows` | `.gs` |
+| Which imports went missing | `importAudit` | `.gs` (editor) |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; yard app `renderSheet` |

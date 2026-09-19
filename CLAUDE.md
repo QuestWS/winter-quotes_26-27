@@ -137,7 +137,8 @@ serves the cached old version and you'll debug a ghost.
 | `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
-| `repairImportedRows()` | once, after the Sept 19 importer fix | Puts back any quote an import stranded in a header row, and lists any quote number that ended up on two rows. Safe to re-run; an import now does the same sweep on its own. |
+| `importAudit()` | once, after the Sept 19 importer fix | Repairs, then lists every import in the Activity Log that is no longer on the sheet — the ones to run again. Read-only apart from the repair. |
+| `repairImportedRows()` | called by `importAudit()`; on its own to just repair | Puts back any quote an import stranded in a header row, and lists any quote number that ended up on two rows. Safe to re-run; an import now does the same sweep on its own. |
 | `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. |
 
 ---

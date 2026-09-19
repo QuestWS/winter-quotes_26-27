@@ -4820,6 +4820,74 @@ function repairImportedRows() {
   return report;
 }
 
+/* ---------------------------------------------------------------------------
+   WHAT THE IMPORTS ACTUALLY LEFT BEHIND — run from the editor: importAudit.
+   Repairs first (above), then reconciles: every "IMPORTED …" line in the
+   Activity Log against what is findable on the sheet right now, looked up the
+   way the console looks a quote up. Anything it cannot find was overwritten
+   before this was fixed and has to be imported again.
+
+   Nothing about those customers is gone. The old per-customer sheet is still
+   in the season folder on Drive, and the PDF that import filed is still there
+   too — it is the ROW that was overwritten, and re-importing writes a new one.
+
+   Sends nothing, and writes nothing beyond the rescues. */
+function importAudit() {
+  const repair = repairImportedRows();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('Activity Log');
+  const seen = {};     // quoteNo -> the first log line that mentions it
+  const order = [];
+  if (log && log.getLastRow() > 1) {
+    log.getRange(2, 1, log.getLastRow() - 1, 3).getValues().forEach(function (r) {
+      const action = String(r[2] || '');
+      const m = action.match(/^IMPORTED\s+(QW-\d{2}-\d{3,5})\b(.*)$/);
+      if (!m) return;
+      const qn = m[1].toUpperCase();
+      if (seen[qn]) return;
+      seen[qn] = { when: r[0], who: String(r[1] || ''), rest: m[2].replace(/^\s*—\s*/, '') };
+      order.push(qn);
+    });
+  }
+
+  /* Present on the sheet, by the same rule every other sweep uses: a tab is a
+     quote tab when its column 3 header says so, and a quote is found from row
+     2 down. If it is not visible to that, it is not visible to the console. */
+  const live = {};
+  ss.getSheets().forEach(function (sh) {
+    if (String(sh.getRange(1, COL.QN).getValue() || '') !== HEADERS[COL.QN - 1]) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r, i) {
+      const qn = String(r[0] || '').trim().toUpperCase();
+      if (qn) live[qn] = sh.getName() + ' row ' + (i + 2);
+    });
+  });
+
+  const missing = order.filter(function (qn) { return !live[qn]; });
+  const lines = [repair, ''];
+  lines.push('Imports in the Activity Log: ' + order.length);
+  lines.push('Of those, on the sheet now:  ' + (order.length - missing.length));
+  if (!missing.length) {
+    lines.push('Nothing is missing — every import that was logged is there.');
+  } else {
+    lines.push('');
+    lines.push('MISSING — overwritten before the fix, import these again:');
+    missing.forEach(function (qn) {
+      const s = seen[qn];
+      lines.push('  ' + qn + '  —  ' + s.rest + '   (' + new Date(s.when).toLocaleString() +
+        ', ' + s.who + ')');
+    });
+    lines.push('');
+    lines.push('The old sheet for each is still in the season folder on Drive, so');
+    lines.push('re-importing is the whole of the fix. Nothing was sent to anybody.');
+  }
+  const report = lines.join('\n');
+  console.log(report);
+  return report;
+}
+
 /* Writing it. The imported quote is an ordinary quote from here on: a fresh
    number, priced at TODAY's rates by the shared engine, on the right storage
    tab, with its own PDF. What it carries from the old sheet is the customer's

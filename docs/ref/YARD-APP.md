@@ -228,21 +228,19 @@ Slip, keys, trailer, storage, requested timing, balance — read-only, straight
 off `adminLookup`. Two of those rows are conditional, and both conditions are
 the server's:
 
-- **"Trailer is" appears only when there is something to say**
-  (`showTrailerLoc_`, `docs/ref/STAFF-CONSOLE.md` § *Keys & slip*). It used to
+- **"Trailer is" appears only when there is a trailer to find**
+  (`needsTrailerLoc_`, `docs/ref/STAFF-CONSOLE.md` § *Keys & slip*). It used to
   render for every unit, so a boat blocked on stands showed
   *"Trailer is — not recorded —"* in the colour this app uses for missing
   information, and a settled fact read as a gap somebody forgot to fill in.
   The **"On a trailer"** row directly above already says there is none, so
-  nothing is lost by dropping it. Note this is **narrower than the console's
-  field**: the console offers an input for a golf cart nobody was asked about,
-  and this shows nothing for one until a location is actually recorded. An
-  editor's empty field is the point; a reader's empty row is a claim.
-- **"On a trailer" says `—`, not "No", for a unit nobody asked.** The quote
-  page puts that question to boats and jet skis only, so a golf cart's flag is
-  a default rather than an answer; `trailerAsked` carries which it is. An
-  unrecognised or absent `trailerAsked` falls back to trusting the flag, so an
-  older backend behaves as it did before.
+  nothing is lost by dropping it. Where the row *is* shown and empty, the red
+  is earned: we know there is a trailer and nobody has said where.
+- **Land units drop the subject entirely.** Golf carts are driven here and
+  e-bikes are carried, so neither the *"On a trailer"* row nor the location row
+  appears on one — printing *"On a trailer: No"* on every cart is the same
+  noise. `trailerApplies` is the server's answer; an absent one falls back to
+  showing the row, so a boat never loses it to an older backend.
 
 Anything the app renders in the missing-information red is a claim that
 somebody should go and find out. Rows that can never be filled in have to be
@@ -508,6 +506,9 @@ localStorage, and a session opened before the deploy would otherwise lose the
 note box on an action the server would still accept.
 
 `measure` gates the one thing in the app that moves money, and `canMeasure()`
-mirrors `canMeasure_` for the same reason. Without it the Measurements card is
-**absent, not disabled**: a permanently dead control is something people learn
-to tap anyway.
+mirrors `canMeasure_` for the same reason. Its fallback routes through
+`canWrite()` — this file's copy of `canKeys_` — because that *is* the server's
+fallback, so the two cannot drift: whoever can record yard facts can correct a
+measurement. In practice that is the yard crew, which is the point of the card.
+Without the permission the Measurements card is **absent, not disabled**: a
+permanently dead control is something people learn to tap anyway.

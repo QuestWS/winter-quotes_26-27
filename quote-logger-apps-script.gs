@@ -2124,15 +2124,19 @@ function canKeys_(st) {
    a quote, so it is not `keys` -- but it is also not `adjust`, which is the
    permission to invent a charge out of nothing. Measuring is reading a tape
    over a hull, and the person holding the tape is standing in the yard.
-   Unset falls back to `adjust`, so the roster as it stands today behaves
-   exactly as it did before this existed and nobody silently gains it; an
-   admin turns it on per person from the console's Staff panel. */
+   Unset falls back to whoever can already record yard facts (`canKeys_`),
+   which is Chris's call, made once he had the card in his hand: the people
+   holding the tape are John, Rex and Jess, and gating a re-measure behind
+   `adjust` left it with the two admins who never hold one. It stops at the
+   same line `keys` stops at -- Marina has neither, and photos alone still buy
+   nothing. An explicit setting always wins, including turning it OFF, from the
+   console's Staff panel. */
 function canMeasure_(st) {
   if (!st) return false;
   if (st.admin) return true;
   const p = st.perms || {};
   if (p.measure !== undefined && p.measure !== null && p.measure !== '') return !!Number(p.measure);
-  return !!p.adjust;
+  return canKeys_(st);
 }
 /* The resolved permission set, so the console never has to re-implement the
    fallback above and then disagree with the server about it. */
@@ -2508,6 +2512,14 @@ function sanitizeMeasured_(changes, st) {
     out[k] = v;
   });
   if (changes.hasTrailer !== undefined && String(changes.hasTrailer) !== '') {
+    /* Golf carts and e-bikes do not have trailers. No surface offers the
+       checkbox for one, so this only fires on a crafted request or a future
+       caller that forgets -- and a land unit carrying hasTrailer would change
+       its deposit (RULES.depositTrailer) as well as putting the question back
+       on the yard screen. */
+    if (unitKind === 'golf' || unitKind === 'ebike') {
+      throw new Error('A ' + (unitKind === 'golf' ? 'golf cart' : 'e-bike') + ' is not stored on a trailer.');
+    }
     out.hasTrailer = !!Number(changes.hasTrailer);
   }
   if (changes.storage !== undefined && String(changes.storage) !== '') {
@@ -3308,15 +3320,13 @@ function adminLookup(token, qn) {
         slipNo: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || ''),
         trailerLoc: trailerLoc,
         hasTrailer: !!st.hasTrailer,
-        /* Whether that flag is an ANSWER or just a default — the quote page
-           only asks boats and jet skis. A client showing "On a trailer: No"
-           for a golf cart would be stating something nobody established. */
-        trailerAsked: !isLandUnit_(d),
-        /* Can staff RECORD a trailer location here (the console's input)? */
+        /* Can this unit be on a trailer at all? Land units cannot, so the
+           clients drop the whole subject rather than printing "On a trailer:
+           No" on every golf cart. */
+        trailerApplies: !isLandUnit_(d),
+        /* Is there a trailer location to record or show? One answer, read by
+           the console's input and the yard app's row alike. */
         needsTrailerLoc: needsTrailerLoc_(d, st, trailerLoc),
-        /* Is there a trailer fact worth SHOWING the crew (the yard app's row)?
-           Narrower on purpose — see showTrailerLoc_. */
-        showTrailerLoc: showTrailerLoc_(d, st, trailerLoc),
         needsKeys: !isBike_(d),
         /* Owning a trailer does not mean the boat is on it — see
            missingHaulInfo_. Every water unit gets a slip field. */
@@ -6672,47 +6682,30 @@ function isLandUnit_(d) {
 function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') > -1; }
 
 /* Is there a trailer for the crew to go and find?
-   Asking that of a boat blocked on stands is not a harmless extra row: it
-   renders as "— not recorded —" in the yard app's missing-information red, so
-   the crew reads a settled fact as a gap somebody forgot to fill in.
+   Asking that of a unit that cannot have one is not a harmless extra row: the
+   yard app renders an unfilled value in its missing-information red, so the
+   crew reads a settled fact as a gap somebody forgot to fill in. Chris
+   reported exactly that from the yard.
 
-   Whose answer `hasTrailer` is depends on the unit, and that is the whole
-   subtlety. The quote page only shows the trailer question for boats and jet
-   skis (`#trailerFs`), so for those it is the customer's own answer — "No
-   trailer, boat is blocked on stands" — and can be trusted. A GOLF CART is
-   never asked, so its flag sits at the default `false`, which is not an answer
-   and must not be read as one; carts do turn up on trailers. An e-bike has no
-   keys, no slip and no trailer, as everywhere else.
+   LAND UNITS NEVER HAVE ONE. Golf carts are driven here and e-bikes are
+   carried, and Chris was explicit about the carts after an earlier pass gave
+   them the field on the theory that one might turn up towed. They don't.
+   `trailerApplies` on the payload is the same fact, for the row that says
+   whether a unit is on a trailer at all.
 
-   And a location somebody has already written down always wins, whatever the
-   flag says. That is the safety valve: if the flag is wrong, the field stays
-   visible and editable rather than orphaning a value nobody can see or clear. */
+   For boats and jet skis the flag is the CUSTOMER'S OWN ANSWER — the quote
+   page asks exactly those two (`#trailerFs`), and the wording they pick is
+   "No trailer, boat is blocked on stands" — so it can be trusted.
+
+   And a location somebody has already written down always wins, short of an
+   e-bike. That is the safety valve: if a flag is wrong, or a stray value
+   predates this rule, the field stays visible and clearable rather than
+   orphaning a value nobody can see. */
 function needsTrailerLoc_(d, st, trailerLoc) {
   if (isBike_(d)) return false;
   if (String(trailerLoc || '').trim()) return true;
-  if (isLandUnit_(d)) return true;              // golf cart: never asked, so don't assume
+  if (isLandUnit_(d)) return false;             // golf cart: never has one
   return !!(st && st.hasTrailer);               // boat / jet ski: they answered it
-}
-
-/* The console and the yard app want different answers, because one is an
-   EDITOR and the other is a READER, and an empty row costs them different
-   things.
-
-   An editor offers an empty field: that is what a field is for, and the golf
-   cart nobody was asked about needs somewhere to write "came in on a trailer,
-   it is in the back lot". A reader showing an empty row is making a claim —
-   the yard app renders an unfilled value in its missing-information red, which
-   says *somebody should go and find this out*. On a cart whose trailer status
-   nobody ever established, that is a chase with no quarry, and it is the same
-   noise Chris reported on boats blocked on stands.
-
-   So the crew only sees the row when there is something to say: a location
-   already recorded, or a trailer we KNOW exists whose location is still
-   missing — which is a real gap and should be red. */
-function showTrailerLoc_(d, st, trailerLoc) {
-  if (!needsTrailerLoc_(d, st, trailerLoc)) return false;
-  if (String(trailerLoc || '').trim()) return true;
-  return !isLandUnit_(d) && !!(st && st.hasTrailer);
 }
 
 /* What the haul-out crew still doesn't know about this unit.

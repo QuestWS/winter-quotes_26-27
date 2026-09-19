@@ -486,15 +486,19 @@ function canWrite(){
   return !!p.keys;
 }
 function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
-/* Re-measuring re-prices, so it is not the same bar as writing a note. Mirrors
-   canMeasure_ in the .gs INCLUDING its fallback: ME is cached in localStorage,
-   so a session opened before the permission existed must read `undefined` the
-   way the server does rather than as a flat no. */
+/* Mirrors canMeasure_ in the .gs INCLUDING its fallback, which is now
+   canKeys_: whoever can record yard facts can correct a measurement. Chris's
+   call — the people holding the tape are the yard crew, and leaving it on
+   `adjust` left it with the two admins who never hold one.
+   The mirror matters because ME is cached in localStorage, so a session opened
+   before the permission existed must read `undefined` the way the server does
+   rather than as a flat no. canWrite() is already this file's copy of
+   canKeys_, so the fallback goes through it and cannot drift from it. */
 function canMeasure(){
   if(!ME) return false;
   if(ME.admin) return true;
   const p=ME.perms||{};
-  if(p.measure===undefined||p.measure===null||p.measure==='') return !!p.adjust;
+  if(p.measure===undefined||p.measure===null||p.measure==='') return canWrite();
   return !!p.measure;
 }
 
@@ -979,30 +983,27 @@ function renderSheet(r){
   const kv=(k,v,miss)=>'<div class="kv"><span>'+k+'</span><b'+(miss?' class="miss"':'')+'>'+v+'</b></div>';
   const or=t=>t?esc(t):'<span class="miss">— not recorded —</span>';
   const keys=r.keys||{};
-  /* "No" only when somebody actually said no. The quote page asks the trailer
-     question of boats and jet skis and nobody else, so a golf cart's flag is a
-     default sitting at false — printing "No" from it would be telling the crew
-     something that was never established. trailerAsked says which it is; an
-     older backend that does not send it falls back to the flag, as before. */
-  const asked=keys.trailerAsked===undefined?true:!!keys.trailerAsked;
-  const trailerTxt=!asked?'—':keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
+  /* Land units are not towed — golf carts are driven here and e-bikes are
+     carried — so the whole subject is dropped rather than printing
+     "On a trailer: No" on every cart. trailerApplies is the server's answer;
+     an older backend that does not send it falls back to showing the row, so a
+     boat never loses it. */
+  const towable=keys.trailerApplies===undefined?true:!!keys.trailerApplies;
+  const trailerTxt=keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
   $('dFacts').innerHTML=
     kv('Unit',esc(r.unit||'')+(r.ymm?' · '+esc(r.ymm):''))+
     (listRow.dims?kv('Dimensions',esc(listRow.dims)):'')+
     kv('Storage',esc(listRow.tab||'—'))+
     kv('Slip',or(keys.slipNo))+
     kv('Keys',or(keys.keyLoc))+
-    kv('On a trailer',trailerTxt)+
-    /* showTrailerLoc, NOT needsTrailerLoc — the console offers the field
-       wherever one could be recorded, this shows the row only where there is
-       something to say. An unfilled value renders in the missing-information
-       red, which claims somebody should go and find it out; on a boat blocked
-       on stands, or a golf cart nobody was ever asked about, that is a chase
-       with no quarry. The row above already says whether there is a trailer.
-       An older backend sends no showTrailerLoc, so fall back to the wider
-       field rather than hiding a location it did send. */
-    ((keys.showTrailerLoc===undefined?keys.needsTrailerLoc:keys.showTrailerLoc)
-      ?kv('Trailer is',or(keys.trailerLoc)):'')+
+    (towable?kv('On a trailer',trailerTxt):'')+
+    /* Absent unless there is a trailer to find. An unfilled value renders in
+       the missing-information red, which claims somebody should go and find it
+       out — on a boat blocked on stands, or on any land unit, that is a chase
+       with no quarry. Where it IS shown and empty, the red is earned: we know
+       there is a trailer and nobody has said where. The row above already says
+       whether there is one at all. */
+    (keys.needsTrailerLoc?kv('Trailer is',or(keys.trailerLoc)):'')+
     kv('Requested timing',esc(o.label))+
     kv('Balance',esc(r.balance||''));
 

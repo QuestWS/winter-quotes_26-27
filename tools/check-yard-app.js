@@ -441,8 +441,8 @@ Y.ev('ROWS = ' + JSON.stringify([
   const gate = (GAS.match(/function canMeasure_\b[\s\S]*?\n}/m) || [''])[0];
   if (!gate) fail('there is no canMeasure_ on the server');
   else {
-    if (/p\.adjust/.test(gate)) ok('an unset `measure` falls back to `adjust`, so no roster entry ' +
-                                   'silently gains it the day this deploys');
+    if (/canKeys_\(st\)|p\.adjust/.test(gate))
+      ok('an unset `measure` falls back rather than reading as a flat no');
     else fail('canMeasure_ has no fallback — every roster entry written before this permission ' +
               'existed would read as undefined, and the answer to that must not be "sure"');
   }
@@ -455,18 +455,28 @@ Y.ev('ROWS = ' + JSON.stringify([
      is cached in localStorage: a session opened before the deploy carries a
      perms object with no `measure` key in it. */
   Y.ev('ME = {name:"Rex",admin:false,perms:{keys:1,photos:1}}');
-  if (Y.ev('canMeasure()') === false) ok('a yard account with notes and photos cannot re-measure');
-  else fail('the `keys` permission is buying a re-price in the app');
-  Y.ev('ME = {name:"Chris",admin:false,perms:{keys:1,adjust:1}}');
-  if (Y.ev('canMeasure()') === true) ok('an account that could already adjust money still can');
-  else fail('the fallback does not match canMeasure_ — somebody who could re-measure yesterday ' +
-            'cannot today');
-  Y.ev('ME = {name:"Jess",admin:false,perms:{keys:1,adjust:0,measure:1}}');
+  if (Y.ev('canMeasure()') === true) ok('the yard crew can re-measure, which is the point of the card');
+  else fail('the app hides the card from the people holding the tape — the server now allows ' +
+            'them, so this is the two copies disagreeing');
+  Y.ev('ME = {name:"Marina",admin:false,perms:{photos:1}}');
+  if (Y.ev('canMeasure()') === false) ok('photos alone still buys nothing');
+  else fail('a photos-only account can re-price a quote in the app');
+  Y.ev('ME = {name:"Jess",admin:false,perms:{photos:1,measure:1}}');
   if (Y.ev('canMeasure()') === true) ok('and the permission grants it on its own');
   else fail('granting `measure` does nothing in the app');
-  Y.ev('ME = {name:"Marina",admin:false,perms:{photos:1,adjust:1,measure:0}}');
+  Y.ev('ME = {name:"Rex",admin:false,perms:{keys:1,measure:0}}');
   if (Y.ev('canMeasure()') === false) ok('an explicit no beats the fallback');
   else fail('turning `measure` off does not turn it off');
+  /* The fallback must BE canKeys_, not a second opinion about it. */
+  [['{keys:1}', true], ['{pay:1}', true], ['{adjust:1}', true], ['{photos:1}', false], ['{}', false]]
+    .forEach(function (c) {
+      Y.ev('ME = {name:"x",admin:false,perms:' + c[0] + '}');
+      const m = Y.ev('canMeasure()'), w = Y.ev('canWrite()');
+      if (m !== w) fail('canMeasure() and canWrite() disagree for perms ' + c[0] +
+                        ' — the fallback has drifted from the yard-facts bar it is supposed to be');
+      else if (m !== c[1]) fail('perms ' + c[0] + ' resolved to ' + m + ', expected ' + c[1]);
+    });
+  ok('the fallback is the yard-facts bar itself, not a second copy of it');
 
   /* --- 2. preview then apply, never one tap --- */
   const src = SRC.replace(/\/\*[\s\S]*?\*\//g, '');

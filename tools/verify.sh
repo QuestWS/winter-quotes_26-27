@@ -176,14 +176,15 @@ if [ -f yard/index.html ]; then
       echo "  FAIL trap: $f re-derives the trailer rule — that is a second copy of it"; FAIL=1
     else echo "  OK   trap: $f renders the server's trailer answer"; fi
   done
-  # The reader's answer must never be wider than the editor's, or the yard shows
-  # a row the console has no field for. Executed in check-haul-info.js; named
-  # here because this is the grep somebody runs when adding a unit type.
-  if grep -q "function showTrailerLoc_" quote-logger-apps-script.gs; then
-    echo "  OK   trap: the yard's trailer row has its own, narrower answer"
+  # Golf carts are driven here and e-bikes are carried: neither has a trailer,
+  # so neither should be asked about one. Executed over the whole unit matrix in
+  # check-haul-info.js; named here because this is the grep somebody runs when
+  # adding a unit type.
+  if grep -q "isLandUnit_(d)) return false;             // golf cart" quote-logger-apps-script.gs; then
+    echo "  OK   trap: land units are never asked where their trailer is"
   else
-    echo "  FAIL trap: showTrailerLoc_ is gone — the yard would show an empty row on every"; FAIL=1
-    echo "       golf cart, in the colour that means somebody should go and find it out"
+    echo "  FAIL trap: needsTrailerLoc_ no longer excludes land units — every golf cart would"; FAIL=1
+    echo "       show a trailer row in the colour that means somebody should go and find it out"
   fi
   # Re-measuring is a money act on a yard phone, so it is its own permission
   # and it never travels on `keys`. Checked here as well as in the gate because

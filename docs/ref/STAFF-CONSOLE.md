@@ -247,32 +247,28 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   started life as `!isBike_(d)`, which put an unanswerable row on every boat
   blocked on stands; the yard app renders an unanswered field in its
   missing-information red, so a settled fact read as a gap somebody forgot to
-  fill in. Chris reported it from the yard. Three rules, and the middle one is
-  the subtle one:
+  fill in. Chris reported it from the yard.
   - **Boat or jet ski → follow `hasTrailer`.** The quote page puts the trailer
     question to these two and nobody else (`#trailerFs`), so for them the flag
     is the *customer's own answer* — "No trailer, boat is blocked on stands".
-  - **Golf cart → always ask.** It is never shown that question, so its flag
-    sits at the default `false`, which is not an answer. Carts do arrive on
-    trailers, and reading the default as a "no" would delete the only place to
-    write that down. The same reasoning stops the yard app printing
-    *"On a trailer: No"* for one — `trailerAsked` says which units were asked,
-    and an unasked unit shows `—`.
-  - **E-bike → never**, like keys and slip.
-  - **A recorded location always wins**, whatever the flag says. That is the
-    safety valve: if the flag is wrong, the field stays visible and editable
-    rather than orphaning a value nobody can read, change or clear.
+  - **Golf cart or e-bike → never.** Carts are driven here and bikes are
+    carried. An intermediate version gave carts the field on the theory that
+    one might turn up towed; Chris corrected that flatly, and it had put a red
+    *"— not recorded —"* on every cart, which is the same noise aimed at a
+    different unit. `trailerApplies` (`!isLandUnit_`) carries the same fact for
+    the *"On a trailer"* row, which the yard app now drops entirely for a land
+    unit rather than printing "No" on every cart.
+    `sanitizeMeasured_` refuses a `hasTrailer` change on one, so the rule holds
+    against a crafted request too — a trailered cart would move its deposit
+    (`RULES.depositTrailer`) as well as putting the question back on screen.
+  - **A recorded location always wins**, short of an e-bike. That is the safety
+    valve: if a flag is wrong, or a stray value predates this rule, the field
+    stays visible and clearable rather than orphaning a value nobody can see.
 
-  **The console and the yard app get different answers, on purpose.** The
-  console is an EDITOR: it offers the input wherever a location could be
-  recorded (`needsTrailerLoc_`), including the golf cart nobody was asked
-  about. The yard app is a READER: it shows the row only where there is
-  something to say (`showTrailerLoc_`) — a location already recorded, or a
-  trailer we know exists whose location is still missing, which is a real gap
-  and should be red. An empty row costs them different things: in an editor an
-  empty field is the point, while in the yard it claims somebody should go and
-  find this out. `showTrailerLoc_` is asserted never to be wider than
-  `needsTrailerLoc_`, or the crew would see a row the console cannot fill in.
+  There is **exactly one predicate**. An editor/reader split (`showTrailerLoc_`)
+  existed briefly and only had the golf cart to justify it; once carts were out,
+  it agreed with `needsTrailerLoc_` in every case and was deleted rather than
+  left looking meaningful. The guard asserts it has not come back.
 
   Note the coupling this creates: for a boat whose quote says no trailer and
   where nothing has been recorded, the only way to get the field back is to
@@ -468,16 +464,26 @@ never hold the tape.
 - **It is not `adjust`.** `adjust` is inventing a charge out of nothing.
   Measuring is reading a tape over a hull. They are different acts and they
   deserve different answers.
-- **Unset falls back to `adjust`** (`canMeasure_`), so introducing it changed
-  nobody's access on the day it deployed: the two admins could already
-  re-measure, and everybody else still cannot until an admin says so. An
-  explicit setting always wins, including turning it OFF for somebody who can
-  adjust. `permsOf()` in the console and `canMeasure()` in the yard app mirror
-  the fallback, because `ME` is cached in localStorage.
-  `tools/check-perms-pause.js` runs the real roster through it.
-- **To grant it:** Admin → Staff → the *Re-measure* button on that person's
-  row. It takes effect on their next sign-in (the console reads `ME` from the
-  cached session), so have them sign out and back in if they are already on.
+- **Unset falls back to `canKeys_`** — *whoever can already record yard facts
+  can correct a measurement.* It shipped falling back to `adjust`, which left
+  the only people who could fix a dimension being the two admins who never hold
+  the tape; Chris then said plainly to give it to John, Rex and Jess, so the
+  fallback is the yard-facts bar itself rather than a list of names. It stops
+  exactly where `keys` stops: **Marina has neither**, and photos alone buys
+  nothing. An explicit setting always wins, including turning it OFF for
+  somebody who could otherwise record yard facts.
+  `permsOf()` in the console and `canMeasure()` in the yard app mirror that
+  fallback — the yard app routes it through its own `canWrite()`, which is
+  already its copy of `canKeys_`, so the two cannot drift. `ME` is cached in
+  localStorage, which is why the mirror has to exist at all.
+  `tools/check-perms-pause.js` runs the real roster through it and asserts
+  `canMeasure_` and `canKeys_` agree on every one of them.
+- **Effective roster:** Chris, Jeff (admin), John, Rex, Jess can re-measure;
+  Marina cannot.
+- **To change it for one person:** Admin → Staff → the *Re-measure* button on
+  their row. It takes effect on their next sign-in (the console reads `ME` from
+  the cached session), so have them sign out and back in if they are already
+  on.
 
 ---
 

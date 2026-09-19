@@ -64,24 +64,32 @@ check('empty string falls back',        B.canKeys_({admin:false,perms:{pay:1,key
 check('nobody at all',                  B.canKeys_(null)===false);
 
 console.log('\n=== 2b. who can re-measure, on TODAY\'S roster (no `measure` field yet) ===');
-/* A re-measure re-prices the quote, so it is NOT the `keys` bar — writing a
-   yard note must never buy it. It is not `adjust` either: adjusting is
-   inventing a charge, measuring is reading a tape over a hull. Unset falls
-   back to `adjust`, which is what makes deploying this a no-op: nobody's
-   access changes on the day, and Chris grants it per person afterwards.
-   These are the real people and their real current permissions. */
-const wantM={Chris:true,Jeff:true,John:false,Rex:false,Jess:false,Marina:false};
+/* A re-measure re-prices the quote, so it is its own permission rather than
+   riding on `adjust` — adjusting is inventing a charge, measuring is reading a
+   tape over a hull, and they deserve different answers.
+
+   It shipped falling back to `adjust`, which meant the only people who could
+   correct a dimension were the two admins who never hold the tape. Chris then
+   said plainly: give it to John, Rex and Jess. So the fallback is `canKeys_`
+   — whoever can already record yard facts can correct a measurement — and it
+   stops exactly where `keys` stops. Marina has neither.
+
+   These are the real people and their real current permissions. Nobody has a
+   `measure` field yet, so every line here is the fallback answering. */
+const wantM={Chris:true,Jeff:true,John:true,Rex:true,Jess:true,Marina:false};
 for(const n of Object.keys(roster))
   check(n.padEnd(7)+' can re-measure', B.canMeasure_(roster[n])===wantM[n],
         'got '+B.canMeasure_(roster[n])+' want '+wantM[n]);
-check('a yard account with `keys` alone cannot re-measure',
-      B.canMeasure_({admin:false,perms:{keys:1,photos:1}})===false);
+check('it lands on exactly the people who can record yard facts',
+      Object.keys(roster).every(n=>B.canMeasure_(roster[n])===B.canKeys_(roster[n])));
+check('photos alone still buys nothing',
+      B.canMeasure_({admin:false,perms:{photos:1}})===false);
 check('granting `measure` is enough on its own',
-      B.canMeasure_({admin:false,perms:{keys:1,measure:1}})===true);
-check('and it can be taken away from somebody who can adjust',
-      B.canMeasure_({admin:false,perms:{adjust:1,measure:0}})===false);
-check('0 as a string is still OFF',  B.canMeasure_({admin:false,perms:{adjust:1,measure:'0'}})===false);
-check('empty string falls back',     B.canMeasure_({admin:false,perms:{adjust:1,measure:''}})===true);
+      B.canMeasure_({admin:false,perms:{photos:1,measure:1}})===true);
+check('and it can be taken away from somebody who could record yard facts',
+      B.canMeasure_({admin:false,perms:{keys:1,measure:0}})===false);
+check('0 as a string is still OFF',  B.canMeasure_({admin:false,perms:{keys:1,measure:'0'}})===false);
+check('empty string falls back',     B.canMeasure_({admin:false,perms:{keys:1,measure:''}})===true);
 check('an admin cannot be locked out',B.canMeasure_({admin:true,perms:{measure:0}})===true);
 check('nobody at all',               B.canMeasure_(null)===false);
 
@@ -93,6 +101,8 @@ for(const n of ['John','Marina']){
 }
 check('other permissions survive untouched',
   JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0,measure:0}));
+check('and the yard crew resolve as able to re-measure',
+  JSON.stringify(B.resolvedPerms_(roster.John))===JSON.stringify({pay:1,adjust:0,email:1,photos:1,keys:1,measure:1}));
 
 console.log('\n=== 4. the pause ===');
 store={};

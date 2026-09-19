@@ -975,10 +975,12 @@ function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');
 function permsOf(me){
   const p=Object.assign({},(me&&me.perms)||{});
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
-  /* Mirrors canMeasure_ in the .gs. ME is cached, so a session opened before
+  /* Mirrors canMeasure_ in the .gs, whose fallback is canKeys_ — whoever can
+     record yard facts can correct a measurement. Resolved AFTER p.keys above,
+     so it cannot disagree with it. ME is cached, so a session opened before
      this permission existed must resolve the same way the server does rather
      than reading `undefined` as "no". */
-  if(p.measure===undefined||p.measure===null||p.measure==='') p.measure=p.adjust?1:0;
+  if(p.measure===undefined||p.measure===null||p.measure==='') p.measure=p.keys?1:0;
   return p;
 }
 /* My own permissions, admin's blanket grant included. One place, because the
@@ -1255,9 +1257,9 @@ function renderKeys(k){
   $('keysTrailerWrap').classList.toggle('hide',!k.needsTrailerLoc);
   /* Say where the field went, and how to get it back. An input that silently
      disappears is a bug report; one that explains itself is a rule. Only for
-     units the trailer question was actually put to — a golf cart keeps the
-     field, so there is nothing to explain. */
-  $('keysNoTrailer').classList.toggle('hide',!(k.trailerAsked&&!k.needsTrailerLoc));
+     units that can be on a trailer at all — a golf cart is driven here, so
+     there is nothing to explain and nothing to offer. */
+  $('keysNoTrailer').classList.toggle('hide',!(k.trailerApplies&&!k.needsTrailerLoc));
   /* An e-bike has no keys, no slip and no trailer — with nothing to edit there
      is nothing to show, so don't render an empty card. */
   if(!k.needsKeys&&!k.needsSlip&&!k.needsTrailerLoc){ c.classList.add('hide'); return; }

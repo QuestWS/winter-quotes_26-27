@@ -493,6 +493,16 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: legacy sheet parsing broken"; sed 's/^/       /' "$TMP/leg.txt"; FAIL=1
   fi
+  # WHERE an imported quote lands. The importer reserved its row with an
+  # appendRow of empty strings and then read getLastRow() — which does not move
+  # for a row of empty cells, so every import overwrote the last real row, or
+  # the header row on an empty tab, and was reported as saved either way.
+  # Executed against a sheet fake with Apps Script's real semantics.
+  if node tools/check-import-write.js > "$TMP/impw.txt" 2>&1; then
+    echo "  OK   gate: imported quotes land on a free row"
+  else
+    echo "  FAIL gate: imported quotes can overwrite a row"; sed 's/^/       /' "$TMP/impw.txt"; FAIL=1
+  fi
   # RE-PRICE. This rewrites what customers owe across a whole season, so the
   # rules are executed against a fake sheet with the rates actually moved.
   if node tools/check-reprice.js > "$TMP/rp.txt" 2>&1; then

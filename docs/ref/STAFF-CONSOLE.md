@@ -745,3 +745,49 @@ than printing "Invalid Date" on a sheet somebody is holding.
 - **Key location & HHO address:** required for boat/jetski/golf (keys) and
   golf (HHO street address). $500 tow/start fee warning for boats/jetskis;
   golf carts **cannot be picked up without keys at all**.
+
+
+## Where a written row goes
+
+Every path that adds a row to a quote tab finds the bottom the same way —
+`sh.getLastRow() + 1` — and the importer is the one that did not. It reserved
+its row with `sh.appendRow(new Array(HEADERS.length).fill(''))` and then read
+`sh.getLastRow()`, which looks like "reserve a row and take its number" and is
+not: **a row of empty strings is a row of empty cells**, so the data region
+never grew and `getLastRow()` still pointed at the last row with something in
+it. Every imported quote was written on top of that row.
+
+- On a tab that already had quotes, it landed on the **most recent quote and
+  destroyed it**. In a batch each import ate the one before it, so a morning of
+  imports left one row behind and no sign of the rest.
+- On an empty tab — Golf Cart, E-bike — it landed on the **header row**, where
+  nothing can find it: every scan in this system starts at row 2, and
+  `takenQuoteNos_` stops recognising a tab as a quote tab at all once its
+  header is gone, so that quote's number could be handed out again.
+
+The console said *"Imported as QW-26-3445 on Golf Cart"* in both cases, because
+nothing had checked. Four rules came out of it:
+
+- **`nextQuoteRow_(sh)` is how an appended row is chosen**, and it *throws*
+  rather than return a row that already holds a quote. A write that cannot go
+  where we think it goes is an error, never a silent overwrite.
+- **An import reads the row back before reporting success** — with
+  `findQuoteRow_`, the same row-2-down scan the console will use to find it
+  afterwards, so a quote written where nothing can see it still fails.
+- **`rescueClobberedHeader_` repairs a tab instead of skipping it.** A quote
+  stranded in row 1 is moved to the bottom and the header put back. It acts
+  only when column 3 of row 1 already reads as a full quote number: every tab
+  in the spreadsheet is offered to it, and writing `HEADERS` across the
+  Activity Log would be a worse bug than the one it fixes. The customer save
+  path calls it too — that path rewrites a stale header row, which on such a
+  tab would have finished what the import started.
+- **The sweep runs at the top of every import** (`rescueAllQuoteTabs_`), so the
+  quotes already lost come back by carrying on with the batch rather than
+  waiting for anybody to open the script editor. `repairImportedRows()` does
+  the same across every tab from the editor and reports what it found,
+  duplicate quote numbers included.
+
+`tools/check-import-write.js` executes all of it against a sheet fake with Apps
+Script's real behaviour — an empty string is not content, `appendRow` writes
+below the last row that is — because the premise is the part a grep cannot
+hold down.

@@ -1709,11 +1709,14 @@ let _freshPdf_ = null;
 
 function savePdf_(d) {
   try {
-    const folder = getFolder_();
+    const folder = seasonFolderFor_(d);
     const fileName = (d.quoteNo || 'quote') + ' — ' + (d.owner || 'Unknown') + '.pdf';
-    // replace any previous PDF for this quote number
-    const old = folder.searchFiles('title contains "' + (d.quoteNo || '§none§') + '"');
-    while (old.hasNext()) old.next().setTrashed(true);
+    /* Replace any previous PDF for this quote number, in EVERY season folder
+       rather than only the one we are about to write to. A quote whose
+       pricing became final changes folder, and the copy left behind in the
+       old one would be a second PDF for the same quote carrying a different
+       total — with nothing to say which is current. */
+    trashQuotePdfs_(d.quoteNo);
 
     const blob = Utilities.newBlob(quoteHtml_(d), MimeType.HTML, fileName)
                           .getAs(MimeType.PDF)
@@ -1727,9 +1730,79 @@ function savePdf_(d) {
   }
 }
 
+/* ============ WHICH SEASON FOLDER A QUOTE'S PAPERWORK LIVES IN ============
+   ---------------------------------------------------------------------------
+   Chris's rule: a quote filed under the season whose rates it is ACTUALLY
+   priced at. While PRICES still holds 2025-2026 numbers every quote we hand
+   out is an estimate at last season's rates, so it belongs in last season's
+   folder — except one. We negotiated a real 2026-2027 price for a specific
+   customer, and that quote is a current quote, not an estimate, so it files
+   under 2026-2027 today.
+
+   QUOTE_RATE_OVERRIDES is already the record of "we agreed a price for this
+   one in real money", so it decides this. A second flag would be a second
+   thing to remember, and the one that gets forgotten.
+
+   At the rollover `PRICING.provisional` goes false, every quote becomes
+   current, and all of them file under 2026-2027 from then on. Because
+   saveQuoteRow_ regenerates the PDF on every write, the season re-price
+   re-files the whole season by itself — nothing to move by hand. */
+
+/* Folder names are NOT derived from the label by one formatter, on purpose.
+   "Winter Quotes 2025-26" already exists with a season of PDFs in it and its
+   URLs are stored on the sheet, so renaming it would break every stored link;
+   it keeps its short spelling. Everything from 2026-2027 on uses the long
+   form, which matches the spreadsheet name and the season labels on the page
+   and in emails. A season not listed here still gets a sane folder rather
+   than landing somewhere silently wrong. */
+const SEASON_FOLDERS_ = {
+  '2025-2026': DRIVE_FOLDER_NAME,          // 'Winter Quotes 2025-26' — the existing one
+  '2026-2027': 'Winter Quotes 2026-2027'
+};
+function seasonFolderName_(label) {
+  /* The season labels use an EN DASH (2025–2026); folder names use a hyphen.
+     Normalising first is what stops '2025–2026' missing the table and quietly
+     creating a second, near-identically-named folder next to the real one. */
+  const key = String(label || '').replace(/[\u2012-\u2015\u2212]/g, '-').trim();
+  return SEASON_FOLDERS_[key] || ('Winter Quotes ' + (key || 'unfiled'));
+}
+
+/* The season whose rates this quote is priced at — see the rule above. */
+function quoteRateSeason_(d) {
+  if (!PRICING.provisional) return PRICING.ratesLabel;   // the card landed; everything is current
+  const qn = d && d.quoteNo;
+  if (qn && QUOTE_RATE_OVERRIDES[qn]) return PRICING.nextLabel;   // a negotiated, real price
+  return PRICING.ratesLabel;                             // an estimate at last season's rates
+}
+
+function folderByName_(name) {
+  const it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+/* The folder for THIS quote's paperwork. */
+function seasonFolderFor_(d) {
+  return folderByName_(seasonFolderName_(quoteRateSeason_(d)));
+}
+
+/* Every season folder a quote's paperwork could be sitting in. Used when
+   LOOKING for something rather than filing it: a quote that has changed
+   folder must still be findable in the one it came from, or an email quietly
+   goes out with no PDF on it. */
+function allSeasonFolderNames_() {
+  const seen = {}, out = [];
+  const add = function (n) { if (n && !seen[n]) { seen[n] = 1; out.push(n); } };
+  Object.keys(SEASON_FOLDERS_).forEach(function (k) { add(SEASON_FOLDERS_[k]); });
+  add(seasonFolderName_(PRICING.ratesLabel));
+  add(seasonFolderName_(PRICING.nextLabel));
+  return out;
+}
+
+/* The CURRENT season's folder, for things that belong to the season rather
+   than to one quote — the pre-restore snapshot, for instance. Follows the
+   rollover automatically; today it resolves to the same folder it always has. */
 function getFolder_() {
-  const it = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
-  return it.hasNext() ? it.next() : DriveApp.createFolder(DRIVE_FOLDER_NAME);
+  return folderByName_(seasonFolderName_(PRICING.ratesLabel));
 }
 
 function esc_(s) {
@@ -3694,7 +3767,7 @@ function adminSendEmail(token, qn, kind, extra) {
     /* Some notices carry the rebuilt quote/invoice — a re-measure is not much
        use to the customer without the paperwork that matches it. */
     if (built.attachPdf) {
-      const pdf = getPdfBlob_(d.quoteNo);
+      const pdf = getPdfBlob_(d.quoteNo, d);
       if (pdf) opts.attachments = [pdf];
     }
     if (FROM_ALIAS) opts.from = FROM_ALIAS;
@@ -3722,13 +3795,24 @@ function adminSendEmail(token, qn, kind, extra) {
 function ensurePhotoFolders_(ctx) {
   const d = ctx.d;
   let url = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
-  const season = getFolder_();
+  /* A photo folder that already exists is reused BY ITS STORED ID rather than
+     by re-deriving where it ought to be. Now that a quote can change season
+     folder, re-deriving would build a second, empty folder in the new place
+     and leave the yard's photos in the old one — with the link on the row
+     still pointing at the old. The stored URL is the truth about where the
+     photos actually are. */
+  let f = null;
+  const idm = url.match(/\/folders\/([A-Za-z0-9_-]+)/);
+  if (idm) { try { f = DriveApp.getFolderById(idm[1]); } catch (e) { f = null; } }
+  const season = seasonFolderFor_(d);
   let parentAll;
   const it = season.getFoldersByName('Unit Photos');
   parentAll = it.hasNext() ? it.next() : season.createFolder('Unit Photos');
   const name = (d.quoteNo || 'quote') + ' — ' + [d.firstName, d.lastName].filter(Boolean).join(' ');
-  const it2 = parentAll.getFoldersByName(name);
-  const f = it2.hasNext() ? it2.next() : parentAll.createFolder(name);
+  if (!f) {
+    const it2 = parentAll.getFoldersByName(name);
+    f = it2.hasNext() ? it2.next() : parentAll.createFolder(name);
+  }
   f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const sub = function (nm) {
     const i3 = f.getFoldersByName(nm);
@@ -3759,13 +3843,23 @@ function adminUploadContract(token, qn, fileName, base64Data, mimeType) {
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
-  const season = getFolder_();
+  const season = seasonFolderFor_(d);
   let cf;
   const it = season.getFoldersByName('Signed Contracts');
   cf = it.hasNext() ? it.next() : season.createFolder('Signed Contracts');
-  // replace any prior copy for this quote
-  const prior = cf.searchFiles('title contains "' + d.quoteNo + '"');
-  while (prior.hasNext()) prior.next().setTrashed(true);
+  /* Clear any prior copy from EVERY season's Signed Contracts, not just this
+     one: two signed agreements for the same quote in two folders is the worst
+     version of this bug, because both look authoritative. */
+  allSeasonFolderNames_().forEach(function (nm) {
+    try {
+      const si = DriveApp.getFoldersByName(nm);
+      if (!si.hasNext()) return;
+      const sc = si.next().getFoldersByName('Signed Contracts');
+      if (!sc.hasNext()) return;
+      const prior = sc.next().searchFiles('title contains "' + d.quoteNo + '"');
+      while (prior.hasNext()) prior.next().setTrashed(true);
+    } catch (e) { /* one unreachable folder must not stop the others */ }
+  });
   const bytes = Utilities.base64Decode(base64Data);
   const nm = d.quoteNo + ' — ' + [d.firstName, d.lastName].filter(Boolean).join(' ') + ' — signed contract' +
     (String(fileName || '').match(/\.[A-Za-z0-9]+$/) ? String(fileName).match(/\.[A-Za-z0-9]+$/)[0] : '.pdf');
@@ -4054,7 +4148,7 @@ function bulkSendKind_(kind, by, only) {
       const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
       const logo = getLogoBlob_();
       if (logo) opts.inlineImages = { questlogo: logo };
-      if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+      if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo, x.d); if (pdf) opts.attachments = [pdf]; }
       if (FROM_ALIAS) opts.from = FROM_ALIAS;
       GmailApp.sendEmail(x.d.email, built.subject, built.subject, opts);
       x.sh.getRange(x.row, COL.STATUS).setValue(built.status || cfg.status);
@@ -6081,7 +6175,7 @@ function menuSendKind_(ctx, kind, extra) {
   const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
   const logo = getLogoBlob_();
   if (logo) opts.inlineImages = { questlogo: logo };
-  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo, d); if (pdf) opts.attachments = [pdf]; }
   if (FROM_ALIAS) opts.from = FROM_ALIAS;
   GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
   if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
@@ -6311,14 +6405,40 @@ function addLateFee() {
 }
 
 /* ================= CUSTOMER-FACING EMAIL ================= */
-function getPdfBlob_(quoteNo) {
+/* Bin every PDF for a quote number, wherever it was filed. */
+function trashQuotePdfs_(quoteNo) {
+  const qn = String(quoteNo || '');
+  if (!qn) return;
+  allSeasonFolderNames_().forEach(function (name) {
+    try {
+      const it = DriveApp.getFoldersByName(name);
+      if (!it.hasNext()) return;                       // never create one just to empty it
+      const old = it.next().searchFiles('title contains "' + qn + '"');
+      while (old.hasNext()) old.next().setTrashed(true);
+    } catch (e) { /* one unreachable folder must not stop the others */ }
+  });
+}
+
+/* `d` is optional and only steers WHICH folder is tried first. Without it the
+   search still finds the PDF, just after looking somewhere else — worth it,
+   because the alternative is an email going out with no quote attached. */
+function getPdfBlob_(quoteNo, d) {
   const qn = String(quoteNo || '');
   /* Built earlier in this same execution? Use it — see _freshPdf_. */
   if (qn && _freshPdf_ && _freshPdf_.qn === qn) return _freshPdf_.blob;
-  try {
-    const it = getFolder_().searchFiles('title contains "' + qn + '"');
-    return it.hasNext() ? it.next().getBlob() : null;
-  } catch (e) { return null; }
+  if (!qn) return null;
+  const names = [];
+  if (d) names.push(seasonFolderName_(quoteRateSeason_(d)));
+  allSeasonFolderNames_().forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
+  for (let i = 0; i < names.length; i++) {
+    try {
+      const it = DriveApp.getFoldersByName(names[i]);
+      if (!it.hasNext()) continue;
+      const f = it.next().searchFiles('title contains "' + qn + '"');
+      if (f.hasNext()) return f.next().getBlob();
+    } catch (e) { /* try the next folder */ }
+  }
+  return null;
 }
 
 let _logoBlob = null;
@@ -6654,7 +6774,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
-    const pdf = getPdfBlob_(d.quoteNo);
+    const pdf = getPdfBlob_(d.quoteNo, d);
     const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
     if (pdf) opts.attachments = [pdf];
     const logo = getLogoBlob_();
@@ -6819,12 +6939,12 @@ function dailyReminderCheck() {
       const ts = r[COL.TS-1], status = String(r[COL.STATUS-1] || ''), quoteNo = r[COL.QN-1], unit = r[COL.UNIT-1],
             first = r[COL.FIRST-1], last = r[COL.LAST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
             signUrl = r[COL.SIGN-1], reminder = r[COL.REM-1];
-      let payByShort = '', noStorage = false, signLink = '';
+      let payByShort = '', noStorage = false, signLink = '', pdRow = null;
       /* The sign link is rebuilt from the payload rather than taken from the
          SIGN column: this email goes to people who saved a quote and never
          came back, which is exactly the set whose stored link predates the
          web form. See signUrlFor_. */
-      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
+      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); pdRow = pd; payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
       /* An imported quote that a human has since emailed restarts its ten
          days from THAT send. Every other marker still means "done, say no
          more" — including the HOLD on an import nobody has contacted yet. */
@@ -6847,7 +6967,9 @@ function dailyReminderCheck() {
              own last name, the same halves quoteLinkFor_ takes off a payload. */
           quoteUrl: quoteLink_(quoteNo, last), reminder: true
         });
-        const pdf = getPdfBlob_(quoteNo);
+        /* pdRow steers which season folder is searched first; an unreadable
+           payload just means we look in the default order and still find it. */
+        const pdf = getPdfBlob_(quoteNo, pdRow);
         const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
         if (pdf) opts.attachments = [pdf];
         const logo = getLogoBlob_();

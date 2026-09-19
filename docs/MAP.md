@@ -40,6 +40,7 @@ symptom.
 |---|---|---|
 | The rules themselves | `computeQuote` | `pricing-engine.js` |
 | The dates a quote prints (`d.season`) | `seasonStamp` | `pricing-engine.js` |
+| Which Drive folder a quote is filed in | `quoteRateSeason_`, `seasonFolderName_`, `seasonFolderFor_`, `allSeasonFolderNames_`, `trashQuotePdfs_` | `.gs` |
 | A quote number nothing else is using | `uniqueQuoteNo_`, `takenQuoteNos_`, `readReservations_` | `.gs` |
 | The page asking for one before it saves | `reserveQuoteNo_` (page), `?action=newquoteno` (`doGet`) | `index.html`, `.gs` |
 | Estimate disclaimer while rates are last season's | `pricingNotice`, `lockinCopy`, `pricesValidSentence` (switched by `PRICING`) | `pricing-engine.js` |
@@ -157,4 +158,5 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |
 | `check-quote-numbers.js` | A minted quote number is never one already on the sheet or reserved, and minting rewrites nothing |
+| `check-season-folders.js` | A quote is filed under the rates it is priced at; the en-dash labels resolve to the real folders; a moved quote stays findable |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

@@ -154,6 +154,39 @@ season's customers is about a 90% chance of at least one collision.
 - `tools/check-quote-numbers.js` executes all of it against a sheet holding
   8,991 of the 9,000 four-digit numbers.
 
+## Which Drive folder a quote's paperwork is filed in
+**A quote is filed under the season whose rates it is actually priced at**, not
+by the calendar. While `PRICING.provisional` is true every quote we hand out is
+an estimate at last season's numbers, so it belongs in last season's folder —
+except one we negotiated a real 2026-2027 price for, which is a current quote
+and files under 2026-2027 today.
+
+- **`QUOTE_RATE_OVERRIDES` decides it.** That table is already the record of
+  "we agreed a price for this one in real money", so `quoteRateSeason_` reads
+  it rather than a second flag somebody has to remember to set.
+- **At the rollover it resolves itself.** `provisional:false` makes every quote
+  current, and because `saveQuoteRow_` regenerates the PDF on every write, the
+  season re-price re-files the whole season. Nothing to move by hand.
+- **`Winter Quotes 2025-26` keeps its short spelling.** It exists, it holds a
+  season of PDFs and its URLs are on the sheet, so renaming it would break
+  every stored link. `2026-2027` onwards uses the long form, matching the
+  spreadsheet and the season labels. `SEASON_FOLDERS_` maps the exceptions and
+  an unlisted season still gets a sane long-form folder.
+- **The season labels use an EN DASH and folder names use a hyphen.**
+  `seasonFolderName_` normalises first — without it, `2025–2026` would miss the
+  table and quietly create a second, near-identically-named folder.
+- **Looking something up sweeps every season folder; filing it does not.** A
+  quote that changed folder must still be findable in the one it came from, or
+  an email goes out with no PDF and nothing says so. `savePdf_` likewise bins
+  prior PDFs from *all* of them, since one quote with two PDFs carrying
+  different totals is worse than none.
+- **A photo folder that exists is reused by its stored id**, never by
+  re-deriving the path — otherwise a quote changing season would get a second,
+  empty folder while the yard's photos stayed in the old one.
+- **The pre-restore snapshot belongs to the season, not a quote**, so it stays
+  on `getFolder_()`, which now follows the current season automatically.
+- `tools/check-season-folders.js` executes all of it, including the rollover.
+
 ### At the rollover
 1. Update `PRICES` (and `SEASON`) in the Annual Update Zone.
 2. Set `PRICING.provisional:false` **in the same commit**.

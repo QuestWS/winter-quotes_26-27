@@ -508,6 +508,16 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: season stamp / import hold broken"; sed 's/^/       /' "$TMP/ss.txt"; FAIL=1
   fi
+  # SEASON FOLDERS. A quote is filed under the rates it is actually priced at,
+  # so the negotiated-price quote sits in 2026-2027 while the estimates are
+  # still in 2025-26. The traps are the en-dash in the season labels (which
+  # would silently create a second folder) and a quote that changes folder
+  # still needing to be findable in the one it came from.
+  if node tools/check-season-folders.js > "$TMP/sf.txt" 2>&1; then
+    echo "  OK   gate: quote paperwork is filed by the season it is priced at"
+  else
+    echo "  FAIL gate: season folder rule broken"; sed 's/^/       /' "$TMP/sf.txt"; FAIL=1
+  fi
   # QUOTE NUMBERS. saveQuoteRow_ writes by number and savePdf_ replaces by
   # number, so a duplicate is one customer's row and PDF overwritten by
   # another's — silently. Executed against a nearly-full number space.

@@ -4436,7 +4436,20 @@ function parseLegacyGrid_(rows, master) {
   if (pwcQty > 0 && boaty) {
     extras.push(pwcQty + ' jet ski winterization' + (pwcQty === 1 ? '' : 's') + ' on a boat’s sheet');
   } else if (pwcQty > 1) {
-    extras.push(pwcQty + ' jet skis on one sheet');
+    /* Several skis and no boat is NOT automatically several quotes. Two skis on
+       one tandem trailer is ONE quote here — the quote page says so in as many
+       words ("Tandem trailer with two skis? Set it to 2") and prices the space
+       the whole rig occupies: one footprint, one haul-out row, one storage
+       line. Two skis on two trailers is one quote each, for the same reason.
+       The old sheet records the winterizing count and never the trailers, so
+       this asks rather than asserting, and says which way the money runs if the
+       answer is the other one. */
+    out.warnings.push('This sheet winterizes ' + pwcQty + ' jet skis. On ONE trailer that is one ' +
+      'quote here: the count comes across as ' + pwcQty + ' and storage is priced on the single ' +
+      'stored footprint, which is what this import has done. On separate trailers it is one quote ' +
+      'each, because each trailer is its own footprint and its own haul-out row — import this one, ' +
+      'correct its count and dimensions, and build the other by hand. The sheet does not say ' +
+      'which, and taking two trailers as one charges for about half the space they occupy.');
   }
   const golf = out.picked.filter(function (x) { return x.key === 'golf'; });
   if (golf.length && (boaty || pwcQty > 0)) {

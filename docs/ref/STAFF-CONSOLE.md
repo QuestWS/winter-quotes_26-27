@@ -427,6 +427,14 @@ pricing" template. This reads one and makes a quote here.
 - **Jet skis and golf carts got tagged onto boat sheets** because fewer files
   was better then. Here one quote per unit is what makes the storage tabs, the
   haul-out list and re-pricing work, so extras are reported for separating.
+- **Two skis on one trailer is one quote, not two.** A unit here is a stored
+  footprint, not a hull: the quote page asks for the count *on this trailer*
+  and prices the space the whole rig occupies. So a ski-only sheet winterizing
+  two is imported as one quote with the count at 2, and the import **asks**
+  which it is rather than telling staff to split it — two trailers is one quote
+  each, and taking two trailers as one charges for about half the space. Only
+  skis riding on a **boat's** sheet are reported as needing separating, which
+  they genuinely do.
 - **A jet ski's size is read across, not copied.** The old sheet has one set of
   dimension boxes whatever the unit is — LOA, beam, length with trailer — and
   the engine prices a ski from `skiLen`/`skiWid`. A ski is stored on its

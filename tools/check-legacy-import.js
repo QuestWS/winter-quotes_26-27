@@ -218,6 +218,8 @@ console.log('\n=== 10. a jet ski tagged onto a boat sheet ===');
   console.log('   extras:',JSON.stringify(p.extraUnits));
   check('extra units detected',!!p.extraUnits);
   check('it counts the jet skis',/2 jet ski/.test((p.extraUnits||[]).join(' ')));
+  check('skis on a BOAT sheet are still told to separate',
+    /need separating/.test(p.warnings.join(' ')));
   check('it says why separating matters',/one quote per unit/.test(p.warnings.join(' ')));
   check('single storage is not flagged as a comparison',!p.storageChoice);
 }
@@ -338,6 +340,25 @@ console.log('\n=== 18. LWT + beam are enough to price a jet ski\'s storage ===')
     JSON.stringify(storageLine));
   check('it says where the two numbers came from',
     /length with trailer/.test(m.notes.join(' ')),JSON.stringify(m.notes));
+  /* Two skis and no boat is a tandem trailer until somebody says otherwise: one
+     quote, count 2, one footprint. It must NOT be told to split, because a
+     unit here is a stored footprint rather than a hull. */
+  check('both skis ride on the one quote',st.engines.pwc.qty===2,String(st.engines.pwc.qty));
+  check('it is not reported as units needing separating',!p.extraUnits,
+    JSON.stringify(p.extraUnits));
+  check('nothing tells staff to split it',!/need separating/.test(p.warnings.join(' ')));
+  check('it asks which way round it is',
+    /ONE trailer/.test(p.warnings.join(' '))&&/separate trailers/.test(p.warnings.join(' ')),
+    JSON.stringify(p.warnings));
+  check('and says what two trailers would cost them',
+    /half the space/.test(p.warnings.join(' ')));
+  /* One ski on its own asks nothing at all. */
+  const solo=B.parseLegacyGrid_(
+    grid({owner:'X',phone:'',email:'',ymm:'',loa:'',beam:5,lwt:12,labels:true},
+      [[3,1,111]],[[12,1,0]]));
+  check('a single ski raises none of it',
+    !/ONE trailer/.test(solo.warnings.join(' '))&&!solo.extraUnits,
+    JSON.stringify(solo.warnings));
 }
 
 console.log('\n=== 19. storage a jet ski cannot have here is named, not zeroed ===');

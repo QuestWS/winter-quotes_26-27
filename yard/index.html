@@ -222,16 +222,17 @@ textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;bord
       <div class="msg" id="noteMsg"></div>
     </div>
     <div class="blk">
-      <h3>Condition photos</h3>
+      <h3>Condition photos &amp; video</h3>
       <div class="msg" id="photoCounts" style="margin-top:0">—</div>
       <div class="row2" style="margin-top:8px">
-        <button class="btn ghost" onclick="$('camIn').click()">📷 Take photos</button>
+        <button class="btn ghost" onclick="$('camIn').click()">📷 Photo / video</button>
         <button class="btn ghost" onclick="$('galIn').click()">Choose</button>
       </div>
       <!-- `capture` forces the camera on Android and kills the gallery option,
-           so it lives on the camera button ONLY. -->
-      <input type="file" id="camIn" class="hide" accept="image/*" capture="environment" multiple>
-      <input type="file" id="galIn" class="hide" accept="image/*" multiple>
+           so it lives on the camera button ONLY. Both take video as well as
+           stills; the size cap is what keeps that workable, see upload(). -->
+      <input type="file" id="camIn" class="hide" accept="image/*,video/*" capture="environment" multiple>
+      <input type="file" id="galIn" class="hide" accept="image/*,video/*" multiple>
       <div class="msg" id="upMsg"></div>
       <div style="margin-top:8px"><button class="btn ghost wide" id="openFolder" onclick="openFolder()">Open photo folder</button></div>
     </div>
@@ -936,7 +937,7 @@ async function refreshPhotos(qn){
     const r=await api('photoInfo',[qn]);
     if(r&&r.ok){
       PHOTOURL=r.url||'';
-      $('photoCounts').textContent='Winter: '+r.counts.winter+' · Spring: '+r.counts.spring+' on file';
+      $('photoCounts').textContent='Winter: '+r.counts.winter+' · Spring: '+r.counts.spring+' file(s) on record';
     }
   }catch(e){}
 }
@@ -949,12 +950,32 @@ function b64_(f){
     rd.readAsDataURL(f);
   });
 }
+/* Checked before anything is read off the disk. A clip goes over the wire as
+   base64, which is a third bigger again, and an oversized POST is dropped by
+   Apps Script without an explanation — on a phone that reads as a spinner and
+   then a failure nobody can act on. Refusing early, by name and by size, is
+   the whole difference. */
+const MAX_UPLOAD_MB=25;
+function tooBig_(f){ return f && f.size > MAX_UPLOAD_MB*1048576; }
 async function upload(files){
   if(!CUR||!files||!files.length) return;
-  if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos.',false); return; }
-  const list=Array.prototype.slice.call(files);
+  if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos or video.',false); return; }
+  let list=Array.prototype.slice.call(files);
+  const big=list.filter(tooBig_);
+  list=list.filter(f=>!tooBig_(f));
+  /* Kept for the FINAL message, not just shown now. A warning that is
+     overwritten by "2 uploaded" a few seconds later is a file the crew thinks
+     they saved and did not. */
+  const bigTxt=big.length
+    ? big.map(f=>f.name+' ('+Math.round(f.size/1048576)+' MB)').join(', ')+
+      ' skipped — over the '+MAX_UPLOAD_MB+' MB limit. Shoot a shorter clip, or set the camera '+
+      'to 1080p; 4K video is four times the size.'
+    : '';
+  if(bigTxt) setMsg('upMsg',bigTxt,false);
+  if(!list.length) return;
   let done=0, failed=0;
-  setMsg('upMsg','Uploading 0 of '+list.length+'…');
+  const anyVideo=list.some(f=>String(f.type||'').indexOf('video/')===0);
+  setMsg('upMsg','Uploading 0 of '+list.length+'…'+(anyVideo?' Video takes a while — keep this open.':''));
   for(const f of list){
     const data=await b64_(f);
     if(!data){ failed++; continue; }
@@ -962,12 +983,15 @@ async function upload(files){
       /* Winter: this app is used at haul-out. Spring relaunch photos go
          through the console, which has the season switch. */
       const r=await api('uploadPhoto',[CUR.quoteNo,'winter',f.name||('yard-'+Date.now()+'.jpg'),data,f.type]);
-      if(r&&r.ok) done++; else failed++;
+      if(r&&r.ok) done++; else { failed++; if(r&&r.error) setMsg('upMsg',r.error,false); }
     }catch(e){ failed++; }
-    setMsg('upMsg','Uploading '+(done+failed)+' of '+list.length+'…');
+    setMsg('upMsg','Uploading '+(done+failed)+' of '+list.length+'…'+
+      (anyVideo?' Video takes a while — keep this open.':''));
   }
-  setMsg('upMsg',done+' uploaded'+(failed?', '+failed+' failed — try those again':'')+'.',failed?false:true);
-  if(done) toast(done+' photo'+(done===1?'':'s')+' saved');
+  const summary=done+' uploaded'+(failed?', '+failed+' failed — try those again':'')+'.'+
+    (bigTxt?' '+bigTxt:'');
+  setMsg('upMsg',summary,(failed||bigTxt)?false:true);
+  if(done) toast(done+' file'+(done===1?'':'s')+' saved'+(bigTxt?' — '+big.length+' skipped':''));
   refreshPhotos(CUR.quoteNo);
 }
 $('camIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });

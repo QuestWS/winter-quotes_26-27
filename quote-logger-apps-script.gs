@@ -3523,16 +3523,47 @@ function adminUploadContract(token, qn, fileName, base64Data, mimeType) {
   return { ok: 1, url: d.contractUrl };
 }
 
+/* CONDITION MEDIA — stills and video, same folders, same endpoint.
+   ---------------------------------------------------------------------------
+   Drive does not care what the blob is, so video needed no new plumbing. What
+   it needed was a SIZE LIMIT, because that is the part that actually breaks.
+
+   A clip arrives as base64 inside a POST, which inflates it by a third, and
+   Apps Script will drop an oversized request rather than explain itself. On a
+   phone in the yard that reads as "the upload just spins and then says it
+   failed" — the exact failure mode this project keeps designing away from. So
+   the cap is checked on the client BEFORE the read (so nothing is spent), and
+   again here, because a client is not a permission.
+
+   25 MB is roughly half a minute of 1080p from a phone. A 4K clip of the same
+   length is four times that and will be refused; the message says so, rather
+   than leaving somebody to guess. If that proves too tight in practice the fix
+   is a chunked upload, which is a real piece of work and not worth building
+   before we know it is needed. */
+const MAX_UPLOAD_BYTES_ = 25 * 1024 * 1024;
+
 function adminUploadPhoto(token, qn, seasonName, fileName, base64Data, mimeType) {
   const who = requireAuth_(token, 'photos');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  /* Measured from the base64 rather than after decoding: refusing a 60MB clip
+     should not cost the memory of decoding it first. */
+  const approxBytes = Math.floor(String(base64Data || '').length * 3 / 4);
+  if (approxBytes > MAX_UPLOAD_BYTES_) {
+    return { ok: 0, error: 'That file is about ' + Math.round(approxBytes / 1048576) +
+      ' MB, and the limit is ' + Math.round(MAX_UPLOAD_BYTES_ / 1048576) +
+      ' MB. Shoot a shorter clip, or drop the camera to 1080p — a 4K video is four times the size.' };
+  }
   const ff = ensurePhotoFolders_(ctx);
   const target = seasonName === 'spring' ? ff.spring : ff.winter;
   const bytes = Utilities.base64Decode(base64Data);
-  const blob = Utilities.newBlob(bytes, mimeType || 'image/jpeg', fileName || ('photo-' + Date.now() + '.jpg'));
+  const mime = String(mimeType || '') || 'image/jpeg';
+  const isVideo = mime.indexOf('video/') === 0;
+  const blob = Utilities.newBlob(bytes, mime,
+    fileName || ((isVideo ? 'video-' : 'photo-') + Date.now() + (isVideo ? '.mp4' : '.jpg')));
   target.createFile(blob);
-  auditLog_(who.name, 'Photo uploaded to ' + qn + ' (' + seasonName + '): ' + fileName);
+  auditLog_(who.name, (isVideo ? 'Video' : 'Photo') + ' uploaded to ' + qn +
+    ' (' + seasonName + '): ' + fileName);
   return { ok: 1 };
 }
 

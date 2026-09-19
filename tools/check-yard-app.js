@@ -398,6 +398,54 @@ Y.ev('ROWS = ' + JSON.stringify([
 /* =====================================================================
    4. THE PHONE ITSELF.
    ===================================================================== */
+/* Condition media is stills AND video. The format needed no new plumbing —
+   Drive takes any blob — but the size does: a clip arrives as base64, a third
+   bigger again, and an oversized POST is dropped by Apps Script with no
+   explanation at all. On a phone that is a spinner and then a failure nobody
+   can act on, so the cap is enforced on BOTH clients and on the server. */
+{
+  const adminHtml = read('admin/index.html');
+  /* By id, not by "any input that takes an image". The signed-contract upload
+     also accepts image/* — somebody photographing a signed page — and it is
+     NOT condition media: a video of a contract is not a thing. */
+  const MEDIA_INPUTS = { 'yard/index.html': ['camIn', 'galIn'],
+                         'admin/index.html': ['photoFiles', 'cameraInput'] };
+  [['yard/index.html', HTML], ['admin/index.html', adminHtml]].forEach(function (p) {
+    MEDIA_INPUTS[p[0]].forEach(function (id) {
+      const m = p[1].match(new RegExp('<input[^>]*id="' + id + '"[^>]*>'));
+      if (!m) return fail(p[0] + ' has no file input called ' + id);
+      if (!/accept="[^"]*video\//.test(m[0]))
+        fail(p[0] + ' #' + id + ' will not take video: ' + m[0].slice(0, 90));
+      else ok(p[0] + ' #' + id + ' accepts video as well as stills');
+    });
+  });
+  /* And the contract input must NOT have quietly been widened along with them. */
+  if (/id="contractFile"[^>]*video\//.test(adminHtml))
+    fail('the signed-contract input now accepts video — that is not condition media');
+  else ok('the signed-contract input was left alone');
+  /* Client-side, so nothing is spent reading a file that cannot be sent. */
+  if (/MAX_UPLOAD_MB/.test(SRC)) ok('the yard app refuses an oversized file before reading it');
+  else fail('the yard app will read and base64 a file the server is going to refuse');
+  if (/MAX_UPLOAD_MB/.test(adminHtml)) ok('the console does too');
+  else fail('the console has no size check');
+  /* And server-side, because a client is not a permission. */
+  if (/MAX_UPLOAD_BYTES_/.test(GAS)) ok('and the server enforces it independently');
+  else fail('the server accepts an upload of any size');
+  /* The console used to drop anything not an image on the floor, silently. */
+  if (/startsWith\('video\/'\)/.test(adminHtml)) ok('the console no longer discards video before uploading it');
+  else fail('the console filters uploads to image/* — video would vanish with no message');
+  /* THE SKIP HAS TO SURVIVE THE SUMMARY. The first version warned about the
+     oversized clip and then overwrote that warning with "2 uploaded" a few
+     seconds later — so the crew walked away believing a video was saved that
+     never left the phone. Silent partial success is the worst outcome here. */
+  if (/bigTxt\?' '\+bigTxt/.test(SRC) || /\+\s*\(bigTxt/.test(SRC))
+    ok('a skipped oversized file is still named in the final message');
+  else fail('the oversized-file warning is overwritten by the upload summary — the crew would ' +
+            'believe a clip saved when it never left the phone');
+  /* Three large POSTs racing each other on a phone connection is not a plan. */
+  if (/CONCURRENCY=files\.some/.test(adminHtml)) ok('the console uploads video one at a time');
+  else fail('the console uploads video with the same concurrency as stills');
+}
 {
   const caps = (HTML.match(/capture=/g) || []).length;
   if (caps !== 1) fail('`capture` appears ' + caps + ' times — on Android it forces the camera and ' +

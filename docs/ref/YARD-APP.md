@@ -12,12 +12,14 @@ goes missing.*
 
 ## What it is for
 
-Three lists, and they are **one field read three ways**. Left to right is the
-season, and a unit moves along it as the work gets done:
+Four lists, and they are **one field read four ways**. Left to right is the
+season, and a unit moves along it as the work gets done. The first two are the
+two ways a unit gets here at all — we fetch it, or the customer brings it:
 
 | Tab | Shows | The question it answers |
 |---|---|---|
 | **To pull** | slip boats not yet pulled, in requested-timing order | what is still in the water, and in what order |
+| **Awaiting** | no slip number and nothing recorded, in requested-timing order | what we are still waiting on the customer to bring |
 | **To store** | everything pulled, plus everything marked dropped off | what is sitting here waiting for a spot |
 | **Stored** | everything put away | did we already deal with that one |
 
@@ -26,13 +28,46 @@ either flagged as pulled (a flag from the pull list which also removes them
 from the pull list) or marked as dropped off on the admin page… once something
 is brought to storage it should be moved to a 3rd list."*
 
+### Awaiting drop-off, and the hole it closed
+
+The fourth list came later, from a boat that was on none of the other three.
+QW-26-1991 was paid in full, signed, and sitting in a storage tab, and the yard
+app had never heard of it: no slip number, nothing recorded, so `listOf_`
+returned the empty string and it rendered nowhere. **That was 30 of the 35
+quotes in the sheet** — the app was showing the four units that happened to
+have a slip on file and silently swallowing the rest.
+
+The pull rule itself was right and stays: *"Can't pull without knowing where it
+is."* A slip number is the only thing that says which boat to go and get, so a
+unit without one is not pullable and must not sit on the pull list. What was
+wrong was the conclusion that it therefore belonged on no list.
+
+So the missing slip becomes **visible** instead of silent. Chris: *"It will
+give us line of sight if we're missing a slip number — seeing a boat that
+should be pulled on the wrong list."* A boat that is really in the water and
+simply has no slip recorded turns up on Awaiting, where somebody who knows the
+yard reads the name and says *that one's in B-12*. That is a correction the old
+behaviour could never prompt, because nothing was on screen to be wrong.
+
+It is ordered by the timing the customer asked for, like the pull list, for the
+same reason: a unit that answered *"ready now"* and is still not here is either
+late or missing its slip, and both are worth the call. It is searchable,
+because it is the longest list in the app.
+
+**Every row is now on exactly one of the four, and the empty string is not a
+legal answer from `listOf_`.** The guard asserts that for every state × slip
+combination — never two lists, and never none.
+
 ### The state, and why it is a plain field
 
 `d.yard = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'` or
-`'stored'` (`YARD_STATES_`). One field decides the list, so a unit can never be
-on two at once or fall off all three — `check-yard-app.js` walks every
-state × slip combination and asserts exactly that, plus that an unrecognised
-state falls back to a real list rather than making a boat disappear.
+`'stored'` (`YARD_STATES_`). One field plus the slip decides the list, so a
+unit can never be on two at once or fall off all four — `check-yard-app.js`
+walks every state × slip combination and asserts exactly that, plus that an
+unrecognised state falls back to a real list rather than making a boat
+disappear. The "fall off all four" half of that assertion is not theoretical:
+it is the bug Awaiting was added to fix, and it is checked rather than reasoned
+about for that reason.
 
 It is **not** in the manual-ops journal that keys, slip and trailer location
 use. Those are corrections to what the customer told us: they feed
@@ -57,11 +92,11 @@ the only person who can record the pull is the one whose phone just failed.
 | Transition | In the app | On the console | Gated? |
 |---|---|---|---|
 | **Pulled** | button on the **opened unit** only | Yard status card | yes, identically |
-| **Dropped off** | — | Yard status card | no |
+| **Dropped off** | one tap on the Awaiting row, or the opened unit | Yard status card | no |
 | **Stored** | one tap on the To store row, or the opened unit | Yard status card | no |
 | **Undo** | opened unit, any state | Yard status card | no |
 
-Two of those placements are deliberate and were changed after the first build:
+Two of those placements are deliberate:
 
 - **Pulling is not a row action.** It is the act the whole liability rule
   exists for, so it is made with the unit **open** — its alert, its
@@ -69,15 +104,28 @@ Two of those placements are deliberate and were changed after the first build:
   list's rows open a unit and record nothing. Putting an already-pulled boat
   into a building carries none of that weight and is done a row at a time down
   a list, so `Stored ✓` stays on the row.
-- **Dropped off is console-only.** It records that a customer drove their own
-  boat in, which is something the *counter* hears; the yard never sees it
-  happen. The app must still **read** the state — it is how a unit reaches the
-  To store list without ever having been in the water — it just cannot set it.
+- **Dropped off is recordable from both surfaces**, and it is a row action on
+  Awaiting for the same reason `Stored ✓` is one on To store: writing down that
+  a customer has arrived with their own boat carries none of the pull's weight,
+  and it is done a row at a time down a list.
 
-`check-yard-app.js` asserts both from the rendered markup rather than from the
-helpers, because a row action is a two-line thing to reinstate by hand and the
-helper is still sitting there. It also asserts the console kept "Mark dropped
-off", since the app gave it up on that understanding.
+  This reversed the first build, which made it console-only on the grounds that
+  a drop-off is something the *counter* hears. Chris took that back out:
+  *"it doesn't hurt to have other people be able to contribute what they know."*
+  It is the same rule as `CLAUDE.md` §9 — gates belong on the **thing** (is
+  this boat cleared to pull?), never on the desk somebody is standing at, and
+  whoever hears a fact first is the one who needs to record it. A drop-off is
+  not a decision, it is an observation, and the yard sees plenty of them.
+
+  It is offered only from the **nothing-recorded** state. On a unit already
+  pulled or stored it would just be a way to walk the season backwards by
+  mis-tap, and Undo already exists for a genuine mistake.
+
+`check-yard-app.js` asserts all of it from the rendered markup rather than from
+the helpers, because a row action is a two-line thing to reinstate by hand and
+the helper is still sitting there. It checks that **both** surfaces can record
+a drop-off, that neither gates it, and that the app still offers it in no other
+state.
 
 ### The pull gate follows the boat
 
@@ -101,10 +149,18 @@ per-row location is dropped, since the heading already says it.
 The pull list has neither, on purpose: **its order is the information.** It is
 the order the customers asked for, and re-sorting it would throw that away.
 
+**Awaiting takes the search and not the sort**, which is both halves of that
+rule at once: its order is the same information the pull list's is, so there is
+no sort control, but it is the longest list in the app and finding one name in
+thirty by eye on a phone is not a plan. Its right-hand column is the timing the
+customer gave rather than a slip — there is no slip, and *"Ready now"* against
+a boat that is not here is the whole signal.
+
 ### The row action
 
-Rows on **To store** carry a `Stored ✓` button, so a crew member can work down
-twenty boats without opening twenty detail sheets. Two things make that safe:
+Rows on **To store** carry a `Stored ✓` button and rows on **Awaiting** carry
+a `Dropped off ✓` button, so a crew member can work down twenty boats without
+opening twenty detail sheets. Two things make that safe:
 it is its own tap target with real padding and a divider above it, and it calls
 `stopPropagation`, or the tick would also open the detail sheet and slide a
 panel over the list they were working down. The guard asserts both.

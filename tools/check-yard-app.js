@@ -111,18 +111,27 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('a whitespace-only slip is not a slip');
   if (pull.indexOf('B') > -1) fail('a boat with no slip is on the pull list');
   else ok('a boat with no slip never reaches the pull list');
+  /* But it is not nowhere. A slip is what tells the crew WHERE to go, so a
+     boat without one waits to be dropped off — and if it is really in the
+     water, seeing it on the wrong list is how the missing slip gets found. */
+  const awaiting = Y.ev('awaitList_().map(function(r){return r.qn;})');
+  eq(awaiting.join(','), 'B,C', 'the boats with no slip are on "Awaiting drop-off", soonest first');
 }
 
 /* =====================================================================
-   2b. THE THREE LISTS ARE ONE FIELD READ THREE WAYS.
+   2b. THE FOUR LISTS ARE ONE FIELD READ FOUR WAYS.
    ---------------------------------------------------------------------
    A unit must be on exactly one list. On two, and the crew does the same job
-   twice; on none, and a boat sits in the water until somebody notices.
+   twice; on NONE, and a boat sits in the water until somebody notices — which
+   is not hypothetical: a unit with no slip and nothing recorded was on no list
+   at all until "Awaiting drop-off" was added, and that was 30 of 35 quotes.
+   The empty string is therefore not a legal answer from listOf_ any more.
    ===================================================================== */
 {
   const cases = [
     ['',        'B-14', 'pull',   'in the water and not yet pulled'],
-    ['',        '',     '',       'no slip and nothing done: not the crew\'s problem yet'],
+    ['',        '',     'await',  'no slip and nothing recorded: waiting to be dropped off'],
+    ['',        '   ',  'await',  'a whitespace-only slip is no slip, so it waits with the rest'],
     ['pulled',  'B-14', 'store',  'pulled leaves the pull list for the store list'],
     ['dropped', '',     'store',  'dropped off reaches the store list without ever being in the water'],
     ['dropped', 'B-14', 'store',  'and a slip does not drag it back onto the pull list'],
@@ -132,17 +141,24 @@ Y.ev('ROWS = ' + JSON.stringify([
   cases.forEach(function (c) {
     eq(Y.listOf_({ yardState: c[0], slip: c[1] }), c[2], c[3]);
   });
-  /* The property underneath all of it, asserted rather than reasoned about. */
-  const lists = ['pull', 'store', 'stored'];
+  /* The property underneath all of it, asserted rather than reasoned about:
+     every state x slip combination lands on exactly ONE list — never two, and
+     never none. */
+  const lists = ['pull', 'await', 'store', 'stored'];
   let clean = true;
   ['', 'pulled', 'dropped', 'stored'].forEach(function (st) {
-    ['', 'B-14'].forEach(function (slip) {
+    ['', '  ', 'B-14'].forEach(function (slip) {
       const row = { yardState: st, slip: slip };
       const on = lists.filter(function (L) { return Y.listOf_(row) === L; });
       if (on.length > 1) { clean = false; fail('state ' + JSON.stringify(st) + ' appears on ' + on.join(' and ')); }
+      if (!on.length) {
+        clean = false;
+        fail('state ' + JSON.stringify(st) + ' with slip ' + JSON.stringify(slip) +
+             ' is on no list at all — that unit is invisible on the phone');
+      }
     });
   });
-  if (clean) ok('no unit is ever on two lists at once');
+  if (clean) ok('every unit is on exactly one list — never two, never none');
   /* An unknown state must not vanish a boat. */
   const odd = Y.listOf_({ yardState: 'teleported', slip: 'B-14' });
   if (odd === '') fail('an unrecognised state made a boat disappear from every list');
@@ -176,6 +192,25 @@ Y.ev('ROWS = ' + JSON.stringify([
   eq(Y.ev('storeList_("store").length'), 1, 'search ignores case');
   Y.ev('document.getElementById("q").value = ""');
 }
+/* The Awaiting list is searchable for the same reason the storage lists are:
+   it is the longest list in the app — every unit nobody has recorded anything
+   about — and scanning thirty rows for one name on a phone is not a plan. */
+{
+  Y.ev('ROWS = ' + JSON.stringify([
+    { qn: 'QW-9', name: 'Chong, A', slip: '', tab: 'Inside', unit: 'Boat',
+      seasonDone: { choice: 'now' } },
+    { qn: 'QW-8', name: 'Baker, Bo', slip: '', tab: 'Outside', unit: 'Boat',
+      seasonDone: { choice: 'call' } },
+    { qn: 'QW-7', name: 'Adams, Al', slip: 'B-2', tab: 'Inside', unit: 'Boat' }
+  ]));
+  eq(Y.ev('awaitList_().map(function(r){return r.qn;}).join(",")'), 'QW-9,QW-8',
+     'Awaiting holds the units with no slip and nothing recorded, ready-now first');
+  Y.ev('document.getElementById("q").value = "chong"');
+  eq(Y.ev('awaitList_().length'), 1, 'Awaiting is searchable by name');
+  Y.ev('document.getElementById("q").value = "QW-8"');
+  eq(Y.ev('awaitList_().length'), 1, 'and by quote number');
+  Y.ev('document.getElementById("q").value = ""');
+}
 /* WHERE the pull is recorded, and the gate that follows it there.
    ---------------------------------------------------------------------
    Chris moved this deliberately: the pull list has no one-tap tick any more,
@@ -196,7 +231,10 @@ Y.ev('ROWS = ' + JSON.stringify([
     { qn: 'C', name: 'Clear', slip: 'B-2', tab: 'Building A', unit: 'Boat',
       auth: { state: 'cleared' } },
     { qn: 'S', name: 'Stow',  slip: '',    tab: 'Building A', unit: 'Boat',
-      yardState: 'pulled', auth: { state: 'cleared' } }
+      yardState: 'pulled', auth: { state: 'cleared' } },
+    /* Nothing recorded and no slip: the Awaiting list's whole population. */
+    { qn: 'W', name: 'Waite', slip: '',    tab: 'Building A', unit: 'Boat',
+      auth: { state: 'cleared' } }
   ]));
   Y.ev('TAB = "pull"; render()');
   const pullMarkup = Y.ev('document.getElementById("list").innerHTML');
@@ -234,14 +272,45 @@ Y.ev('ROWS = ' + JSON.stringify([
   if (/markState\([^)]*pulled/.test(clear)) ok('a cleared unit can be marked pulled once opened');
   else fail('a cleared unit cannot be marked pulled from anywhere in the app');
 
-  /* "Mark dropped off" is a console act. It records that a customer drove in,
-     which is something the counter hears — the yard never sees it happen. */
-  ['', 'pulled', 'stored'].forEach(function (st) {
+  /* "Mark dropped off" is recordable from BOTH surfaces, which reversed an
+     earlier decision. The counter and the shop are the same people (CLAUDE.md
+     §9) and whoever hears "it's here" first is the one who has to be able to
+     write it down — a fact about a boat is not the property of a desk. It is
+     ungated, because the customer drove it in and we touched nothing. */
+  if (/markState\([^)]*dropped/.test(stateOf('C', '')))
+    ok('an opened unit with nothing recorded can be marked dropped off');
+  else fail('the yard app cannot record a drop-off — whoever is told "it is here" has to be ' +
+            'able to write it down, wherever they are standing');
+  {
+    const held = stateOf('H', '');
+    if (/markState\([^)]*dropped/.test(held))
+      ok('and a unit nobody may PULL can still be recorded as dropped off (it is not gated)');
+    else fail('"Mark dropped off" is gated on the pull rule — a boat visibly sitting in the ' +
+              'yard would go unrecorded');
+  }
+  /* Only from the one state it can mean anything, though: the unit has not
+     arrived yet. Offering it on a boat already pulled or stored is a way to
+     walk the season backwards by mis-tap. */
+  ['pulled', 'stored'].forEach(function (st) {
     if (/markState\([^)]*dropped/.test(stateOf('C', st)))
-      fail('the yard app still offers "Mark dropped off" (state ' + JSON.stringify(st) + ') — ' +
-           'Chris asked for that to be console-only');
+      fail('"Mark dropped off" is offered on a unit that is already ' + st +
+           ' — that is the season running backwards');
   });
-  ok('the yard app never offers "Mark dropped off", in any state');
+  ok('and it is offered only before anything else has been recorded');
+
+  /* The Awaiting row carries it too, on the same terms as "Stored ✓": its own
+     tap target, and it must not also fire the row tap. */
+  Y.ev('TAB = "await"; render()');
+  {
+    const awaitMarkup = Y.ev('document.getElementById("list").innerHTML');
+    if (/markState\([^)]*dropped/.test(awaitMarkup)) ok('recording an arrival is one tap from the Awaiting row');
+    else fail('the Awaiting list has no one-tap "Dropped off" — it is a row-at-a-time job');
+    if (/stopPropagation/.test(awaitMarkup)) ok('and it does not also open the sheet');
+    else fail('the Awaiting row action will also fire the row tap');
+    if (/markState\([^)]*pulled/.test(awaitMarkup))
+      fail('the Awaiting list records a PULL from the row — that one is made with the unit open');
+    else ok('and it still records no pull from a row');
+  }
   /* But the app must still READ it, because the console sets it. */
   eq(Y.ev('listOf_({yardState:"dropped",slip:"B-9"})'), 'store',
      'a unit the console dropped off still reaches the To store list');
@@ -273,10 +342,11 @@ Y.ev('ROWS = ' + JSON.stringify([
   if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just the app');
   else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches in the ' +
             'yard, the person they tell has to be able to record it');
-  /* And it is the ONLY surface that can, since the app gave it up. */
+  /* Both surfaces, for the same reason as the pull: the counter hears some of
+     these and the yard hears the rest. */
   if (/btn\('dropped'/.test(adminHtml)) ok('the console can mark a unit dropped off');
-  else fail('nothing can mark a unit dropped off any more — the app gave that up on the ' +
-            'understanding the console kept it, and the To store list depends on it');
+  else fail('the console can no longer mark a unit dropped off — the counter is who hears ' +
+            'most drop-offs, and the To store list depends on it');
   /* But the gate does not relax for it. */
   if (/_yardAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
     ok('and the console gates that button on the same cleared/not-cleared answer');

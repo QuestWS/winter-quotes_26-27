@@ -178,12 +178,14 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
    ===================================================================== */
 {
   const start = fn('bulkImportStart');
-  const step  = fn('bulkImportStep');
+  /* bulkImportSlice_, not bulkImportStep: the loop moved there so the
+     foreground runner could share it, leaving step as a catch around it. */
+  const step  = fn('bulkImportSlice_');
   const one   = fn('bulkImportOne_');
 
-  /* Resumable, because ~149 Drive conversions do not fit in six minutes. */
+  /* Resumable, because ~139 Drive conversions do not fit in six minutes. */
   if (/BULKIMP_BUDGET_MS_/.test(step)) ok('each run stops inside its own time budget');
-  else fail('bulkImportStep has no time budget — Apps Script will kill it mid-folder');
+  else fail('the slice has no time budget — Apps Script will kill it mid-folder');
   if (/bulkImportArm_\(\)/.test(step)) ok('and re-arms itself to carry on');
   else fail('nothing continues the run after a slice — it would stop half way and stay there');
   if (/bulkImportSave_\(st\)/.test(step)) ok('progress is written before the next slice');
@@ -263,6 +265,52 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
             'the console would report the send as failed');
   if (/d\.storageTab/.test(leave)) ok('it sends the row to the tab the engine picked at import');
   else fail('leaveImportTab_ does not read d.storageTab, so it cannot know where the row belongs');
+}
+
+/* =====================================================================
+   9. A RUN THAT DIES MUST SAY SO.
+   ---------------------------------------------------------------------
+   The first real run stalled in total silence: the report sat on "Scanning
+   139 files…", no email came, and the editor said "Execution Complete"
+   because the scan only queues the work. bulkImportStep deletes its own
+   trigger before doing anything, so ONE throw outside the per-file catch
+   disarmed the run, killed it, and left nothing to say why. A background job
+   is allowed to fail; it is not allowed to fail quietly.
+   ===================================================================== */
+{
+  const step = fn('bulkImportStep');
+  if (/try\s*\{[\s\S]*catch/.test(step)) ok('bulkImportStep cannot throw past its own trigger');
+  else fail('bulkImportStep has no catch — one throw outside the per-file handler disarms the ' +
+            'trigger and the run dies silently, which is exactly what happened');
+
+  const blew = fn('bulkImportBlewUp_');
+  if (/REPORT_EMAIL/.test(blew)) ok('a stopped run emails Chris');
+  else fail('a stopped run tells nobody');
+  if (/bulkImportAppendReport_/.test(blew)) ok('and writes the reason into the report');
+  else fail('the report would still read "Scanning …" after the run died');
+  if (/st\.errors/.test(blew) && /bulkImportArm_\(\)/.test(blew)) {
+    ok('it retries a couple of times before giving up');
+  } else fail('a single Drive hiccup would end the whole run');
+  if (/st\.errors < 3/.test(blew)) ok('but not for ever');
+  else fail('nothing bounds the retries — a permanent error would re-arm in a loop');
+
+  /* The foreground runner is the one that must NOT swallow: its whole job is
+     to put the stack on the screen somebody is looking at. */
+  /* Comments stripped first: this function's own comment explains why it does
+     NOT catch, and matching that prose would fail the check it describes. */
+  const now = fn('bulkImportRunNow').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  if (!now) fail('there is no foreground runner');
+  else if (/catch/.test(now)) {
+    fail('bulkImportRunNow catches its own error — then the editor shows nothing useful ' +
+         'and the stall is just as opaque as before');
+  } else ok('the foreground runner lets the editor show the stack');
+  if (/bulkImportSlice_\(\)/.test(now)) ok('and it shares the same slice the trigger runs');
+  else fail('the foreground runner has its own copy of the work');
+
+  /* Progress must survive either path, or a resumed run redoes everything. */
+  const slice = fn('bulkImportSlice_');
+  if (/bulkImportSave_\(st\)/.test(slice)) ok('a slice saves its progress whichever way it was started');
+  else fail('bulkImportSlice_ never saves — a resumed run would start from the beginning');
 }
 
 if (bad) { console.error('\n' + bad + ' problem(s) with the Import tab'); process.exit(1); }

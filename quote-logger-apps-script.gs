@@ -3533,8 +3533,54 @@ function bulkImportDisarm_() {
    sweepTranscripts hit). */
 function bulkImportStep() {
   bulkImportDisarm_();
+  try { bulkImportSlice_(); }
+  catch (err) { bulkImportBlewUp_(err); }
+}
+
+/* A RUN THAT DIES MUST SAY SO.
+   ---------------------------------------------------------------------------
+   The first real run of this stalled in total silence: the report sat on
+   "Scanning 139 files…", no email arrived, and the editor said "Execution
+   Complete" because bulkImportScan only builds the worklist and returns. The
+   work happens on a trigger, and bulkImportStep deletes its own trigger before
+   doing anything -- so one throw outside the per-file catch disarmed the run,
+   killed it, and left nothing behind to say why.
+
+   Silence is the one outcome a background job must not have. Anything that
+   escapes now lands in the report and in Chris's inbox, and the run stops on
+   purpose rather than by accident. Two retries first, because the failures
+   this is most likely to hit -- a Drive hiccup, a timeout on one bad file --
+   are the kind that pass on a second attempt. */
+function bulkImportBlewUp_(err) {
+  const msg = String((err && err.stack) || (err && err.message) || err).slice(0, 900);
   const st = bulkImportState_();
-  if (!st || st.i >= st.jobs.length) { bulkImportClear_(); return; }
+  if (!st) { console.error('bulk import failed with no state: ' + msg); return; }
+  st.errors = (st.errors || 0) + 1;
+  st.lastError = msg;
+  bulkImportSave_(st);
+  console.error('bulk import step failed (attempt ' + st.errors + '): ' + msg);
+  try {
+    bulkImportAppendReport_(st, [['', '(run error ' + st.errors + ')', '', '', '', '', '',
+      st.errors < 3 ? 'RETRYING' : 'RUN STOPPED', msg.slice(0, 400), '']]);
+  } catch (e) { /* the report itself may be what broke */ }
+  if (st.errors < 3) { bulkImportArm_(); return; }
+  try {
+    MailApp.sendEmail({
+      to: REPORT_EMAIL,
+      subject: 'Bulk import STOPPED after ' + st.done + ' of ' + st.jobs.length + ' files',
+      body: 'The ' + st.mode + ' run stopped on an error it hit three times.\n\n' + msg +
+        '\n\nNothing is half-written: every file already processed is in the report, and\n' +
+        'bulkImportRunNow() picks up from file ' + (st.i + 1) + ' when you are ready.\n\n' +
+        (st.reportId ? 'Report: https://docs.google.com/spreadsheets/d/' + st.reportId + '/edit' : '')
+    });
+  } catch (e) { console.error('could not send the failure note: ' + e); }
+}
+
+/* One slice of the worklist. Separate from bulkImportStep so the foreground
+   runner can call it too and let the editor show a stack trace. */
+function bulkImportSlice_() {
+  const st = bulkImportState_();
+  if (!st || st.i >= st.jobs.length) { bulkImportClear_(); return { done: true }; }
 
   const started = Date.now();
   const master = legacyMasterGrid_();
@@ -3558,10 +3604,14 @@ function bulkImportStep() {
   }
 
   if (rows.length) bulkImportAppendReport_(st, rows);
+  /* A slice that got somewhere resets the error count: the next failure is a
+     new problem, not the third strike of an old one. */
+  if (rows.length) { st.errors = 0; }
   bulkImportSave_(st);
 
-  if (st.i < st.jobs.length) { bulkImportArm_(); return; }
+  if (st.i < st.jobs.length) { bulkImportArm_(); return { done: false, at: st.i, of: st.jobs.length }; }
   bulkImportFinish_(st);
+  return { done: true, at: st.i, of: st.jobs.length };
 }
 
 /* One file. Returns the report row. In scan mode it writes nothing; in apply
@@ -3713,6 +3763,33 @@ function bulkImportApply() {
   const r = bulkImportStart('apply');
   console.log('Importing ' + r.files + ' quotes onto the "' + IMPORT_TAB + '" tab.');
   console.log('It runs in the background; you get an email when it finishes.');
+  return r;
+}
+
+/* RUN A SLICE IN THE FOREGROUND, and let anything that goes wrong reach the
+   screen you are looking at. Use this when the background run has stalled, or
+   simply instead of it: click, watch the log, click again. A one-off migration
+   does not need to be invisible to be resumable, and the trigger is only there
+   so you do not have to click. */
+function bulkImportRunNow() {
+  const before = bulkImportState_();
+  if (!before) {
+    console.log('Nothing queued. Run bulkImportScan() (or bulkImportApply()) first.');
+    return { ok: 0, error: 'nothing queued' };
+  }
+  console.log(before.mode + ': starting at file ' + (before.i + 1) + ' of ' + before.jobs.length +
+    (before.lastError ? '\nLast error was: ' + before.lastError : ''));
+  /* Deliberately NOT caught: the whole point is that the editor shows the
+     stack. bulkImportStep keeps its catch, because nobody is watching that. */
+  const r = bulkImportSlice_();
+  const after = bulkImportState_();
+  if (r && r.done) {
+    console.log('Finished. Check your email and the report.');
+  } else if (after) {
+    console.log('Stopped at ' + after.i + ' of ' + after.jobs.length + ' (time budget). ' +
+      after.imported + ' imported · ' + after.skipped + ' skipped · ' + after.failed + ' failed.');
+    console.log('Run bulkImportRunNow() again to continue — or leave it, a trigger is armed.');
+  }
   return r;
 }
 

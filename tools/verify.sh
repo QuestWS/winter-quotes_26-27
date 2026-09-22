@@ -223,6 +223,15 @@ if [ -f yard/index.html ]; then
   else
     echo "  FAIL trap: nothing can mark a unit dropped off — the To store list depends on it"; FAIL=1
   fi
+  # A bulk-imported quote is a DRAFT. The 9am reminder runs unattended, so an
+  # Import tab it can see is ~139 unwanted emails before anyone is awake. This
+  # gate went missing once already, in a merge — which is how a silent stall
+  # got reported as ALL CHECKS PASSED.
+  if node tools/check-import-tab.js > "$TMP/imptab.txt" 2>&1; then
+    echo "  OK   gate: imported drafts stay off every customer path"
+  else
+    echo "  FAIL gate: Import tab"; sed 's/^/       /' "$TMP/imptab.txt"; FAIL=1
+  fi
   # The pull rule belongs to the server. Three surfaces ask it; one answers.
   if node tools/check-yard-app.js > "$TMP/yardapp.txt" 2>&1; then
     echo "  OK   gate: yard app renders the server's verdict and degrades safely"

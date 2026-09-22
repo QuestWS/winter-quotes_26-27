@@ -388,6 +388,32 @@ first. `bulkImportStart_` is now private so it leaves the list; `bulkImportStep`
 has to stay public, because a trigger handler with a trailing underscore fires
 unreliably (the trap `sweepTranscripts` hit), so it sits last instead.
 
+### Run it from the console, not the editor
+
+Everything above is also on the **Load from an old sheet** card, under *…or the
+whole folder at once* — admin only, because it writes ~139 quotes into live
+customer data, the same bar as deleting one.
+
+The editor's Run dropdown lists every top-level function in the `.gs` in file
+order, hundreds of them; the person who had to run this could not find the
+functions at all, which is a fair verdict on that as an interface. The editor
+entry points stay as the fallback.
+
+**Every console call returns immediately.** Starting a run queues the worklist
+and arms the background trigger — the reading of 139 `.ods` files happens
+there. Nothing in the console waits for it, because a console call slow enough
+to be dropped is a console call reported *wrong* (§ *A dropped POST is not an
+answer*), and the one you least want reported wrong is the one that starts an
+import. `check-import-tab.js` asserts none of the four endpoints so much as
+touches `legacyReadGrid_`.
+
+The card polls `bulkImpState` every 15s while a run is going and stops the
+timer when the card closes — a poll left running against a phone in the yard is
+somebody's battery. `bulkImpState` is a read and may retry over GET; the four
+writes stay POST-only, so a lost POST can never replay one. Starting a run on
+top of a live one is refused outright, since that would import every file
+twice.
+
 ### The row-1 bug, and why a blank row is never appended
 
 The first real bulk run put **forty quotes through row 1 of the new Import

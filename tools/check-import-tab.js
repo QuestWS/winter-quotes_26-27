@@ -394,6 +394,68 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   else fail('the repair never re-arms the report, so Apply would have nothing to do');
 }
 
+/* =====================================================================
+   12. IT IS RUNNABLE FROM THE CONSOLE, NOT JUST THE EDITOR.
+   ---------------------------------------------------------------------
+   The Apps Script Run dropdown lists every top-level function in the file, in
+   file order — hundreds of them. Telling somebody to scroll to line 3756 to
+   start a migration of 139 live customer quotes is not an interface, and the
+   person running it could not find the functions at all.
+   ===================================================================== */
+{
+  const ADMIN = fs.readFileSync(path.join(ROOT, 'admin/index.html'), 'utf8');
+
+  /* Every button must have a server endpoint, and every endpoint a button. */
+  [['bulkImpStart', 'bulkStart('], ['bulkImpState', 'bulkPoll'],
+   ['bulkImpStop', 'bulkStop('], ['bulkImpNudge', 'bulkNudge('],
+   ['bulkImpRepair', 'bulkRepair(']].forEach(function (pair) {
+    const fnName = pair[0];
+    if (!new RegExp(fnName + ':\\s*function').test(GAS))
+      fail('the console calls ' + fnName + ' but the server does not answer it');
+    else if (ADMIN.indexOf(pair[1]) < 0)
+      fail('the server answers ' + fnName + ' but no console control reaches it');
+    else ok('the console can ' + fnName.replace('bulkImp', '').toLowerCase() + ' a run');
+  });
+
+  /* ~139 quotes into live customer data is an admin act, like deleting one. */
+  ['adminBulkImportStart', 'adminBulkImportStop', 'adminBulkImportNudge',
+   'adminBulkImportRepair'].forEach(function (n) {
+    const body = fn(n);
+    if (/who\.admin/.test(body)) ok(n + ' is admin-only');
+    else fail(n + ' is not admin-only — it writes or destroys at scale');
+  });
+
+  /* NONE of them may wait for the folder to be read. A console call slow
+     enough to be dropped is a console call reported wrong, and the one you
+     least want reported wrong is the one that starts an import. */
+  ['adminBulkImportStart', 'adminBulkImportState', 'adminBulkImportStop',
+   'adminBulkImportNudge'].forEach(function (n) {
+    const body = fn(n);
+    if (/bulkImportSlice_\(|legacyReadGrid_\(/.test(body)) {
+      fail(n + ' reads files inline — that call would run for minutes and be dropped');
+    } else ok(n + ' returns without reading a single file');
+  });
+
+  /* Starting a second run on top of a live one would double-import. */
+  if (/running\.i < running\.jobs\.length/.test(fn('adminBulkImportStart'))) {
+    ok('a run cannot be started on top of one already going');
+  } else fail('the console can start a second run over a live one — every file imported twice');
+
+  /* The state read may fall back to GET like every other read; the four writes
+     must not, or a lost POST could replay one. */
+  if (/bulkImpState: 1/.test(GAS)) ok('the state read can answer on GET');
+  else fail('bulkImpState is not on CONSOLE_GET_FNS_, so a lost read cannot retry');
+  ['bulkImpStart', 'bulkImpStop', 'bulkImpNudge', 'bulkImpRepair'].forEach(function (n) {
+    if (new RegExp('\\b' + n + ':\\s*1').test(GAS))
+      fail(n + ' is GET-able — a write must never be followable twice');
+  });
+  ok('the four writes stay POST-only');
+
+  /* A timer left polling against a phone in the yard is somebody's battery. */
+  if (/bulkPollStop\(\)/.test(ADMIN)) ok('the poll stops when the card is closed');
+  else fail('nothing stops the status poll');
+}
+
 if (bad) { console.error('\n' + bad + ' problem(s) with the Import tab'); process.exit(1); }
 console.log('import tab holds: drafts stay off every customer path, duplicates are skipped, ' +
             'the dry run writes nothing');

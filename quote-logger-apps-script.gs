@@ -1174,7 +1174,10 @@ const CONSOLE_GET_FNS_ = {
      that is the invariant they already had to hold (docs/ref/EMAILS.md,
      docs/ref/STAFF-CONSOLE.md), and check-console-transport.js pins it. */
   emailPreview: 1, dimsPreview: 1, bulkPreview: 1, repricePreview: 1,
-  importList: 1, importPreview: 1, backupPreview: 1
+  importList: 1, importPreview: 1, backupPreview: 1,
+  /* A read: it reports where the run has got to and writes nothing. The other
+     four are writes and stay POST-only. */
+  bulkImpState: 1
 };
 
 function consoleFns_(p) {
@@ -1225,7 +1228,12 @@ function consoleFns_(p) {
     repriceApply:   function (a) { return adminRepriceApply(p.token, a[0], a[1]); },
     importList:     function (a) { return adminImportList(p.token); },
     importPreview:  function (a) { return adminImportPreview(p.token, a[0], a[1], a[2], a[3]); },
-    importApply:    function (a) { return adminImportApply(p.token, a[0], a[1]); }
+    importApply:    function (a) { return adminImportApply(p.token, a[0], a[1]); },
+    bulkImpStart:   function (a) { return adminBulkImportStart(p.token, a[0]); },
+    bulkImpState:   function (a) { return adminBulkImportState(p.token); },
+    bulkImpStop:    function (a) { return adminBulkImportStop(p.token); },
+    bulkImpNudge:   function (a) { return adminBulkImportNudge(p.token); },
+    bulkImpRepair:  function (a) { return adminBulkImportRepair(p.token); }
   };
 }
 
@@ -3892,6 +3900,80 @@ function bulkImportRepair() {
     '; ' + rearmed + ' report row(s) re-armed.');
   console.log('\nNow run bulkImport2_Apply() to bring the rest back in.');
   return { ok: 1, headerWasOk: headerOk, onTab: survivors.length, rearmed: rearmed };
+}
+
+/* ===================== THE SAME THING, FROM THE CONSOLE ================
+ * Chris lives in the staff console, not the Apps Script editor, and the
+ * editor's Run dropdown lists every top-level function in the file in file
+ * order -- hundreds of them. Telling somebody to scroll to line 3756 to start
+ * a migration is not an interface.
+ *
+ * So the console drives it too. Every call here is FAST on purpose: starting a
+ * run queues the worklist and arms the trigger, and the reading of 139 files
+ * happens on that trigger. Nothing here waits for it. That matters because a
+ * slow console call is a dropped console call (CLAUDE.md section 7), and
+ * dropping the one that starts an import is how you end up running it twice.
+ *
+ * Admin only. This writes ~139 quotes; it is not a `keys` or `adjust` job.
+ * ===================================================================== */
+function adminBulkImportStart(token, mode) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const running = bulkImportState_();
+  if (running && running.i < running.jobs.length) {
+    return { ok: 0, error: 'A ' + running.mode + ' run is already going (' + running.i +
+      ' of ' + running.jobs.length + '). Let it finish, or stop it first.' };
+  }
+  try {
+    const r = bulkImportStart_(mode === 'apply' ? 'apply' : 'scan');
+    auditLog_(who.name, 'Bulk import ' + r.mode + ' started from the console — ' +
+      r.files + ' file(s) from "' + r.folder + '"');
+    return Object.assign({ ok: 1 }, r);
+  } catch (err) { return { ok: 0, error: String(err.message || err) }; }
+}
+
+/* A read, so it can answer on GET when a POST goes missing. */
+function adminBulkImportState(token) {
+  requireAuth_(token, 'view');
+  const st = bulkImportState_();
+  const reportId = PropertiesService.getScriptProperties().getProperty(BULKIMP_REPORT_PROP_) || '';
+  const report = reportId ? 'https://docs.google.com/spreadsheets/d/' + reportId + '/edit' : '';
+  if (!st) return { ok: 1, running: false, report: report };
+  return { ok: 1, running: st.i < st.jobs.length, mode: st.mode, folder: st.folder,
+           at: st.i, of: st.jobs.length, imported: st.imported, skipped: st.skipped,
+           failed: st.failed, lastError: st.lastError || '', report: report };
+}
+
+function adminBulkImportStop(token) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  bulkImportDisarm_(); bulkImportClear_();
+  auditLog_(who.name, 'Bulk import stopped from the console');
+  return { ok: 1, msg: 'Stopped. Nothing already written is undone.' };
+}
+
+/* Re-arms the trigger without doing the work, for the case where the run is
+   queued but nothing is carrying it along. Fast, so the console can call it. */
+function adminBulkImportNudge(token) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const st = bulkImportState_();
+  if (!st) return { ok: 0, error: 'Nothing queued.' };
+  if (st.i >= st.jobs.length) return { ok: 0, error: 'That run has already finished.' };
+  st.errors = 0; bulkImportSave_(st);
+  bulkImportArm_();
+  return { ok: 1, msg: 'Nudged — it should pick up within a few seconds.' };
+}
+
+function adminBulkImportRepair(token) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  try {
+    const r = bulkImportRepair();
+    return Object.assign({ ok: 1 }, r, {
+      msg: (r.headerWasOk ? 'The Import tab was already fine. ' : 'Header row restored. ') +
+           r.onTab + ' quote(s) really on the tab; ' + r.rearmed + ' report row(s) set back to IMPORT.' });
+  } catch (err) { return { ok: 0, error: String(err.message || err) }; }
 }
 
 /* NOT FOR CLICKING — this is what the background trigger calls. Running it by

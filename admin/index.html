@@ -729,6 +729,32 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <button class="btn navy" id="impPrevBtn" style="margin-top:10px" onclick="previewImport()">Read it</button>
       <div class="msg" id="impMsg"></div>
       <div class="hide" id="impReport"></div>
+
+      <!-- THE WHOLE FOLDER. Admin only: this writes ~139 quotes. Every button
+           here returns immediately — the reading happens on a background
+           trigger, because a slow console call is a dropped console call and
+           dropping the one that STARTS an import is how you run it twice. -->
+      <div id="bulkWrap" class="hide" style="margin-top:18px;border-top:2px solid var(--line);padding-top:14px">
+        <h3 style="margin:0 0 4px">…or the whole folder at once</h3>
+        <div class="msg" style="margin-top:0">
+          <b>Step 1</b> reads every file and writes a report to Drive — it writes no quotes.
+          Read the report, delete any row you don't want, then <b>step 2</b> imports what is
+          left onto the <b>Import</b> tab. Imported quotes are invisible to the yard app, the
+          haul-out sheets and the 9am reminder until you send one off. <b>No customer is emailed.</b></div>
+        <div class="msg" id="bulkNow" style="margin:8px 0 0"></div>
+        <div id="bulkReportLink" class="msg hide" style="margin:2px 0 0"></div>
+        <div class="row2" style="margin-top:10px">
+          <button class="btn navy" id="bulkScanBtn" onclick="bulkStart('scan')">1 · Scan the folder</button>
+          <button class="btn navy" id="bulkApplyBtn" onclick="bulkStart('apply')">2 · Import the approved rows</button>
+        </div>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn ghost sm" id="bulkNudgeBtn" onclick="bulkNudge()">It has stalled — nudge it</button>
+          <button class="btn ghost sm" id="bulkStopBtn" onclick="bulkStop()">Stop the run</button>
+        </div>
+        <button class="btn ghost sm wide" id="bulkRepairBtn" style="margin-top:8px"
+                onclick="bulkRepair()">Check &amp; repair the Import tab</button>
+        <div class="msg" id="bulkMsg"></div>
+      </div>
     </div>
 
     <div class="card hide" id="repriceCard">
@@ -848,7 +874,8 @@ const $=id=>document.getElementById(id);
    this list only decides what the console bothers retrying. */
 const API_GET_OK={auth:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
-  repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1};
+  repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
+  bulkImpState:1};
 /* Once a POST has come back lost, every later READ goes straight to GET — no
    point paying for a round trip that is already known to fail. A write always
    posts anyway: GET is refused for writes by the server, so skipping the POST
@@ -2216,7 +2243,12 @@ function toggleImport(){
   const c=$('importCard');
   c.classList.toggle('hide');
   if(!c.classList.contains('hide')){ IMP=null; $('impReport').classList.add('hide');
-    setMsg('impMsg',''); loadImportList(); }
+    setMsg('impMsg',''); loadImportList();
+    /* The whole-folder run writes ~139 quotes, so it is admin-only — the same
+       bar as deleting one. */
+    $('bulkWrap').classList.toggle('hide',!(ME&&ME.admin));
+    if(ME&&ME.admin) bulkPoll(true);
+  } else { bulkPollStop(); }
 }
 async function loadImportList(){
   try{
@@ -2230,6 +2262,100 @@ async function loadImportList(){
       r.hasMaster?null:false);
   }catch(e){ setMsg('impMsg',e.message,false); }
 }
+
+/* ---------- The whole folder at once ----------
+   Reading 139 .ods files takes minutes, so none of this waits for it. Starting
+   a run queues the worklist and arms a background trigger, and everything here
+   just asks where that trigger has got to. Every call returns in a moment,
+   which is the point: a console call slow enough to be dropped is a console
+   call that gets REPORTED wrong (CLAUDE.md §7), and the one you least want
+   reported wrong is the one that starts an import.
+
+   The poll stops when the card is closed and when the run finishes — a timer
+   left running against a phone in the yard is somebody's battery. */
+let BULKTIMER=null;
+function bulkPollStop(){ if(BULKTIMER){ clearTimeout(BULKTIMER); BULKTIMER=null; } }
+function bulkBusy(on){
+  ['bulkScanBtn','bulkApplyBtn','bulkRepairBtn'].forEach(id=>{
+    const b=$(id); if(b) b.disabled=!!on;
+  });
+}
+async function bulkPoll(once){
+  bulkPollStop();
+  if(!(ME&&ME.admin)) return;
+  if($('importCard').classList.contains('hide')) return;
+  try{
+    const r=await api('bulkImpState',[]);
+    if(!r||!r.ok){ setMsg('bulkNow',(r&&r.error)||'Could not read the run state.',false); return; }
+    const link=$('bulkReportLink');
+    if(r.report){
+      link.innerHTML='Report: <a href="'+esc(r.report)+'" target="_blank" rel="noopener">open it on Drive</a>';
+      link.classList.remove('hide');
+    } else link.classList.add('hide');
+
+    if(r.running){
+      bulkBusy(true);
+      setMsg('bulkNow','Running the '+(r.mode==='apply'?'import':'scan')+' — '+r.at+' of '+r.of+
+        ' file(s) read'+(r.mode==='apply'?' · '+r.imported+' imported · '+r.skipped+' skipped':'')+
+        (r.failed?' · '+r.failed+' unreadable':'')+'. You can close this; it keeps going.');
+      /* Every 15s: often enough to feel live, rare enough not to be traffic. */
+      BULKTIMER=setTimeout(()=>bulkPoll(),15000);
+      return;
+    }
+    bulkBusy(false);
+    if(r.of){
+      setMsg('bulkNow','Last '+(r.mode==='apply'?'import':'scan')+' finished — '+r.of+' file(s)'+
+        (r.mode==='apply'?', '+r.imported+' imported, '+r.skipped+' skipped as already quoted':'')+
+        (r.failed?', '+r.failed+' unreadable':'')+'.',true);
+    } else {
+      setMsg('bulkNow','Nothing running.');
+    }
+    if(r.lastError) setMsg('bulkMsg','Last error: '+r.lastError,false);
+  }catch(e){ setMsg('bulkNow',e.message,false); }
+}
+async function bulkStart(mode){
+  const isApply=mode==='apply';
+  if(!confirm(isApply
+      ? 'Import every row the report still marks IMPORT?\n\nThey land on the "Import" tab. '+
+        'No customer is emailed, and nothing is sent until you send it.'
+      : 'Read every sheet in the season folder and write a report?\n\nNo quotes are written.')) return;
+  bulkBusy(true); setMsg('bulkMsg','');
+  try{
+    const r=await api('bulkImpStart',[isApply?'apply':'scan']);
+    if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Could not start it.',false); bulkBusy(false); return; }
+    setMsg('bulkMsg','Started on '+r.files+' file(s) from “'+r.folder+'”. It runs in the background.',true);
+    toast('Started');
+    bulkPoll();
+  }catch(e){ setMsg('bulkMsg',e.message,false); bulkBusy(false); }
+}
+async function bulkNudge(){
+  try{
+    const r=await api('bulkImpNudge',[]);
+    setMsg('bulkMsg',(r&&(r.msg||r.error))||'—', !!(r&&r.ok));
+    bulkPoll();
+  }catch(e){ setMsg('bulkMsg',e.message,false); }
+}
+async function bulkStop(){
+  if(!confirm('Stop the run?\n\nNothing already written is undone.')) return;
+  try{
+    const r=await api('bulkImpStop',[]);
+    setMsg('bulkMsg',(r&&(r.msg||r.error))||'—', !!(r&&r.ok));
+    bulkPoll();
+  }catch(e){ setMsg('bulkMsg',e.message,false); }
+}
+async function bulkRepair(){
+  const b=$('bulkRepairBtn'); b.disabled=true; b.textContent='Checking…';
+  setMsg('bulkMsg','');
+  try{
+    const r=await api('bulkImpRepair',[]);
+    if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Could not check it.',false); return; }
+    setMsg('bulkMsg',r.msg,true);
+    toast('Checked');
+    bulkPoll();
+  }catch(e){ setMsg('bulkMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Check & repair the Import tab'; }
+}
+
 function impFileBase64(){
   return new Promise((res)=>{
     const f=$('impUpload').files&&$('impUpload').files[0];

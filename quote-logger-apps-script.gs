@@ -1099,7 +1099,9 @@ function doPost(e) {
       oldPhotos || (d.photosUrl || '')
     ];
     const existing = findQuoteRow_(sh, d.quoteNo);
-    const rowNum = existing > 0 ? existing : sh.getLastRow() + 1;
+    /* let, not const: a save that emails the customer their copy releases a
+       parked draft below, and the row physically moves to another tab. */
+    let rowNum = existing > 0 ? existing : sh.getLastRow() + 1;
     if (existing > 0) {
       row[COL.REM - 1] = sh.getRange(rowNum, COL.REM).getValue() || carriedReminder;
       row[COL.PHOTOS - 1] = sh.getRange(rowNum, COL.PHOTOS).getValue() || row[COL.PHOTOS - 1];
@@ -1115,10 +1117,25 @@ function doPost(e) {
       (manualRes.skipped ? ' · could NOT re-apply ' + manualRes.skipped + ' (' + manualRes.notes.join('; ') + ') — REVIEW THIS QUOTE' : '');
 
     // 3) Email service@
-    sendNotification_(d, tabName, existing > 0, pdfUrl);
+    /* WHERE THE QUOTE WILL ACTUALLY BE when Chris opens this notice. A save
+       that emails the customer their copy releases a parked draft a few lines
+       down, so a notice naming the Import tab would send him looking for a row
+       that is no longer on it. */
+    const releasing = parked && !!(d.emailCustomer && d.email);
+    sendNotification_(d, releasing ? (d.storageTab || 'No Storage') : tabName, existing > 0, pdfUrl);
 
     // 4) Customer copy, when the Email-me button was used
-    if (d.emailCustomer && d.email) { sendCustomerEmail_(d); recordEmail_(sh, rowNum, d, 'quote copy', 'Quote page'); }
+    /* THE CUSTOMER ASKING FOR THEIR OWN COPY IS A SEND, and it counts as the
+       same event as Chris emailing the quote from the console: recordEmail_
+       releases the reminder hold and moves the row off the Import tab, so a
+       boat the customer has now been told about becomes visible to the crew
+       who have to pull it. Then follow the row — everything below this line
+       would otherwise be talking about a row that has just been deleted. */
+    if (d.emailCustomer && d.email) {
+      sendCustomerEmail_(d);
+      const after = recordEmail_(sh, rowNum, d, 'quote copy', 'Quote page');
+      if (after && after.sh) { sh = after.sh; rowNum = after.rowNum; }
+    }
     /* A customer save moves a balance and can move a quote to another tab, so
        the yard sheet staff are about to open must not be the one cached before
        it happened. */
@@ -4489,7 +4506,9 @@ function recordEmail_(sh, rowNum, d, kind, by) {
      released here rather than in the console path alone — the sheet menu can
      send the same emails, and menu/console parity is a standing rule. */
   releaseImportHold_(sh, rowNum);
-  leaveImportTab_(sh, rowNum, d);
+  /* Where the row is NOW. Callers that keep working with it after a send have
+     to follow it off the Import tab; the ones that don't simply ignore this. */
+  return leaveImportTab_(sh, rowNum, d) || { sh: sh, rowNum: rowNum };
 }
 
 /* Emailing the customer is the moment a bulk-imported draft becomes a real
@@ -4509,17 +4528,20 @@ function recordEmail_(sh, rowNum, d, kind, by) {
    already knows where it belongs. Same guard as the dimension editor's move:
    never drag a lead off its own tab. */
 function leaveImportTab_(sh, rowNum, d) {
-  if (!sh || !rowNum || !d) return;
+  if (!sh || !rowNum || !d) return null;
   try {
-    if (!isImportTab_(sh.getName())) return;
+    if (!isImportTab_(sh.getName())) return null;
     const dest = String(d.storageTab || '') || 'No Storage';
-    if (isOffstageTab_(dest)) return;            // nowhere sensible to send it
-    moveQuoteRow_({ sh: sh, rowNum: rowNum, d: d }, dest);
+    if (isOffstageTab_(dest)) return null;       // nowhere sensible to send it
+    const ctx = { sh: sh, rowNum: rowNum, d: d };
+    moveQuoteRow_(ctx, dest);                    // rewrites ctx.sh / ctx.rowNum
     auditLog_('System', 'Sent ' + d.quoteNo + ' — moved off ' + IMPORT_TAB + ' to ' + dest);
+    return { sh: ctx.sh, rowNum: ctx.rowNum };
   } catch (e) {
     /* Bookkeeping must never fail a send that has already gone out. The row
        stays on the Import tab and the next send moves it. */
     console.error('leaveImportTab_ failed for ' + (d && d.quoteNo) + ': ' + e);
+    return null;
   }
 }
 

@@ -123,6 +123,30 @@ MUST_EXCLUDE.forEach(function (pair) {
          'and saving it would publish it to the storage view, the yard app and the ' +
          'printed haul-out sheets without anybody sending it');
   }
+  /* The customer's own "Email me this quote" is a send like any other, and
+     Chris asked for it to count as one: it must go through recordEmail_, which
+     is what releases both holds. A save that emailed the customer and left the
+     row parked would leave a boat the customer has been told about invisible
+     to the crew — and the row it then caches would be one that moved. */
+  if (/sendCustomerEmail_\(d\);[\s\S]{0,240}recordEmail_\(sh, rowNum, d, 'quote copy'/.test(post)) {
+    ok('the customer emailing themselves their copy releases the draft');
+  } else {
+    fail('doPost emails the customer without recording it through recordEmail_ — the ' +
+         'quote would stay parked and held back from the 9am reminder although the ' +
+         'customer has been sent it');
+  }
+  if (/after\.sh/.test(post) && /rowNum = after\.rowNum/.test(post)) {
+    ok('and doPost follows the row to wherever that send left it');
+  } else {
+    fail('doPost keeps using sh/rowNum after a send that can move the row — the row ' +
+         'cache would point at a deleted row on the Import tab');
+  }
+  const rec = fn('recordEmail_');
+  if (/return leaveImportTab_\(/.test(rec)) {
+    ok('recordEmail_ is the single release, and reports where the row landed');
+  } else {
+    fail('recordEmail_ no longer releases the Import tab — every send site loses it at once');
+  }
   const dims = fn('adminDimsApply');
   if (/!isOffstageTab_\(fromTab\)/.test(dims)) {
     ok('a re-measure does not drag a draft (or a lead) off its own tab');

@@ -232,6 +232,14 @@ if [ -f yard/index.html ]; then
   else
     echo "  FAIL gate: Import tab"; sed 's/^/       /' "$TMP/imptab.txt"; FAIL=1
   fi
+  # ...and the other half of that rule: a send, including the customer's own
+  # "Email me this quote", is what releases a draft. Run, not read — a release
+  # that is wired up but lands the row in the wrong place reads identically.
+  if node tools/check-import-release.js > "$TMP/imprel.txt" 2>&1; then
+    echo "  OK   gate: a send moves a draft off the Import tab, and says where to"
+  else
+    echo "  FAIL gate: Import release"; sed 's/^/       /' "$TMP/imprel.txt"; FAIL=1
+  fi
   # The pull rule belongs to the server. Three surfaces ask it; one answers.
   if node tools/check-yard-app.js > "$TMP/yardapp.txt" 2>&1; then
     echo "  OK   gate: yard app renders the server's verdict and degrades safely"

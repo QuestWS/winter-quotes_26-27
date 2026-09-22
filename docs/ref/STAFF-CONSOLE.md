@@ -359,8 +359,18 @@ So opening a draft is allowed and **releasing** one is not:
   alone, so fixing an imported quote's beam from the console put a boat nobody
   had agreed to store onto the crew's haul-out list.
 - **`recordEmail_` is the only release**, which is what makes "sending it is
-  what puts it on a real tab" true rather than aspirational. A quote-page save
-  that *does* email the customer goes through it like any other send.
+  what puts it on a real tab" true rather than aspirational.
+- **The customer's own "Email me this quote" counts as that send** — Chris's
+  call, and the same event as him emailing it from the console. It runs
+  `recordEmail_`, so the hold is swapped for a SENT marker (the ten days start
+  from *that* moment) and the row moves onto its storage tab, where the crew
+  can see a boat the customer has now been told about. Two things follow from
+  the row physically moving mid-request: `doPost` takes the resting `{sh,
+  rowNum}` back from `recordEmail_` and keeps working with **that** — anything
+  after the send would otherwise be addressing a deleted row, starting with the
+  row cache — and the service@ notice names the tab the quote **ends on**,
+  since a notice saying `Import` would send Chris looking for a row that is no
+  longer there.
 
 The reminder hold is the belt to that brace: it lives in the row's own
 `COL.REM` and survives every move, so even a draft that leaves the tab cannot
@@ -369,7 +379,12 @@ be picked up by the 9am trigger until a human has sent it.
 `tools/check-import-tab.js` reads the real scan bodies out of the `.gs` and
 executes the predicates. It asserts all three directions: every customer-facing
 **push** excludes the tab, every staff path still reaches it, and the loader,
-the save and the re-measure leave a parked row parked. Hiding it from
+the save and the re-measure leave a parked row parked.
+`tools/check-import-release.js` is the other half, and it **runs** the release
+rather than reading it: the real `recordEmail_`, `leaveImportTab_` and
+`moveQuoteRow_` against a fake spreadsheet, asking where the row actually
+landed. A release that is wired up but drops the row in the wrong place, or
+moves it without reporting where, reads identically to one that works. Hiding it from
 everything would be safe and useless.
 
 ### Two holds, and sending releases both

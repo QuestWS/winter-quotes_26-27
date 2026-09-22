@@ -177,7 +177,7 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
    6. THE RUN ITSELF.
    ===================================================================== */
 {
-  const start = fn('bulkImportStart');
+  const start = fn('bulkImportStart_');
   /* bulkImportSlice_, not bulkImportStep: the loop moved there so the
      foreground runner could share it, leaving step as a catch around it. */
   const step  = fn('bulkImportSlice_');
@@ -298,10 +298,10 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
      to put the stack on the screen somebody is looking at. */
   /* Comments stripped first: this function's own comment explains why it does
      NOT catch, and matching that prose would fail the check it describes. */
-  const now = fn('bulkImportRunNow').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const now = fn('bulkImportContinue').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   if (!now) fail('there is no foreground runner');
   else if (/catch/.test(now)) {
-    fail('bulkImportRunNow catches its own error — then the editor shows nothing useful ' +
+    fail('bulkImportContinue catches its own error — then the editor shows nothing useful ' +
          'and the stall is just as opaque as before');
   } else ok('the foreground runner lets the editor show the stack');
   if (/bulkImportSlice_\(\)/.test(now)) ok('and it shares the same slice the trigger runs');
@@ -311,6 +311,44 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   const slice = fn('bulkImportSlice_');
   if (/bulkImportSave_\(st\)/.test(slice)) ok('a slice saves its progress whichever way it was started');
   else fail('bulkImportSlice_ never saves — a resumed run would start from the beginning');
+}
+
+/* =====================================================================
+   10. THE RUN DROPDOWN READS IN THE ORDER YOU RUN IT.
+   ---------------------------------------------------------------------
+   The Apps Script editor lists top-level functions in FILE ORDER and hides
+   anything ending in an underscore. For a migration somebody runs twice ever,
+   that list is the only instruction they get at the moment they click — and
+   it first shipped as Start, Step, Scan, Apply, Status, Stop: two pieces of
+   machinery above the thing you actually want, and Apply sitting next to Scan
+   with nothing to say which comes first.
+   ===================================================================== */
+{
+  const pub = (GAS.match(/^function (bulkImport[A-Za-z0-9_]*)\s*\(/gm) || [])
+    .map(m => m.replace(/^function /, '').replace(/\s*\($/, ''))
+    .filter(n => !n.endsWith('_'));          // the editor hides these
+  const want = ['bulkImport1_Scan', 'bulkImport2_Apply', 'bulkImportContinue',
+                'bulkImportStatus', 'bulkImportStop', 'bulkImportStep'];
+  eq(pub.join(' → '), want.join(' → '),
+     'the dropdown reads: scan, apply, continue, status, stop, then the trigger handler');
+
+  /* The numbered pair must stay numbered: they are the only two that have a
+     wrong order to get wrong. */
+  if (/^function bulkImport1_Scan/m.test(GAS) && /^function bulkImport2_Apply/m.test(GAS)) {
+    ok('and the two passes carry their order in their names');
+  } else fail('the two passes are no longer numbered — nothing in the dropdown says which is first');
+
+  /* Machinery must not climb back into the list. */
+  const machinery = ['bulkImportStart_', 'bulkImportSlice_', 'bulkImportOne_',
+                     'bulkImportArm_', 'bulkImportBlewUp_', 'bulkImportState_'];
+  const leaked = machinery.filter(n => pub.indexOf(n.replace(/_$/, '')) > -1);
+  if (leaked.length) fail('machinery is showing in the dropdown: ' + leaked.join(', '));
+  else ok('the machinery stays out of it');
+
+  /* And the trigger handler must stay public, or the trigger stops firing. */
+  if (/^function bulkImportStep\s*\(/m.test(GAS)) ok('the trigger handler is still public');
+  else fail('bulkImportStep was made private — a trailing-underscore trigger handler fires ' +
+            'unreliably, which is the trap sweepTranscripts already hit');
 }
 
 if (bad) { console.error('\n' + bad + ' problem(s) with the Import tab'); process.exit(1); }

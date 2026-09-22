@@ -364,14 +364,37 @@ saves progress to Script Properties, and re-arms a trigger. Interrupt it, run
 out of quota, close the tab — it picks up where it stopped. `bulkImportStatus()`
 says where that is; `bulkImportStop()` ends it.
 
+### What you run, and in what order
+
+The Apps Script Run dropdown lists top-level functions in **file order** and
+hides anything ending in an underscore, so for a job somebody runs twice ever
+that list *is* the instruction. It is ordered deliberately, and
+`check-import-tab.js` pins the order:
+
+| Dropdown | What it does |
+|---|---|
+| `bulkImport1_Scan()` | Pass one. Queues the folder, writes the report, starts the background run. |
+| `bulkImport2_Apply()` | Pass two. Queues the approved rows and starts the run. |
+| `bulkImportContinue()` | Pushes the current pass along **in the foreground**, so an error reaches the screen. Use after either pass. |
+| `bulkImportStatus()` | Where it got to. |
+| `bulkImportStop()` | Ends the run. Nothing already written is undone. |
+| `bulkImportStep()` | **Not for clicking** — the background trigger's handler. |
+
+It first shipped as `bulkImportStart, bulkImportStep, bulkImportScan,
+bulkImportApply, …`: two pieces of machinery above the thing you actually
+want, with `Scan` and `Apply` side by side and nothing saying which came
+first. `bulkImportStart_` is now private so it leaves the list; `bulkImportStep`
+has to stay public, because a trigger handler with a trailing underscore fires
+unreliably (the trap `sweepTranscripts` hit), so it sits last instead.
+
 ### Two passes, and the report is the approval
 
-1. **`bulkImportScan()`** reads every file and writes a **report sheet to
+1. **`bulkImport1_Scan()`** reads every file and writes a **report sheet to
    Drive**. It touches the quote spreadsheet only to read it. Chris gets an
    email with the link when it finishes.
 2. He reads the report and **deletes any row he doesn't want** (or changes its
    first cell from `IMPORT`).
-3. **`bulkImportApply()`** imports exactly what the report still marks
+3. **`bulkImport2_Apply()`** imports exactly what the report still marks
    `IMPORT`, onto the Import tab, and rewrites each row's verdict in place so
    one report tells the whole story.
 

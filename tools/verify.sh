@@ -51,7 +51,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
     "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "importApplyCore_" "legacyToState_" "IMPORT_TAB" "isImportTab_" "isOffstageTab_" "bulkImportScan" "bulkImportApply" "bulkImportStep" "bulkImportOne_" "bulkImportDuplicateOf_" "BULKIMP_NOT_A_QUOTE_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
+    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "importApplyCore_" "legacyToState_" "IMPORT_TAB" "isImportTab_" "isOffstageTab_" "bulkImport1_Scan" "bulkImport2_Apply" "bulkImportContinue" "bulkImportStep" "bulkImportOne_" "bulkImportDuplicateOf_" "BULKIMP_NOT_A_QUOTE_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1

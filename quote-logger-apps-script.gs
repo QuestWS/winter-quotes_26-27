@@ -3436,7 +3436,7 @@ const BULKIMP_HEAD_ = ['Import?', 'File', 'Customer', 'Unit', 'Dimensions',
 
 /* Build the worklist. Reads the folder only -- no file is opened here, so this
    returns in a second however big the folder is. */
-function bulkImportStart(mode) {
+function bulkImportStart_(mode) {
   const m = (mode === 'apply') ? 'apply' : 'scan';
   const folder = legacyFolder_();
   if (!folder) throw new Error('No season folder found on Drive. Expected one named like "Storage 2025-2026".');
@@ -3446,7 +3446,7 @@ function bulkImportStart(mode) {
     /* Pass two imports exactly what the report still says to import. Chris
        deleting a row is how he says no to one. */
     jobs = bulkImportReadReport_();
-    if (!jobs.length) throw new Error('Nothing marked for import. Run bulkImportScan() first, then check the report.');
+    if (!jobs.length) throw new Error('Nothing marked for import. Run bulkImport1_Scan() first, then check the report.');
   } else {
     const it = folder.getFiles();
     while (it.hasNext()) {
@@ -3497,7 +3497,7 @@ function bulkImportNewReport_(folderName, n) {
    its first cell, is how a file is excluded from pass two. */
 function bulkImportReadReport_() {
   const id = PropertiesService.getScriptProperties().getProperty(BULKIMP_REPORT_PROP_);
-  if (!id) throw new Error('No scan report yet — run bulkImportScan() first.');
+  if (!id) throw new Error('No scan report yet — run bulkImport1_Scan() first.');
   const sh = SpreadsheetApp.openById(id).getSheetByName('Report');
   if (!sh) throw new Error('That report has no Report tab.');
   const last = sh.getLastRow();
@@ -3528,20 +3528,12 @@ function bulkImportDisarm_() {
   });
 }
 
-/* One slice of the worklist. Public because a trigger handler with a trailing
-   underscore is treated as private and does not reliably fire (the same trap
-   sweepTranscripts hit). */
-function bulkImportStep() {
-  bulkImportDisarm_();
-  try { bulkImportSlice_(); }
-  catch (err) { bulkImportBlewUp_(err); }
-}
 
 /* A RUN THAT DIES MUST SAY SO.
    ---------------------------------------------------------------------------
    The first real run of this stalled in total silence: the report sat on
    "Scanning 139 files…", no email arrived, and the editor said "Execution
-   Complete" because bulkImportScan only builds the worklist and returns. The
+   Complete" because bulkImport1_Scan only builds the worklist and returns. The
    work happens on a trigger, and bulkImportStep deletes its own trigger before
    doing anything -- so one throw outside the per-file catch disarmed the run,
    killed it, and left nothing behind to say why.
@@ -3570,7 +3562,7 @@ function bulkImportBlewUp_(err) {
       subject: 'Bulk import STOPPED after ' + st.done + ' of ' + st.jobs.length + ' files',
       body: 'The ' + st.mode + ' run stopped on an error it hit three times.\n\n' + msg +
         '\n\nNothing is half-written: every file already processed is in the report, and\n' +
-        'bulkImportRunNow() picks up from file ' + (st.i + 1) + ' when you are ready.\n\n' +
+        'bulkImportContinue() picks up from file ' + (st.i + 1) + ' when you are ready.\n\n' +
         (st.reportId ? 'Report: https://docs.google.com/spreadsheets/d/' + st.reportId + '/edit' : '')
     });
   } catch (e) { console.error('could not send the failure note: ' + e); }
@@ -3739,18 +3731,30 @@ function bulkImportFinish_(st) {
             'They are invisible to the yard app, the haul-out sheets and the 9am reminder until you send one off.'
           : 'NOTHING HAS BEEN WRITTEN to the quote sheet yet.\n' +
             'Open the report, delete any row you do not want (or change its first cell from IMPORT),\n' +
-            'then run bulkImportApply() to import what is left.')
+            'then run bulkImport2_Apply() to import what is left.')
     });
   } catch (e) { console.error('bulk finish email failed: ' + e); }
   bulkImportClear_();
 }
 
-/* ---- the three you run from the editor -------------------------------- */
+/* ===================== WHAT YOU RUN, IN THE ORDER YOU RUN IT ============
+ * The Apps Script editor's Run dropdown lists top-level functions in FILE
+ * ORDER and hides anything ending in an underscore. That makes the order of
+ * the five below the only documentation a person gets at the moment they are
+ * about to click something, so it is deliberate: the two numbered passes
+ * first, then the three you reach for when a run needs a push or a look.
+ *
+ * Everything else in this section is machinery and ends in _ so it stays out
+ * of that list. bulkImportStep is the one exception — it is a TRIGGER handler,
+ * and a trailing underscore makes those fire unreliably (the trap
+ * sweepTranscripts hit), so it has to be public. It sits last, after the
+ * things a human actually picks.
+ * ===================================================================== */
 
 /* PASS ONE. Reads every file in the season folder and writes a report to
    Drive. Touches the quote spreadsheet only to read it. */
-function bulkImportScan() {
-  const r = bulkImportStart('scan');
+function bulkImport1_Scan() {
+  const r = bulkImportStart_('scan');
   console.log('Scanning ' + r.files + ' files from "' + r.folder + '".');
   console.log('Report: ' + r.report);
   console.log('It runs in the background; you get an email when it finishes.');
@@ -3758,23 +3762,24 @@ function bulkImportScan() {
 }
 
 /* PASS TWO. Imports every row the report still marks IMPORT, onto the Import
-   tab. Run it only after reading the report. */
-function bulkImportApply() {
-  const r = bulkImportStart('apply');
+   tab. Run it only after reading the report that pass one produced. */
+function bulkImport2_Apply() {
+  const r = bulkImportStart_('apply');
   console.log('Importing ' + r.files + ' quotes onto the "' + IMPORT_TAB + '" tab.');
   console.log('It runs in the background; you get an email when it finishes.');
   return r;
 }
 
-/* RUN A SLICE IN THE FOREGROUND, and let anything that goes wrong reach the
-   screen you are looking at. Use this when the background run has stalled, or
-   simply instead of it: click, watch the log, click again. A one-off migration
-   does not need to be invisible to be resumable, and the trigger is only there
-   so you do not have to click. */
-function bulkImportRunNow() {
+/* PUSH THE CURRENT PASS ALONG BY HAND, in the foreground, letting anything
+   that goes wrong reach the screen you are looking at. Use it after either
+   numbered pass: when the background run has stalled, or simply instead of it
+   — click, watch the log, click again. A one-off migration does not need to be
+   invisible to be resumable, and the trigger only exists so you need not
+   click. */
+function bulkImportContinue() {
   const before = bulkImportState_();
   if (!before) {
-    console.log('Nothing queued. Run bulkImportScan() (or bulkImportApply()) first.');
+    console.log('Nothing queued. Run bulkImport1_Scan() (or bulkImport2_Apply()) first.');
     return { ok: 0, error: 'nothing queued' };
   }
   console.log(before.mode + ': starting at file ' + (before.i + 1) + ' of ' + before.jobs.length +
@@ -3788,7 +3793,7 @@ function bulkImportRunNow() {
   } else if (after) {
     console.log('Stopped at ' + after.i + ' of ' + after.jobs.length + ' (time budget). ' +
       after.imported + ' imported · ' + after.skipped + ' skipped · ' + after.failed + ' failed.');
-    console.log('Run bulkImportRunNow() again to continue — or leave it, a trigger is armed.');
+    console.log('Run bulkImportContinue() again to continue — or leave it, a trigger is armed.');
   }
   return r;
 }
@@ -3808,6 +3813,17 @@ function bulkImportStop() {
   console.log('Stopped. Nothing already written is undone — delete rows from the Import tab if you need to.');
   return { ok: 1 };
 }
+/* NOT FOR CLICKING — this is what the background trigger calls. Running it by
+   hand works, but bulkImportContinue() is the one that shows you an error.
+   Public only because a trigger handler with a trailing underscore fires
+   unreliably (the trap sweepTranscripts hit); kept last so it is the furthest
+   thing from the two passes at the top of the list. */
+function bulkImportStep() {
+  bulkImportDisarm_();
+  try { bulkImportSlice_(); }
+  catch (err) { bulkImportBlewUp_(err); }
+}
+
 
 /* ======================= WHERE A UNIT IS IN THE SEASON ==================
    One field, four states, and the yard app's three lists are just this field

@@ -88,17 +88,54 @@ const REMINDER_ENABLED = true;
 const AUTO_PAUSE_KEY_ = 'AUTO_EMAIL_PAUSED';
 function autoPauseState_() {
   const raw = PropertiesService.getScriptProperties().getProperty(AUTO_PAUSE_KEY_);
-  if (!raw) return { on: false, reason: '', by: '', at: '' };
+  if (!raw) return { on: false, reason: '', by: '', at: '', resumedAt: '' };
   try {
     const p = JSON.parse(raw);
-    return { on: !!p.on, reason: String(p.reason || ''), by: String(p.by || ''), at: String(p.at || '') };
+    return { on: !!p.on, reason: String(p.reason || ''), by: String(p.by || ''), at: String(p.at || ''),
+             /* ISO, machine-readable, unlike `at` which is for reading. The
+                clocks below are measured from it. */
+             resumedAt: String(p.resumedAt || '') };
   } catch (e) {
     /* Anything unparseable is treated as PAUSED. A corrupt flag must fail
        towards sending nothing, never towards emailing five hundred people. */
-    return { on: true, reason: 'unreadable pause setting — treating as paused', by: '', at: '' };
+    return { on: true, reason: 'unreadable pause setting — treating as paused', by: '', at: '', resumedAt: '' };
   }
 }
 function autoEmailsPaused_() { return autoPauseState_().on; }
+
+/* ---------------------------------------------------------------------------
+   THE CLOCKS RESTART WHEN THE PAUSE LIFTS
+   ---------------------------------------------------------------------------
+   Lifting the pause must not fire everything that came due while it was on.
+   The case that made this a rule: the 2026-2027 rate card lands, PRICES is
+   updated, `provisional` goes false, the season is re-priced and everybody is
+   emailed their real quote -- and the pause comes off. Without this, the next
+   9am sweep sees a few hundred quotes whose ten days elapsed weeks ago and
+   sends the lot. A customer reads "here is your updated quote" and, hours
+   later, "your quote is still waiting" about the same quote.
+
+   So a pause does not hold the clock, it RESETS it: nothing automatic goes out
+   until a full window has passed since the pause came off. That covers both
+   halves of the problem in one rule -- a quote whose timer would have STARTED
+   during the pause, and one whose timer would have EXPIRED during it.
+
+   Deliberately global rather than per-quote. The alternative, restarting only
+   the rows whose timestamp falls inside the pause window, still lets everything
+   older fire on resume morning, which is the blast this exists to stop.
+
+   Returns '' when the send may go ahead, or a sentence saying why not (which
+   is what lands in the execution log). A resumedAt we cannot parse means no
+   cooldown: the guard must never be the reason a real reminder stops for ever,
+   and the pause itself already fails towards silence. */
+function autoPauseCooldown_(windowMs) {
+  const at = Date.parse(autoPauseState_().resumedAt || '');
+  if (isNaN(at) || !(windowMs > 0)) return '';
+  const until = at + windowMs;
+  if (Date.now() >= until) return '';
+  return 'automatic emails resumed ' + new Date(at).toLocaleString() +
+    ', so the clock restarts from there — nothing automatic goes out before ' +
+    new Date(until).toLocaleString() + '.';
+}
 const REMINDER_AFTER_DAYS = 10;
 /* THE REMINDER COLUMN ON AN IMPORTED QUOTE.
    ---------------------------------------------------------------------------
@@ -6189,16 +6226,27 @@ function adminEditLine(token, qn, idx, action, newAmt, newLabel) {
    it does not do its job. Only an admin can change it. */
 function adminAutoPause(token) {
   requireAuth_(token, 'view');
-  return Object.assign({ ok: 1 }, autoPauseState_());
+  /* The console shows this: "running again, but nothing automatic until the
+     29th" is a different state from "running", and staff who cannot see it
+     will report the reminders as broken. */
+  return Object.assign({ ok: 1 }, autoPauseState_(),
+    { cooldown: autoPauseCooldown_(REMINDER_AFTER_DAYS * 24 * 60 * 60 * 1000) });
 }
 function adminSetAutoPause(token, on, reason) {
   const who = requireAuth_(token, 'view');
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const prev = autoPauseState_();
+  /* Only a real pause->running transition restarts the clocks. Clicking
+     "resume" on something already running must not buy another ten days of
+     silence, and starting a pause clears the last resume rather than leaving a
+     stale one to expire mid-pause. */
+  const resuming = prev.on && !on;
   const state = {
     on: !!on,
     reason: String(reason || '').slice(0, 200),
     by: who.name,
-    at: new Date().toLocaleString()
+    at: new Date().toLocaleString(),
+    resumedAt: on ? '' : (resuming ? new Date().toISOString() : (prev.resumedAt || ''))
   };
   PropertiesService.getScriptProperties().setProperty(AUTO_PAUSE_KEY_, JSON.stringify(state));
   auditLog_(who.name, 'AUTOMATIC EMAILS ' + (state.on ? 'PAUSED' : 'RESUMED') +
@@ -6211,12 +6259,18 @@ function adminSetAutoPause(token, on, reason) {
       'Winter quotes: automatic customer emails ' + (state.on ? 'PAUSED' : 'resumed'),
       (state.on
         ? 'The 10-day quote reminder and the 24h lead follow-up are now PAUSED.\n\n'
-        : 'The 10-day quote reminder and the 24h lead follow-up are running again.\n\n') +
+        : 'The 10-day quote reminder and the 24h lead follow-up are running again.\n\n' +
+          (resuming
+            ? 'Both clocks restart from now, so nothing automatic goes out for another ' +
+              REMINDER_AFTER_DAYS + ' days (' + LEAD_FOLLOWUP_AFTER_HOURS + ' hours for leads). ' +
+              'Nobody gets an updated quote and a reminder about it in the same week.\n\n'
+            : '')) +
       'By: ' + state.by + '\nWhen: ' + state.at +
       (state.reason ? '\nReason: ' + state.reason : '') +
       '\n\nStaff can still send emails by hand from the console; this only affects the two automatic sends.');
   } catch (e) { console.error('Pause notice failed: ' + e); }
-  return Object.assign({ ok: 1 }, state);
+  return Object.assign({ ok: 1 }, state,
+    { cooldown: autoPauseCooldown_(REMINDER_AFTER_DAYS * 24 * 60 * 60 * 1000) });
 }
 
 function adminListStaff(token) {
@@ -7976,6 +8030,10 @@ function setupReminderTrigger() {
 function dailyReminderCheck() {
   if (!REMINDER_ENABLED) return;
   if (autoEmailsPaused_()) { console.log('Automatic emails are paused — no 10-day reminders sent.'); return; }
+  /* The ten days restart when a pause is lifted, so an updated quote is not
+     chased by a reminder about itself. See autoPauseCooldown_. */
+  const cooling = autoPauseCooldown_(REMINDER_AFTER_DAYS * 24 * 60 * 60 * 1000);
+  if (cooling) { console.log('No 10-day reminders: ' + cooling); return; }
   const cutoff = Date.now() - REMINDER_AFTER_DAYS * 24 * 60 * 60 * 1000;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(function (sh) {
@@ -8060,6 +8118,10 @@ function isLeadFollowUpMark_(v) { return String(v || '').indexOf(LEAD_FOLLOWUP_M
 function leadFollowUpCheck() {
   if (!LEAD_FOLLOWUP_ENABLED) return;
   if (autoEmailsPaused_()) { console.log('Automatic emails are paused — no lead follow-ups sent.'); return; }
+  /* Same rule, its own window: every lead that went stale during the pause
+     would otherwise be nudged at once on resume morning. */
+  const coolingLead = autoPauseCooldown_(LEAD_FOLLOWUP_AFTER_HOURS * 60 * 60 * 1000);
+  if (coolingLead) { console.log('No lead follow-ups: ' + coolingLead); return; }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(STARTED_TAB);
   if (!sh) return;

@@ -157,6 +157,35 @@ human**: the 10-day reminder and the lead follow-up.
   standing banner is the thing that stops somebody blasting old prices.
 - **The banner shows for everyone, not just admins.** A pause nobody can see is
   a pause somebody forgets to lift. Toggling it is audited and emails `NOTIFY`.
+- **Lifting the pause RESTARTS both clocks; it does not resume them.**
+  `autoPauseCooldown_` holds the 10-day reminder for a further ten days after
+  the pause comes off, and the lead follow-up for a further 24 hours.
+
+  Chris's case, and the one this was built for: the 2026-2027 rate card lands,
+  `PRICES` is updated, `provisional` goes false, the season is re-priced and
+  everybody is emailed their real quote — then the pause comes off. Without the
+  cooldown the next 9am sweep finds a few hundred quotes whose ten days elapsed
+  weeks ago and sends the lot, so a customer reads *"here is your updated
+  quote"* and hours later *"your quote is still waiting"* about the same quote.
+
+  - **Global, not per-quote.** Restarting only the rows whose timestamp falls
+    inside the pause window still lets everything older fire on resume morning,
+    which is the blast this exists to stop.
+  - **Only a real pause → running transition stamps it.** Clicking "resume" on
+    something already running must not buy another ten days of silence, and
+    starting a pause clears the last stamp rather than leaving a stale one to
+    expire mid-pause.
+  - **An unreadable `resumedAt` means no cooldown.** The pause itself fails
+    towards silence; this guard must never become the reason a real reminder
+    stops for ever.
+  - **It is visible.** The resume notice to `NOTIFY` says the clocks restarted,
+    the console's pause card carries the same sentence, and the Resume
+    confirmation says it before you click — because "running again, but nothing
+    until the 29th" looks exactly like a broken reminder to anyone who cannot
+    see it.
+  - `check-perms-pause.js` executes it: the cooldown at 0, 9 and 11 days, the
+    24h lead window inside the 10-day one, a corrupt stamp, and all four pause
+    transitions through the real `adminSetAutoPause`.
 
 - **Two customer-facing emails are automatic; everything else needs a click.**
   (1) the 10-day reminder on real quotes, and (2) the **lead follow-up**

@@ -19,7 +19,11 @@
    Run by tools/verify.sh. */
 'use strict';
 const fs = require('fs');
-const GAS = fs.readFileSync('/home/user/winter-quotes_26-27/quote-logger-apps-script.gs', 'utf8');
+const path = require('path');
+/* Relative to THIS FILE, never an absolute path: the checkout lives somewhere
+   else on the CI runner, and a hardcoded one turns "the test passes" into "the
+   test passes on the machine it was written on". It did exactly that once. */
+const GAS = fs.readFileSync(path.join(__dirname, '..', 'quote-logger-apps-script.gs'), 'utf8');
 function fn(n){
   const one = GAS.match(new RegExp('^function ' + n + '\\b.*}\\s*$','m'));
   if (one) return one[0];

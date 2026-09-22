@@ -2592,7 +2592,11 @@ function renderPause(){
     b.textContent='Resume automatic emails'; b.className='btn gold';
     why.classList.add('hide');
   }else{
-    setMsg('pauseState','Currently running normally.',true);
+    /* "Running" and "running, but the clocks are still restarting" are
+       different states. Without this, the days after a pause is lifted look
+       exactly like a broken reminder — which is the point at which somebody
+       goes hunting for a bug that is not there. */
+    setMsg('pauseState','Currently running normally.'+(PAUSE.cooldown?' '+PAUSE.cooldown:''),true);
     b.textContent='Pause automatic emails'; b.className='btn navy';
     why.classList.remove('hide');
   }
@@ -2606,14 +2610,15 @@ async function toggleAutoPause(){
   const turningOn=!PAUSE.on;
   const msg=turningOn
     ? 'Pause the two automatic customer emails?\n\nThe 10-day reminder and the lead follow-up will stop until you turn this back on.'
-    : 'Resume automatic customer emails?\n\nThe 10-day reminder and the lead follow-up start going out again — including to anyone who became due while it was paused.';
+    : 'Resume automatic customer emails?\n\nThe 10-day reminder and the lead follow-up start going out again, but BOTH CLOCKS RESTART FROM NOW — nobody who became due during the pause is chased straight away. Nothing automatic goes out for another 10 days (24 hours for leads).';
   if(!confirm(msg)) return;
   const b=$('pauseBtn'); b.disabled=true; b.textContent='Saving…';
   try{
     const r=await api('setAutoPause',[turningOn?1:0,turningOn?$('pauseReason').value:'']);
     if(!r||!r.ok){ setMsg('pauseMsg',(r&&r.error)||'Could not change that.',false); return; }
     PAUSE=r; renderPause();
-    setMsg('pauseMsg',turningOn?'Paused. Nothing sends on its own now.':'Running again.',true);
+    setMsg('pauseMsg',turningOn?'Paused. Nothing sends on its own now.'
+      :('Running again. '+(r.cooldown||'')),true);
     toast(turningOn?'Automatic emails paused':'Automatic emails resumed');
   }catch(e){ setMsg('pauseMsg',e.message,false); }
   finally{ b.disabled=false; renderPause(); }

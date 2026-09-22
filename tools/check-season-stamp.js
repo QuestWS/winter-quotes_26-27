@@ -220,6 +220,11 @@ console.log('=== the 10-day reminder and an imported quote ===');
          where there is only a missing definition. */
       "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
       'function autoEmailsPaused_(){return false;}',
+      /* Nothing is paused in these cases, so no cooldown is running. The
+         "lifting a pause restarts the ten days" rule has its own guard, in
+         check-perms-pause.js; stubbing it here keeps this file about the
+         marker rules it was written for. */
+      "function autoPauseCooldown_(){return '';}",
       'function signUrlFor_(){return "";}',
       'function customerEmailHtml_(){return "<p>x</p>";}',
       'function quoteLink_(){return "u";}',

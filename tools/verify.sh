@@ -829,6 +829,18 @@ else
   echo "  (no deploy workflow — Apps Script is deployed by hand)"
 fi
 
+# A GUARD THAT ONLY RUNS ON ONE MACHINE IS NOT A GUARD. check-import-release.js
+# shipped reading an absolute home-directory path: it passed here and died on
+# the CI runner, where the checkout is somewhere else, so the deploy stopped on
+# a green local run and a red remote one. Tools resolve the repo from
+# __dirname; nothing in tools/ may name an absolute home directory. (This check
+# greps for the pattern, so it must not write one itself.)
+HARDPATH=$(git grep -nI -- '/home/[a-z]' -- 'tools/*' 2>/dev/null || true)
+if [ -n "$HARDPATH" ]; then
+  echo "  FAIL trap: a tool hardcodes an absolute path — it will only run on one machine:"
+  echo "$HARDPATH" | sed 's/^/       /'; FAIL=1
+else echo "  OK   trap: no tool hardcodes an absolute path"; fi
+
 echo "== Secrets ==" 
 # NOTHING THAT AUTHENTICATES US BELONGS IN THIS REPO. The AssemblyAI key lives
 # in Script Properties, where only Chris can put it; the webhook secret mints

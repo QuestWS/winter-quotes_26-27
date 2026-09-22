@@ -34,8 +34,8 @@ const PropertiesService={getScriptProperties:()=>({
 const B=new Function('PropertiesService',[
   fn('canKeys_'), fn('canMeasure_'), fn('resolvedPerms_'),
   "const AUTO_PAUSE_KEY_='AUTO_EMAIL_PAUSED';",
-  fn('autoPauseState_'), fn('autoEmailsPaused_'),
-  'return {canKeys_,canMeasure_,resolvedPerms_,autoPauseState_,autoEmailsPaused_};'
+  fn('autoPauseState_'), fn('autoEmailsPaused_'), fn('autoPauseCooldown_'),
+  'return {canKeys_,canMeasure_,resolvedPerms_,autoPauseState_,autoEmailsPaused_,autoPauseCooldown_};'
 ].join('\n'))(PropertiesService);
 
 let fails=0;
@@ -117,5 +117,69 @@ check('CORRUPT setting = paused',       B.autoEmailsPaused_()===true, 'must fail
 store['AUTO_EMAIL_PAUSED']='';
 check('empty string means running',     B.autoEmailsPaused_()===false);
 
-console.log(fails?fails+' permission/pause violation(s)':'permissions and pause hold: yard crew can record keys, a broken pause stops sending');
+/* ===================================================================
+   5. LIFTING THE PAUSE RESTARTS THE CLOCKS.
+   -------------------------------------------------------------------
+   The case this exists for: the rate card lands, the season is re-priced,
+   everybody is emailed their real quote, and the pause comes off. Without
+   the cooldown the next 9am sweep sends a reminder to every quote whose ten
+   days elapsed during the pause — so the customer reads "here is your
+   updated quote" and then "your quote is still waiting" about the same one.
+   =================================================================== */
+console.log('\n=== 5. lifting the pause restarts the 10-day clock ===');
+const DAY=24*60*60*1000, TEN=10*DAY, DAYMS=DAY;
+const iso=ms=>new Date(Date.now()-ms).toISOString();
+store={};
+check('never paused = no cooldown',     B.autoPauseCooldown_(TEN)==='');
+store['AUTO_EMAIL_PAUSED']=JSON.stringify({on:false,resumedAt:iso(0)});
+check('just resumed = held',            B.autoPauseCooldown_(TEN)!=='');
+check('and it says when it lifts',      /nothing automatic goes out before/.test(B.autoPauseCooldown_(TEN)));
+store['AUTO_EMAIL_PAUSED']=JSON.stringify({on:false,resumedAt:iso(9*DAY)});
+check('9 days after resuming = still held', B.autoPauseCooldown_(TEN)!=='');
+check('but the 24h lead window has passed', B.autoPauseCooldown_(DAYMS)==='');
+store['AUTO_EMAIL_PAUSED']=JSON.stringify({on:false,resumedAt:iso(11*DAY)});
+check('11 days after resuming = running',   B.autoPauseCooldown_(TEN)==='');
+store['AUTO_EMAIL_PAUSED']=JSON.stringify({on:false,resumedAt:'not a date'});
+check('an unreadable resume stamp never silences a reminder', B.autoPauseCooldown_(TEN)==='',
+      'the pause already fails towards silence; this guard must not');
+store['AUTO_EMAIL_PAUSED']=JSON.stringify({on:true,reason:'rate card',by:'Chris',at:'now',resumedAt:iso(30*DAY)});
+check('paused again = the old resume stamp is irrelevant', B.autoEmailsPaused_()===true);
+check('and resumedAt still round-trips', B.autoPauseState_().resumedAt!=='');
+
+/* ===================================================================
+   6. AND ONLY A REAL RESUME RESTARTS THEM.
+   -------------------------------------------------------------------
+   Run the real adminSetAutoPause against the fake property store. The
+   transitions are the subtle part: clicking "resume" on something already
+   running must not buy another ten days of silence, and starting a pause must
+   clear the last resume rather than leave a stale stamp to expire mid-pause.
+   =================================================================== */
+console.log('\n=== 6. only a real pause -> running restarts the clocks ===');
+{
+  const notices=[];
+  const S=new Function('PropertiesService','requireAuth_','auditLog_','MailApp','NOTIFY',
+    'REMINDER_AFTER_DAYS','LEAD_FOLLOWUP_AFTER_HOURS','console',[
+      "const AUTO_PAUSE_KEY_='AUTO_EMAIL_PAUSED';",
+      fn('autoPauseState_'), fn('autoPauseCooldown_'), fn('adminSetAutoPause'),
+      'return adminSetAutoPause;'
+    ].join('\n'))(PropertiesService, ()=>({name:'Chris',admin:true}), ()=>{},
+      {sendEmail:(to,subj,body)=>notices.push(body)}, 'x@y.z', 10, 24, console);
+
+  store={};
+  let r=S('t', true, 'rate card');            // start a pause
+  check('pausing stores no resume stamp',     r.resumedAt==='');
+  r=S('t', false, '');                        // lift it
+  check('lifting it stamps the resume',       !!r.resumedAt && !isNaN(Date.parse(r.resumedAt)));
+  check('and the notice says the clocks restart',
+        /clocks restart from now/.test(notices[notices.length-1]||''));
+  const stamped=r.resumedAt;
+  r=S('t', false, '');                        // "resume" again, already running
+  check('resuming twice does not extend the silence', r.resumedAt===stamped);
+  r=S('t', true, 'again');                    // pause again
+  check('a new pause clears the old stamp',   r.resumedAt==='');
+  check('and its notice does not promise a restart',
+        !/clocks restart from now/.test(notices[notices.length-1]||''));
+}
+
+console.log(fails?fails+' permission/pause violation(s)':'permissions and pause hold: yard crew can record keys, a broken pause stops sending, and lifting it restarts the clocks');
 process.exit(fails?1:0);

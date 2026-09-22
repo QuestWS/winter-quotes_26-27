@@ -187,6 +187,22 @@ input[type=number]{font-family:var(--mono)}
 .btn.ghost{background:#fff;color:var(--navy)}
 .btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .btn.gold{background:var(--gold);border-color:var(--gold);color:#fff}
+/* "We're working on it." Looking a quote up is a round trip to Apps Script,
+   which cold-starts, so several seconds of nothing is normal — and a line of
+   static text is not enough to tell a customer their tap registered. The
+   spinner rides inside whichever button is busy. */
+.spin{display:inline-block;width:14px;height:14px;margin-right:9px;vertical-align:-2px;border:2.5px solid var(--line);border-top-color:var(--navy);border-radius:50%;animation:qwspin .8s linear infinite}
+.btn.primary .spin,.btn.gold .spin{border-color:rgba(255,255,255,.45);border-top-color:#fff}
+/* An author rule beats the browser's own [hidden]{display:none} whatever the
+   specificity, so display:inline-block above would leave the spinner turning
+   for ever, on a button nobody has pressed. It has to be said here. */
+.spin[hidden]{display:none}
+@keyframes qwspin{to{transform:rotate(360deg)}}
+/* Reduced motion means LESS motion, not none — the movement IS the message
+   here, so it slows to a crawl rather than freezing into a broken-looking
+   ring. */
+@media (prefers-reduced-motion:reduce){ .spin{animation-duration:2.4s} }
+.btn[aria-busy="true"]{cursor:progress}
 
 /* flat-rate info card (golf/ebike) */
 .flatcard{border:1.5px solid var(--gold);background:var(--gold-soft);border-radius:10px;padding:16px 18px;margin-bottom:20px}
@@ -324,9 +340,12 @@ aside.ticket{position:sticky;top:18px}
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div><label class="f" for="loadQn">Quote number</label><input type="text" id="loadQn" placeholder="QW-26-1234" style="max-width:160px"></div>
         <div><label class="f" for="loadLn">Last name</label><input type="text" id="loadLn" placeholder="Last name" style="max-width:180px"></div>
-        <button class="btn ghost" type="button" onclick="loadQuote()" id="loadBtn">Load my quote</button>
+        <button class="btn ghost" type="button" onclick="loadQuote()" id="loadBtn"><span class="spin" id="loadSpin" hidden aria-hidden="true"></span><span id="loadBtnLabel">Load my quote</span></button>
       </div>
-      <div id="loadMsg" class="note" style="margin-top:8px;display:none"></div>
+      <!-- role="status" so the lookup's progress and its result are announced,
+           not just drawn: the spinner says "working" to everyone who can see
+           it, and this says the same thing to everyone who cannot. -->
+      <div id="loadMsg" class="note" role="status" style="margin-top:8px;display:none"></div>
     </div>
     <h2>What are we wintering?</h2>
     <p class="lead">Pick what you're storing or servicing and we'll only ask the questions that apply.</p>
@@ -1131,9 +1150,22 @@ function loadMsg(txt, ok){
   m.style.color=ok?'#1E6B3A':'#A6541F';
   m.textContent=txt;
 }
+/* One place that owns "the lookup is underway", because there are four ways
+   out of it — the answer, a not-found, the JSONP fallback's onerror and its
+   20-second timeout — and a spinner left running by any one of them tells the
+   customer we are still working when we have given up. Each of those calls
+   loadBusy(false); nothing sets the button's disabled flag directly any more.
+   Not unlockUI's problem either: it re-enables the panel wholesale on a
+   successful load, and this runs first. */
+function loadBusy(on){
+  const b=$('#loadBtn'), sp=$('#loadSpin'), lb=$('#loadBtnLabel');
+  if(b){ b.disabled=!!on; if(on) b.setAttribute('aria-busy','true'); else b.removeAttribute('aria-busy'); }
+  if(sp) sp.hidden=!on;
+  if(lb) lb.textContent=on?'Loading…':'Load my quote';
+}
 let loadTimer=null;
 function handleLoadResult(res, qn){
-  $('#loadBtn').disabled=false;
+  loadBusy(false);
   if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
   try{
     MANUAL=res.manual||null; PAYMENTS=res.payments||[];
@@ -1154,9 +1186,9 @@ function loadQuoteJsonp(qn, ln){
   window.__qwLoad=function(res){ clearTimeout(loadTimer); handleLoadResult(res, qn); };
   const sc=document.createElement('script');
   sc.src=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&callback=__qwLoad&t='+Date.now();
-  sc.onerror=function(){ clearTimeout(loadTimer); $('#loadBtn').disabled=false; loadMsg('Could not reach the quote system — please try again or call (815) 433-2200.'); };
+  sc.onerror=function(){ clearTimeout(loadTimer); loadBusy(false); loadMsg('Could not reach the quote system — please try again or call (815) 433-2200.'); };
   document.body.appendChild(sc);
-  loadTimer=setTimeout(function(){ $('#loadBtn').disabled=false; loadMsg('The quote system is taking too long — please try again.'); },20000);
+  loadTimer=setTimeout(function(){ loadBusy(false); loadMsg('The quote system is taking too long — please try again.'); },20000);
 }
 /* A "finish my quote" email links here with the quote number and last name
    already attached, so the customer lands on their quote without typing
@@ -1178,7 +1210,7 @@ function loadQuote(){
   const ln=$('#loadLn').value.trim();
   if(!qn||!ln){ loadMsg('Enter both your quote number and last name.'); return; }
   if(!INTEGRATIONS.quoteLogUrl){ loadMsg('Quote loading is not configured.'); return; }
-  $('#loadBtn').disabled=true; loadMsg('Looking up your quote…', true);
+  loadBusy(true); loadMsg('Looking up your quote…', true);
   const url=INTEGRATIONS.quoteLogUrl+'?quote='+encodeURIComponent(qn)+'&ln='+encodeURIComponent(ln)+'&t='+Date.now();
   fetch(url,{method:'GET',redirect:'follow'})
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })

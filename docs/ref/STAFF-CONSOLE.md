@@ -323,17 +323,53 @@ tab, asked once by the places that must exclude both:
 | `repriceScan_` | already at today's rates — the engine priced it as it was read |
 | `adminStorageView` | the storage view, the yard app and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
 | `signLookup_` | the public scan-to-sign lookup; a draft is not a signer |
-| `doGet` loader | the customer has never been given the number |
-| `doGet` launchpref | same reason |
+| `doGet` launchpref | a spring button on a quote nobody sent |
 
 Staff paths deliberately **do** see it — `adminSearch` so Chris can find one,
 `findQuoteCtx_` so he can open, re-price and send it, `readQuoteRows_` so the
 nightly backup carries it. `d.storageTab` is left as the engine computed it, so
 each quote already knows where it belongs; only the *row* is parked.
 
+### The quote page opens a draft; it does not release one
+
+**The `doGet` loader is the one customer-facing path that reads the Import
+tab**, and that is a decision. It shipped excluded, and the first thing the
+bulk import produced was Chris typing an imported quote number into the
+customer page and being told *"Quote not found. Check the quote number and last
+name."* — about a quote that exists, on a page that is the **only** surface
+able to change what a customer ticked. The console edits lines, dimensions and
+money; nothing but the quote page can rebuild the selections an old sheet was
+read into.
+
+Every other exclusion above is a **push** — an email, a crew list, a money
+report — and those are where the damage lives. The loader is a **pull**: it
+answers a quote number *and* a last name with one quote, exactly the pair that
+opens every other quote on the sheet. For a draft, staff are the only people
+holding that pair (the console prints the customer's own link beside every
+quote, drafts included) and the number appears nowhere else.
+
+So opening a draft is allowed and **releasing** one is not:
+
+- **A save from the quote page leaves the row parked.** `doPost` targets the
+  Import tab whenever an existing copy is already on it, so editing a draft
+  does not publish it. The payload's `d.storageTab` is still recomputed by the
+  engine on that save, so the quote keeps knowing where it belongs.
+- **A re-measure leaves it parked too.** `adminDimsApply` moves a row when the
+  storage tab changes, guarded by `isOffstageTab_` — it read `isStartedTab_`
+  alone, so fixing an imported quote's beam from the console put a boat nobody
+  had agreed to store onto the crew's haul-out list.
+- **`recordEmail_` is the only release**, which is what makes "sending it is
+  what puts it on a real tab" true rather than aspirational. A quote-page save
+  that *does* email the customer goes through it like any other send.
+
+The reminder hold is the belt to that brace: it lives in the row's own
+`COL.REM` and survives every move, so even a draft that leaves the tab cannot
+be picked up by the 9am trigger until a human has sent it.
+
 `tools/check-import-tab.js` reads the real scan bodies out of the `.gs` and
-executes the predicates. It asserts both directions: every customer-facing scan
-excludes the tab, and every staff path still reaches it. Hiding it from
+executes the predicates. It asserts all three directions: every customer-facing
+**push** excludes the tab, every staff path still reaches it, and the loader,
+the save and the re-measure leave a parked row parked. Hiding it from
 everything would be safe and useless.
 
 ### Two holds, and sending releases both
@@ -344,7 +380,9 @@ The bulk import landed alongside the per-row **reminder hold**
 - the **marker** keeps the 9am nudge off a row and, when a human finally emails
   the customer, restarts the ten days from *that* send;
 - the **tab** keeps the row out of the storage view, the yard app, the printed
-  haul-out sheets, the balance report, send-to-all and the public lookups.
+  haul-out sheets, the balance report, send-to-all and the scan-to-sign
+  lookup. (Not the quote page's loader — see below: opening a draft is a pull,
+  and it leaves the row parked.)
 
 `recordEmail_` releases both — `releaseImportHold_` swaps the marker, and
 `leaveImportTab_` moves the row onto the tab `d.storageTab` has held since the

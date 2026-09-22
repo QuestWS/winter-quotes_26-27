@@ -1036,7 +1036,17 @@ function doPost(e) {
     }
 
     // 3) Target tab (locked quotes stay on their original tab)
-    const tabName = d.storageTab || 'No Storage';
+    /* A quote parked on the Import tab STAYS parked, however it is edited.
+       Its payload carries the storage tab the engine just recomputed, so it
+       knows where it belongs the moment somebody sends it -- but until a human
+       does, a draft nobody agreed to must not turn up on the crew's haul-out
+       list, in the storage view or on the balance report. Now that the quote
+       page can open a draft, a save from it is the obvious way that would have
+       happened: editing a draft is not sending it. recordEmail_ ->
+       leaveImportTab_ is the one release, and a save that does email the
+       customer (step 4 below) goes through exactly that. IMPORT_TAB. */
+    const parked = copies.some(function (c) { return isImportTab_(c.sheet.getName()); });
+    const tabName = parked ? IMPORT_TAB : (d.storageTab || 'No Storage');
     let sh = ss.getSheetByName(tabName);
     if (!sh) {
       sh = ss.insertSheet(tabName);
@@ -1580,10 +1590,23 @@ function doGet(e) {
     for (let i = 0; i < sheets.length; i++) {
       const sh = sheets[i];
       if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
-      /* An unsent import is a draft: the customer has never been given this
-         number, and the figures came from last season's sheet rather than
-         from them. Sending it is what puts it on a real tab. IMPORT_TAB. */
-      if (isImportTab_(sh.getName())) continue;
+      /* THE IMPORT TAB IS IN THIS SCAN, DELIBERATELY.
+         -------------------------------------------------------------------
+         An imported quote is still a draft -- the crew must not see it, the
+         9am trigger must never email it, and both of those are still true
+         everywhere else. But this path is a PULL, not a push: it hands one
+         quote back to somebody who typed its number AND its last name, the
+         same pair that opens every other quote on this sheet. Staff are the
+         only people holding that pair for a draft (the console prints the
+         customer's own link beside every quote, drafts included) and the
+         number appears nowhere else, so skipping the tab here protected
+         nothing -- and it cost the one surface that can correct an imported
+         quote's SELECTIONS before anybody sends it. The console can edit
+         lines and dimensions; only the quote page can change what was
+         ticked.
+         What keeps a draft a draft is the row's hold marker and its tab, and
+         both survive an edit (see step 3 of doPost). A human send is still
+         the only thing that releases either. IMPORT_TAB. */
       const rowNum = findQuoteRow_(sh, qn);
       if (rowNum <= 0) continue;
       const rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
@@ -4163,7 +4186,13 @@ function adminDimsApply(token, qn, changes, note) {
 
   const toTab = d.storageTab || fromTab;
   let moved = '';
-  if (toTab !== fromTab && !isStartedTab_(fromTab)) {
+  /* Never drag a row off a tab that is holding it back. A lead has not chosen
+     anything yet, and an import is a draft nobody has been sent -- re-measuring
+     either one is not the event that makes it real. Sending is, and that is
+     what moves it (recordEmail_ -> leaveImportTab_). This read isStartedTab_
+     alone, so fixing an imported quote's dimensions from the console published
+     it straight onto the crew's haul-out list. IMPORT_TAB. */
+  if (toTab !== fromTab && !isOffstageTab_(fromTab)) {
     moveQuoteRow_(ctx, toTab);
     moved = ' Moved from ' + fromTab + ' to ' + toTab + '.';
   }
@@ -4469,10 +4498,12 @@ function recordEmail_(sh, rowNum, d, kind, by) {
    The two holds do different jobs and both are wanted: the reminder marker
    keeps the 9am nudge off it and restarts the ten days from this send, while
    IMPORT_TAB keeps it out of the storage view, the yard app, the printed
-   haul-out sheets, the balance report and the public lookups. Releasing only
-   the marker would leave a boat Chris has quoted, and may be paid for,
-   invisible to the crew who have to pull it — which is the failure the tab was
-   supposed to prevent, arriving from the other direction.
+   haul-out sheets, the balance report and the scan-to-sign lookup. (Not the
+   quote page's loader: that one reads a draft on purpose, and a save from it
+   leaves the row parked — step 3 of doPost.) Releasing only the marker would
+   leave a boat Chris has quoted, and may be paid for, invisible to the crew
+   who have to pull it — which is the failure the tab was supposed to prevent,
+   arriving from the other direction.
 
    d.storageTab was left as the engine computed it at import, so the row
    already knows where it belongs. Same guard as the dimension editor's move:

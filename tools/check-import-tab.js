@@ -91,11 +91,45 @@ MUST_EXCLUDE.forEach(function (pair) {
   const doGet = fn('doGet');
   const loader = /if \(isImportTab_\(sh\.getName\(\)\)\) continue;/.test(doGet);
   const pref   = /if \(isImportTab_\(sh2\.getName\(\)\)\) return;/.test(doGet);
-  if (loader) ok('a customer cannot load a draft with its quote number');
-  else fail('doGet\'s quote loader does not exclude the Import tab — a customer given the ' +
-            'number by accident could open a quote nobody sent them');
+  /* THE LOADER IS THE ONE PATH THAT MAY SEE IT, and that is a decision, not
+     an oversight: it answers a number AND a last name with one quote, which
+     is the same pair that opens every other quote, and it is the only surface
+     that can correct an imported quote's selections before it is sent. The
+     skip is what made Chris's imported quotes read "Quote not found." on the
+     customer page. Everything a draft must stay out of is a PUSH — email, the
+     yard lists, the money report — and those are asserted above. */
+  if (!loader) ok('a draft can be opened on the quote page with its number and last name');
+  else fail('doGet\'s quote loader skips the Import tab again — an imported quote reads ' +
+            '"Quote not found." on the customer page, and nothing can fix its selections');
   if (pref) ok('the spring launch buttons ignore drafts');
   else fail('doGet\'s launch-preference path does not exclude the Import tab');
+}
+
+/* =====================================================================
+   1b. EDITING A DRAFT IS NOT SENDING IT.
+   ---------------------------------------------------------------------
+   The loader above lets a draft be opened and re-saved, and the dimension
+   editor could already re-price one. Neither may hand it to the crew: a
+   parked row stays parked until recordEmail_ releases it. Without this the
+   Import tab is a pen with an open gate — a boat nobody agreed to store
+   appears on the haul-out list because somebody fixed its beam.
+   ===================================================================== */
+{
+  const post = fn('doPost');
+  if (/isImportTab_\(c\.sheet\.getName\(\)\)/.test(post) && /parked \? IMPORT_TAB/.test(post)) {
+    ok('a save from the quote page leaves a parked draft on the Import tab');
+  } else {
+    fail('doPost writes a parked draft to its storage tab — opening an imported quote ' +
+         'and saving it would publish it to the storage view, the yard app and the ' +
+         'printed haul-out sheets without anybody sending it');
+  }
+  const dims = fn('adminDimsApply');
+  if (/!isOffstageTab_\(fromTab\)/.test(dims)) {
+    ok('a re-measure does not drag a draft (or a lead) off its own tab');
+  } else {
+    fail('adminDimsApply moves a row off whatever tab it is on — re-measuring an imported ' +
+         'quote would publish a draft the same way');
+  }
 }
 
 /* =====================================================================

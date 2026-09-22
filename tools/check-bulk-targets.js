@@ -84,6 +84,10 @@ try {
   B = new Function('SpreadsheetApp', [
     "const STARTED_TAB = 'Quote Started';",
     fn('isStartedTab_'),
+    /* bulkTargets_ now asks isOffstageTab_, which covers leads AND the bulk
+       Import tab. Both have to be in the sandbox or the function throws and
+       this guard reports a broken rule where there is only a missing stub. */
+    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
     decl('HEADERS'),
     decl('COL'),
     decl('BULK_KINDS_'),

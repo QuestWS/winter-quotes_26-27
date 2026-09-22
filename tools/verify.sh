@@ -42,7 +42,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
     "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "legacyToState_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
+    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "importApplyCore_" "legacyToState_" "IMPORT_TAB" "isImportTab_" "isOffstageTab_" "bulkImportScan" "bulkImportApply" "bulkImportStep" "bulkImportOne_" "bulkImportDuplicateOf_" "BULKIMP_NOT_A_QUOTE_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -462,12 +462,19 @@ if [ -f quote-logger-apps-script.gs ]; then
   # An import must never email anybody, and must price at CURRENT rates rather
   # than copying the old sheet's figures — an imported quote has to behave like
   # every other quote or it cannot be re-priced later.
-  if awk '/^function adminImportApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_'; then
+  # Read from importApplyCore_, which is where the write actually happens now:
+  # adminImportApply is a thin wrapper over it and the bulk run calls it too, so
+  # checking the wrapper would pass while saying nothing about either caller.
+  if awk '/^function importApplyCore_/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_'; then
     echo "  FAIL trap: importing a sheet emails the customer"; FAIL=1
   else echo "  OK   trap: import emails nobody"; fi
-  if awk '/^function adminImportApply/,/^}/' quote-logger-apps-script.gs | grep -q 'rebuildLinesFromState_'; then
+  if awk '/^function importApplyCore_/,/^}/' quote-logger-apps-script.gs | grep -q 'rebuildLinesFromState_'; then
     echo "  OK   trap: imported quotes are priced by the shared engine"
   else echo "  FAIL trap: import does not re-price — it would carry stale figures"; FAIL=1; fi
+  # And the wrapper must still go through it rather than growing its own copy.
+  if awk '/^function adminImportApply/,/^}/' quote-logger-apps-script.gs | grep -q 'importApplyCore_'; then
+    echo "  OK   trap: the single importer shares the bulk write path"
+  else echo "  FAIL trap: adminImportApply no longer calls importApplyCore_"; FAIL=1; fi
   # Preview reads and reports; it must not create a quote.
   if awk '/^function adminImportPreview/,/^}/' quote-logger-apps-script.gs | grep -qE 'appendRow|saveQuoteRow_'; then
     echo "  FAIL trap: import preview writes a quote — it must only report"; FAIL=1
@@ -645,7 +652,7 @@ if [ -f quote-logger-apps-script.gs ]; then
   sweep quote-logger-apps-script.gs "lead capture" "STARTED_TAB" "isStartedTab_" "isStartedQuote_"
   # THE load-bearing check: a started quote is a lead, not a customer. If the
   # daily 9am reminder ever stops skipping that tab, it will email strangers.
-  if awk '/function dailyReminderCheck/,/^}/' quote-logger-apps-script.gs | grep -q "isStartedTab_"; then
+  if awk '/function dailyReminderCheck/,/^}/' quote-logger-apps-script.gs | grep -qE "isStartedTab_|isOffstageTab_"; then
     echo "  OK   trap: daily reminder skips the lead tab"
   else echo "  FAIL trap: dailyReminderCheck no longer skips STARTED_TAB — it will email leads"; FAIL=1; fi
   # Every mass send now shares ONE recipient list, so there is one place the lead

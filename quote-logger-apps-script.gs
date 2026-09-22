@@ -145,6 +145,46 @@ const STARTED_STATUS = 'Quote started';
 function isStartedTab_(name) { return String(name) === STARTED_TAB; }
 function isStartedQuote_(d) { return String((d && d.storageTab) || '') === STARTED_TAB; }
 
+/* ---------------------------------------------------------------------------
+   THE IMPORT TAB — a holding pen, not a storage area.
+   ---------------------------------------------------------------------------
+   Quotes carried over in bulk from last season's per-customer sheets land here
+   and nowhere else, because a quote on this tab is a DRAFT: nobody has agreed
+   to it, nobody has been told about it, and the price came from a file rather
+   than from the customer. Chris reviews them and sends them off one at a time;
+   sending is what moves a row onto its real storage tab.
+
+   That makes "is this tab offstage?" the most load-bearing question in the
+   import, and the answer has to be asked in every place a quote can reach a
+   customer or the yard. The list below is the whole of it, and the reason each
+   one is on it:
+
+     dailyReminderCheck   emails customers at 9am, unattended. 145 people who
+                          never asked us for a quote would get one. THIS is the
+                          failure that matters; everything else is tidiness.
+     bulkTargets_         the send-to-all recipient list.
+     balanceReportCheck   the money report. A draft owes nothing.
+     repriceScan_         the season re-price. These are already at today's
+                          rates -- the engine priced them as they were read.
+     adminStorageView     the storage view, the yard app and the printed
+                          haul-out sheets. The crew must not see a boat nobody
+                          has agreed to store.
+     signLookup_          the public scan-to-sign lookup. A draft is not a
+                          signer.
+     doGet (loader)       the customer's own "resume my quote". They have never
+                          been given the number.
+     doGet (launchpref)   the spring launch buttons, same reason.
+
+   Staff-side lookups deliberately DO see it: adminSearch so Chris can find
+   one, findQuoteCtx_ so he can open, price and send it, readQuoteRows_ so the
+   nightly backup carries it. */
+const IMPORT_TAB = 'Import';
+const IMPORT_STATUS_ = 'Imported — not yet sent';
+function isImportTab_(name) { return String(name) === IMPORT_TAB; }
+/* A lead has no pricing; an import has pricing nobody agreed to. Different
+   reasons, same answer, so the places that must exclude both ask once. */
+function isOffstageTab_(name) { return isStartedTab_(name) || isImportTab_(name); }
+
 const COL = { LAST:1, FIRST:2, QN:3, BAL:4, TS:5, STATUS:6, UNIT:7, PHONE:8, EMAIL:9,
   YMM:10, DIMS:11, TOTAL:12, DEP:13, PAY:14, ITEMS:15, RQ:16, NOTES:17, PDF:18,
   SIGN:19, REM:20, PAYLOAD:21, PAID:22, PHOTOS:23 };
@@ -1376,6 +1416,7 @@ function doGet(e) {
       let done = false, surcharge = false;
       ss2.getSheets().forEach(function (sh2) {
         if (done || sh2.getRange(1, 3).getValue() !== 'Quote #') return;
+        if (isImportTab_(sh2.getName())) return;      // a draft was never emailed — IMPORT_TAB
         const r2 = findQuoteRow_(sh2, qn2);
         if (r2 <= 0) return;
         if (String(sh2.getRange(r2, COL.LAST).getValue() || '').trim().toLowerCase() !== ln2) return;
@@ -1440,6 +1481,10 @@ function doGet(e) {
     for (let i = 0; i < sheets.length; i++) {
       const sh = sheets[i];
       if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+      /* An unsent import is a draft: the customer has never been given this
+         number, and the figures came from last season's sheet rather than
+         from them. Sending it is what puts it on a real tab. IMPORT_TAB. */
+      if (isImportTab_(sh.getName())) continue;
       const rowNum = findQuoteRow_(sh, qn);
       if (rowNum <= 0) continue;
       const rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
@@ -2997,6 +3042,401 @@ function sweepTranscripts() {
 }
 
 
+
+/* ======================= BULK IMPORT OF A SEASON FOLDER ==================
+ * "Mass import all the ones in the drive folder, put it in an Import category
+ * and I'll send them off manually" -- Chris, Sept 2026. Roughly 149 files in
+ * "Storage 2025-2026", one per customer, from the era before this system.
+ *
+ * THREE THINGS SHAPE THIS, and none of them are the parsing:
+ *
+ * 1. IT CANNOT RUN IN ONE GO. Every file is an .ods, and reading one means
+ *    uploading it to Drive as a temporary Google Sheet (legacyReadGrid_ ->
+ *    uploadAsSheet_). That is seconds each, and Apps Script stops a script at
+ *    six minutes. So this is a RESUMABLE WORKLIST: each run takes as many
+ *    files as it can inside its own budget, writes progress to Script
+ *    Properties, and re-arms a trigger to carry on. Interrupt it, run out of
+ *    quota, lose the tab -- it picks up where it stopped.
+ *
+ * 2. THE DRY RUN IS THE APPROVAL. Pass one reads every file and writes a
+ *    REPORT sheet to Drive: what parsed, what it priced, what it would skip
+ *    and why. Nothing touches the quote spreadsheet. Chris reads it, deletes
+ *    any row he does not want, and pass two imports exactly what the report
+ *    still lists. The report is both the record and the control.
+ *
+ * 3. THE DANGER IS DUPLICATES, NOT OVERWRITES. importApplyCore_ always mints
+ *    a new quote number and appends, so nothing can be overwritten -- but half
+ *    these customers already have a 2026-27 quote. Matching is on last name
+ *    plus unit type, and a match is SKIPPED and reported rather than imported.
+ * ======================================================================= */
+
+const BULKIMP_PROP_ = 'BULK_IMPORT_STATE';
+const BULKIMP_REPORT_PROP_ = 'BULK_IMPORT_REPORT_ID';
+/* Four files in that folder are not customer quotes. Left in, they import as
+   a nameless $0 quote that somebody then has to find and delete. */
+const BULKIMP_NOT_A_QUOTE_ = [
+  /master pricing/i,          // the price list itself
+  /^~\$/,                     // LibreOffice lock file
+  /storage list/i,            // "aaaaa Storage List"
+  /^deposits?\b/i,            // the deposits ledger
+  /^winter services menu template/i,   // the blank template
+  /^winter services\.(ods|xlsx)$/i     // an untitled copy of it
+];
+function bulkImportNotAQuote_(name) {
+  const n = String(name || '');
+  return BULKIMP_NOT_A_QUOTE_.some(function (re) { return re.test(n); });
+}
+
+/* Each run stops with time to spare: the write that follows must finish, and a
+   script killed mid-write is the one outcome there is no log of. */
+const BULKIMP_BUDGET_MS_ = 240000;   // 4 minutes of a 6-minute ceiling
+
+function bulkImportState_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(BULKIMP_PROP_) || 'null'); }
+  catch (e) { return null; }
+}
+function bulkImportSave_(st) {
+  PropertiesService.getScriptProperties().setProperty(BULKIMP_PROP_, JSON.stringify(st));
+}
+function bulkImportClear_() {
+  PropertiesService.getScriptProperties().deleteProperty(BULKIMP_PROP_);
+}
+
+/* Every quote already in the system, keyed for duplicate matching. Reads two
+   columns, never the payload -- that column is kilobytes per quote and reading
+   it to compare a surname is what made the storage view time out once already
+   (CLAUDE.md section 7). */
+function bulkImportExistingIndex_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const idx = {};
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    if (isImportTab_(sh.getName())) return;     // a previous run is not "already quoted"
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    const vals = sh.getRange(2, 1, last - 1, COL.UNIT).getValues();
+    vals.forEach(function (r) {
+      const ln = String(r[COL.LAST - 1] || '').trim().toLowerCase();
+      if (!ln) return;
+      const unit = String(r[COL.UNIT - 1] || '').trim().toLowerCase();
+      const qn = String(r[COL.QN - 1] || '').trim();
+      (idx[ln] = idx[ln] || []).push({ qn: qn, unit: unit });
+    });
+  });
+  return idx;
+}
+/* Last name plus unit type. Surname alone would skip a customer who stores a
+   boat AND a jet ski under one name -- which several of them do, and those are
+   two quotes, not one. */
+function bulkImportDuplicateOf_(idx, lastName, unit) {
+  const ln = String(lastName || '').trim().toLowerCase();
+  if (!ln || !idx[ln]) return '';
+  const u = String(unit || '').trim().toLowerCase();
+  const hit = idx[ln].filter(function (e) { return e.unit === u; })[0];
+  return hit ? hit.qn : '';
+}
+
+const BULKIMP_HEAD_ = ['Import?', 'File', 'Customer', 'Unit', 'Dimensions',
+  'Priced now', 'Old sheet said', 'Verdict', 'Notes', 'File ID'];
+
+/* Build the worklist. Reads the folder only -- no file is opened here, so this
+   returns in a second however big the folder is. */
+function bulkImportStart(mode) {
+  const m = (mode === 'apply') ? 'apply' : 'scan';
+  const folder = legacyFolder_();
+  if (!folder) throw new Error('No season folder found on Drive. Expected one named like "Storage 2025-2026".');
+
+  let jobs = [];
+  if (m === 'apply') {
+    /* Pass two imports exactly what the report still says to import. Chris
+       deleting a row is how he says no to one. */
+    jobs = bulkImportReadReport_();
+    if (!jobs.length) throw new Error('Nothing marked for import. Run bulkImportScan() first, then check the report.');
+  } else {
+    const it = folder.getFiles();
+    while (it.hasNext()) {
+      const f = it.next();
+      const n = f.getName();
+      if (bulkImportNotAQuote_(n)) continue;
+      if (LEGACY_SHEET_MIMES_.indexOf(f.getMimeType()) < 0) continue;
+      jobs.push({ id: f.getId(), name: n });
+    }
+    jobs.sort(function (a, b) {
+      return legacyLabel_(a.name).toLowerCase() < legacyLabel_(b.name).toLowerCase() ? -1 : 1;
+    });
+  }
+
+  const st = { mode: m, folder: folder.getName(), at: new Date().toISOString(),
+               jobs: jobs.map(function (j) { return j.id; }),
+               names: {}, i: 0, done: 0, failed: 0, skipped: 0, imported: 0,
+               reportId: '' };
+  jobs.forEach(function (j) { st.names[j.id] = j.name; });
+  bulkImportSave_(st);
+
+  if (m === 'scan') {
+    st.reportId = bulkImportNewReport_(folder.getName(), jobs.length);
+    bulkImportSave_(st);
+  }
+  bulkImportArm_();
+  return { ok: 1, mode: m, files: jobs.length, folder: folder.getName(),
+           report: st.reportId ? 'https://docs.google.com/spreadsheets/d/' + st.reportId + '/edit' : '' };
+}
+
+function bulkImportNewReport_(folderName, n) {
+  const ss = SpreadsheetApp.create('Bulk import report — ' + folderName + ' — ' +
+    Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'));
+  const sh = ss.getSheets()[0];
+  sh.setName('Report');
+  sh.appendRow(BULKIMP_HEAD_);
+  sh.getRange(1, 1, 1, BULKIMP_HEAD_.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.appendRow(['', 'Scanning ' + n + ' files…', '', '', '', '', '', '', '', '']);
+  PropertiesService.getScriptProperties().setProperty(BULKIMP_REPORT_PROP_, ss.getId());
+  /* Chris opens this from his own account, so it has to be reachable the same
+     way the signed contracts and photo folders are. */
+  try { DriveApp.getFileById(ss.getId()).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.EDIT); } catch (e) {}
+  return ss.getId();
+}
+
+/* The rows of the report that still say IMPORT. Deleting a row, or changing
+   its first cell, is how a file is excluded from pass two. */
+function bulkImportReadReport_() {
+  const id = PropertiesService.getScriptProperties().getProperty(BULKIMP_REPORT_PROP_);
+  if (!id) throw new Error('No scan report yet — run bulkImportScan() first.');
+  const sh = SpreadsheetApp.openById(id).getSheetByName('Report');
+  if (!sh) throw new Error('That report has no Report tab.');
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  const vals = sh.getRange(2, 1, last - 1, BULKIMP_HEAD_.length).getValues();
+  const out = [];
+  vals.forEach(function (r) {
+    const flag = String(r[0] || '').trim().toUpperCase();
+    const fid = String(r[BULKIMP_HEAD_.length - 1] || '').trim();
+    if (flag === 'IMPORT' && fid) out.push({ id: fid, name: String(r[1] || '') });
+  });
+  return out;
+}
+
+function bulkImportArm_() {
+  try {
+    const already = ScriptApp.getProjectTriggers().some(function (t) {
+      return t.getHandlerFunction() === 'bulkImportStep';
+    });
+    if (!already) ScriptApp.newTrigger('bulkImportStep').timeBased().after(5000).create();
+  } catch (e) { /* out of triggers: the next manual run still continues it */ }
+}
+function bulkImportDisarm_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'bulkImportStep') {
+      try { ScriptApp.deleteTrigger(t); } catch (e) {}
+    }
+  });
+}
+
+/* One slice of the worklist. Public because a trigger handler with a trailing
+   underscore is treated as private and does not reliably fire (the same trap
+   sweepTranscripts hit). */
+function bulkImportStep() {
+  bulkImportDisarm_();
+  const st = bulkImportState_();
+  if (!st || st.i >= st.jobs.length) { bulkImportClear_(); return; }
+
+  const started = Date.now();
+  const master = legacyMasterGrid_();
+  const idx = bulkImportExistingIndex_();
+  const who = { name: 'Bulk import' };
+  const rows = [];
+
+  while (st.i < st.jobs.length && (Date.now() - started) < BULKIMP_BUDGET_MS_) {
+    const fid = st.jobs[st.i];
+    const name = st.names[fid] || fid;
+    st.i++;
+    let row;
+    try { row = bulkImportOne_(fid, name, master, idx, st, who); }
+    catch (err) {
+      st.failed++;
+      row = ['', name, '', '', '', '', '', 'COULD NOT READ',
+             String(err && err.message || err).slice(0, 300), fid];
+    }
+    rows.push(row);
+    st.done++;
+  }
+
+  if (rows.length) bulkImportAppendReport_(st, rows);
+  bulkImportSave_(st);
+
+  if (st.i < st.jobs.length) { bulkImportArm_(); return; }
+  bulkImportFinish_(st);
+}
+
+/* One file. Returns the report row. In scan mode it writes nothing; in apply
+   mode it creates the quote on IMPORT_TAB. */
+function bulkImportOne_(fid, name, master, idx, st, who) {
+  const rows = legacyReadGrid_(fid, name);
+  if (!rows || !rows.length) {
+    st.failed++;
+    return ['', name, '', '', '', '', '', 'EMPTY FILE', 'Nothing readable in it.', fid];
+  }
+  const parsed = parseLegacyGrid_(rows, master);
+  const mapped = legacyToState_(parsed, null);
+  const owner = String(parsed.owner || '').trim();
+  const parts = owner.split(/\s+/);
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : owner;
+
+  if (!owner) {
+    st.failed++;
+    return ['', name, '', '', '', '', '', 'NO CUSTOMER NAME',
+            'The sheet has no owner on it — import this one by hand.', fid];
+  }
+
+  let total = '', unitLabel = '';
+  try {
+    const r = computeQuote(mapped.state);
+    total = usd_(r.lines.reduce(function (a, l) { return a + Number(l.amt || 0); }, 0));
+  } catch (e) {
+    st.failed++;
+    return ['', name, owner, '', '', '', '', 'COULD NOT PRICE',
+            String(e && e.message || e).slice(0, 300), fid];
+  }
+  const u = mapped.state.unit;
+  unitLabel = u === 'jetski' ? 'Jet ski' : u === 'golf' ? 'Golf cart' : u === 'ebike' ? 'E-bike' : 'Boat';
+
+  const dupe = bulkImportDuplicateOf_(idx, lastName, unitLabel);
+  const notes = (parsed.warnings || []).concat(mapped.notes || []).join(' · ').slice(0, 500);
+  /* What the old sheet itself came to, summed from the lines it had ticked --
+     parseLegacyGrid_ reports the lines, not a total. Worth showing next to the
+     new figure: a big gap is either a rate change or a misread file, and the
+     report is where that gets noticed rather than in a customer's inbox. */
+  const oldSum = (parsed.picked || []).reduce(function (a, x) {
+    return a + (x && typeof x.amount === 'number' ? x.amount : 0);
+  }, 0);
+  const oldTotal = parsed.totalUnreliable ? '(several storage options priced side by side)'
+                 : oldSum ? usd_(oldSum) : '';
+
+  if (dupe) {
+    st.skipped++;
+    return ['SKIP', name, owner, unitLabel, dimsString(mapped.state) || '', total, oldTotal,
+            'ALREADY QUOTED — ' + dupe,
+            'A ' + unitLabel.toLowerCase() + ' for this surname is already in the system. ' +
+            'Change this cell to IMPORT if it is a different unit.', fid];
+  }
+
+  if (st.mode !== 'apply') {
+    return ['IMPORT', name, owner, unitLabel, dimsString(mapped.state) || '', total, oldTotal,
+            'READY', notes, fid];
+  }
+
+  const res = importApplyCore_(who, mapped.state, {
+    owner: owner, file: name, oldTotal: oldTotal,
+    oldTotalUnreliable: !!parsed.totalUnreliable,
+    note: 'Bulk import from ' + st.folder + '. Nothing has been sent to this customer.'
+  }, IMPORT_TAB);
+
+  if (!res || !res.ok) {
+    st.failed++;
+    return ['', name, owner, unitLabel, '', total, oldTotal, 'IMPORT FAILED',
+            String((res && res.error) || 'unknown').slice(0, 300), fid];
+  }
+  st.imported++;
+  /* Added to the index so a folder holding the same customer twice does not
+     import them twice in one run. */
+  (idx[String(lastName).trim().toLowerCase()] = idx[String(lastName).trim().toLowerCase()] || [])
+    .push({ qn: res.quoteNo, unit: unitLabel.toLowerCase() });
+  return ['IMPORTED ' + res.quoteNo, name, owner, unitLabel,
+          dimsString(mapped.state) || '', res.total, oldTotal, 'IMPORTED', notes, fid];
+}
+
+function bulkImportAppendReport_(st, rows) {
+  const id = st.reportId || PropertiesService.getScriptProperties().getProperty(BULKIMP_REPORT_PROP_);
+  if (!id) return;
+  try {
+    const sh = SpreadsheetApp.openById(id).getSheetByName('Report');
+    if (!sh) return;
+    /* The placeholder line the report opens with, replaced by the first slice
+       rather than left above real data. */
+    if (sh.getLastRow() === 2 && String(sh.getRange(2, 2).getValue()).indexOf('Scanning') === 0) {
+      sh.deleteRow(2);
+    }
+    if (st.mode === 'apply') {
+      /* Pass two rewrites the verdict in place, so one report tells the whole
+         story instead of two half-stories in two files. */
+      const last = sh.getLastRow();
+      const ids = last > 1 ? sh.getRange(2, BULKIMP_HEAD_.length, last - 1, 1).getValues() : [];
+      rows.forEach(function (r) {
+        const fid = r[BULKIMP_HEAD_.length - 1];
+        for (let i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === String(fid)) {
+            sh.getRange(i + 2, 1, 1, BULKIMP_HEAD_.length).setValues([r]);
+            return;
+          }
+        }
+        sh.appendRow(r);
+      });
+    } else {
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, BULKIMP_HEAD_.length).setValues(rows);
+    }
+  } catch (e) { console.error('bulk report write failed: ' + e); }
+}
+
+function bulkImportFinish_(st) {
+  const url = st.reportId ? 'https://docs.google.com/spreadsheets/d/' + st.reportId + '/edit' : '(no report)';
+  const what = st.mode === 'apply'
+    ? st.imported + ' imported, ' + st.skipped + ' skipped as already quoted, ' + st.failed + ' failed'
+    : st.done + ' read, ' + st.skipped + ' would be skipped as already quoted, ' + st.failed + ' unreadable';
+  auditLog_('Bulk import', 'Bulk ' + st.mode + ' of "' + st.folder + '": ' + what);
+  try {
+    MailApp.sendEmail({
+      to: REPORT_EMAIL,
+      subject: 'Bulk import ' + (st.mode === 'apply' ? 'finished' : 'scan finished') + ' — ' + what,
+      body: 'Folder: ' + st.folder + '\n' + what + '\n\nReport: ' + url + '\n\n' +
+        (st.mode === 'apply'
+          ? 'Every quote is on the "' + IMPORT_TAB + '" tab. Nothing has been emailed to anybody.\n' +
+            'They are invisible to the yard app, the haul-out sheets and the 9am reminder until you send one off.'
+          : 'NOTHING HAS BEEN WRITTEN to the quote sheet yet.\n' +
+            'Open the report, delete any row you do not want (or change its first cell from IMPORT),\n' +
+            'then run bulkImportApply() to import what is left.')
+    });
+  } catch (e) { console.error('bulk finish email failed: ' + e); }
+  bulkImportClear_();
+}
+
+/* ---- the three you run from the editor -------------------------------- */
+
+/* PASS ONE. Reads every file in the season folder and writes a report to
+   Drive. Touches the quote spreadsheet only to read it. */
+function bulkImportScan() {
+  const r = bulkImportStart('scan');
+  console.log('Scanning ' + r.files + ' files from "' + r.folder + '".');
+  console.log('Report: ' + r.report);
+  console.log('It runs in the background; you get an email when it finishes.');
+  return r;
+}
+
+/* PASS TWO. Imports every row the report still marks IMPORT, onto the Import
+   tab. Run it only after reading the report. */
+function bulkImportApply() {
+  const r = bulkImportStart('apply');
+  console.log('Importing ' + r.files + ' quotes onto the "' + IMPORT_TAB + '" tab.');
+  console.log('It runs in the background; you get an email when it finishes.');
+  return r;
+}
+
+/* Where has it got to, and stopping it. */
+function bulkImportStatus() {
+  const st = bulkImportState_();
+  if (!st) { console.log('Nothing running.'); return { ok: 1, running: false }; }
+  const msg = st.mode + ': ' + st.i + ' of ' + st.jobs.length + ' done · ' +
+    st.imported + ' imported · ' + st.skipped + ' skipped · ' + st.failed + ' failed';
+  console.log(msg);
+  return { ok: 1, running: true, mode: st.mode, at: st.i, of: st.jobs.length,
+           imported: st.imported, skipped: st.skipped, failed: st.failed };
+}
+function bulkImportStop() {
+  bulkImportDisarm_(); bulkImportClear_();
+  console.log('Stopped. Nothing already written is undone — delete rows from the Import tab if you need to.');
+  return { ok: 1 };
+}
+
 /* ======================= WHERE A UNIT IS IN THE SEASON ==================
    One field, four states, and the yard app's three lists are just this field
    read three ways:
@@ -3742,7 +4182,7 @@ function bulkTargets_(kind) {
   ss.getSheets().forEach(function (sh) {
     const tab = sh.getName();
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (isStartedTab_(tab)) return;                      // leads are never emailed
+    if (isOffstageTab_(tab)) return;                     // leads and imports are never emailed
     if (cfg.skipTabs.indexOf(tab) > -1) return;
     const last = sh.getLastRow();
     if (last < 2) return;
@@ -4337,6 +4777,17 @@ function adminImportPreview(token, fileId, fileName, base64Data, pick) {
    everything else. No customer is emailed. */
 function adminImportApply(token, state, meta) {
   const who = requireAuth_(token, 'adjust');
+  return importApplyCore_(who, state, meta, '');
+}
+
+/* The write, shared by the one-at-a-time importer and the bulk run. Pulled out
+   rather than copied because the two differ in exactly one thing -- which tab
+   the row lands on -- and a second copy of "build the payload, price it, write
+   the columns" is a second place for the column list to go stale.
+
+   `tabOverride` is the bulk run putting everything on IMPORT_TAB. Empty means
+   the historical behaviour: the storage tab the dimensions imply. */
+function importApplyCore_(who, state, meta, tabOverride) {
   if (!state || !state.unit) return { ok: 0, error: 'Nothing to import — preview it first.' };
   meta = meta || {};
 
@@ -4379,7 +4830,9 @@ function adminImportApply(token, state, meta) {
   recomputeTotals_(d);
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tabName = d.storageTab || 'No Storage';
+  /* d.storageTab is left as the engine computed it, so the quote knows where it
+     belongs the moment it is sent off; only the ROW is parked elsewhere. */
+  const tabName = tabOverride || d.storageTab || 'No Storage';
   let sh = ss.getSheetByName(tabName);
   if (!sh) {
     sh = ss.insertSheet(tabName);
@@ -4553,7 +5006,7 @@ function repriceScan_() {
   ss.getSheets().forEach(function (sh) {
     const tab = sh.getName();
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (isStartedTab_(tab)) return;               // leads have no pricing at all
+    if (isOffstageTab_(tab)) return;              // leads have no pricing; an import is already at today's rates
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
@@ -4751,6 +5204,9 @@ function adminStorageView(token) {
   const groups = [];
   ss.getSheets().forEach(function (sh) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    /* Not a storage area. The crew must not be shown a boat nobody has agreed
+       to store, and the haul-out counts must not include one. IMPORT_TAB. */
+    if (isImportTab_(sh.getName())) return;
     const last = sh.getLastRow();
     const rows = [];
     if (last > 1) {
@@ -6369,7 +6825,7 @@ function signLookup_(quoteNo) {
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
     if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
-    if (isStartedTab_(sh.getName())) continue;   // a lead is not a signer
+    if (isOffstageTab_(sh.getName())) continue;  // a lead is not a signer, and nor is an unsent import
     const rowNum = findQuoteRow_(sh, quoteNo);
     if (rowNum <= 0) continue;
     const row = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
@@ -6484,6 +6940,7 @@ function balanceReportCheck() {
   const rows = [];
   ss.getSheets().forEach(function (sh) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    if (isOffstageTab_(sh.getName())) return;   // a draft owes nothing — see IMPORT_TAB
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r) {
@@ -6563,7 +7020,7 @@ function dailyReminderCheck() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   ss.getSheets().forEach(function (sh) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return; // not a quote tab
-    if (isStartedTab_(sh.getName())) return;  // leads are never emailed — see STARTED_TAB
+    if (isOffstageTab_(sh.getName())) return; // leads and imports are never emailed — see STARTED_TAB / IMPORT_TAB
     const last = sh.getLastRow();
     if (last < 2) return;
     const data = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();

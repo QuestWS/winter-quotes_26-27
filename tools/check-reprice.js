@@ -69,6 +69,7 @@ function build(engine){
     'const ADJ_CC_PCT=3, ADJ_LATE_PCT=10;',
     'function usd_(n){n=Number(n||0);return "$"+Math.abs(n).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g,",").replace(/^/, n<0?"-":"");}',
     "const STARTED_TAB='Quote Started';", fn('isStartedTab_'),
+    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
     decl('HEADERS'), decl('COL'), decl('KEYFIELDS_'),
     fn('paymentsTotal_'), fn('effectiveState_'), fn('serverPrice_'), fn('linesTotal_'),
     fn('rebuildLinesFromState_'), fn('ensureManual_'), fn('applyManualOps_'),

@@ -212,7 +212,11 @@ if (typeof engine.normalizeQuoteNo !== 'function') {
     if (!/maskLastName_\(/.test(fn))
       bad('signLookup_ returns the last name unmasked — a guessed quote number would hand out a name');
     else ok('the last name is masked before it leaves the server');
-    if (!/isStartedTab_\(/.test(fn))
+    /* Either predicate satisfies this: isOffstageTab_ IS isStartedTab_ plus
+       the Import tab. Pinning the identifier made this fail the moment a
+       second kind of non-signer was added, while the rule it cares about --
+       "a lead never reaches Adobe" -- was still being enforced. */
+    if (!/isStartedTab_\(|isOffstageTab_\(/.test(fn))
       bad('signLookup_ does not skip the lead tab — somebody who only poked at pricing is not signing ' +
           'a storage agreement, and lead rows are not customers');
     else ok('the lead tab is skipped');

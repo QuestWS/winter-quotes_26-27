@@ -293,6 +293,82 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
 ---
 
 
+## Bulk import of a season folder
+
+*"Mass import all the ones in the drive folder, put it in an Import category
+and I'll send them off manually so I don't have to import 1 by 1 and worry
+about overwrites"* — Chris, Sept 2026. ~149 files in **Storage 2025-2026**, one
+per customer, from before this system existed.
+
+**Overwrites were never the risk; duplicates are.** `importApplyCore_` always
+mints a fresh quote number and appends, so nothing can be written over. But
+roughly half those customers already have a 2026-27 quote, so a match on **last
+name + unit type** is skipped and reported instead of imported. Surname alone
+would wrongly skip the people who store a boat *and* a jet ski under one name,
+and several do.
+
+### The Import tab is a holding pen, not a storage area
+
+Everything lands on one tab, `IMPORT_TAB` (`Import`). A quote there is a
+**draft**: nobody agreed to it, nobody was told about it, and its price came
+from a file rather than from the customer. `isImportTab_` keeps it off every
+path that could reach one, and `isOffstageTab_` is that question plus the lead
+tab, asked once by the places that must exclude both:
+
+| Excluded | Why |
+|---|---|
+| `dailyReminderCheck` | **The one that matters.** It emails customers at 9am on a trigger, unattended. 145 people would get a quote nobody meant to send, hours before anyone could stop it. |
+| `bulkTargets_` | the send-to-all recipient list |
+| `balanceReportCheck` | a draft owes nothing |
+| `repriceScan_` | already at today's rates — the engine priced it as it was read |
+| `adminStorageView` | the storage view, the yard app and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
+| `signLookup_` | the public scan-to-sign lookup; a draft is not a signer |
+| `doGet` loader | the customer has never been given the number |
+| `doGet` launchpref | same reason |
+
+Staff paths deliberately **do** see it — `adminSearch` so Chris can find one,
+`findQuoteCtx_` so he can open, re-price and send it, `readQuoteRows_` so the
+nightly backup carries it. `d.storageTab` is left as the engine computed it, so
+each quote already knows where it belongs; only the *row* is parked.
+
+`tools/check-import-tab.js` reads the real scan bodies out of the `.gs` and
+executes the predicates. It asserts both directions: every customer-facing scan
+excludes the tab, and every staff path still reaches it. Hiding it from
+everything would be safe and useless.
+
+### It cannot run in one go
+
+Every file is an `.ods`, and reading one means uploading it to Drive as a
+temporary Google Sheet (`legacyReadGrid_` → `uploadAsSheet_`) — seconds each,
+against a six-minute execution ceiling. So it is a **resumable worklist**:
+`bulkImportStep` takes as many files as fit in `BULKIMP_BUDGET_MS_` (4 minutes),
+saves progress to Script Properties, and re-arms a trigger. Interrupt it, run
+out of quota, close the tab — it picks up where it stopped. `bulkImportStatus()`
+says where that is; `bulkImportStop()` ends it.
+
+### Two passes, and the report is the approval
+
+1. **`bulkImportScan()`** reads every file and writes a **report sheet to
+   Drive**. It touches the quote spreadsheet only to read it. Chris gets an
+   email with the link when it finishes.
+2. He reads the report and **deletes any row he doesn't want** (or changes its
+   first cell from `IMPORT`).
+3. **`bulkImportApply()`** imports exactly what the report still marks
+   `IMPORT`, onto the Import tab, and rewrites each row's verdict in place so
+   one report tells the whole story.
+
+Four files in that folder are not customer quotes and import as a nameless $0
+row if left in — the master price list, `aaaaa Storage List`, `Deposits`, and
+two copies of the blank template. `BULKIMP_NOT_A_QUOTE_` names them, and the
+guard checks real filenames from the real folder, including that
+`Cromer - Winter services menu template.ods` **is** a customer despite its name.
+
+The report shows what the old sheet came to beside what the engine prices it at
+now. A big gap is either a rate change or a misread file, and the report is
+where that gets noticed rather than in a customer's inbox.
+
+---
+
 ## Re-measuring and relocating (console)
 
 `Unit details & storage` card, gated on the **`measure` permission** (it used

@@ -328,9 +328,10 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
     .map(m => m.replace(/^function /, '').replace(/\s*\($/, ''))
     .filter(n => !n.endsWith('_'));          // the editor hides these
   const want = ['bulkImport1_Scan', 'bulkImport2_Apply', 'bulkImportContinue',
-                'bulkImportStatus', 'bulkImportStop', 'bulkImportStep'];
+                'bulkImportStatus', 'bulkImportStop', 'bulkImportRepair',
+                'bulkImportStep'];
   eq(pub.join(' → '), want.join(' → '),
-     'the dropdown reads: scan, apply, continue, status, stop, then the trigger handler');
+     'the dropdown reads: scan, apply, continue, status, stop, repair, then the trigger handler');
 
   /* The numbered pair must stay numbered: they are the only two that have a
      wrong order to get wrong. */
@@ -349,6 +350,48 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   if (/^function bulkImportStep\s*\(/m.test(GAS)) ok('the trigger handler is still public');
   else fail('bulkImportStep was made private — a trailing-underscore trigger handler fires ' +
             'unreliably, which is the trap sweepTranscripts already hit');
+}
+
+/* =====================================================================
+   11. A ROW IS NEVER PLACED BY ASKING getLastRow() AFTER WRITING BLANKS.
+   ---------------------------------------------------------------------
+   This one actually happened, to ~40 real quotes. importApplyCore_ did
+   appendRow(new Array(23).fill('')) and then took getLastRow() as the row it
+   had just made. A row of empty strings is still blank to getLastRow(), so on
+   a tab whose only content was the header it answered 1 — and the import wrote
+   the quote OVER the header. The next one asked again, got 1 again, and
+   overwrote that. Forty quotes went through row 1 of the new Import tab,
+   one survived, and with "Quote #" gone from C1 every sheet sweep skipped the
+   whole tab: the console could not find any of them.
+
+   It hid for as long as it did because every other caller appends to a tab
+   that already holds rows. Creating a fresh tab is what the bulk import added.
+   ===================================================================== */
+{
+  const core = fn('importApplyCore_');
+  if (/appendRow\(new Array\(HEADERS\.length\)\.fill\(''\)\)/.test(core)) {
+    fail('importApplyCore_ still appends a row of blanks — getLastRow() does not count ' +
+         'those, so on a tab holding only its header the next write lands ON the header');
+  } else ok('no blank row is appended before the write');
+  if (/rowNum\s*=\s*sh\.getLastRow\(\)\s*;/.test(core)) {
+    fail('the target row is getLastRow() itself — that is the row that already has data');
+  } else ok('the target row is not getLastRow() itself');
+  if (/Math\.max\(sh\.getLastRow\(\),\s*1\)\s*\+\s*1/.test(core)) {
+    ok('it writes below the last row with real data, and never to row 1');
+  } else fail('importApplyCore_ no longer computes its row defensively — row 1 is the header ' +
+              'and must never be a target');
+
+  /* And the repair for the damage already done. */
+  const rp = fn('bulkImportRepair');
+  if (/insertRowBefore\(1\)/.test(rp)) ok('the repair puts a header row back above a stranded quote');
+  else fail('bulkImportRepair does not restore the header row');
+  if (/setValues\(\[HEADERS\]\)/.test(rp)) ok('and writes the real HEADERS, not a guess at them');
+  else fail('the repair does not write HEADERS');
+  if (/survivors\.indexOf\(qn\) > -1/.test(rp)) {
+    ok('a quote that really is on the tab is not queued for a second import');
+  } else fail('the repair would re-import the surviving quote, duplicating it');
+  if (/'IMPORT'\)/.test(rp)) ok('and the rest of the report is set back to IMPORT');
+  else fail('the repair never re-arms the report, so Apply would have nothing to do');
 }
 
 if (bad) { console.error('\n' + bad + ' problem(s) with the Import tab'); process.exit(1); }

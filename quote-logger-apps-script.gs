@@ -3813,6 +3813,87 @@ function bulkImportStop() {
   console.log('Stopped. Nothing already written is undone — delete rows from the Import tab if you need to.');
   return { ok: 1 };
 }
+/* PUT THE IMPORT TAB BACK, and re-arm the report so the lost quotes can be
+   re-imported.
+   ---------------------------------------------------------------------------
+   The first bulk run wrote every quote into ROW 1 of a brand-new Import tab,
+   each one over the last, because appendRow(blanks) + getLastRow() answered 1
+   (see importApplyCore_). Two consequences, and this undoes both:
+
+     1. "Quote #" was gone from C1, so EVERY sheet sweep skipped the tab —
+        findQuoteCtx_, adminSearch, the backup, all of it. The one surviving
+        quote was invisible to the console. A header row is inserted above it,
+        which rescues it into row 2 where it belongs.
+
+     2. The report marks ~40 files "IMPORTED QW-…", and bulkImportReadReport_
+        only re-imports rows that say IMPORT. Those quote numbers point at rows
+        that no longer exist, so they are reset to IMPORT — except the survivor,
+        which is a real quote and must not be imported twice.
+
+   Nothing is actually lost: the .ods files are untouched, the report names
+   every one, and re-running bulkImport2_Apply() recreates them. The orphaned
+   quote numbers stay spent, which costs nothing — uniqueQuoteNo_ hands out the
+   next free one either way. */
+function bulkImportRepair() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(IMPORT_TAB);
+  if (!sh) { console.log('No "' + IMPORT_TAB + '" tab — nothing to repair.'); return { ok: 1, nothing: true }; }
+
+  const survivors = [];
+  const headerOk = String(sh.getRange(1, COL.QN).getValue() || '') === 'Quote #';
+  if (headerOk) {
+    console.log('Header row is intact — the tab was not damaged.');
+  } else {
+    /* Row 1 holds a quote rather than the headers. Push everything down and
+       write the headers back above it; the quote lands on row 2. */
+    const stranded = String(sh.getRange(1, COL.QN).getValue() || '');
+    sh.insertRowBefore(1);
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    console.log('Restored the header row. Rescued ' + (stranded || '(a row with no quote number)') +
+      ' into row 2.');
+    if (stranded) survivors.push(stranded);
+  }
+
+  /* Whatever is on the tab now is real and must not be re-imported. */
+  const last = sh.getLastRow();
+  if (last > 1) {
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
+      const q = String(r[0] || '').trim();
+      if (q && survivors.indexOf(q) < 0) survivors.push(q);
+    });
+  }
+  console.log('Quotes actually on the tab: ' + (survivors.join(', ') || 'none'));
+
+  /* Re-arm the report. */
+  const id = PropertiesService.getScriptProperties().getProperty(BULKIMP_REPORT_PROP_);
+  let rearmed = 0, kept = 0;
+  if (!id) {
+    console.log('No scan report on file — run bulkImport1_Scan() again before importing.');
+  } else {
+    const rs = SpreadsheetApp.openById(id).getSheetByName('Report');
+    const n = rs ? rs.getLastRow() : 0;
+    if (n > 1) {
+      const flags = rs.getRange(2, 1, n - 1, 1).getValues();
+      for (let i = 0; i < flags.length; i++) {
+        const v = String(flags[i][0] || '').trim();
+        if (v.indexOf('IMPORTED ') !== 0) continue;
+        const qn = v.slice('IMPORTED '.length).trim();
+        if (survivors.indexOf(qn) > -1) { kept++; continue; }   // that one really is there
+        rs.getRange(i + 2, 1).setValue('IMPORT');
+        rearmed++;
+      }
+    }
+    console.log('Report: ' + rearmed + ' row(s) set back to IMPORT, ' + kept + ' left as imported.');
+  }
+
+  auditLog_('Bulk import', 'Repaired the ' + IMPORT_TAB + ' tab' +
+    (headerOk ? ' (header was fine)' : ' (header restored)') +
+    '; ' + rearmed + ' report row(s) re-armed.');
+  console.log('\nNow run bulkImport2_Apply() to bring the rest back in.');
+  return { ok: 1, headerWasOk: headerOk, onTab: survivors.length, rearmed: rearmed };
+}
+
 /* NOT FOR CLICKING — this is what the background trigger calls. Running it by
    hand works, but bulkImportContinue() is the one that shows you an error.
    Public only because a trigger handler with a trailing underscore fires
@@ -5308,8 +5389,22 @@ function importApplyCore_(who, state, meta, tabOverride) {
     sh.appendRow(HEADERS);
     sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
   }
-  sh.appendRow(new Array(HEADERS.length).fill(''));
-  const ctx = { d: d, sh: sh, rowNum: sh.getLastRow() };
+  /* NEVER appendRow(blanks) THEN ASK getLastRow().
+     A row of empty strings is still blank as far as getLastRow() is concerned,
+     so on a tab whose only content is the header it answered 1 — and the
+     import wrote the quote OVER the header. The next import asked again, got 1
+     again, and overwrote that. The bulk run put forty quotes through row 1 of
+     a brand-new Import tab, left one survivor, and with "Quote #" gone from C1
+     every sheet sweep skipped the tab entirely: the console could not find a
+     single one of them.
+
+     It never showed before because every other caller appends to a tab that
+     already holds quote rows. Creating a fresh tab is what the bulk import
+     added. So: work the row out from the data that is actually there, write
+     the values straight into it, and never leave a blank row behind for the
+     next caller to trip over. Row 1 is the header and is not a target. */
+  const rowNum = Math.max(sh.getLastRow(), 1) + 1;
+  const ctx = { d: d, sh: sh, rowNum: rowNum };
   sh.getRange(ctx.rowNum, COL.LAST).setValue(d.lastName);
   sh.getRange(ctx.rowNum, COL.FIRST).setValue(d.firstName);
   sh.getRange(ctx.rowNum, COL.QN).setValue(qn);

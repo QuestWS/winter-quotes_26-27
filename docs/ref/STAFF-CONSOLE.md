@@ -378,6 +378,7 @@ that list *is* the instruction. It is ordered deliberately, and
 | `bulkImportContinue()` | Pushes the current pass along **in the foreground**, so an error reaches the screen. Use after either pass. |
 | `bulkImportStatus()` | Where it got to. |
 | `bulkImportStop()` | Ends the run. Nothing already written is undone. |
+| `bulkImportRepair()` | Puts the header row back if a quote is stranded in it, and re-arms the report. See below. |
 | `bulkImportStep()` | **Not for clicking** — the background trigger's handler. |
 
 It first shipped as `bulkImportStart, bulkImportStep, bulkImportScan,
@@ -386,6 +387,34 @@ want, with `Scan` and `Apply` side by side and nothing saying which came
 first. `bulkImportStart_` is now private so it leaves the list; `bulkImportStep`
 has to stay public, because a trigger handler with a trailing underscore fires
 unreliably (the trap `sweepTranscripts` hit), so it sits last instead.
+
+### The row-1 bug, and why a blank row is never appended
+
+The first real bulk run put **forty quotes through row 1 of the new Import
+tab**, each overwriting the last, and left one survivor. `importApplyCore_`
+did `appendRow(new Array(23).fill(''))` and then took `getLastRow()` as the row
+it had just created — but a row of empty strings is still *blank* to
+`getLastRow()`, so on a tab whose only content was the header it answered `1`.
+The quote went over the header; the next one asked again, got `1` again, and
+went over that.
+
+The second consequence was the one Chris hit: with `Quote #` gone from `C1`,
+**every sheet sweep skipped the whole tab** — `findQuoteCtx_`, `adminSearch`,
+the nightly backup — so the console could not find a single imported quote.
+
+It hid for as long as it did because every other caller appends to a tab that
+*already holds rows*; creating a fresh tab is what the bulk import introduced.
+The row is now worked out from the data actually present
+(`Math.max(sh.getLastRow(), 1) + 1`), no blank row is left behind, and row 1 is
+never a target. `check-import-tab.js` fails on any of the three.
+
+`bulkImportRepair()` undoes the damage: it inserts a header row above a
+stranded quote (rescuing it to row 2), then sets every report row whose flag
+reads `IMPORTED QW-…` back to `IMPORT` — except quotes that really are on the
+tab, which must not be imported twice. Nothing was lost: the `.ods` files are
+untouched and the report names every file, so re-running `bulkImport2_Apply()`
+brings them all back. The orphaned quote numbers stay spent, which costs
+nothing.
 
 ### Two passes, and the report is the approval
 

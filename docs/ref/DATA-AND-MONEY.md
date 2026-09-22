@@ -103,6 +103,90 @@ from them** — the page, the PDF and the emails all read the live engine flag,
 which is what makes the disclaimer vanish everywhere from one edit, including
 from a PDF regenerated for an old quote.
 
+## The season stamp — the dates a quote prints
+`d.season` holds the dates the quote was written under: the PDF's totals block
+reads `payByShort`, its fine print reads `payBy` and `lateStart`, and
+`pricesValidSentence()` takes `payBy` so an old quote keeps the terms it was
+quoted under.
+
+**It is built by `seasonStamp()` in the engine, and nowhere else.** Three paths
+write it and they have to write the same shape: the customer page on every
+save, `adminImportApply`, and `adminRepriceApply`. It used to be assembled
+inline on the page, which was true while a customer save was the only way a
+quote came into being — and that is exactly how two bugs got in. An imported
+quote had no `season` at all, so its PDF printed "Total — … by " and "a service
+charge beginning " with nothing after them. A re-priced quote kept last
+season's dates against this season's prices.
+
+**A re-price re-dates as well as re-costs.** `adminRepriceApply` re-stamps from
+the live constants, deliberately overriding `pricesValidSentence`'s habit of
+keeping the quote's original date: that habit exists so an *old* quote keeps
+what it was quoted under, and it stops being the right answer the moment we
+re-price that quote into a new season. `tools/check-season-stamp.js` runs the
+real re-price over a quote carrying a 2019–2020 stamp and asserts the dates
+moved.
+
+## Quote numbers cannot collide
+Every write path finds a quote **by its number**: `saveQuoteRow_` overwrites
+the row `findQuoteRow_` returns, and `savePdf_` replaces the Drive file whose
+title carries it. So a duplicate number is not a clash anybody notices — it is
+one customer's row and PDF silently replaced by another's.
+
+Numbers used to be four random digits drawn on the page against nothing: 9,000
+slots, no check. That held while quotes arrived a few a day and stops holding
+the moment a batch is created at once — importing a couple of hundred of last
+season's customers is about a 90% chance of at least one collision.
+
+- **`uniqueQuoteNo_(proposed)` is the only minter**, and it checks two things:
+  the Quote # column of every quote tab, and the numbers **reserved** in the
+  last `QNO_RESERVE_TTL_MIN_` minutes by customers still filling in the form.
+  It reads the Quote # column only — never the payload, which is kilobytes a
+  row and is what made the storage view time out.
+- **Existing numbers are never rewritten.** Minting reads; it writes no cell.
+- **The page cannot mint safely on its own** — it cannot see the sheet, and its
+  save POST is `no-cors`, so it cannot be told a corrected number afterwards.
+  It therefore asks for one at the contact gate (`reserveQuoteNo_`, alongside
+  the resume check) and **fails open** to the old local draw if that call does
+  not come back. A customer is never blocked from quoting by a slow backend.
+- **A full four-digit space widens to five** rather than failing;
+  `normalizeQuoteNo` already accepts 3–5 digits on both sides, so a wider
+  number round-trips everywhere without any other change.
+- `tools/check-quote-numbers.js` executes all of it against a sheet holding
+  8,991 of the 9,000 four-digit numbers.
+
+## Which Drive folder a quote's paperwork is filed in
+**A quote is filed under the season whose rates it is actually priced at**, not
+by the calendar. While `PRICING.provisional` is true every quote we hand out is
+an estimate at last season's numbers, so it belongs in last season's folder —
+except one we negotiated a real 2026-2027 price for, which is a current quote
+and files under 2026-2027 today.
+
+- **`QUOTE_RATE_OVERRIDES` decides it.** That table is already the record of
+  "we agreed a price for this one in real money", so `quoteRateSeason_` reads
+  it rather than a second flag somebody has to remember to set.
+- **At the rollover it resolves itself.** `provisional:false` makes every quote
+  current, and because `saveQuoteRow_` regenerates the PDF on every write, the
+  season re-price re-files the whole season. Nothing to move by hand.
+- **`Winter Quotes 2025-26` keeps its short spelling.** It exists, it holds a
+  season of PDFs and its URLs are on the sheet, so renaming it would break
+  every stored link. `2026-2027` onwards uses the long form, matching the
+  spreadsheet and the season labels. `SEASON_FOLDERS_` maps the exceptions and
+  an unlisted season still gets a sane long-form folder.
+- **The season labels use an EN DASH and folder names use a hyphen.**
+  `seasonFolderName_` normalises first — without it, `2025–2026` would miss the
+  table and quietly create a second, near-identically-named folder.
+- **Looking something up sweeps every season folder; filing it does not.** A
+  quote that changed folder must still be findable in the one it came from, or
+  an email goes out with no PDF and nothing says so. `savePdf_` likewise bins
+  prior PDFs from *all* of them, since one quote with two PDFs carrying
+  different totals is worse than none.
+- **A photo folder that exists is reused by its stored id**, never by
+  re-deriving the path — otherwise a quote changing season would get a second,
+  empty folder while the yard's photos stayed in the old one.
+- **The pre-restore snapshot belongs to the season, not a quote**, so it stays
+  on `getFolder_()`, which now follows the current season automatically.
+- `tools/check-season-folders.js` executes all of it, including the rollover.
+
 ### At the rollover
 1. Update `PRICES` (and `SEASON`) in the Annual Update Zone.
 2. Set `PRICING.provisional:false` **in the same commit**.

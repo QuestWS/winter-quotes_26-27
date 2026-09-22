@@ -336,6 +336,24 @@ executes the predicates. It asserts both directions: every customer-facing scan
 excludes the tab, and every staff path still reaches it. Hiding it from
 everything would be safe and useless.
 
+### Two holds, and sending releases both
+
+The bulk import landed alongside the per-row **reminder hold**
+(`IMPORT_HOLD_MARK`), and they are complementary rather than duplicates:
+
+- the **marker** keeps the 9am nudge off a row and, when a human finally emails
+  the customer, restarts the ten days from *that* send;
+- the **tab** keeps the row out of the storage view, the yard app, the printed
+  haul-out sheets, the balance report, send-to-all and the public lookups.
+
+`recordEmail_` releases both — `releaseImportHold_` swaps the marker, and
+`leaveImportTab_` moves the row onto the tab `d.storageTab` has held since the
+import. Releasing only the marker would leave a boat Chris has quoted, and may
+have been paid for, invisible to the crew who have to pull it: the failure the
+tab exists to prevent, arriving from the other side. The move is wrapped in a
+`try` because bookkeeping must never fail a send that has already gone out; the
+row simply stays parked and the next send moves it.
+
 ### It cannot run in one go
 
 Every file is an `.ods`, and reading one means uploading it to Drive as a
@@ -459,6 +477,10 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **It re-dates as well as re-prices.** `adminRepriceApply` re-stamps
+  `d.season` from the live constants, because a quote carrying this season's
+  money under last season's pay-by date is wrong on the document the customer
+  pays from. See the season stamp in `docs/ref/DATA-AND-MONEY.md`.
 - **Applied in batches of 15** from the console. Regenerating a quote PDF takes
   seconds and Apps Script stops a call at six minutes; a whole season in one
   request would time out mid-write with no record of where it stopped.
@@ -499,14 +521,114 @@ pricing" template. This reads one and makes a quote here.
 - **Jet skis and golf carts got tagged onto boat sheets** because fewer files
   was better then. Here one quote per unit is what makes the storage tabs, the
   haul-out list and re-pricing work, so extras are reported for separating.
+- **Two skis on one trailer is one quote, not two.** A unit here is a stored
+  footprint, not a hull: the quote page asks for the count *on this trailer*
+  and prices the space the whole rig occupies. So a ski-only sheet winterizing
+  two is imported as one quote with the count at 2, and the import **asks**
+  which it is rather than telling staff to split it — two trailers is one quote
+  each, and taking two trailers as one charges for about half the space. Only
+  skis riding on a **boat's** sheet are reported as needing separating, which
+  they genuinely do.
+- **A jet ski's size is read across, not copied.** The old sheet has one set of
+  dimension boxes whatever the unit is — LOA, beam, length with trailer — and
+  the engine prices a ski from `skiLen`/`skiWid`. A ski is stored on its
+  trailer, so the stored footprint is **LWT × beam**; LOA stands in only when
+  the sheet has no LWT, and the import says when it did that, because the hull
+  is shorter than the ski sits. Copying the boat fields straight across is what
+  made every jet ski import read *"still needs stored length & width"* with its
+  storage priced at nothing, off a sheet that plainly had the measurements. The
+  boat boxes are then left empty: no jet ski surface prints them.
+- **What a jet ski cannot be quoted is named, never zeroed.** The engine's jet
+  ski branch prices winterizing, detailing, inside-on-trailer storage and the
+  late surcharge, and silently ignores anything else in the state. So the
+  importer will not hand it one: outside storage is dropped, premium inside
+  falls back to the standard inside rate, shrinkwrap and powerwash come off,
+  and each lands in *Priced differently here* for staff to add back as a line.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
   imported quote must re-price like every other. Preview writes nothing; the
   import emails nobody; `verify.sh` asserts all three.
-- `tools/check-legacy-import.js` executes eighteen groups over all three file
-  states, a mismatched master, comparison sheets, multi-unit sheets and the
-  live engine. Fixtures are invented names over the real layout — **no customer
+- **Import after the new rate card, not before.** An import prices at whatever
+  is live, so importing first means pricing the whole batch at last season's
+  rates and then re-pricing all of it. Importing afterwards prices it right
+  once.
+- **Its quote number is minted server-side** by `uniqueQuoteNo_`, against what
+  is already on the sheet. A batch is precisely the shape that makes a blind
+  random draw collide — `docs/ref/DATA-AND-MONEY.md`.
+- **It holds the automatic reminder off the new row** so a batch import cannot
+  turn into an unattended mailshot ten days later —
+  `docs/ref/EMAILS.md`. Nothing marks which files have already been
+  imported, so track that yourself if the job spans more than one sitting.
+- `tools/check-legacy-import.js` executes twenty-one groups over all three file
+  states, a mismatched master, comparison sheets, multi-unit sheets, jet ski
+  dimensions and storage, and the live engine. Fixtures are invented names over the real layout — **no customer
   data in this repo**.
 
+
+## Deleting a quote (console)
+
+`Delete this quote`, last card on the quote, **admin-only** — today that is
+Chris and Jeff. Customers build the same quote twice (a save that went in on a
+bad signal, a second go at the same boat) and every season starts with a few
+deliberate test rows. A duplicate is not cosmetic: it is a second haul-out
+row, a second reminder email and a second line in every count. Before this the
+only way to remove one was opening the spreadsheet on a desktop and deleting
+the row by hand, which is exactly what this system tells you never to do —
+the payload, the PDF and the money columns go out of step with each other.
+
+- **`who.admin`, not a list of names.** The roster *is* Quest's record of who
+  is trusted with something irreversible, so the gate reads it rather than
+  hardcoding two people who might change job. To hand it to somebody else,
+  make them an admin; there is no separate `delete` permission, deliberately —
+  a third permission nobody can see the effect of is worse than the bar being
+  obvious.
+- **Nothing is destroyed.** Every copy of the row is written to a
+  **`Deleted Quotes`** tab first — all 23 columns, payload included — followed
+  by when, who, why and which tab it came off. An undo is a paste of columns
+  A–W back onto the storage tab.
+- **That tab must never look like a quote tab.** Seventeen sweeps in the `.gs`
+  decide what is a quote tab by reading `'Quote #'` out of column 3, and the
+  9am auto-reminder is one of them. So the archive's header says
+  **`Quote # (deleted)`** there, and the quote number stays in its own column
+  for the paste-back. Get that wrong and deleting a quote puts the customer
+  back on the reminder run and back on the haul-out list.
+- **The number is never reissued.** `takenQuoteNos_` reads the archive as well
+  as the live tabs — matched by tab name, since the header probe deliberately
+  misses it. A recycled number would have the Activity Log, the archive and a
+  live row describing different customers under one number, and `savePdf_`
+  would replace one customer's PDF with another's (`docs/ref/DATA-AND-MONEY.md`
+  — quote numbers cannot collide).
+- **Every copy goes, not just the one on screen.** A quote mid-relocation can
+  sit on two tabs; deleting the one staff were looking at and leaving the other
+  is how a deleted quote reappears on the haul-out list. Rows are removed
+  bottom-up, because deleting one moves the row number of everything under it.
+- **The quote number is typed, and a reason is required.** A tick box next to a
+  loaded quote is one mis-tap away from deleting whatever is on screen, and
+  once the row is gone the reason is the only record of why. Money or a signed
+  contract on the quote needs a second, explicit confirmation on top — the
+  server refuses without it (`needsForce`) and the console reveals the box it
+  is asking for rather than just printing the refusal.
+- **The PDF is trashed; photos and the signed contract are not.** A quote PDF
+  in the season folder for a row that no longer exists is the one artifact that
+  could still be handed to a customer. Photos and contracts are evidence, they
+  are linked from the archived row, and an unused folder costs nothing. Drive's
+  bin holds the PDF for 30 days either way.
+- **Nobody is emailed**, and the deletion is written to the Activity Log with
+  the quote, the customer, the total, the payment count, the tabs and the
+  reason.
+- **A customer with the page still open can re-save the quote back into
+  existence.** Their browser holds the whole payload and `doPost` finds no row
+  to update, so it creates one — under the same number, since the archive keeps
+  it reserved. Nothing stops that by design: the alternative is a blocklist that
+  turns a legitimate re-quote into a silent failure. If a customer is actively
+  quoting, delete the duplicate after they are done.
+- **A backup restore can bring a deleted quote back**, because the nightly
+  `.xlsx` predates the deletion and its default mode restores what is *missing*
+  from the live sheet. That is the recovery path working as designed, not a
+  bug — but it is worth knowing before restoring a backup taken before a purge.
+- `tools/check-delete-quote.js` executes all of it against a fake spreadsheet:
+  a non-admin refused before any row moves, each confirmation gating, both
+  copies archived with the payload intact, the archive failing the quote-tab
+  probe, the number still taken afterwards, and the call refused on GET.
 
 ## Restoring from a backup
 Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload

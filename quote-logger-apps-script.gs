@@ -100,6 +100,48 @@ function autoPauseState_() {
 }
 function autoEmailsPaused_() { return autoPauseState_().on; }
 const REMINDER_AFTER_DAYS = 10;
+/* THE REMINDER COLUMN ON AN IMPORTED QUOTE.
+   ---------------------------------------------------------------------------
+   dailyReminderCheck sends to any quote with an email address, no payment, no
+   reminder marker and a timestamp older than REMINDER_AFTER_DAYS. An imported
+   quote is all four, ten days after it lands — so a batch import would, with
+   nobody's finger on it, mail "Your Quest Watersports winter quote is waiting"
+   to several hundred people who never built a quote.
+
+   So an import writes HOLD into the reminder column, which stops that send the
+   same way an already-sent reminder does. When a human actually emails the
+   customer, releaseImportHold_ swaps it for SENT plus an ISO date, and
+   dailyReminderCheck reads that date as the start of the ten days — the clock
+   runs from the day we contacted them, not the day the row was created, so
+   the nudge does not arrive the morning after the quote finally went out.
+
+   ISO on the SENT marker on purpose: it is parsed, not just read. The HOLD
+   marker is only ever looked at, so it carries a local date for whoever is
+   scanning the column.  */
+const IMPORT_HOLD_MARK = 'Imported — not yet sent ';
+const IMPORT_SENT_MARK = 'Imported — sent ';
+function isImportHoldMark_(v) { return String(v || '').indexOf(IMPORT_HOLD_MARK) === 0; }
+function isImportSentMark_(v) { return String(v || '').indexOf(IMPORT_SENT_MARK) === 0; }
+/* The send date out of a SENT marker, or null if this is not one / is corrupt.
+   Unparseable must read as "no date", and the caller then leaves the quote
+   alone — a broken marker must never become a reason to email somebody. */
+function importSentAt_(v) {
+  if (!isImportSentMark_(v)) return null;
+  const t = Date.parse(String(v).slice(IMPORT_SENT_MARK.length).trim());
+  return isNaN(t) ? null : t;
+}
+/* Called from recordEmail_, so every human send site releases the hold —
+   console, sheet menu and quote page alike. It only ever rewrites the HOLD
+   marker, which is what makes it safe to call from the shared recorder: a
+   "Reminder sent ..." or a lead marker is left exactly as it was. */
+function releaseImportHold_(sh, rowNum) {
+  if (!sh || !rowNum) return;
+  try {
+    const cell = sh.getRange(rowNum, COL.REM);
+    if (!isImportHoldMark_(cell.getValue())) return;
+    cell.setValue(IMPORT_SENT_MARK + new Date().toISOString());
+  } catch (e) { /* never let bookkeeping fail a send that already went out */ }
+}
 // Daily backup: full spreadsheet emailed as an Excel file. Run
 // setupBackupTrigger() once from the editor to activate (6pm daily).
 const BACKUP_EMAIL = 'chris@questwatersports.com';
@@ -840,6 +882,43 @@ const DIM_FIELDS = {
   golf:   [],
   ebike:  []
 };
+
+/* ----------------------------------------------------------------------------
+   THE SEASON STAMP that rides in every payload as `d.season`.
+   ----------------------------------------------------------------------------
+   The dates a quote was written under, frozen into the payload so the PDF and
+   the emails can print them without re-reading the live constants. `sn.payBy`,
+   `sn.lateStart` and `sn.payByShort` are what the PDF's totals block and fine
+   print render, and pricesValidSentence() takes `sn.payBy` deliberately so a
+   quote that is genuinely still last season's keeps the date it was quoted
+   under.
+
+   It lives in the engine because THREE places now write it and they must write
+   the same shape: the customer page on every save, the old-sheet importer, and
+   the season re-price. It used to be built inline on the page alone, which was
+   true while a customer save was the only way a quote came into being — and it
+   is why an imported quote had no `season` at all (a PDF reading "Total — ...
+   by " with nothing after it) and why a re-priced quote kept last season's
+   dates against this season's prices.
+
+   `pricingProvisional` / `ratesLabel` are a RECORD of what the customer was
+   shown, so a quote written while rates were provisional can be told apart
+   later. Nothing renders from them — every surface reads the live engine flag,
+   which is what makes the disclaimer clear everywhere at the rollover. */
+function seasonStamp(){
+  return {
+    label:              SEASON.seasonLabel,
+    payBy:              SEASON.payByDate,
+    payByShort:         SEASON.payByShort,
+    lateStart:          SEASON.lateChargeStart,
+    storageStart:       SEASON.storageStart,
+    storageEnd:         SEASON.storageEnd,
+    lateRetrievalFee:   PRICES.lateRetrieval,
+    lateRetrievalLabel: 'Late retrieval surcharge (after ' + SEASON.payByShort + ')',
+    pricingProvisional: !!PRICING.provisional,
+    ratesLabel:         PRICING.ratesLabel
+  };
+}
 // ENGINE-END
 
 function doPost(e) {
@@ -1135,6 +1214,9 @@ function consoleFns_(p) {
     resetPin:    function (a) { return adminResetPin(p.token, a[0]); },
     addStaff:    function (a) { return adminAddStaff(p.token, a[0], a[1], a[2]); },
     removeStaff: function (a) { return adminRemoveStaff(p.token, a[0]); },
+    /* Admin-only and irreversible from inside the console — deliberately NOT on
+       CONSOLE_GET_FNS_, so it can only ever arrive as a POST carrying a rid. */
+    deleteQuote: function (a) { return adminDeleteQuote(p.token, a[0], a[1], a[2], a[3]); },
     backupPreview: function (a) { return adminBackupPreview(p.token, a[0], a[1]); },
     backupRestore: function (a) { return adminBackupRestore(p.token, a[0], a[1], a[2]); },
     bulkPreview: function (a) { return adminBulkPreview(p.token, a[0]); },
@@ -1314,6 +1396,15 @@ function doGet(e) {
      It must never be widened to real quote tabs: that would turn an email
      address into a way to pull somebody's priced quote, which today needs the
      quote number. */
+  /* A quote number set aside for a customer who is about to start building.
+     Writes nothing to the spreadsheet and reveals nothing about it: the reply
+     is one number that is, by construction, NOT in use. The page asks for this
+     at the contact gate because its save POST is no-cors and cannot be told a
+     number afterwards (see reserveQuoteNo_ in index.html). */
+  if (p.action === 'newquoteno') {
+    try { return out({ ok: 1, quoteNo: uniqueQuoteNo_('') }); }
+    catch (err) { return out({ ok: 0 }); }
+  }
   if (p.action === 'findlead') {
     try {
       const em = String(p.email || '').trim().toLowerCase();
@@ -1520,6 +1611,137 @@ function findQuoteRowFrom_(sh, quoteNo, startRow) {
   return -1;
 }
 
+/* ============ QUOTE NUMBERS THAT CANNOT COLLIDE ============
+   ---------------------------------------------------------------------------
+   Every write path finds a quote BY ITS NUMBER: saveQuoteRow_ overwrites the
+   row findQuoteRow_ returns, and savePdf_ replaces the Drive file whose title
+   contains it. So two quotes sharing a number is not a cosmetic clash — the
+   second customer silently overwrites the first, and takes their PDF with them.
+
+   The old number was four random digits drawn on the page: 9,000 slots, no
+   check against anything. That held up while quotes arrived a few a day, and
+   stops holding up the moment a batch is created at once — importing a couple
+   of hundred of last season's customers is about a 90% chance of at least one
+   collision, and nothing would announce it.
+
+   EXISTING NUMBERS ARE NEVER TOUCHED. This only governs numbers minted from
+   here on: it reads what is already taken and picks something that is not.
+
+   Two things can be taken, and both are checked:
+     - a number on the sheet, read from the Quote # column only. Never the
+       payload column: that is kilobytes a row, and reading it to mint a number
+       is exactly the kind of full-payload scan that made the storage view time
+       out (CLAUDE.md section 7).
+     - a number RESERVED minutes ago by a customer who is still filling in the
+       form and has not saved yet. Held in Script Properties with a timestamp
+       and expired after RESERVE_TTL_MIN_, so an abandoned quote releases its
+       number instead of burning it forever.
+
+   Serialized with LockService, because two customers passing the contact gate
+   in the same second is the case this exists to stop. Failing to get the lock
+   is not fatal — the caller still gets a number, just one drawn without the
+   guarantee, which is exactly where we were before. */
+const QNO_RESERVE_KEY_ = 'QNO_RESERVATIONS';
+const QNO_RESERVE_TTL_MIN_ = 90;
+const QNO_LOCK_MS_ = 8000;
+
+/* Every quote number currently on the spreadsheet, as a lookup object.
+   Quote # is column 3 on every quote tab (COL.QN), which is also how a tab is
+   recognised as a quote tab at all. */
+function takenQuoteNos_() {
+  const taken = {};
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.getSheets().forEach(function (sh) {
+    /* Quote tabs, plus the deleted-quote archive. A number that has been used
+       once is never handed out again: reissuing one would have the Activity
+       Log, the archive and a live row all describing a different customer
+       under the same number, and savePdf_ would replace one customer's PDF
+       with another's. The archive's header row says 'Quote # (deleted)' in
+       column 3 precisely so every OTHER sweep skips it, which is why it is
+       matched here by name rather than by that header. */
+    if (sh.getRange(1, 3).getValue() !== 'Quote #' && sh.getName() !== DELETED_TAB) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
+      const qn = String(r[0] || '').trim();
+      if (qn) taken[qn.toUpperCase()] = 1;
+    });
+  });
+  return taken;
+}
+
+/* The unexpired reservations, pruned. Returns {map, changed} so the caller can
+   avoid writing the property back when nothing aged out. */
+function readReservations_() {
+  const props = PropertiesService.getScriptProperties();
+  let raw = {};
+  try { raw = JSON.parse(props.getProperty(QNO_RESERVE_KEY_) || '{}') || {}; } catch (e) { raw = {}; }
+  const cutoff = Date.now() - QNO_RESERVE_TTL_MIN_ * 60 * 1000;
+  const live = {};
+  let changed = false;
+  Object.keys(raw).forEach(function (qn) {
+    if (Number(raw[qn] || 0) >= cutoff) live[qn] = raw[qn]; else changed = true;
+  });
+  return { map: live, changed: changed };
+}
+
+/* Mint a quote number nothing else is using.
+   `proposed` is honoured when it is free — that is what lets a caller that
+   already has a number (an import carrying one, a retry) keep it rather than
+   churn a new one. Anything not free is replaced.
+
+   Four digits first, so numbers stay the short thing staff read down a phone.
+   If the four-digit space is genuinely crowded the draw widens to five, which
+   normalizeQuoteNo already accepts on both sides (it matches 3 to 5 digits),
+   so a wider number round-trips through the customer page and the console
+   without any other change. */
+function uniqueQuoteNo_(proposed) {
+  const yy = String(new Date().getFullYear()).slice(2);
+  const lock = LockService.getScriptLock();
+  let locked = false;
+  try { locked = lock.tryLock(QNO_LOCK_MS_); } catch (e) { locked = false; }
+  try {
+    const taken = takenQuoteNos_();
+    const res = readReservations_();
+    const free = function (qn) {
+      const k = qn.toUpperCase();
+      return !taken[k] && !res.map[k];
+    };
+
+    let pick = normalizeQuoteNo(proposed || '', new Date().getFullYear());
+    if (!pick || !free(pick)) {
+      pick = '';
+      /* 400 draws at four digits. With the whole 9,000 free this lands first
+         try; it only runs long when the space is nearly full, and that is the
+         case the widening below exists for. */
+      for (let i = 0; i < 400 && !pick; i++) {
+        const c = 'QW-' + yy + '-' + String(Math.floor(1000 + Math.random() * 9000));
+        if (free(c)) pick = c;
+      }
+      for (let i = 0; i < 400 && !pick; i++) {
+        const c = 'QW-' + yy + '-' + String(Math.floor(10000 + Math.random() * 90000));
+        if (free(c)) pick = c;
+      }
+      /* Both spaces exhausted is not survivable by guessing — walk the
+         five-digit range in order and take the first gap. */
+      for (let n = 10000; n < 100000 && !pick; n++) {
+        const c = 'QW-' + yy + '-' + String(n);
+        if (free(c)) pick = c;
+      }
+    }
+    if (!pick) throw new Error('no free quote number in QW-' + yy + '-*');
+
+    res.map[pick.toUpperCase()] = Date.now();
+    try {
+      PropertiesService.getScriptProperties()
+        .setProperty(QNO_RESERVE_KEY_, JSON.stringify(res.map));
+    } catch (e) { /* the reservation is an optimisation; the sheet scan is the guarantee */ }
+    return pick;
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e) {} }
+  }
+}
+
 function findQuoteRow_(sh, quoteNo) {
   if (!quoteNo || sh.getLastRow() < 2) return -1;
   const col = sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues(); // Quote #
@@ -1542,11 +1764,14 @@ let _freshPdf_ = null;
 
 function savePdf_(d) {
   try {
-    const folder = getFolder_();
+    const folder = seasonFolderFor_(d);
     const fileName = (d.quoteNo || 'quote') + ' — ' + (d.owner || 'Unknown') + '.pdf';
-    // replace any previous PDF for this quote number
-    const old = folder.searchFiles('title contains "' + (d.quoteNo || '§none§') + '"');
-    while (old.hasNext()) old.next().setTrashed(true);
+    /* Replace any previous PDF for this quote number, in EVERY season folder
+       rather than only the one we are about to write to. A quote whose
+       pricing became final changes folder, and the copy left behind in the
+       old one would be a second PDF for the same quote carrying a different
+       total — with nothing to say which is current. */
+    trashQuotePdfs_(d.quoteNo);
 
     const blob = Utilities.newBlob(quoteHtml_(d), MimeType.HTML, fileName)
                           .getAs(MimeType.PDF)
@@ -1560,9 +1785,79 @@ function savePdf_(d) {
   }
 }
 
+/* ============ WHICH SEASON FOLDER A QUOTE'S PAPERWORK LIVES IN ============
+   ---------------------------------------------------------------------------
+   Chris's rule: a quote filed under the season whose rates it is ACTUALLY
+   priced at. While PRICES still holds 2025-2026 numbers every quote we hand
+   out is an estimate at last season's rates, so it belongs in last season's
+   folder — except one. We negotiated a real 2026-2027 price for a specific
+   customer, and that quote is a current quote, not an estimate, so it files
+   under 2026-2027 today.
+
+   QUOTE_RATE_OVERRIDES is already the record of "we agreed a price for this
+   one in real money", so it decides this. A second flag would be a second
+   thing to remember, and the one that gets forgotten.
+
+   At the rollover `PRICING.provisional` goes false, every quote becomes
+   current, and all of them file under 2026-2027 from then on. Because
+   saveQuoteRow_ regenerates the PDF on every write, the season re-price
+   re-files the whole season by itself — nothing to move by hand. */
+
+/* Folder names are NOT derived from the label by one formatter, on purpose.
+   "Winter Quotes 2025-26" already exists with a season of PDFs in it and its
+   URLs are stored on the sheet, so renaming it would break every stored link;
+   it keeps its short spelling. Everything from 2026-2027 on uses the long
+   form, which matches the spreadsheet name and the season labels on the page
+   and in emails. A season not listed here still gets a sane folder rather
+   than landing somewhere silently wrong. */
+const SEASON_FOLDERS_ = {
+  '2025-2026': DRIVE_FOLDER_NAME,          // 'Winter Quotes 2025-26' — the existing one
+  '2026-2027': 'Winter Quotes 2026-2027'
+};
+function seasonFolderName_(label) {
+  /* The season labels use an EN DASH (2025–2026); folder names use a hyphen.
+     Normalising first is what stops '2025–2026' missing the table and quietly
+     creating a second, near-identically-named folder next to the real one. */
+  const key = String(label || '').replace(/[\u2012-\u2015\u2212]/g, '-').trim();
+  return SEASON_FOLDERS_[key] || ('Winter Quotes ' + (key || 'unfiled'));
+}
+
+/* The season whose rates this quote is priced at — see the rule above. */
+function quoteRateSeason_(d) {
+  if (!PRICING.provisional) return PRICING.ratesLabel;   // the card landed; everything is current
+  const qn = d && d.quoteNo;
+  if (qn && QUOTE_RATE_OVERRIDES[qn]) return PRICING.nextLabel;   // a negotiated, real price
+  return PRICING.ratesLabel;                             // an estimate at last season's rates
+}
+
+function folderByName_(name) {
+  const it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+/* The folder for THIS quote's paperwork. */
+function seasonFolderFor_(d) {
+  return folderByName_(seasonFolderName_(quoteRateSeason_(d)));
+}
+
+/* Every season folder a quote's paperwork could be sitting in. Used when
+   LOOKING for something rather than filing it: a quote that has changed
+   folder must still be findable in the one it came from, or an email quietly
+   goes out with no PDF on it. */
+function allSeasonFolderNames_() {
+  const seen = {}, out = [];
+  const add = function (n) { if (n && !seen[n]) { seen[n] = 1; out.push(n); } };
+  Object.keys(SEASON_FOLDERS_).forEach(function (k) { add(SEASON_FOLDERS_[k]); });
+  add(seasonFolderName_(PRICING.ratesLabel));
+  add(seasonFolderName_(PRICING.nextLabel));
+  return out;
+}
+
+/* The CURRENT season's folder, for things that belong to the season rather
+   than to one quote — the pre-restore snapshot, for instance. Follows the
+   rollover automatically; today it resolves to the same folder it always has. */
 function getFolder_() {
-  const it = DriveApp.getFoldersByName(DRIVE_FOLDER_NAME);
-  return it.hasNext() ? it.next() : DriveApp.createFolder(DRIVE_FOLDER_NAME);
+  return folderByName_(seasonFolderName_(PRICING.ratesLabel));
 }
 
 function esc_(s) {
@@ -3702,6 +3997,12 @@ function adminLookup(token, qn) {
        email. '' from signUrlFor_ means the web form is unset, and every caller
        hides its button on ''; this is that rule for the console's button. */
     canSign: !!signUrlFor_(d) && !isStartedQuote_(d),
+    /* For the delete card: whether this viewer may delete at all, and what is
+       on the quote that warrants a second confirmation. The console knows its
+       own admin flag, but ME is cached in localStorage — the server is the one
+       that decides, the same way canSign does. */
+    canDelete: !!who.admin,
+    payCount: (d.payments || []).length,
     /* The customer's own way back into this quote — quote number and last name
        already attached, so nothing to read out over the phone. Built server-
        side by the same quoteLink_ every customer email uses, so what staff copy
@@ -3899,6 +4200,40 @@ function recordEmail_(sh, rowNum, d, kind, by) {
   d.emailLog = d.emailLog || [];
   d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: d.email || '', by: by || '' });
   if (sh) sh.getRange(rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  /* Every send site calls this, which is exactly why the import hold is
+     released here rather than in the console path alone — the sheet menu can
+     send the same emails, and menu/console parity is a standing rule. */
+  releaseImportHold_(sh, rowNum);
+  leaveImportTab_(sh, rowNum, d);
+}
+
+/* Emailing the customer is the moment a bulk-imported draft becomes a real
+   quote, so it is the moment its row stops being parked.
+   ---------------------------------------------------------------------------
+   The two holds do different jobs and both are wanted: the reminder marker
+   keeps the 9am nudge off it and restarts the ten days from this send, while
+   IMPORT_TAB keeps it out of the storage view, the yard app, the printed
+   haul-out sheets, the balance report and the public lookups. Releasing only
+   the marker would leave a boat Chris has quoted, and may be paid for,
+   invisible to the crew who have to pull it — which is the failure the tab was
+   supposed to prevent, arriving from the other direction.
+
+   d.storageTab was left as the engine computed it at import, so the row
+   already knows where it belongs. Same guard as the dimension editor's move:
+   never drag a lead off its own tab. */
+function leaveImportTab_(sh, rowNum, d) {
+  if (!sh || !rowNum || !d) return;
+  try {
+    if (!isImportTab_(sh.getName())) return;
+    const dest = String(d.storageTab || '') || 'No Storage';
+    if (isOffstageTab_(dest)) return;            // nowhere sensible to send it
+    moveQuoteRow_({ sh: sh, rowNum: rowNum, d: d }, dest);
+    auditLog_('System', 'Sent ' + d.quoteNo + ' — moved off ' + IMPORT_TAB + ' to ' + dest);
+  } catch (e) {
+    /* Bookkeeping must never fail a send that has already gone out. The row
+       stays on the Import tab and the next send moves it. */
+    console.error('leaveImportTab_ failed for ' + (d && d.quoteNo) + ': ' + e);
+  }
 }
 
 function adminSendEmail(token, qn, kind, extra) {
@@ -3918,7 +4253,7 @@ function adminSendEmail(token, qn, kind, extra) {
     /* Some notices carry the rebuilt quote/invoice — a re-measure is not much
        use to the customer without the paperwork that matches it. */
     if (built.attachPdf) {
-      const pdf = getPdfBlob_(d.quoteNo);
+      const pdf = getPdfBlob_(d.quoteNo, d);
       if (pdf) opts.attachments = [pdf];
     }
     if (FROM_ALIAS) opts.from = FROM_ALIAS;
@@ -3946,13 +4281,24 @@ function adminSendEmail(token, qn, kind, extra) {
 function ensurePhotoFolders_(ctx) {
   const d = ctx.d;
   let url = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
-  const season = getFolder_();
+  /* A photo folder that already exists is reused BY ITS STORED ID rather than
+     by re-deriving where it ought to be. Now that a quote can change season
+     folder, re-deriving would build a second, empty folder in the new place
+     and leave the yard's photos in the old one — with the link on the row
+     still pointing at the old. The stored URL is the truth about where the
+     photos actually are. */
+  let f = null;
+  const idm = url.match(/\/folders\/([A-Za-z0-9_-]+)/);
+  if (idm) { try { f = DriveApp.getFolderById(idm[1]); } catch (e) { f = null; } }
+  const season = seasonFolderFor_(d);
   let parentAll;
   const it = season.getFoldersByName('Unit Photos');
   parentAll = it.hasNext() ? it.next() : season.createFolder('Unit Photos');
   const name = (d.quoteNo || 'quote') + ' — ' + [d.firstName, d.lastName].filter(Boolean).join(' ');
-  const it2 = parentAll.getFoldersByName(name);
-  const f = it2.hasNext() ? it2.next() : parentAll.createFolder(name);
+  if (!f) {
+    const it2 = parentAll.getFoldersByName(name);
+    f = it2.hasNext() ? it2.next() : parentAll.createFolder(name);
+  }
   f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const sub = function (nm) {
     const i3 = f.getFoldersByName(nm);
@@ -3983,13 +4329,23 @@ function adminUploadContract(token, qn, fileName, base64Data, mimeType) {
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
-  const season = getFolder_();
+  const season = seasonFolderFor_(d);
   let cf;
   const it = season.getFoldersByName('Signed Contracts');
   cf = it.hasNext() ? it.next() : season.createFolder('Signed Contracts');
-  // replace any prior copy for this quote
-  const prior = cf.searchFiles('title contains "' + d.quoteNo + '"');
-  while (prior.hasNext()) prior.next().setTrashed(true);
+  /* Clear any prior copy from EVERY season's Signed Contracts, not just this
+     one: two signed agreements for the same quote in two folders is the worst
+     version of this bug, because both look authoritative. */
+  allSeasonFolderNames_().forEach(function (nm) {
+    try {
+      const si = DriveApp.getFoldersByName(nm);
+      if (!si.hasNext()) return;
+      const sc = si.next().getFoldersByName('Signed Contracts');
+      if (!sc.hasNext()) return;
+      const prior = sc.next().searchFiles('title contains "' + d.quoteNo + '"');
+      while (prior.hasNext()) prior.next().setTrashed(true);
+    } catch (e) { /* one unreachable folder must not stop the others */ }
+  });
   const bytes = Utilities.base64Decode(base64Data);
   const nm = d.quoteNo + ' — ' + [d.firstName, d.lastName].filter(Boolean).join(' ') + ' — signed contract' +
     (String(fileName || '').match(/\.[A-Za-z0-9]+$/) ? String(fileName).match(/\.[A-Za-z0-9]+$/)[0] : '.pdf');
@@ -4278,7 +4634,7 @@ function bulkSendKind_(kind, by, only) {
       const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
       const logo = getLogoBlob_();
       if (logo) opts.inlineImages = { questlogo: logo };
-      if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+      if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo, x.d); if (pdf) opts.attachments = [pdf]; }
       if (FROM_ALIAS) opts.from = FROM_ALIAS;
       GmailApp.sendEmail(x.d.email, built.subject, built.subject, opts);
       x.sh.getRange(x.row, COL.STATUS).setValue(built.status || cfg.status);
@@ -4566,7 +4922,20 @@ function parseLegacyGrid_(rows, master) {
   if (pwcQty > 0 && boaty) {
     extras.push(pwcQty + ' jet ski winterization' + (pwcQty === 1 ? '' : 's') + ' on a boat’s sheet');
   } else if (pwcQty > 1) {
-    extras.push(pwcQty + ' jet skis on one sheet');
+    /* Several skis and no boat is NOT automatically several quotes. Two skis on
+       one tandem trailer is ONE quote here — the quote page says so in as many
+       words ("Tandem trailer with two skis? Set it to 2") and prices the space
+       the whole rig occupies: one footprint, one haul-out row, one storage
+       line. Two skis on two trailers is one quote each, for the same reason.
+       The old sheet records the winterizing count and never the trailers, so
+       this asks rather than asserting, and says which way the money runs if the
+       answer is the other one. */
+    out.warnings.push('This sheet winterizes ' + pwcQty + ' jet skis. On ONE trailer that is one ' +
+      'quote here: the count comes across as ' + pwcQty + ' and storage is priced on the single ' +
+      'stored footprint, which is what this import has done. On separate trailers it is one quote ' +
+      'each, because each trailer is its own footprint and its own haul-out row — import this one, ' +
+      'correct its count and dimensions, and build the other by hand. The sheet does not say ' +
+      'which, and taking two trailers as one charges for about half the space they occupy.');
   }
   const golf = out.picked.filter(function (x) { return x.key === 'golf'; });
   if (golf.length && (boaty || pwcQty > 0)) {
@@ -4798,8 +5167,10 @@ function importApplyCore_(who, state, meta, tabOverride) {
   st.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
   st.quoteNo = '';
 
-  const yy = String(new Date().getFullYear()).slice(2);
-  const qn = 'QW-' + yy + '-' + String(Math.floor(1000 + Math.random() * 9000));
+  /* Minted server-side against what is already on the sheet. An import runs
+     in a batch — hundreds in a sitting — which is precisely the shape that
+     makes a blind random draw collide (see uniqueQuoteNo_). */
+  const qn = uniqueQuoteNo_('');
 
   const d = {
     status: 'Imported from ' + (meta.file || 'a previous sheet') + ' — not yet sent',
@@ -4813,6 +5184,11 @@ function importApplyCore_(who, state, meta, tabOverride) {
     hasTrailer: st.hasTrailer ? 1 : 0,
     depositBase: depositBaseFor(st),
     payMode: 'deposit', payments: [], emailLog: [],
+    /* The dates this quote is written under. Without it the PDF prints
+       "Total — ... by " and "a service charge beginning " with nothing after
+       them, because that block reads d.season and an imported quote never had
+       one — the stamp used to be built on the customer page alone. */
+    season: seasonStamp(),
     state: st, lines: [], total: '0.00',
     /* Why this quote exists and what it came from, in the staff note — which
        is exactly the "what was I thinking" record Chris asked for. */
@@ -4852,6 +5228,18 @@ function importApplyCore_(who, state, meta, tabOverride) {
   sh.getRange(ctx.rowNum, COL.DIMS).setValue(d.dims || '');
   sh.getRange(ctx.rowNum, COL.NOTES).setValue(d.notes);
   saveQuoteRow_(ctx, d.status);
+  /* HOLD THE AUTOMATIC REMINDER OFF AN IMPORTED QUOTE.
+     dailyReminderCheck mails any quote older than REMINDER_AFTER_DAYS that has
+     no reminder marker, no payment and an email address — which an imported
+     row is, ten days after it is created. That email opens "Your Quest
+     Watersports winter quote is waiting", and it would be going, unprompted
+     and with nobody's finger on it, to people who never built a quote.
+
+     The marker in the reminder column is what dailyReminderCheck already
+     honours, so this needs no change there. adminSendEmail clears it the
+     moment a human actually sends this customer something — the same
+     write-a-marker, drop-it-on-graduation pattern the lead follow-up uses. */
+  sh.getRange(ctx.rowNum, COL.REM).setValue(IMPORT_HOLD_MARK + new Date().toLocaleDateString());
 
   auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
     d.unit + ', ' + tabName + ', ' + usd_(Number(d.total || 0)) +
@@ -4875,7 +5263,7 @@ function importApplyCore_(who, state, meta, tabOverride) {
 function legacyToState_(parsed, pick) {
   const q = {};
   (parsed.picked || []).forEach(function (x) { q[x.key] = (q[x.key] || 0) + x.qty; });
-  const notes = [];
+  const notes = [], unmapped = [];
 
   /* Which storage did they take? */
   const STORAGE_MAP_ = { outside: 'outside', insideNT: 'inside', insideT: 'inside',
@@ -4903,12 +5291,59 @@ function legacyToState_(parsed, pick) {
   if (!boaty && pwcQty) unit = 'jetski';
   else if (!boaty && !pwcQty && q.golf) unit = 'golf';
 
+  /* Dimensions. The old sheet has one set of boxes whatever the unit is — LOA,
+     beam, and length with trailer — but the engine reads a jet ski's size from
+     skiLen/skiWid and never looks at the boat fields. Copying the numbers
+     across unchanged is what made every jet ski import say "still needs stored
+     length & width" and price its storage at nothing, with the measurements
+     sitting right there on the sheet in front of you.
+
+     A jet ski is stored and serviced on its trailer, so its stored footprint is
+     the trailer length × the width at the widest point — which is exactly what
+     the quote page asks for in those two boxes ("tip of the trailer tongue to
+     the rearmost point"), and exactly what the old sheet's LWT and beam hold.
+     LOA is the hull alone. It stands in when the sheet carries no LWT, and says
+     so when it does, because a ski on its trailer takes up more room than its
+     hull length. */
+  let loa = parsed.loa || 0, beam = parsed.beam || 0, lwt = parsed.lwt || 0;
+  let skiLen = 0, skiWid = 0;
+  let storage = storageKey ? STORAGE_MAP_[storageKey] : 'none';
+  if (unit === 'jetski') {
+    skiLen = lwt || loa;
+    skiWid = beam;
+    if (skiLen && skiWid) {
+      notes.push('stored size read as ' + skiLen + ' × ' + skiWid + ' ft from the sheet\'s ' +
+        (lwt ? 'length with trailer × beam'
+             : 'LOA × beam — the sheet carried no length with trailer, so that is the ' +
+               'hull alone, and on its trailer it takes up more room than that') +
+        '. Check it against the unit before saving.');
+    }
+    /* Nothing on a jet ski quote reads the boat boxes and its dimension line
+       cannot show them, so leaving them set would put numbers on the row that
+       no surface would ever print. */
+    loa = 0; beam = 0; lwt = 0;
+    hasTrailer = true;          // the quote page forces this too: no trailer, no winter service
+    /* Inside, on its trailer, is the only storage a jet ski can be quoted here.
+       An old sheet that stored one outside, or in premium inside, has no
+       equivalent — and the engine prices a storage choice it does not recognise
+       at nothing, silently, which is the whole failure mode this guards. */
+    if (storage === 'insidePrem') {
+      storage = 'inside';
+      unmapped.push('premium inside storage for a jet ski — priced here at the standard ' +
+        'inside-on-trailer rate');
+    } else if (storage !== 'inside' && storage !== 'none') {
+      unmapped.push(storage + ' storage for a jet ski — jet skis are stored inside on their ' +
+        'trailers here, so no storage has been carried over');
+      storage = 'none';
+    }
+  }
+
   const st = {
     unit: unit,
     firstName: '', lastName: '', phone: fmtPhone(parsed.phone || ''), email: parsed.email || '',
     ymm: parsed.ymm || '', notes: parsed.notes || '',
-    loa: parsed.loa || 0, beam: parsed.beam || 0, lwt: parsed.lwt || 0,
-    skiLen: 0, skiWid: 0, skiDetail: 0,
+    loa: loa, beam: beam, lwt: lwt,
+    skiLen: skiLen, skiWid: skiWid, skiDetail: 0,
     hasTrailer: hasTrailer,
     engines: { inboard: { qty: 0, level: 'basic' }, io: { qty: 0, level: 'basic' },
                outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' }, pwc: { qty: 0, level: 'basic' } },
@@ -4916,7 +5351,7 @@ function legacyToState_(parsed, pick) {
     ballast: q.ballast || 0, addlHeads: q.addlHeads || 0,
     waterCold: !!q.waterCold, waterHead: !!q.waterHead, pumpout: !!q.pumpout,
     ac: !!q.ac, genBasic: !!q.genBasic, genFull: !!q.genOil,
-    storage: storageKey ? STORAGE_MAP_[storageKey] : 'none',
+    storage: storage,
     retrieval: 'none',
     wrap: !!(q.wrapLabor || q.wrapUpto20 || q.wrapUpto24 || q.wrapMaterials),
     inWater: !!q.wrapInWater,
@@ -4969,13 +5404,25 @@ function legacyToState_(parsed, pick) {
   }
 
   /* Things the old menu had that the new one prices differently or not at all. */
-  const unmapped = [];
   if (q.wrapUpto20 || q.wrapUpto24) {
     unmapped.push('a flat-rate shrinkwrap total — the new engine prices wrap per foot, so the ' +
       'figure will differ');
   }
   if (q.golf && unit !== 'golf') unmapped.push('golf cart storage (needs its own quote)');
   if (pwcQty && unit !== 'jetski') unmapped.push(pwcQty + ' jet ski winterization(s) (need their own quote)');
+  if (unit === 'jetski') {
+    /* The jet ski price list is winterizing, detailing, inside storage and the
+       late surcharge — and nothing else. Anything else the old sheet charged
+       lands in a field the engine's jet ski branch never reads, so it would
+       come out as a quote quietly short by that amount rather than as an error. */
+    const dropped = [];
+    if (st.wrap || st.inWater) { dropped.push('shrinkwrap'); st.wrap = false; st.inWater = false; }
+    if (st.powerwash) { dropped.push('powerwash'); st.powerwash = false; }
+    if (dropped.length) {
+      unmapped.push(dropped.join(' and ') + ' on a jet ski — not on the jet ski price list here, ' +
+        'so it has been left off; add it as a staff line if they still want it');
+    }
+  }
 
   return { state: st, notes: notes, unmapped: unmapped, storageKey: storageKey };
 }
@@ -5125,6 +5572,19 @@ function adminRepriceApply(token, only, first) {
       const cross = rebuildLinesFromState_(d);
       if (!cross.rebuilt) throw new Error(cross.reason || 'could not be priced');
       applyManualOps_(d);
+      /* RE-PRICED MEANS RE-DATED. The prices this quote now carries are this
+         season's, so the dates printed beside them have to be too. d.season is
+         what the PDF's totals block and fine print read — the pay-by date, the
+         date late charges start, the season label — and it was only ever
+         written by the customer page. Leaving it alone here is how a quote
+         ends up quoting 2026-2027 money against a "balance due by November 15,
+         2025" and a service charge starting "Dec 1, 2025".
+
+         This is the one place that overrides pricesValidSentence's habit of
+         keeping a quote's original date, and deliberately: that rule exists so
+         an OLD quote keeps the terms it was quoted under, which stops being
+         the right answer at the moment we re-price it into a new season. */
+      d.season = seasonStamp();
       /* If the tab moved between preview and now, stop rather than write a
          quote onto the wrong sheet. */
       if ((d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
@@ -5729,6 +6189,157 @@ function adminBackupRestore(token, fileId, mode, quoteNos) {
   };
 }
 
+/* ===========================================================================
+   DELETING A QUOTE — admins only, and archived rather than destroyed
+   ---------------------------------------------------------------------------
+   Customers sometimes build the same quote twice (a phone that lost signal
+   mid-save, a second go at the same boat), and the season starts with a few
+   deliberate test rows. Those have to be able to leave the sheet: a duplicate
+   is a second haul-out row, a second reminder email and a second line in every
+   count, and there was no way to remove one without opening the spreadsheet on
+   a desktop and hand-editing a row — which is exactly what `docs/ref/
+   DATA-AND-MONEY.md` says never to do, because the payload, the PDF and the
+   money columns go out of step with each other.
+
+   Four rules, each of them the answer to something that could go wrong here:
+
+   - **Admins only.** `who.admin` rather than a list of names, because the
+     roster IS the record of who Quest trusts with an irreversible action, and
+     a name in the code stops being true the day somebody changes jobs. Today
+     that resolves to exactly Chris and Jeff.
+   - **Nothing is destroyed.** Every copy of the row is copied onto the
+     `Deleted Quotes` tab first, payload column and all, so an undo is a
+     copy-and-paste of columns A-W back onto the storage tab. The archive's
+     header row deliberately does NOT read 'Quote #' in column 3, which is how
+     all seventeen "is this a quote tab" sweeps — the 9am reminder among them —
+     skip straight past it. Get that wrong and deleting a quote would put the
+     customer back on the reminder run.
+   - **The number is never handed out again.** `takenQuoteNos_` reads the
+     archive too. A reissued number would mean the Activity Log, the archive
+     and a live row all disagreeing about whose quote it is, and `savePdf_`
+     replacing one customer's PDF with another's (`docs/ref/DATA-AND-MONEY.md`
+     — quote numbers cannot collide).
+   - **The quote number has to be typed, and a reason given.** This is the one
+     control in the console that removes a row, and it is one tap away from a
+     card that is otherwise all safe actions. Money or a signed contract on the
+     quote needs a second, explicit confirmation on top — those are the two
+     quotes nobody deletes by accident and means to.
+
+   It emails nobody, and it never touches the photo folder or the signed
+   contract in Drive: those are evidence, they are linked from the archived
+   row, and an empty folder costs nothing. The quote's PDF IS trashed, because
+   a PDF in the season folder for a quote that no longer exists is the one
+   thing that could be handed to a customer by mistake. Drive's bin holds it
+   for 30 days either way. */
+const DELETED_TAB = 'Deleted Quotes';
+const DELETED_META_ = ['Deleted', 'Deleted by', 'Why', 'From tab'];
+const DELETE_WHY_MAX_ = 200;
+
+/* The live headers with ONE word changed, then the four metadata columns.
+   Keeping the original 23 in their original order is what makes an undo a
+   paste rather than a reconstruction; renaming column 3 is what keeps every
+   sheet sweep out of here. */
+function deletedHeaders_() {
+  const h = HEADERS.slice();
+  h[COL.QN - 1] = 'Quote # (deleted)';
+  return h.concat(DELETED_META_);
+}
+
+function deletedSheet_(ss) {
+  let sh = ss.getSheetByName(DELETED_TAB);
+  if (sh) return sh;
+  sh = ss.insertSheet(DELETED_TAB);
+  const h = deletedHeaders_();
+  sh.appendRow(h);
+  sh.getRange(1, 1, 1, h.length).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+function adminDeleteQuote(token, qn, confirmText, why, force) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only — deleting a quote is Chris or Jeff.' };
+
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = String(d.quoteNo || qn).trim().toUpperCase();
+
+  /* Typed, not ticked. A checkbox next to a loaded quote is a mis-tap away
+     from deleting whatever happens to be on screen. */
+  if (String(confirmText || '').trim().toUpperCase() !== want) {
+    return { ok: 0, error: 'Type the quote number exactly — ' + want + ' — to confirm.' };
+  }
+  const reason = String(why || '').trim().replace(/\s+/g, ' ').slice(0, DELETE_WHY_MAX_);
+  if (reason.length < 3) {
+    return { ok: 0, error: 'Say why in a few words — once the row is gone this is the only record of the reason.' };
+  }
+
+  const payCount = ((d.payments || []).length);
+  const hasContract = !!d.contractUrl;
+  if ((payCount || hasContract) && !Number(force)) {
+    const bits = [];
+    if (payCount) bits.push(payCount + ' payment' + (payCount > 1 ? 's' : '') + ' totalling ' + usd_(paymentsTotal_(d)));
+    if (hasContract) bits.push('a signed contract on file');
+    return { ok: 0, needsForce: 1,
+      what: bits.join(' and '),
+      error: 'This quote has ' + bits.join(' and ') + '. Tick the box to say you mean to delete it anyway.' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  /* Every copy, not just the one findQuoteCtx_ landed on. A quote that moved
+     storage tab mid-save can sit on two of them (doPost sweeps the stale ones
+     on the next save) — deleting the copy staff were looking at and leaving
+     the other is how a "deleted" quote comes back on the haul-out list. */
+  const copies = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    let r = findQuoteRow_(sh, want);
+    while (r > 0) { copies.push({ sheet: sh, row: r }); r = findQuoteRowFrom_(sh, want, r + 1); }
+  });
+  if (!copies.length) return { ok: 0, error: 'Quote not found.' };
+
+  /* Archive BEFORE deleting, every copy of the row, so a failure halfway
+     through leaves a duplicate row rather than a missing one. */
+  const arch = deletedSheet_(ss);
+  const stamp = new Date();
+  const width = HEADERS.length;
+  const tabs = [];
+  copies.forEach(function (c) {
+    const row = c.sheet.getRange(c.row, 1, 1, width).getValues()[0];
+    arch.appendRow(row.concat([stamp, who.name, reason, c.sheet.getName()]));
+    if (tabs.indexOf(c.sheet.getName()) < 0) tabs.push(c.sheet.getName());
+  });
+
+  /* Bottom-up, so deleting one row cannot move another out from under its own
+     row number. Rows on different tabs are independent, so one descending sort
+     across all of them is enough. */
+  copies.slice().sort(function (a, b) { return b.row - a.row; })
+    .forEach(function (c) { c.sheet.deleteRow(c.row); });
+
+  trashQuotePdfs_(want);
+  /* The cached (tab,row) index would now point at whatever moved up into that
+     row. It is verified before it is trusted, so a stale entry only costs a
+     miss — dropping it anyway keeps the next lookup honest and cheap. */
+  try { CacheService.getScriptCache().remove(qrowKey_(want)); } catch (e) {}
+  /* The storage view's cache is NOT dropped here on purpose: consoleServe_
+     does it for every function that is not on the read-only allow-list, and
+     that one place is what stops a write added later from forgetting. */
+
+  auditLog_(who.name, 'DELETED quote ' + want + ' — ' +
+    [d.firstName, d.lastName].filter(Boolean).join(' ') + ', ' + (d.unit || 'unit') + ', ' +
+    usd_(d.total || 0) + ', ' + payCount + ' payment(s)' + (hasContract ? ', signed contract on file' : '') +
+    ' — from ' + tabs.join(' + ') + '. Reason: ' + reason +
+    '. Row archived on "' + DELETED_TAB + '"; PDF trashed.');
+
+  let archiveUrl = '';
+  try { archiveUrl = ss.getUrl() + '#gid=' + arch.getSheetId(); } catch (e) {}
+  return { ok: 1, removed: copies.length, archiveUrl: archiveUrl,
+    msg: want + ' deleted from ' + tabs.join(' + ') + '. The whole row is on the "' + DELETED_TAB +
+         '" tab — paste columns A–W back onto its storage tab to undo. The PDF is in Drive\'s bin; ' +
+         'photos and any signed contract are untouched.' };
+}
+
 function adminAddStaff(token, name, perms, isAdmin) {
   const who = requireAuth_(token, 'view');
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
@@ -6289,7 +6900,7 @@ function menuSendKind_(ctx, kind, extra) {
   const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
   const logo = getLogoBlob_();
   if (logo) opts.inlineImages = { questlogo: logo };
-  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo); if (pdf) opts.attachments = [pdf]; }
+  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo, d); if (pdf) opts.attachments = [pdf]; }
   if (FROM_ALIAS) opts.from = FROM_ALIAS;
   GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
   if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
@@ -6519,14 +7130,40 @@ function addLateFee() {
 }
 
 /* ================= CUSTOMER-FACING EMAIL ================= */
-function getPdfBlob_(quoteNo) {
+/* Bin every PDF for a quote number, wherever it was filed. */
+function trashQuotePdfs_(quoteNo) {
+  const qn = String(quoteNo || '');
+  if (!qn) return;
+  allSeasonFolderNames_().forEach(function (name) {
+    try {
+      const it = DriveApp.getFoldersByName(name);
+      if (!it.hasNext()) return;                       // never create one just to empty it
+      const old = it.next().searchFiles('title contains "' + qn + '"');
+      while (old.hasNext()) old.next().setTrashed(true);
+    } catch (e) { /* one unreachable folder must not stop the others */ }
+  });
+}
+
+/* `d` is optional and only steers WHICH folder is tried first. Without it the
+   search still finds the PDF, just after looking somewhere else — worth it,
+   because the alternative is an email going out with no quote attached. */
+function getPdfBlob_(quoteNo, d) {
   const qn = String(quoteNo || '');
   /* Built earlier in this same execution? Use it — see _freshPdf_. */
   if (qn && _freshPdf_ && _freshPdf_.qn === qn) return _freshPdf_.blob;
-  try {
-    const it = getFolder_().searchFiles('title contains "' + qn + '"');
-    return it.hasNext() ? it.next().getBlob() : null;
-  } catch (e) { return null; }
+  if (!qn) return null;
+  const names = [];
+  if (d) names.push(seasonFolderName_(quoteRateSeason_(d)));
+  allSeasonFolderNames_().forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
+  for (let i = 0; i < names.length; i++) {
+    try {
+      const it = DriveApp.getFoldersByName(names[i]);
+      if (!it.hasNext()) continue;
+      const f = it.next().searchFiles('title contains "' + qn + '"');
+      if (f.hasNext()) return f.next().getBlob();
+    } catch (e) { /* try the next folder */ }
+  }
+  return null;
 }
 
 let _logoBlob = null;
@@ -6862,7 +7499,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
-    const pdf = getPdfBlob_(d.quoteNo);
+    const pdf = getPdfBlob_(d.quoteNo, d);
     const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
     if (pdf) opts.attachments = [pdf];
     const logo = getLogoBlob_();
@@ -7028,13 +7665,18 @@ function dailyReminderCheck() {
       const ts = r[COL.TS-1], status = String(r[COL.STATUS-1] || ''), quoteNo = r[COL.QN-1], unit = r[COL.UNIT-1],
             first = r[COL.FIRST-1], last = r[COL.LAST-1], email = r[COL.EMAIL-1], total = r[COL.TOTAL-1], deposit = r[COL.DEP-1],
             signUrl = r[COL.SIGN-1], reminder = r[COL.REM-1];
-      let payByShort = '', noStorage = false, signLink = '';
+      let payByShort = '', noStorage = false, signLink = '', pdRow = null;
       /* The sign link is rebuilt from the payload rather than taken from the
          SIGN column: this email goes to people who saved a quote and never
          came back, which is exactly the set whose stored link predates the
          web form. See signUrlFor_. */
-      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
-      if (reminder) return;                                   // already reminded
+      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); pdRow = pd; payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
+      /* An imported quote that a human has since emailed restarts its ten
+         days from THAT send. Every other marker still means "done, say no
+         more" — including the HOLD on an import nobody has contacted yet. */
+      const sentAt = importSentAt_(reminder);
+      if (reminder && sentAt === null) return;                // already reminded, or held
+      if (sentAt !== null && sentAt > cutoff) return;         // contacted too recently
       if (!email) return;                                     // nowhere to send
       if (status.indexOf('Signed & paying') === 0) return;    // already moving forward
       if (status.indexOf('Adjusted after signing') === 0) return; // signed, then tweaked
@@ -7051,7 +7693,9 @@ function dailyReminderCheck() {
              own last name, the same halves quoteLinkFor_ takes off a payload. */
           quoteUrl: quoteLink_(quoteNo, last), reminder: true
         });
-        const pdf = getPdfBlob_(quoteNo);
+        /* pdRow steers which season folder is searched first; an unreadable
+           payload just means we look in the default order and still find it. */
+        const pdf = getPdfBlob_(quoteNo, pdRow);
         const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
         if (pdf) opts.attachments = [pdf];
         const logo = getLogoBlob_();

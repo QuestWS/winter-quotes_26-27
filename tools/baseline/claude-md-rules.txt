@@ -101,7 +101,7 @@ request. Open the one that covers what you are about to change — and open it
 | Read this | Before touching |
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
 | `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
-| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, yard printing |
+| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, yard printing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |
 `tools/check-docs-coverage.js` fails if a rule that was once written down stops
@@ -190,7 +190,7 @@ documented for Chris; account-locking is a ~2-line change if ever wanted.
 - **Sheet menu prompts** (`ui.prompt`) only exist on desktop. Console
 equivalents must supply their own inputs.
 | Adobe Sign web form | **Live — needs one test signature** | Wired end to end. `SIGNING.webFormUrl` (`pricing-engine.js`) holds the published form; the page embeds it and every customer email carries a **Review & sign** button. Two fields pre-fill from the URL fragment, `Quote_Number` (read-only on the Adobe side) and `Slip_Number` (editable — most quotes have no slip to send). A field name that stops matching the Adobe side fails **silently** — blank contracts, no error — so send one live test link after any rename: `docs/adobe-webform-field-map.md`. |
-| Excel import of last year's selections | **Built** | `bulkImportScan()` / `bulkImportApply()` carry a whole season folder over onto the **Import** tab, skipping customers who already have a quote this season. §2. |
+| Excel import of last year's selections | **Built — one at a time, or the whole folder** | `Load from an old sheet` for one file; `bulkImportScan()` / `bulkImportApply()` for a whole season folder onto the **Import** tab (§2). Both recover the `#REF!` files from the master grid and price at today's rates. Only the bulk run skips customers who already have a quote. Detail: `docs/ref/STAFF-CONSOLE.md`. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
@@ -624,9 +624,9 @@ haul-out list and re-pricing work, so extras are reported for separating.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
 imported quote must re-price like every other. Preview writes nothing; the
 import emails nobody; `verify.sh` asserts all three.
-- `tools/check-legacy-import.js` executes eighteen groups over all three file
-states, a mismatched master, comparison sheets, multi-unit sheets and the
-live engine. Fixtures are invented names over the real layout — **no customer
+- `tools/check-legacy-import.js` executes twenty-one groups over all three file
+states, a mismatched master, comparison sheets, multi-unit sheets, jet ski
+dimensions and storage, and the live engine. Fixtures are invented names over the real layout — **no customer
 Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
 a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
 - **A restore never deletes a live quote.** It only writes rows the backup

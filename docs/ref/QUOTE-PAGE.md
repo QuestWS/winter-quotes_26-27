@@ -24,6 +24,16 @@ the pwc rate at rollover and jet follows automatically; there is no second
 number to remember.
 
 
+## A jet ski quote is a trailer, not a hull
+The ski step asks how many skis are **on this trailer** ("Tandem trailer with
+two skis? Set it to 2"), and storage is priced once, on the stored footprint of
+the whole rig — tongue to rearmost point, full width at the widest — including
+a tandem trailer carrying a single ski. Winterizing and detailing are per ski;
+storage, retrieval and the haul-out row are per trailer. Two skis on two
+trailers are therefore two quotes, and the old-sheet importer asks which it is
+looking at rather than guessing (`docs/ref/STAFF-CONSOLE.md`).
+
+
 ## Detail options are NOT mutually exclusive
 Exterior detail / wash & wax, interior detail / wipe-down, and bottom-paint
 touch-up / strip & reapply can all be requested together, deliberately: Quest

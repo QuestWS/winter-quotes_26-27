@@ -137,8 +137,8 @@ serves the cached old version and you'll debug a ghost.
 | `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
-| `bulkImportScan()` | once, to carry last season's sheets over | Reads ~149 files from "Storage 2025-2026" and writes a **report to Drive**. Writes nothing to the quote sheet. Resumable — it re-arms itself and emails Chris when done. `bulkImportStatus()` / `bulkImportStop()`. |
-| `bulkImportApply()` | after reading that report | Imports every row still marked `IMPORT` onto the **Import** tab. Deleting a report row is how you exclude one. `docs/ref/STAFF-CONSOLE.md` § *Bulk import*. |
+| `bulkImportScan()` | once, to carry a season folder over | Reads every file, writes a **report to Drive**, touches no quote. Resumable; emails Chris when done. |
+| `bulkImportApply()` | after reading that report | Imports each row still marked `IMPORT` onto the **Import** tab. Both: `docs/ref/STAFF-CONSOLE.md` § *Bulk import*. |
 | `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. |
 
 ---
@@ -197,7 +197,7 @@ request. Open the one that covers what you are about to change — and open it
 |---|---|
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
 | `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
-| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, yard printing |
+| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, yard printing |
 | `docs/ref/YARD-APP.md` | `yard/index.html` — the two lists, the yard log, dictation, photos, and why the app decides nothing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/adobe-webform-field-map.md` | The Adobe Sign hand-off — what pre-fills, the exact field names, the Adobe-side setup |
@@ -356,7 +356,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 |---|---|---|
 | Scan-to-sign QR flyer | **Page live — flyer not yet printed** | `sign.html` is deployed and guarded. The laminated counter flyer's QR must be generated against `.../sign.html`, **not** the Adobe link. The same live-test rule applies: one real signature through it after any Adobe field rename. |
 | Adobe Sign web form | **Live — needs one test signature** | Wired end to end. `SIGNING.webFormUrl` (`pricing-engine.js`) holds the published form; the page embeds it and every customer email carries a **Review & sign** button. Two fields pre-fill from the URL fragment, `Quote_Number` (read-only on the Adobe side) and `Slip_Number` (editable — most quotes have no slip to send). A field name that stops matching the Adobe side fails **silently** — blank contracts, no error — so send one live test link after any rename: `docs/adobe-webform-field-map.md`. |
-| Excel import of last year's selections | **Built** | `bulkImportScan()` / `bulkImportApply()` carry a whole season folder over onto the **Import** tab, skipping customers who already have a quote this season. §2. |
+| Excel import of last year's selections | **Built — one at a time, or the whole folder** | `Load from an old sheet` for one file; `bulkImportScan()` / `bulkImportApply()` for a whole season folder onto the **Import** tab (§2). Both recover the `#REF!` files from the master grid and price at today's rates. Only the bulk run skips customers who already have a quote. Detail: `docs/ref/STAFF-CONSOLE.md`. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
 | 2026–2027 rates | **Waiting on Chris** | `PRICES` still holds 2025–2026 numbers, so quotes go out as estimates behind `PRICING.provisional` (§5). When the rate card lands: update `PRICES`, flip `provisional:false`, re-baseline the fixtures, and re-price the season from the console. |

@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Quest winter system — syntax + feature sweep. Run AFTER every edit, BEFORE deploying.
 # Usage: bash tools/verify.sh        (requires node)
-set -uo pipefail
+# NO pipefail, deliberately. Nearly every check here is `producer | grep -q`,
+# and `grep -q` exits the instant it matches — the producer (awk, or another
+# grep) is then killed by SIGPIPE and exits 141. With pipefail that becomes the
+# pipeline's status, so a check FAILS precisely because its pattern WAS found,
+# and only when the producer still had output left to write. That made the
+# result depend on how long the function being checked happened to be: adding
+# a comment to adminImportApply was enough to turn a passing trap red. Each
+# check's verdict is grep's own exit status, which is what we actually want.
+set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 TMP="$(mktemp -d)"; FAIL=0
@@ -38,6 +46,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
     "dimsProposal_" "adminDimsPreview" "adminDimsApply" "moveQuoteRow_" "adminQuoteHtml" \
     "adminAddStaff" "adminRemoveStaff" "freshPin_" "adminCount_" "revokeSessions_" \
+    "adminDeleteQuote" "DELETED_TAB" "deletedHeaders_" "deletedSheet_" \
     "adminBackupPreview" "adminBackupRestore" "snapshotBeforeRestore_" "checkRestoreAccess" \
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
     "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
@@ -61,8 +70,11 @@ else echo "  (quote-logger-apps-script.gs not present)"; fi
 echo "== Customer page =="
 if [ -f index.html ]; then
   extract_scripts index.html "$TMP/page.js"; check_js "$TMP/page.js" "index.html"
+  # lateRetrievalFee is no longer written inline here: the payload's season
+  # stamp comes from the engine's seasonStamp(), which check-season-stamp.js
+  # EXECUTES and checks field by field — a stronger test than this grep was.
   sweep index.html "page" "keyLoc" "hhoAddr" "tDocTerm" "CREDIT DUE TO YOU" "quoteLogUrl" \
-    "lateRetrievalFee" "jump start"
+    "seasonStamp" "reserveQuoteNo_" "jump start"
 else echo "  (index.html not present)"; fi
 
 echo "== Staff console =="
@@ -74,6 +86,7 @@ if [ -f admin/index.html ]; then
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \
+    "renderDeleteQuote" "doDeleteQuote" "deleteCard" "delForce" \
     "renderMotors" "dimsMotors" "previewBulk" "doBulkSend" "printHaulOut" "bulkCard" \
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
@@ -494,6 +507,34 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: re-price rules broken"; sed 's/^/       /' "$TMP/rp.txt"; FAIL=1
   fi
+  # SEASON STAMP. The dates a quote prints (d.season) are written by three
+  # paths now — the customer page, the importer and the re-price — and a
+  # re-priced quote showing last season's pay-by date beside this season's
+  # money is wrong on the document a customer pays from. Also covers the
+  # reminder hold that stops a batch import auto-emailing hundreds of people.
+  if node tools/check-season-stamp.js > "$TMP/ss.txt" 2>&1; then
+    echo "  OK   gate: season dates follow a re-price, and imports are held back"
+  else
+    echo "  FAIL gate: season stamp / import hold broken"; sed 's/^/       /' "$TMP/ss.txt"; FAIL=1
+  fi
+  # SEASON FOLDERS. A quote is filed under the rates it is actually priced at,
+  # so the negotiated-price quote sits in 2026-2027 while the estimates are
+  # still in 2025-26. The traps are the en-dash in the season labels (which
+  # would silently create a second folder) and a quote that changes folder
+  # still needing to be findable in the one it came from.
+  if node tools/check-season-folders.js > "$TMP/sf.txt" 2>&1; then
+    echo "  OK   gate: quote paperwork is filed by the season it is priced at"
+  else
+    echo "  FAIL gate: season folder rule broken"; sed 's/^/       /' "$TMP/sf.txt"; FAIL=1
+  fi
+  # QUOTE NUMBERS. saveQuoteRow_ writes by number and savePdf_ replaces by
+  # number, so a duplicate is one customer's row and PDF overwritten by
+  # another's — silently. Executed against a nearly-full number space.
+  if node tools/check-quote-numbers.js > "$TMP/qn.txt" 2>&1; then
+    echo "  OK   gate: minted quote numbers cannot collide"
+  else
+    echo "  FAIL gate: quote numbers can collide"; sed 's/^/       /' "$TMP/qn.txt"; FAIL=1
+  fi
   # Preview must read and report. If it ever writes, "see what would change"
   # becomes "change everything", which is the opposite of the point.
   for f in adminRepricePreview repriceScan_; do
@@ -522,6 +563,24 @@ if [ -f quote-logger-apps-script.gs ]; then
   # A slow write whose answer is dropped must not be reported as a failure —
   # Chris was told a payment failed while its receipt was already sent. The
   # request id makes asking again safe; both halves are executed, not grepped.
+  # The only console action that removes a row. Admin-only, archived, and
+  # invisible to every sheet sweep afterwards — all executed against a fake
+  # spreadsheet, because a grep cannot tell an archived row from a lost one.
+  if node tools/check-delete-quote.js > "$TMP/del.txt" 2>&1; then
+    echo "  OK   gate: quote delete (admins only, archived, number never reissued)"
+  else
+    echo "  FAIL gate: quote delete rules broken"; sed 's/^/       /' "$TMP/del.txt"; FAIL=1
+  fi
+  # It must not email anyone. A deletion is an internal act; the customer is
+  # told by a person, if at all.
+  if awk '/^function adminDeleteQuote/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
+    echo "  FAIL trap: deleting a quote emails somebody"; FAIL=1
+  else echo "  OK   trap: deleting a quote emails nobody"; fi
+  # The archive header must NOT read 'Quote #' in column 3, or every sheet
+  # sweep — the 9am reminder included — would treat deleted quotes as live.
+  if grep -q "h\[COL.QN - 1\] = 'Quote # (deleted)'" quote-logger-apps-script.gs; then
+    echo "  OK   trap: the deleted-quotes archive is not a quote tab"
+  else echo "  FAIL trap: the archive's header no longer hides it from the quote-tab sweeps"; FAIL=1; fi
   if node tools/check-idempotent-writes.js > "$TMP/idem.txt" 2>&1; then
     echo "  OK   gate: writes run once per request id and can answer twice"
   else

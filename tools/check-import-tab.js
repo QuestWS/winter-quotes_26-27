@@ -237,6 +237,34 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   } else ok('authentication stays with the callers, one check each');
 }
 
+/* =====================================================================
+   8. SENDING ONE OFF UNPARKS IT.
+   ---------------------------------------------------------------------
+   The reminder marker and the tab hold different things back, and releasing
+   only the marker would leave a boat Chris has quoted — and may have been
+   paid for — invisible to the crew who have to pull it. That is the failure
+   the tab exists to prevent, arriving from the other side.
+   ===================================================================== */
+{
+  const rec = fn('recordEmail_');
+  if (/leaveImportTab_\(/.test(rec)) ok('every send site unparks the row, not just the console');
+  else fail('recordEmail_ does not move a sent quote off the Import tab — it would stay ' +
+            'invisible to the yard app and the haul-out sheets after the customer was quoted');
+  if (/releaseImportHold_\(/.test(rec)) ok('and still releases the reminder hold');
+  else fail('recordEmail_ no longer releases the import hold');
+
+  const leave = fn('leaveImportTab_');
+  if (/isImportTab_\(sh\.getName\(\)\)/.test(leave)) ok('it only touches rows that are actually parked');
+  else fail('leaveImportTab_ does not check which tab the row is on — it would move ordinary quotes');
+  if (/isOffstageTab_\(dest\)/.test(leave)) ok('and never moves one onto another offstage tab');
+  else fail('leaveImportTab_ could move a row from the Import tab to the lead tab');
+  if (/catch/.test(leave)) ok('a failed move cannot fail a send that already went out');
+  else fail('leaveImportTab_ can throw after the email has gone — the customer has it, and ' +
+            'the console would report the send as failed');
+  if (/d\.storageTab/.test(leave)) ok('it sends the row to the tab the engine picked at import');
+  else fail('leaveImportTab_ does not read d.storageTab, so it cannot know where the row belongs');
+}
+
 if (bad) { console.error('\n' + bad + ' problem(s) with the Import tab'); process.exit(1); }
 console.log('import tab holds: drafts stay off every customer path, duplicates are skipped, ' +
             'the dry run writes nothing');

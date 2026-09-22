@@ -730,8 +730,17 @@ const S = {
 const $ = s=>document.querySelector(s), $$ = s=>[...document.querySelectorAll(s)];
 const fmt = n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
+/* A number the server has already set aside for us, fetched at the contact
+   gate by reserveQuoteNo_() below. Empty means we never got one and the local
+   fallback in ensureQuoteNo() applies. */
+let RESERVED_QNO='';
 function ensureQuoteNo(){
   if(!S.quoteNo){
+    if(RESERVED_QNO){ S.quoteNo=RESERVED_QNO; RESERVED_QNO=''; return S.quoteNo; }
+    /* FALLBACK ONLY — see reserveQuoteNo_(). A local draw cannot see the sheet,
+       so it can collide; the server is what guarantees uniqueness. Reached only
+       when the reservation call failed, and a quote with a number that might
+       collide is still better than a customer staring at a dead page. */
     const yy=String(new Date().getFullYear()).slice(2);
     S.quoteNo=`QW-${yy}-${String(Math.floor(1000+Math.random()*9000))}`;
   }
@@ -1072,11 +1081,10 @@ function logQuote(status, extra){
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
     quotesRequested:rq.join('; '), notes:S.notes,
-    /* pricingProvisional / ratesLabel are a RECORD of what the customer was
-       shown, so a quote saved while rates were provisional can still be told
-       apart later. Nothing renders from them — the PDF and the emails read the
-       live engine flag, so the disclaimer clears everywhere at the rollover. */
-    season:{label:SEASON.seasonLabel,payBy:SEASON.payByDate,payByShort:SEASON.payByShort,lateStart:SEASON.lateChargeStart,storageStart:SEASON.storageStart,storageEnd:SEASON.storageEnd,lateRetrievalFee:PRICES.lateRetrieval,lateRetrievalLabel:'Late retrieval surcharge (after '+SEASON.payByShort+')',pricingProvisional:!!PRICING.provisional,ratesLabel:PRICING.ratesLabel},
+    /* The season stamp comes from the engine (seasonStamp), because the
+       importer and the season re-price write the same field server-side and
+       the three must agree. See pricing-engine.js. */
+    season:QuestPricing.seasonStamp(),
     dueToday:t.dueToday?1:0,
     /* Terms acceptance, promoted to the top level of the payload so the sheet
        and console can read it without unpacking `state`. */
@@ -1590,6 +1598,39 @@ function checkForUnfinished_(){
       .catch(()=>{ clearTimeout(timer); resolve(null); });
   });
 }
+/* ASK THE SERVER FOR A QUOTE NUMBER NOBODY ELSE HAS.
+   ---------------------------------------------------------------------------
+   The page cannot see the spreadsheet, so a number it draws itself is a guess:
+   four digits is 9,000 slots, and saveQuoteRow_ writes by quote number — a
+   collision does not warn, it OVERWRITES the other customer's row and takes
+   their PDF with it (savePdf_ replaces by number too).
+
+   So the number is minted server-side, where the taken list is knowable, and
+   held for a short while so two people filling the form at the same moment
+   cannot be handed the same one. The POST that saves a quote is `no-cors` and
+   cannot read a reply, which is why this is its own GET *before* the first
+   save rather than a correction afterwards.
+
+   It FAILS OPEN, like every other call this page makes: a timeout or an error
+   leaves RESERVED_QNO empty and ensureQuoteNo() draws locally. A customer is
+   never blocked from quoting because the backend is slow. */
+function reserveQuoteNo_(){
+  return new Promise(resolve=>{
+    if(!INTEGRATIONS.quoteLogUrl||S.quoteNo||RESERVED_QNO){ resolve(null); return; }
+    const url=INTEGRATIONS.quoteLogUrl+'?action=newquoteno&t='+Date.now();
+    const timer=setTimeout(()=>resolve(null),6000);
+    fetch(url,{method:'GET',redirect:'follow'})
+      .then(r=>r.ok?r.json():null)
+      .then(res=>{ clearTimeout(timer);
+        /* Normalize what came back rather than trusting it: the same function
+           the server minted it with, so a mangled reply is dropped instead of
+           becoming a quote number nothing can look up. */
+        const qn=res&&res.ok?QuestPricing.normalizeQuoteNo(res.quoteNo):'';
+        if(qn) RESERVED_QNO=qn;
+        resolve(qn||null); })
+      .catch(()=>{ clearTimeout(timer); resolve(null); });
+  });
+}
 async function startAcceptAndContinue(){
   const need=contactMissing_();
   if(need.length){ showGate_(need); return; }
@@ -1598,7 +1639,10 @@ async function startAcceptAndContinue(){
     RESUME_CHECKED=true;
     const btn=$('#startNext'); const label=btn?btn.textContent:'';
     if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
-    const hit=await checkForUnfinished_();
+    /* Both server round-trips at the one moment the customer is already
+       waiting, rather than two separate pauses. Neither can reject the gate:
+       reserveQuoteNo_ fails open and the resume check already did. */
+    const [hit]=await Promise.all([checkForUnfinished_(),reserveQuoteNo_()]);
     if(btn){ btn.disabled=false; btn.textContent=label; }
     if(hit&&hit.quoteNo){
       window._resumeHit=hit;

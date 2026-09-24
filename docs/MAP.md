@@ -22,6 +22,7 @@ in a day and a function name does not.
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
 | `docs/build-guides.py` | ~1,140 | Builds the four staff PDFs in `docs/pdf/` |
+| `docs/build-manual.py` | ~620 | Builds `docs/pdf/5 - Winter Services Program Manual.pdf` — every feature, how-to and permission in one volume. Rebuild when a feature or permission changes; not part of `emailGuides()` |
 
 ## Backend entry points
 

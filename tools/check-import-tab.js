@@ -69,7 +69,6 @@ const MUST_EXCLUDE = [
   ['dailyReminderCheck', 'emails customers at 9am on a trigger, with nobody watching'],
   ['bulkTargets_',       'builds the send-to-all recipient list'],
   ['balanceReportCheck', 'reports money owed; a draft owes nothing'],
-  ['repriceScan_',       'the season re-price'],
   ['adminStorageView',   'the storage view, the yard app and the printed haul-out sheets'],
   ['signLookup_',        'the public scan-to-sign lookup']
 ];
@@ -84,6 +83,28 @@ MUST_EXCLUDE.forEach(function (pair) {
          'draft would be treated as a live quote');
   }
 });
+
+/* THE SEASON RE-PRICE IS THE EXCEPTION, and it is deliberate. The season's
+   drafts were imported at 2025-2026 rates before the 2026-2027 card existed, so
+   leaving them out of the re-price left no way to move them onto new rates. It
+   is not a push — it emails nobody and does not move the row — so a draft may be
+   re-priced where it sits. Leads stay out: they have nothing to price. The
+   re-price itself is executed over a draft in check-reprice.js. */
+{
+  const scan = fn('repriceScan_'), apply = fn('adminRepriceApply');
+  if (/isStartedTab_\(tab\)\) return;/.test(scan) && !/isOffstageTab_\(|if \(isImportTab_\(tab\)\) return/.test(scan)) {
+    ok('the season re-price reaches imported drafts and still skips leads');
+  } else {
+    fail('repriceScan_ skips the Import tab again — imported drafts could never be moved ' +
+         'onto a new rate card');
+  }
+  if (/!draft && toTab !== tab/.test(scan) && /isImportTab_\(ctx\.sh\.getName\(\)\)/.test(apply) &&
+      !/moveQuoteRow_|recordEmail_|sendEmail|GmailApp/.test(apply)) {
+    ok('re-pricing a draft leaves it parked, held and un-emailed');
+  } else {
+    fail('adminRepriceApply could move, release or email an imported draft');
+  }
+}
 
 /* The two public doGet paths live inside one big function, so they are read by
    their own shape rather than by the function body. */

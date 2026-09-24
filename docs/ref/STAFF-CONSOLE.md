@@ -320,12 +320,12 @@ tab, asked once by the places that must exclude both:
 | `dailyReminderCheck` | **The one that matters.** It emails customers at 9am on a trigger, unattended. 145 people would get a quote nobody meant to send, hours before anyone could stop it. |
 | `bulkTargets_` | the send-to-all recipient list |
 | `balanceReportCheck` | a draft owes nothing |
-| `repriceScan_` | already at today's rates — the engine priced it as it was read |
 | `adminStorageView` | the storage view, the yard app and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
 | `signLookup_` | the public scan-to-sign lookup; a draft is not a signer |
 | `doGet` launchpref | a spring button on a quote nobody sent |
 
-Staff paths deliberately **do** see it — `adminSearch` so Chris can find one,
+Staff paths deliberately **do** see it — `repriceScan_` so the season re-price
+can move a draft onto new rates (see *Re-pricing a season*), `adminSearch` so Chris can find one,
 `findQuoteCtx_` so he can open, re-price and send it, `readQuoteRows_` so the
 nightly backup carries it. `d.storageTab` is left as the engine computed it, so
 each quote already knows where it belongs; only the *row* is parked.
@@ -608,6 +608,9 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **Imported drafts are included** and re-priced in place on the Import tab —
+  never reported as a storage move, since a parked row always differs from its
+  `d.storageTab`. See *Bulk import* above.
 - **It re-dates as well as re-prices.** `adminRepriceApply` re-stamps
   `d.season` from the live constants, because a quote carrying this season's
   money under last season's pay-by date is wrong on the document the customer
@@ -678,10 +681,15 @@ pricing" template. This reads one and makes a quote here.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
   imported quote must re-price like every other. Preview writes nothing; the
   import emails nobody; `verify.sh` asserts all three.
-- **Import after the new rate card, not before.** An import prices at whatever
-  is live, so importing first means pricing the whole batch at last season's
-  rates and then re-pricing all of it. Importing afterwards prices it right
-  once.
+- **An import prices at whatever rates are live on the day.** The 2026-27
+  season's imports were run before the new rate card, so they carry 2025-26
+  prices — and the **season re-price includes the Import tab** for exactly that
+  reason. It re-prices a draft where it sits: no move, no email, the reminder
+  hold untouched, status `Imported — re-priced at current rates, not yet sent`.
+  Leaving drafts out of the re-price (as it first shipped, on the theory that
+  an import is always at today's rates) left no way at all to move them onto
+  the new card. `check-reprice.js` runs the real scan over a draft;
+  `check-import-tab.js` asserts it stays parked.
 - **Its quote number is minted server-side** by `uniqueQuoteNo_`, against what
   is already on the sheet. A batch is precisely the shape that makes a blind
   random draw collide — `docs/ref/DATA-AND-MONEY.md`.

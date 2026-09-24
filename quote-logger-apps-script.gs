@@ -5813,7 +5813,13 @@ function repriceScan_() {
   ss.getSheets().forEach(function (sh) {
     const tab = sh.getName();
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (isOffstageTab_(tab)) return;              // leads have no pricing; an import is already at today's rates
+    /* Leads have no pricing, so they are out. Imported drafts are IN: they were
+       priced at whatever rates were live on the day of the import, and the
+       season's imports were run under 2025-2026 rates before the 2026-2027
+       card existed. Skipping them here left no way at all to move a draft onto
+       new rates. They are re-priced where they sit — see `draft` below. */
+    if (isStartedTab_(tab)) return;
+    const draft = isImportTab_(tab);
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
@@ -5822,7 +5828,7 @@ function repriceScan_() {
       let d = null;
       try { d = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
       const row = {
-        qn: qn, tab: tab, row: i + 2,
+        qn: qn, tab: tab, row: i + 2, draft: draft,
         name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
         unit: String(r[COL.UNIT - 1] || '')
       };
@@ -5850,8 +5856,11 @@ function repriceScan_() {
       row.afterNum = afterNum;
       row.deltaNum = afterNum - beforeNum;
       row.newBalanceNum = afterNum - paid;
+      /* A draft's row is parked on the Import tab while d.storageTab already
+         names where it belongs, so the two always differ and that is not a
+         move. It stays parked; only a send releases it (recordEmail_). */
       const toTab = copy.storageTab || tab;
-      if (toTab !== tab) row.wouldMove = toTab;    // reported, never acted on
+      if (!draft && toTab !== tab) row.wouldMove = toTab;    // reported, never acted on
       out.push(row);
     });
   });
@@ -5947,10 +5956,16 @@ function adminRepriceApply(token, only, first) {
       d.season = seasonStamp();
       /* If the tab moved between preview and now, stop rather than write a
          quote onto the wrong sheet. */
-      if ((d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
+      const parked = isImportTab_(ctx.sh.getName());
+      if (!parked && (d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
         throw new Error('storage location changed — re-price this one by hand');
       }
-      saveQuoteRow_(ctx, 'Re-priced at current rates — not yet sent');
+      /* A draft keeps saying it is an import. saveQuoteRow_ writes the status
+         and never the reminder column or the row's tab, so the reminder hold
+         and the parking both survive a re-price: nobody is emailed and the
+         crew still cannot see it until somebody sends it. */
+      saveQuoteRow_(ctx, parked ? 'Imported — re-priced at current rates, not yet sent'
+                                : 'Re-priced at current rates — not yet sent');
       const afterNum = Number(d.total || 0);
       auditLog_(who.name, 'RE-PRICED ' + x.qn + ': ' + usd_(beforeNum) + ' → ' + usd_(afterNum) +
         (x.locked ? ' (deposit on file, balance follows)' : ''));

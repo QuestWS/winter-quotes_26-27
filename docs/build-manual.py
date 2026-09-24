@@ -500,7 +500,8 @@ def manual():
     s += [P('Re-price at current rates — <font color="#C08A22">adjust</font>', H2)]
     s += steps([
         '☰ → <b>Re-price at current rates</b> → <b>See what would change</b>. Nothing is written.',
-        'Review each quote\'s before → after → difference, and the season net change. Quotes '
+        'Review each quote\'s before → after → difference, and the season net change. Imported '
+        'drafts are included (shown as tab Import). Quotes '
         'whose storage area would change are listed, not moved.',
         'Select all, or tick the ones to apply → apply. It runs in batches of 15 and takes a '
         'snapshot of the spreadsheet first (link shown).',
@@ -528,7 +529,9 @@ def manual():
         'A quote on the Import tab is invisible to the yard, the storage view, send-to-all, the '
         'balance report and the 9am reminder. It is <b>released</b> — moved onto its real '
         'storage tab — the first time anyone emails it to the customer (staff, or the customer '
-        'using "Email me this quote"). Import <b>after</b> the new rate card, not before.')]
+        'using "Email me this quote"). Imports are priced at the rates live on the day; the '
+        '<b>season re-price includes the Import tab</b>, so drafts move to new rates with '
+        'everything else and stay parked and un-emailed.')]
 
     s += [P('Automatic emails (pause / resume) — <font color="#A6341F">admin</font>', H2)]
     s += steps([
@@ -742,8 +745,8 @@ def manual():
         'Update <b>SEASON</b> dates and <b>PRICES</b> in the Annual Update Zone of '
         'pricing-engine.js, and set <b>provisional: false</b> in the same change.',
         'Re-baseline the price fixtures, sync the engine, run the checks, deploy.',
-        'Console → <b>Re-price at current rates</b>; review; apply.',
-        'Import any old sheets now (not before), so they price once at the new rates.',
+        'Console → <b>Re-price at current rates</b>; review; apply. Imported drafts on the '
+        'Import tab are included and stay there until sent.',
         'Email customers their real quote (Send to all or individually).',
         '<b>Resume automatic emails.</b> The clocks restart, so no reminder crowds your email.',
     ])

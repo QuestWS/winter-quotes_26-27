@@ -139,7 +139,7 @@ serves the cached old version and you'll debug a ghost.
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
 | `bulkImport1_Scan()` | once, to carry a season folder over | Reads every file, writes a **report to Drive**, touches no quote. Resumable; emails Chris when done. |
 | `bulkImport2_Apply()` | after reading that report | Imports each row still marked `IMPORT` onto the **Import** tab. Both: `docs/ref/STAFF-CONSOLE.md` § *Bulk import*. |
-| `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. |
+| `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. The one-volume **Program Manual** (`python3 docs/build-manual.py` → `docs/pdf/5 - Winter Services Program Manual.pdf`) is built separately, is not in that email, and must be rebuilt when a feature or permission changes. |
 
 ---
 

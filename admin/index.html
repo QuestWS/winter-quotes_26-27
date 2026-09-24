@@ -819,7 +819,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
-    <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log</p>
+    <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log<br><span id="apiTiming"></span></p>
   </div>
 </div>
 
@@ -872,7 +872,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
+const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -967,10 +967,35 @@ async function settleWrite_(rid){
   }
   return {};
 }
-async function api(fn,args){
+/* How long each call took, because "it feels slow" cannot be fixed and a number
+   can. `ms` is the whole round trip as this browser saw it; `serverMs` is what
+   Apps Script spent answering. The gap is start-up, the redirect and the
+   signal — which no amount of tidying spreadsheet reads will touch. The last
+   one is shown in the footer. */
+const API_TIMINGS=[];
+function apiTiming_(fn,t0,j){
+  const t={fn:fn,ms:Date.now()-t0,serverMs:(j&&typeof j.serverMs==='number')?j.serverMs:null};
+  API_TIMINGS.push(t); if(API_TIMINGS.length>12) API_TIMINGS.shift();
+  try{
+    const el=document.getElementById('apiTiming');
+    if(el) el.textContent='Last call: '+fn+' '+(t.ms/1000).toFixed(1)+'s'+
+      (t.serverMs!==null?' · '+(t.serverMs/1000).toFixed(1)+'s on the server':'');
+  }catch(e){ /* a diagnostic must never break the call it measured */ }
+}
+/* `opts.withQuote` (a quote number, writes only) asks for the refreshed quote on
+   the same answer, as `quote` — one trip for the save and the screen it lands
+   on, instead of the save and then a lookup. Absent on a replayed answer, so
+   afterWrite_ falls back to asking. */
+async function api(fn,args,opts){
+  const t0=Date.now();
+  try{ const j=await apiCall_(fn,args,opts); apiTiming_(fn,t0,j); return j; }
+  catch(e){ apiTiming_(fn,t0,null); throw e; }
+}
+async function apiCall_(fn,args,opts){
   const isRead=!!API_GET_OK[fn];
   const body={api:'console',fn,token:T,args:args||[]};
   if(!isRead) body.rid=apiRid_();
+  if(!isRead&&opts&&opts.withQuote) body.withQuote=opts.withQuote;
   let dropped=null;
   if(!API_USE_GET||!isRead){
     try{
@@ -1005,6 +1030,16 @@ async function api(fn,args){
   /* Both routes lost it, or this one is a write we will not repeat blindly. */
   throw new Error('The server didn\'t receive that request. Nothing was changed. '+
     'Reload the page and try again — if it keeps happening, tell Chris the console can\'t reach the backend.');
+}
+/* Redraw the open quote after a write: from the answer when it carried the
+   quote, otherwise with the lookup it always used. */
+async function afterWrite_(r){
+  /* Only onto the quote it was read for — if staff have moved on, ask for
+     whichever quote is open now, as before. */
+  if(r&&r.quote&&r.quote.ok&&String(r.quote.quoteNo||'').toUpperCase()===String(QN||'').toUpperCase()){
+    renderQuote(r.quote); return;
+  }
+  const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
 }
 function apiDone_(j){
   if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
@@ -1261,10 +1296,10 @@ async function togglePenalty(key,on){
   if(!confirm((on?'Apply ':'Remove ')+p.label+' on '+QN+'?\n\nThe total changes immediately. The customer is not emailed.')) return;
   setMsg('penaltyMsg','Saving…',null);
   try{
-    const r=await api('penalty',[QN,key,on?1:0]);
+    const r=await api('penalty',[QN,key,on?1:0],{withQuote:QN});
     if(!r||!r.ok){ setMsg('penaltyMsg',(r&&r.error)||'Could not do that.',false); return; }
     toast(p.label+(on?' applied':' removed'));
-    const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
+    await afterWrite_(r);
     setMsg('penaltyMsg',r.msg,true);
   }catch(e){ setMsg('penaltyMsg',e.message,false); }
 }
@@ -1399,13 +1434,13 @@ async function applyDims(){
   if(!QN||!window._dimsPending) return;
   const b=$('dimsApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
   try{
-    const r=await api('dimsApply',[QN,window._dimsPending,$('dimsNote').value.trim()]);
+    const r=await api('dimsApply',[QN,window._dimsPending,$('dimsNote').value.trim()],{withQuote:QN});
     if(!r||!r.ok){ setMsg('dimsMsg',(r&&r.error)||'Could not apply that.',false); return; }
     setMsg('dimsMsg',r.msg,true);
     toast(r.movedTo?('Re-priced and moved to '+r.movedTo):'Re-priced');
     $('dimsDiff').classList.add('hide');
     window._dimsPending=null;
-    await doLookup(QN);            // reload: totals, tab and dimensions all moved
+    await afterWrite_(r);          // reload: totals, tab and dimensions all moved
   }catch(e){ setMsg('dimsMsg',e.message,false); }
   finally{ if(b){ b.disabled=false; b.textContent='Apply this change'; } }
 }
@@ -1792,9 +1827,9 @@ async function priceReq(i){
   const label=window._rq[i];
   const amt=$('rqAmt'+i).value;
   if(!amt){toast('Enter a price first.');return;}
-  try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value]);
+  try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value],{withQuote:QN});
     if(!r.ok){toast(r.error);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){toast(e.message);}
 }
 function renderSeasonDone(canAdj){
@@ -1833,15 +1868,15 @@ function openSeasonDate(){const e=$('sdDateEd');e.classList.remove('hide');$('sd
 async function saveSeasonDate(){
   const d=$('sdDate').value;if(!d){setMsg('sdMsg','Pick a date first.',false);return;}
   setMsg('sdMsg','Saving…');
-  try{const r=await api('setSeasonDone',[QN,'date',d,$('sdNote').value]);
+  try{const r=await api('setSeasonDone',[QN,'date',d,$('sdNote').value],{withQuote:QN});
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
 async function setSeasonDoneChoice(choice){
-  try{const r=await api('setSeasonDone',[QN,choice,'','']);
+  try{const r=await api('setSeasonDone',[QN,choice,'',''],{withQuote:QN});
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
 function renderLines(){
@@ -1861,19 +1896,19 @@ function editLine(i){
 }
 async function saveLine(){
   setMsg('lnMsg','Saving…');
-  try{const r=await api('editLine',[QN,LNIDX,'edit',$('lnAmt').value,$('lnLabel').value]);
+  try{const r=await api('editLine',[QN,LNIDX,'edit',$('lnAmt').value,$('lnLabel').value],{withQuote:QN});
     if(!r.ok){setMsg('lnMsg',r.error,false);return;}
     $('lnEdit').classList.add('hide');toast(r.msg);
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){setMsg('lnMsg',e.message,false);}
 }
 async function delLine(i){
   const l=window._lines.find(x=>x.i===i);
   if(!confirm('Remove this line?\n\n'+l.label+' — '+(l.amt?fmt$(l.amt):'incl.')))return;
-  try{const r=await api('editLine',[QN,i,'delete','','']);
+  try{const r=await api('editLine',[QN,i,'delete','',''],{withQuote:QN});
     if(!r.ok){toast(r.error);return;}
     toast(r.msg);
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){toast(e.message);}
 }
 
@@ -1938,10 +1973,10 @@ async function pvConfirm(){
 }
 async function act(btnId,msgId,fn,args){
   const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
-  try{const r=await api(fn,args);
+  try{const r=await api(fn,args,{withQuote:QN});
     if(!r.ok){setMsg(msgId,r.error,false);b.disabled=false;return;}
     setMsg(msgId,r.msg||'Done.',true);toast(r.msg||'Done');
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){setMsg(msgId,e.message,false);}
   b.disabled=false;
 }
@@ -3073,6 +3108,10 @@ async function doRestore(mode){
   }catch(e){ setMsg('backupMsg',e.message,false); }
 }
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
+  /* Wake Apps Script while the PIN is being typed or the home screen drawn, so
+     the first real call does not also pay for a cold start. Its answer is
+     never looked at. */
+  api('ping',[]).catch(()=>{});
   new MutationObserver(syncHome).observe(document.querySelector('#appView .wrap'),
     {subtree:true,attributes:true,attributeFilter:['class']});
   $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});

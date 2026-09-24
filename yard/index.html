@@ -369,7 +369,7 @@ function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
    API_GET_OK must stay a SUBSET of the server's CONSOLE_GET_FNS_ — the server
    refuses a GET naming a write, so a wrong entry here is a retry that can only
    ever fail. tools/check-yard-app.js asserts the subset by reading both. */
-const API_GET_OK={auth:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
+const API_GET_OK={auth:1,ping:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
 function terr_(m,c){ const e=new Error(m); e.transport=(c===undefined?0:c); return e; }
 function isTerr_(e){ return !!(e&&e.transport!==undefined); }
 function wait_(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -443,10 +443,13 @@ async function api(fn,args){
   }
   const out=await settle_(body.rid);
   if(out.reply) return out.reply;
-  if(out.never) return {ok:0,error:'That did not reach the server — nothing was saved. Try again.'};
+  /* `lost` marks both: the server never answered this. Only a caller for whom
+     asking again is harmless may act on it (uploadOne_, for an upload session,
+     which creates nothing until a file is finished). */
+  if(out.never) return {ok:0,lost:1,error:'That did not reach the server — nothing was saved. Try again.'};
   /* Neither confirmed nor refuted. Say exactly that: telling somebody it
      failed is how the same note gets written twice, or a real one gets lost. */
-  return {ok:0,error:'The connection dropped and the server has not said what happened. '+
+  return {ok:0,lost:1,error:'The connection dropped and the server has not said what happened. '+
     'Do NOT send it again — pull down to refresh in a moment and check whether it is there.'};
 }
 
@@ -507,6 +510,8 @@ function showApp(){
   $('app').classList.remove('hide');
   $('who').textContent=(ME&&ME.name)||'';
   loadList();
+  /* Anything still waiting from the last time the app was open. */
+  upResume_();
 }
 
 /* ---------------------------------------------------------------------------
@@ -1196,7 +1201,7 @@ function tooBig_(f){ return f && f.size > MAX_UPLOAD_MB*1048576; }
    Chris: "I dont want to slow the app down with upload times." So an upload is
    queued against the QUOTE and pumped in the background. The sheet can close,
    the list can be scrolled, boats can be ticked off — a 60MB clip keeps going
-   in a chip at the bottom of the screen. Only closing the app stops it.
+   in a chip at the bottom of the screen.
 
    Each file is tried DIRECT first (the phone PUTs straight to Drive, no size
    ceiling, resumable, no base64) and falls back to the old base64-through-
@@ -1204,8 +1209,37 @@ function tooBig_(f){ return f && f.size > MAX_UPLOAD_MB*1048576; }
    preflight we could not test without a staff PIN. The fallback keeps the
    25 MB ceiling, because that path still has it, and says so plainly rather
    than failing quietly.
+
+   THE FILE IS NEVER SHRUNK OR RE-ENCODED. These are condition photos: they are
+   what shows a scratch was there before the boat came in, so the original
+   bytes go up exactly as the camera wrote them. Everything below is about
+   keeping those full-size files moving on a yard signal, not about making them
+   smaller:
+
+   - SENT IN 8 MB CHUNKS, each one committed by Drive as it lands. A dropped
+     signal costs the chunk in flight, not the whole clip.
+   - A DROP IS WAITED OUT, NOT FAILED. When the connection goes mid-upload the
+     app waits for signal, asks Drive how much it already has, and carries on
+     from there. It no longer falls back to the relay on a drop — that would
+     start the whole file again through Apps Script, capped at 25 MB.
+   - THE QUEUE SURVIVES THE APP CLOSING. Each file is kept on the phone
+     (IndexedDB) with its Drive session until Drive confirms it, so a phone
+     that locks, a crew member who swipes the app away, or a battery that dies
+     picks up where it stopped the next time the app opens — or the moment the
+     signal comes back. An unfinished Drive session creates no file, so a
+     resume can never leave a half-file or a duplicate in the folder.
+   - THE SCREEN IS KEPT ON while files are going (Wake Lock, where the phone
+     has it), because a phone that locks itself suspends the page and the
+     upload with it.
 --------------------------------------------------------------------------- */
-let UPQ=[], UPRUN=false, UPDONE=0, UPFAIL=0, UPSKIP=[];
+let UPQ=[], UPRUN=false, UPDONE=0, UPFAIL=0, UPSKIP=[], UPWAITING=0;
+/* Ids this page has already taken on — in flight, finished or refused. A resume
+   must not pick up the file that is going up right now, or one whose record
+   has not been deleted yet, and send it a second time. */
+const UPSEEN={};
+/* Drive requires every chunk but the last to be a multiple of 256 KiB. */
+const UP_CHUNK=32*256*1024;          // 8 MB
+const UP_MAX_DROPS=6;                // per file, per run; after that it waits for signal
 function upChip_(txt,pct){
   const c=$('upChip');
   if(!c) return;
@@ -1214,36 +1248,185 @@ function upChip_(txt,pct){
   c.innerHTML='<span>'+esc(txt)+'</span>'+
     (pct===null?'':'<span class="bar"><i style="width:'+Math.max(0,Math.min(100,pct))+'%"></i></span>');
 }
-/* The direct leg. XHR rather than fetch purely for upload progress: a phone
-   pushing 60MB with no feedback looks identical to a phone doing nothing. */
-function putDirect_(url,file,onPct){
+function upOnline_(){ return typeof navigator==='undefined'||navigator.onLine!==false; }
+/* Wait for the signal to come back, or for `ms`, whichever is first. */
+function upWaitOnline_(ms){
   return new Promise(function(res){
-    let x;
-    try{ x=new XMLHttpRequest(); }catch(e){ return res({ok:0,reason:'no-xhr'}); }
-    x.open('PUT',url,true);
-    x.setRequestHeader('Content-Type',file.type||'application/octet-stream');
-    if(x.upload) x.upload.onprogress=e=>{ if(e.lengthComputable) onPct(Math.round(100*e.loaded/e.total)); };
-    /* A CORS refusal surfaces here as a status-0 error with no detail — which
-       is exactly the case the fallback exists for, so it is not an error yet. */
-    x.onerror=()=>res({ok:0,reason:'blocked'});
-    x.onabort=()=>res({ok:0,reason:'blocked'});
-    x.onload=()=>res(x.status>=200&&x.status<300?{ok:1}:{ok:0,reason:'http-'+x.status});
-    try{ x.send(file); }catch(e){ res({ok:0,reason:'blocked'}); }
+    let done=false;
+    const fin=()=>{ if(done) return; done=true;
+      try{ window.removeEventListener('online',fin); }catch(e){} res(); };
+    try{ if(window.addEventListener) window.addEventListener('online',fin); }catch(e){}
+    setTimeout(fin,ms);
   });
 }
+/* One PUT to the session. `range` is null for a whole file in one go (the
+   original request shape), else [start,end) of a file of `size` bytes, sent
+   with a Content-Range. Resolves with what came back; never rejects.
+   XHR rather than fetch purely for upload progress: a phone pushing 60MB with
+   no feedback looks identical to a phone doing nothing. */
+function upPut_(url,body,type,range,size,onBytes){
+  return new Promise(function(res){
+    let x, moved=false;
+    try{ x=new XMLHttpRequest(); }catch(e){ return res({status:-1,reason:'no-xhr'}); }
+    x.open('PUT',url,true);
+    x.setRequestHeader('Content-Type',type||'application/octet-stream');
+    if(range) x.setRequestHeader('Content-Range',
+      range[1]>range[0]?'bytes '+range[0]+'-'+(range[1]-1)+'/'+size:'bytes */'+size);
+    if(x.upload) x.upload.onprogress=e=>{ if(e.loaded>0) moved=true; if(onBytes) onBytes(e.loaded); };
+    /* A CORS refusal and a dropped signal both surface here as a status-0 error
+       with no detail. `moved` is what tells them apart: a refusal is decided
+       before a single byte goes. */
+    x.onerror=()=>res({status:0,moved:moved});
+    x.onabort=()=>res({status:0,moved:moved});
+    x.onload=()=>{
+      let next=null;
+      /* 308 "resume incomplete": Range says how much Drive has. */
+      try{ const h=x.getResponseHeader&&x.getResponseHeader('Range');
+        const m=/bytes=0-(\d+)/.exec(h||''); if(m) next=Number(m[1])+1; }catch(e){}
+      res({status:x.status,next:next,moved:true});
+    };
+    try{ x.send(body); }catch(e){ res({status:0,moved:false}); }
+  });
+}
+/* Ask Drive how much of the file it already has. {done} when it has all of it,
+   {next} with the byte to carry on from, or {lost:true} when it cannot say. */
+async function upAsk_(url,file){
+  const r=await upPut_(url,null,file.type,[0,0],file.size||0,null);
+  if(r.status>=200&&r.status<300) return {done:true};
+  /* A 308 with no Range is either "nothing yet" or a Range header this browser
+     is not allowed to read. The two cannot be told apart, so start clean. */
+  if(r.status===308) return r.next===null?{lost:true}:{next:r.next};
+  if(r.status===0) return {offline:true};
+  return {lost:true,reason:'http-'+r.status};
+}
+/* The direct leg: the whole of `file` into the session at `url`, starting at
+   `from` (or at wherever Drive says it got to, when `ask` is set). */
+async function putDirect_(url,file,onPct,from,ask){
+  const size=file.size||0;
+  const canSlice=typeof file.slice==='function';
+  let off=from||0, moved=false, drops=0;
+  if(ask){
+    const a=await upAsk_(url,file);
+    if(a.done) return {ok:1};
+    if(a.offline) return {ok:0,reason:'dropped'};
+    if(a.lost) return {ok:0,reason:'restart'};
+    off=a.next; moved=true;
+  }
+  for(;;){
+    /* Small files go up the way they always did: one PUT, no Content-Range. */
+    const whole=!canSlice||(off===0&&size<=UP_CHUNK);
+    const end=whole?size:Math.min(size,off+UP_CHUNK);
+    const body=whole?file:file.slice(off,end);
+    const base=off;
+    const r=await upPut_(url,body,file.type,whole?null:[off,end],size,
+      b=>{ if(size) onPct(Math.round(100*(base+b)/size)); });
+    if(r.status===-1) return {ok:0,reason:'no-xhr'};
+    if(r.status>=200&&r.status<300) return {ok:1};
+    if(r.status===308){ moved=true; drops=0; off=(r.next===null?end:r.next); continue; }
+    if(r.status===0){
+      /* Nothing ever moved on this session and the phone thinks it is online:
+         that is the browser refusing the request, which the relay exists for. */
+      if(!moved&&!r.moved&&upOnline_()) return {ok:0,reason:'blocked'};
+      moved=true;
+      if(++drops>UP_MAX_DROPS) return {ok:0,reason:'dropped'};
+      upChip_('Signal lost — waiting to carry on…',size?Math.round(100*off/size):0);
+      await upWaitOnline_(Math.min(30000,2000*Math.pow(2,drops-1)));
+      const a=await upAsk_(url,file);
+      if(a.done) return {ok:1};
+      if(a.offline) continue;
+      if(a.lost) return {ok:0,reason:'restart'};
+      off=a.next;
+      continue;
+    }
+    return {ok:0,reason:'http-'+r.status};
+  }
+}
+/* ---- the queue, kept on the phone ---------------------------------------
+   IndexedDB because a clip is a Blob and IndexedDB stores Blobs natively;
+   localStorage is string-only and a few MB. Every call here fails soft: no
+   IndexedDB (a private tab, an old phone) means the queue lives in memory, as
+   it always did, and nothing else changes. */
+const UPDB_='quest-yard-uploads';
+let UPDBP=null;
+function upDb_(){
+  if(UPDBP) return UPDBP;
+  UPDBP=new Promise(function(res){
+    try{
+      if(typeof indexedDB==='undefined'||!indexedDB) return res(null);
+      const rq=indexedDB.open(UPDB_,1);
+      rq.onupgradeneeded=()=>{ try{ rq.result.createObjectStore('jobs',{keyPath:'id'}); }catch(e){} };
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>res(null);
+      rq.onblocked=()=>res(null);
+    }catch(e){ res(null); }
+  });
+  return UPDBP;
+}
+function upTx_(mode,fn){
+  return upDb_().then(function(db){
+    if(!db) return null;
+    return new Promise(function(res){
+      try{
+        const tx=db.transaction('jobs',mode), st=tx.objectStore('jobs');
+        const rq=fn(st);
+        tx.oncomplete=()=>res(rq&&rq.result!==undefined?rq.result:true);
+        tx.onerror=()=>res(null); tx.onabort=()=>res(null);
+      }catch(e){ res(null); }
+    });
+  });
+}
+function upRec_(job){ return {id:job.id,qn:job.qn,season:job.season,name:job.name,file:job.file,
+  url:job.url||'',urlAt:job.urlAt||0,at:job.at}; }
+function upSave_(job){ job.saving=upTx_('readwrite',st=>st.put(upRec_(job))); return job.saving; }
+/* Waits for the job's own save first: a delete that overtook the write would
+   leave a finished file queued to go up again. */
+async function upDrop_(job){ try{ await job.saving; }catch(e){} return upTx_('readwrite',st=>st.delete(job.id)); }
+function upId_(){
+  try{ if(window.crypto&&window.crypto.randomUUID) return window.crypto.randomUUID(); }catch(e){}
+  return 'u'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+}
+/* Drive keeps an unfinished session for about a week; older than this, start a
+   new one rather than asking about one that may be gone. */
+const UP_SESSION_MAX_MS=5*24*3600*1000;
 async function uploadOne_(job){
   const f=job.file;
-  /* 1. Straight to Drive. */
+  const pct=p=>upChip_(job.label,p);
+  /* No signal at all: wait for it. Asking would only fail, and the relay
+     needs the same signal. */
+  if(!upOnline_()) return {ok:0,keep:1};
+  /* 1. Straight to Drive — carrying on in the session it already has, if any. */
   try{
-    const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size]);
-    if(sess&&sess.ok&&sess.url){
-      const r=await putDirect_(sess.url,f,p=>upChip_(job.label,p));
+    if(job.url&&Date.now()-(job.urlAt||0)<UP_SESSION_MAX_MS){
+      const r=await putDirect_(job.url,f,pct,0,true);
       if(r.ok) return {ok:1,how:'direct'};
+      if(r.reason==='dropped') return {ok:0,keep:1};
+      /* Anything else: that session is no use now. A fresh one, below. */
+    }
+    job.url='';
+    for(let attempt=0;attempt<2;attempt++){
+      const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size]);
+      /* The ask was lost on the way. A session creates nothing in Drive until
+         a file is finished, so asking again later is harmless: wait for signal. */
+      if(sess&&sess.lost) return {ok:0,keep:1};
+      if(!(sess&&sess.ok&&sess.url)) break;
+      job.url=sess.url; job.urlAt=Date.now(); upSave_(job);
+      const r=await putDirect_(sess.url,f,pct,0,false);
+      if(r.ok) return {ok:1,how:'direct'};
+      if(r.reason==='dropped') return {ok:0,keep:1};
+      /* Drive could not say how far it got: one clean start on a new session.
+         An unfinished session leaves nothing in Drive, so this cannot duplicate. */
+      if(r.reason==='restart'){ job.url=''; if(attempt) return {ok:0,keep:1}; continue; }
       /* Anything other than "the browser would not let us" is a real failure
          and must not be retried down a path with a smaller ceiling. */
       if(String(r.reason||'').indexOf('http-')===0) return {ok:0,error:'Drive refused the upload ('+r.reason+').'};
+      break;
     }
-  }catch(e){ /* fall through */ }
+  }catch(e){
+    /* No signal to even ask for a session: wait for it rather than falling
+       back to a relay that needs the same signal. */
+    if(!upOnline_()) return {ok:0,keep:1};
+  }
+  job.url='';
   /* 2. The old path, which still has the ceiling. */
   if(f.size>MAX_UPLOAD_MB*1048576){
     return {ok:0,error:f.name+' ('+Math.round(f.size/1048576)+' MB) could not go direct, and the '+
@@ -1254,31 +1437,90 @@ async function uploadOne_(job){
   const r=await api('uploadPhoto',[job.qn,job.season,f.name||('yard-'+Date.now()+'.jpg'),data,f.type]);
   return (r&&r.ok)?{ok:1,how:'relay'}:{ok:0,error:(r&&r.error)||'Upload failed.'};
 }
+/* Keep the screen on while files are going: a phone that locks itself
+   suspends the page, and the upload with it. Released when the queue empties.
+   The phone drops the lock whenever the app is hidden, so it is asked for
+   again when the app comes back. */
+let UPWAKE=null;
+async function upWake_(on){
+  try{
+    if(on){
+      if(UPWAKE||typeof navigator==='undefined'||!navigator.wakeLock) return;
+      UPWAKE=await navigator.wakeLock.request('screen');
+      if(UPWAKE&&UPWAKE.addEventListener) UPWAKE.addEventListener('release',()=>{ UPWAKE=null; });
+    }else if(UPWAKE){ const w=UPWAKE; UPWAKE=null; await w.release(); }
+  }catch(e){ UPWAKE=null; }
+}
 async function upPump_(){
   if(UPRUN) return;
   UPRUN=true;
+  upWake_(true);
+  const waiting=[];
   while(UPQ.length){
     const job=UPQ.shift();
+    UPSEEN[job.id]=1;
     const left=UPQ.length;
     job.label=job.name+(left?' (+'+left+' more)':'');
     upChip_(job.label,0);
     let out;
     try{ out=await uploadOne_(job); }catch(e){ out={ok:0,error:e.message}; }
+    /* Parked, not finished: it may go again when the signal is back. */
+    if(out.keep){ delete UPSEEN[job.id]; waiting.push(job); continue; }
+    upDrop_(job);
     if(out.ok) UPDONE++; else { UPFAIL++; UPSKIP.push(out.error||'failed'); }
     /* Keep the open unit's counts honest without reloading anything. */
     if(CUR&&CUR.quoteNo===job.qn&&canPhotos()) refreshPhotos(job.qn);
   }
   UPRUN=false;
+  upWake_(false);
+  /* Out of signal: the files stay queued (and on the phone), and go the moment
+     it comes back — or the next time the app opens. */
+  UPWAITING=waiting.length;
+  waiting.forEach(j=>UPPARKED.push(j));
+  /* A phone can believe it is online with no usable signal, and then no
+     `online` event ever comes. Try again in a minute in that case. */
+  if(UPWAITING&&upOnline_()) setTimeout(upUnpark_,60000);
   const bits=[];
   if(UPDONE) bits.push(UPDONE+' uploaded');
   if(UPFAIL) bits.push(UPFAIL+' failed');
+  if(UPWAITING) bits.push(UPWAITING+' waiting for signal');
   upChip_(bits.join(' · ')+(UPSKIP.length?' — tap to see why':''),null);
   if(UPSKIP.length) setMsg('upMsg',UPSKIP.join(' '),false);
+  else if(UPWAITING) setMsg('upMsg',UPWAITING+' still to upload — no signal. They are kept on this phone '+
+    'and carry on by themselves when the signal is back.',null);
   else setMsg('upMsg',UPDONE+' uploaded.',true);
   toast(bits.join(' · ')||'Done');
   UPDONE=0; UPFAIL=0; UPSKIP=[];
-  setTimeout(()=>upChip_(null),6000);
+  if(!UPWAITING) setTimeout(()=>upChip_(null),6000);
 }
+/* Files that ran out of signal, held until it comes back. */
+let UPPARKED=[];
+function upUnpark_(){
+  if(!UPPARKED.length) return;
+  UPPARKED.forEach(j=>UPQ.push(j)); UPPARKED=[]; UPWAITING=0;
+  upPump_();
+}
+/* Everything the phone still has from before — a closed app, a dead battery,
+   a locked screen that took the page with it. Anything already queued in this
+   session is skipped by id. */
+async function upResume_(){
+  const all=await upTx_('readonly',st=>st.getAll());
+  if(!all||!all.length) return;
+  const have={};
+  UPQ.concat(UPPARKED).forEach(j=>{ have[j.id]=1; });
+  const fresh=all.filter(r=>r&&r.id&&r.file&&!have[r.id]&&!UPSEEN[r.id]);
+  if(!fresh.length) return;
+  fresh.forEach(r=>UPQ.push({id:r.id,file:r.file,qn:r.qn,season:r.season||'winter',
+    name:r.name||'file',url:r.url||'',urlAt:r.urlAt||0,at:r.at||0,saving:Promise.resolve()}));
+  toast('Carrying on with '+fresh.length+' upload'+(fresh.length===1?'':'s')+' from earlier');
+  upPump_();
+}
+try{
+  if(window.addEventListener) window.addEventListener('online',()=>{ upUnpark_(); upResume_(); });
+  if(document.addEventListener) document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'){ if(UPRUN) upWake_(true); else upUnpark_(); }
+  });
+}catch(e){}
 async function upload(files){
   if(!CUR||!files||!files.length) return;
   if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos or video.',false); return; }
@@ -1287,7 +1529,13 @@ async function upload(files){
   /* Queued against the quote that is open NOW, so closing the sheet does not
      send a clip to whichever boat gets opened next. */
   const qn=CUR.quoteNo;
-  list.forEach(f=>UPQ.push({file:f,qn:qn,season:'winter',name:f.name||'file'}));
+  list.forEach(f=>{
+    const job={id:upId_(),file:f,qn:qn,season:'winter',name:f.name||'file',url:'',urlAt:0,at:Date.now()};
+    /* Onto the phone first, so closing the app cannot lose it — but the upload
+       does not wait for that copy to finish. */
+    upSave_(job);
+    UPQ.push(job);
+  });
   setMsg('upMsg',list.length+' queued — you can keep working, it uploads in the background.');
   upPump_();
 }
@@ -1298,7 +1546,13 @@ $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 
 /* A cached token may be hours old and already expired; loadList finds out and
    drops back to the PIN screen rather than showing an empty yard. */
-if(T&&ME) showApp(); else $('login').classList.remove('hide');
+if(T&&ME) showApp();
+else {
+  $('login').classList.remove('hide');
+  /* Wake Apps Script while the PIN is being typed, so signing in does not also
+     pay for a cold start. Its answer is never looked at. */
+  api('ping',[]).catch(()=>{});
+}
 </script>
 </body>
 </html>

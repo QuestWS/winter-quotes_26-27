@@ -1229,6 +1229,10 @@ const CONSOLE_GET_FNS_ = {
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
   listStaff: 1, autoPause: 1,
+  /* Does nothing, on purpose: the console and the yard app call it as they
+     open so Apps Script has a warm container by the time the first real call
+     arrives, and it is the cleanest reading of what an empty call costs. */
+  ping: 1,
   /* "What became of the write I sent?" — see the idempotency section below.
      It is on this list because it is the one question staff must still be able
      to ask when the POST route is the thing that is broken. It reads a cached
@@ -1247,6 +1251,7 @@ const CONSOLE_GET_FNS_ = {
 function consoleFns_(p) {
   return {
     auth:        function (a) { return adminAuth(a[0]); },
+    ping:        function (a) { return adminPing(); },
     lookup:      function (a) { return adminLookup(p.token, a[0]); },
     quoteHtml:   function (a) { return adminQuoteHtml(p.token, a[0]); },
     dimsPreview: function (a) { return adminDimsPreview(p.token, a[0], a[1]); },
@@ -1383,9 +1388,14 @@ function adminJobStatus(token, rid) {
 /* Serve one console call. `verb` is how it arrived; a write that arrives on a
    GET is refused here, so the allow-list cannot be bypassed by crafting a URL. */
 function consoleServe_(p, verb) {
+  const started = Date.now();
   const reply = function (obj) {
     const o = (obj && typeof obj === 'object') ? obj : { ok: 0, error: 'The server gave no answer.' };
     o._api = 'console';   // the stamp: proof this came from the console API
+    /* What this execution spent, so the console can tell a slow sheet from a
+       slow start-up, redirect or signal — the gap between this and the round
+       trip the phone timed is the part no sheet tidying can reach. */
+    o.serverMs = Date.now() - started;
     return ContentService.createTextOutput(JSON.stringify(o))
       .setMimeType(ContentService.MimeType.JSON);
   };
@@ -1405,7 +1415,7 @@ function consoleServe_(p, verb) {
     const rid = String((p && p.rid) || '');
     if (!isWrite || !rid) {
       const plain = FNS[fn]((p && p.args) || []);
-      if (isWrite) invalidateStorageView_();
+      if (isWrite) { invalidateStorageView_(); withQuote_(p, plain); }
       return reply(plain);
     }
     const claim = claimRid_(rid);
@@ -1419,11 +1429,35 @@ function consoleServe_(p, verb) {
     catch (err) { out = { ok: 0, error: String(err.message || err) }; }
     finishRid_(rid, out);
     invalidateStorageView_();
+    /* After finishRid_, so the replayable answer stays small: a replay simply
+       has no `quote` on it, and the console fetches the quote the old way. */
+    withQuote_(p, out);
     return reply(out);
   } catch (err) {
     return reply({ ok: 0, error: String(err.message || err) });
   }
 }
+
+/* The console's "save, then reload the quote" was two trips to Apps Script for
+   every button on the quote screen: start-up, redirect and signal paid twice.
+   A write can now carry `withQuote: <quote no>` and the refreshed quote comes
+   back on the same answer as `quote` — the same thing a `lookup` returns, read
+   after the write in the same execution, so it cannot be the stale copy.
+
+   Only on success, and never allowed to spoil the write's own answer: if the
+   read fails the answer simply has no `quote`, and the console asks for it the
+   old way. The service tracker's writer portal has worked like this since
+   Sep 2026 (withJobPage_ there). */
+function withQuote_(p, out) {
+  const qn = String((p && p.withQuote) || '').trim();
+  if (!qn || !out || typeof out !== 'object' || Number(out.ok) !== 1) return;
+  try {
+    const q = adminLookup(p.token, qn);
+    if (q && Number(q.ok) === 1) out.quote = q;
+  } catch (e) { /* the write stands; the console reloads the quote itself */ }
+}
+
+function adminPing() { return { ok: 1 }; }
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
@@ -1834,6 +1868,90 @@ function findQuoteRow_(sh, quoteNo) {
     if (String(col[i][0]) === String(quoteNo)) return i + 2;
   }
   return -1;
+}
+
+/* ======================= EVERY TAB IN ONE TRIP ==========================
+   Each getRange/getValue/getLastRow is its own round trip to Google, and each
+   costs about the same whether it fetches one cell or ten thousand. A scan of
+   the quote tabs asked three or four of them PER TAB — is this a quote tab,
+   where does it end, then the columns — so the storage view, the search and a
+   cold quote lookup paid for every tab in the spreadsheet one trip at a time.
+
+   The Sheets advanced service answers all of it in `values.batchGet`. The
+   service tracker has run the same kind of read in production since Sep 2026.
+
+   It FAILS SAFE: no service, not authorised, a refused call or an answer of the
+   wrong shape returns null, and every caller falls back to the reads it always
+   did. The price of the service being unavailable is the old speed, never a
+   different answer. The first refusal switches it off for the rest of the
+   execution rather than paying for the same failure on every tab.
+
+   TWO trips, not one, on purpose. The first asks every tab for its header cell
+   (C1); the second reads only the tabs that say 'Quote #'. Reading the spans of
+   every tab in one go would drag the whole Activity Log, the backups and the
+   deleted-quote archive across the wire to be thrown away — the per-tab code
+   never read those past their header, and neither does this.
+
+   `spans` are [firstCol, lastCol] pairs. The answer is aligned with `sheets`:
+   null for a tab that is not a quote tab, otherwise one grid per span, from
+   ROW 1 to the last row any span returned, padded to full width with '' — the
+   same shape getValues gives. UNFORMATTED_VALUE, so a balance comes back a
+   number exactly as getValues returns it. Dates come back as display text
+   rather than Date objects, which is why no caller of this reads a date column.
+
+   It flushes first: the API reads Google's copy directly and would not see a
+   write this execution is still holding (the save a `withQuote` read follows). */
+let _tabGridsOff_ = false;
+function colA1_(n) {
+  if (!(n >= 1 && n <= 26)) throw new Error('colA1_ only covers A..Z');
+  return String.fromCharCode(64 + n);
+}
+function tabA1_(sh) { return "'" + String(sh.getName()).replace(/'/g, "''") + "'!"; }
+function quoteTabGrids_(ss, sheets, spans) {
+  if (_tabGridsOff_ || !sheets.length || !spans.length) return null;
+  if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) return null;
+  try {
+    SpreadsheetApp.flush();
+    const opt = { majorDimension: 'ROWS', valueRenderOption: 'UNFORMATTED_VALUE',
+                  dateTimeRenderOption: 'FORMATTED_STRING' };
+    const heads = Sheets.Spreadsheets.Values.batchGet(ss.getId(), Object.assign({
+      ranges: sheets.map(function (sh) { return tabA1_(sh) + colA1_(COL.QN) + '1'; }) }, opt));
+    const hv = (heads && heads.valueRanges) || [];
+    if (hv.length !== sheets.length) { _tabGridsOff_ = true; return null; }
+    const quoteIdx = [];
+    hv.forEach(function (r, i) {
+      if ((((r && r.values) || [])[0] || [])[0] === 'Quote #') quoteIdx.push(i);
+    });
+    const out = sheets.map(function () { return null; });
+    if (!quoteIdx.length) return out;
+    const ranges = [];
+    quoteIdx.forEach(function (i) {
+      spans.forEach(function (sp) { ranges.push(tabA1_(sheets[i]) + colA1_(sp[0]) + '1:' + colA1_(sp[1])); });
+    });
+    const res = Sheets.Spreadsheets.Values.batchGet(ss.getId(), Object.assign({ ranges: ranges }, opt));
+    const vr = (res && res.valueRanges) || [];
+    if (vr.length !== ranges.length) { _tabGridsOff_ = true; return null; }
+    quoteIdx.forEach(function (sheetIdx, k) {
+      const raw = spans.map(function (sp, j) { return vr[k * spans.length + j].values || []; });
+      let height = 0;
+      raw.forEach(function (g) { if (g.length > height) height = g.length; });
+      out[sheetIdx] = raw.map(function (g, j) {
+        const w = spans[j][1] - spans[j][0] + 1;
+        const grid = [];
+        for (let r = 0; r < height; r++) {
+          const src = g[r] || [];
+          const row = new Array(w);
+          for (let c = 0; c < w; c++) row[c] = (src[c] === undefined || src[c] === null) ? '' : src[c];
+          grid.push(row);
+        }
+        return grid;
+      });
+    });
+    return out;
+  } catch (e) {
+    _tabGridsOff_ = true;
+    return null;
+  }
 }
 
 /* ---------- PDF generation & Drive archive ---------- */
@@ -2718,6 +2836,20 @@ function findQuoteCtx_(qn) {
   const hit = cachedQuoteRow_(ss, want);
   if (hit) { const ctx = build(hit.sh, hit.rowNum); if (ctx) return ctx; }
   const sheets = ss.getSheets();
+  /* A miss used to cost three trips per tab. A batch read of column C on
+     every quote tab finds it; the old loop below stays as the fallback. The first
+     match in tab order wins, exactly as the loop does. */
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  if (grids) {
+    for (let i = 0; i < sheets.length; i++) {
+      if (!grids[i]) continue;
+      const g = grids[i][0];
+      for (let r = 1; r < g.length; r++) {
+        if (String(g[r][0]) === want) return build(sheets[i], r + 1);
+      }
+    }
+    return null;
+  }
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
     if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
@@ -2733,15 +2865,26 @@ function adminSearch(token, query) {
   if (q.length < 2) return { ok: 0, error: 'Type at least 2 letters of the last name.' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const hits = [];
-  ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    const last = sh.getLastRow();
-    if (last < 2) return;
-    /* Columns 1..DIMS only. Everything this list shows lives in the first
-       eleven columns; reading HEADERS.length pulled the itemised services and
-       the whole JSON payload of every quote in the season across the wire to
-       match a few letters of a surname. */
-    sh.getRange(2, 1, last - 1, COL.DIMS).getValues().forEach(function (r) {
+  const sheets = ss.getSheets();
+  /* Every quote tab in one batch when the Sheets service answers
+     (quoteTabGrids_); the per-tab reads below when it does not. */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS]]);
+  sheets.forEach(function (sh, si) {
+    let body;
+    if (grids) {
+      if (!grids[si]) return;
+      body = grids[si][0].slice(1);
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      /* Columns 1..DIMS only. Everything this list shows lives in the first
+         eleven columns; reading HEADERS.length pulled the itemised services and
+         the whole JSON payload of every quote in the season across the wire to
+         match a few letters of a surname. */
+      body = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+    }
+    body.forEach(function (r) {
       const ln = String(r[COL.LAST - 1] || '').toLowerCase();
       if (!ln || ln.indexOf(q) === -1) return;
       const bal = Number(r[COL.BAL - 1] || 0);
@@ -6022,20 +6165,35 @@ function adminStorageView(token) {
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const groups = [];
-  ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+  const sheets = ss.getSheets();
+  /* Every quote tab in one batch (quoteTabGrids_) — this view is dropped by
+     every write, so it is rebuilt often, and it was four trips per tab. The
+     per-tab reads below are the fallback. */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  sheets.forEach(function (sh, si) {
+    if (grids) {
+      if (!grids[si]) return;
+    } else if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
     /* Not a storage area. The crew must not be shown a boat nobody has agreed
        to store, and the haul-out counts must not include one. IMPORT_TAB. */
     if (isImportTab_(sh.getName())) return;
-    const last = sh.getLastRow();
     const rows = [];
-    if (last > 1) {
-      /* Two narrow reads instead of one wide one. Everything shown comes from
-         columns 1..DIMS, plus the payload for keys, slip and the season-done
-         answer — so the itemised services, the customer notes and the link
-         columns never leave the sheet. */
-      const head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
-      const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    let head = [], pays = [];
+    if (grids) {
+      head = grids[si][0].slice(1);
+      pays = grids[si][1].slice(1);
+    } else {
+      const last = sh.getLastRow();
+      if (last > 1) {
+        /* Two narrow reads instead of one wide one. Everything shown comes from
+           columns 1..DIMS, plus the payload for keys, slip and the season-done
+           answer — so the itemised services, the customer notes and the link
+           columns never leave the sheet. */
+        head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+        pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+      }
+    }
+    {
       head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);

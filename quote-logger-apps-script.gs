@@ -245,7 +245,7 @@ function isStartedQuote_(d) { return String((d && d.storageTab) || '') === START
      balanceReportCheck   the money report. A draft owes nothing.
      repriceScan_         the season re-price. These are already at today's
                           rates -- the engine priced them as they were read.
-     adminStorageView     the storage view, the yard app and the printed
+     adminStorageView     the storage view, Harbor Haul Out and the printed
                           haul-out sheets. The crew must not see a boat nobody
                           has agreed to store.
      signLookup_          the public scan-to-sign lookup. A draft is not a
@@ -1040,20 +1040,25 @@ function doPost(e) {
       if (oldD.staffNote) d.staffNote = oldD.staffNote;
       if (oldD.staffNoteBy) d.staffNoteBy = oldD.staffNoteBy;
       if (oldD.staffNoteAt) d.staffNoteAt = oldD.staffNoteAt;
-      /* The yard log lives only on this side too, and it is append-only — so a
-         customer save that dropped it would destroy observations nobody can
-         reconstruct, silently, at the worst possible moment (they re-save right
-         after we photograph a crack). Carried across exactly like the note. */
-      if (oldD.yardNotes && oldD.yardNotes.length) d.yardNotes = oldD.yardNotes;
-      /* A season's worth of yard progress — pulled, dropped off, stored — that
-         the customer's browser has never heard of and would otherwise wipe on
-         their next save, putting boats that are already in a building back on
-         the crew's to-do list. */
-      if (oldD.yard) d.yard = oldD.yard;
+      /* The Harbor Haul Out log lives only on this side too, and it is
+         append-only — so a customer save that dropped it would destroy
+         observations nobody can reconstruct, silently, at the worst possible
+         moment (they re-save right after we photograph a crack). Carried
+         across exactly like the note. Reads the pre-rename d.yardNotes as a
+         fallback, so a quote saved before the rename keeps its history. */
+      if (oldD.placementNotes && oldD.placementNotes.length) d.placementNotes = oldD.placementNotes;
+      else if (oldD.yardNotes && oldD.yardNotes.length) d.placementNotes = oldD.yardNotes;
+      /* A season's worth of placement progress — pulled, dropped off, stored —
+         that the customer's browser has never heard of and would otherwise
+         wipe on their next save, putting boats that are already in a building
+         back on the crew's to-do list. Same pre-rename fallback. */
+      if (oldD.placement) d.placement = oldD.placement;
+      else if (oldD.yard) d.placement = oldD.yard;
       /* Same reason, and worse consequences: an alert wiped by a customer save
          is a warning the crew stops seeing without anybody deciding to take it
-         down. */
-      if (oldD.yardAlert) d.yardAlert = oldD.yardAlert;
+         down. Same pre-rename fallback. */
+      if (oldD.placementAlert) d.placementAlert = oldD.placementAlert;
+      else if (oldD.yardAlert) d.placementAlert = oldD.yardAlert;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1254,9 +1259,9 @@ function consoleFns_(p) {
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
-    yardNote:    function (a) { return adminAddYardNote(p.token, a[0], a[1], a[2]); },
-    yardState:   function (a) { return adminSetYardState(p.token, a[0], a[1]); },
-    yardAlert:   function (a) { return adminSetYardAlert(p.token, a[0], a[1]); },
+    placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
+    placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
+    placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
@@ -2941,7 +2946,7 @@ function sanitizeMeasured_(changes, st) {
        checkbox for one, so this only fires on a crafted request or a future
        caller that forgets -- and a land unit carrying hasTrailer would change
        its deposit (RULES.depositTrailer) as well as putting the question back
-       on the yard screen. */
+       on the Harbor Haul Out screen. */
     if (unitKind === 'golf' || unitKind === 'ebike') {
       throw new Error('A ' + (unitKind === 'golf' ? 'golf cart' : 'e-bike') + ' is not stored on a trailer.');
     }
@@ -3129,7 +3134,7 @@ function adminKeysApply(token, qn, changes) {
    email, and not returned by the customer-facing load endpoint. verify.sh
    enforces that, because the whole value of a candid note is that it is
    candid. */
-/* THE YARD LOG — append only.
+/* THE HARBOR HAUL OUT LOG — append only.
    ---------------------------------------------------------------------------
    Deliberately NOT the staff note. That one is a single box the office rewrites
    as its understanding of a quote changes; this is a stream of observations
@@ -3145,7 +3150,7 @@ function adminKeysApply(token, qn, changes) {
 
    Same privacy bar as the staff note: it is never on the PDF, never in an
    email, and never returned by ?action=load. verify.sh checks all of those. */
-const YARD_NOTE_MAX_ = 1500;
+const PLACEMENT_NOTE_MAX_ = 1500;
 /* The recording lives beside the unit's photos, in its own subfolder, so
    somebody opening the quote's folder in Drive finds the voice notes filed
    rather than mixed in with the condition shots. */
@@ -3156,7 +3161,7 @@ function voiceFolder_(ctx) {
   return f;
 }
 
-function adminAddYardNote(token, qn, text, audio) {
+function adminAddPlacementNote(token, qn, text, audio) {
   /* Yard work, so the yard permission — the crew who see the boat are the crew
      who write this. Same bar as keys and slip, not the money bar. */
   const who = requireAuth_(token, 'keys');
@@ -3169,11 +3174,12 @@ function adminAddYardNote(token, qn, text, audio) {
      record button useless to the person whose hands are full, which is the
      person it is for. */
   if (!t && !hasAudio) return { ok: 0, error: 'Nothing to save — say something or type something.' };
-  if (t.length > YARD_NOTE_MAX_) {
+  if (t.length > PLACEMENT_NOTE_MAX_) {
     return { ok: 0, error: 'That note is ' + t.length + ' characters; keep it under ' +
-             YARD_NOTE_MAX_ + '. Split it into two if you need to.' };
+             PLACEMENT_NOTE_MAX_ + '. Split it into two if you need to.' };
   }
-  d.yardNotes = d.yardNotes || [];
+  d.placementNotes = d.placementNotes || d.yardNotes || [];
+  delete d.yardNotes;
   /* An id per note, so a transcript coming back hours later lands on the right
      one without reading the sheet to find it. */
   const entry = { id: Utilities.getUuid(), ts: new Date().toISOString(), by: who.name, text: t };
@@ -3196,7 +3202,7 @@ function adminAddYardNote(token, qn, text, audio) {
       entry.terror = 'The recording could not be saved: ' + String((err && err.message) || err).substr(0, 200);
     }
   }
-  d.yardNotes.push(entry);
+  d.placementNotes.push(entry);
   /* Payload only. A note is an observation, not a change to the quote: no
      status, no re-price, no new PDF — the same rule the staff note follows. */
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
@@ -3205,18 +3211,18 @@ function adminAddYardNote(token, qn, text, audio) {
   if (entry.audioId && entry.tstatus === 'pending') {
     queueTranscript_(d.quoteNo, entry.id, entry.audioId);
   }
-  auditLog_(who.name, 'Yard note added to ' + d.quoteNo +
+  auditLog_(who.name, 'Harbor Haul Out note added to ' + d.quoteNo +
     (entry.audioId ? ' (voice)' : '') + ': "' +
     (t ? (t.length > 80 ? t.slice(0, 80) + '\u2026' : t) : '[recording]') + '"');
   return { ok: 1, msg: entry.audioId
       ? (t ? 'Note and recording saved.' : 'Recording saved — typing it up now.')
       : 'Note saved.',
-    note: entry, count: d.yardNotes.length };
+    note: entry, count: d.placementNotes.length };
 }
 
 
 /* =========================== VOICE NOTES ===============================
-   A yard note can be spoken instead of typed. Same method as the service
+   A Harbor Haul Out note can be spoken instead of typed. Same method as the service
    tracker's mechanic app (QuestWS/servicetracker), deliberately, so the two
    apps behave the same way in the same hands:
 
@@ -3241,9 +3247,9 @@ function adminAddYardNote(token, qn, text, audio) {
    and the transcript-id mapping live in Script Properties, and the webhook
    goes straight to the row it names.
 ========================================================================= */
-const TRQ_PROP_ = 'YARD_TRANSCRIPT_QUEUE';
+const TRQ_PROP_ = 'PLACEMENT_TRANSCRIPT_QUEUE';
 const TR_MAP_ = 'YTR_';                  // YTR_<assemblyId> -> {qn, noteId}
-const TR_HOOK_PROP_ = 'YARD_HOOK_KEY';
+const TR_HOOK_PROP_ = 'PLACEMENT_HOOK_KEY';
 
 function assemblyKey_() {
   return String(props_().getProperty('ASSEMBLYAI_API_KEY') || '').trim();
@@ -3253,8 +3259,12 @@ function assemblyKey_() {
    between the public /exec and anybody who can guess a transcript id. */
 function transcriptHookKey_() {
   const p = props_();
-  let k = p.getProperty(TR_HOOK_PROP_);
-  if (!k) { k = Utilities.getUuid().replace(/-/g, ''); p.setProperty(TR_HOOK_PROP_, k); }
+  /* Falls back to the pre-rename property name so a secret already minted
+     under it (and already handed to AssemblyAI on an in-flight webhook URL)
+     keeps working across the rename instead of being silently orphaned. */
+  let k = p.getProperty(TR_HOOK_PROP_) || p.getProperty('YARD_HOOK_KEY');
+  if (!k) k = Utilities.getUuid().replace(/-/g, '');
+  p.setProperty(TR_HOOK_PROP_, k);
   return k;
 }
 function transcriptHookUrl_() {
@@ -3272,7 +3282,7 @@ function props_() { return PropertiesService.getScriptProperties(); }
 function queueTranscript_(qn, noteId, fileId) {
   const p = props_();
   let q = [];
-  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || '[]'); } catch (e) { q = []; }
+  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || p.getProperty('YARD_TRANSCRIPT_QUEUE') || '[]'); } catch (e) { q = []; }
   q.push({ qn: qn, noteId: noteId, fileId: fileId });
   /* A runaway queue must not become a payload nothing can read back. */
   if (q.length > 100) q = q.slice(-100);
@@ -3303,7 +3313,7 @@ function processTranscriptQueue() {
 function submitQueuedTranscripts_() {
   const p = props_();
   let q = [];
-  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || '[]'); } catch (e) { q = []; }
+  try { q = JSON.parse(p.getProperty(TRQ_PROP_) || p.getProperty('YARD_TRANSCRIPT_QUEUE') || '[]'); } catch (e) { q = []; }
   if (!q.length) return;
   /* Taken off the queue before the work, so a run that dies on one recording
      does not replay it for ever. The note keeps its pending mark either way,
@@ -3349,7 +3359,7 @@ function markTranscript_(qn, noteId, status, tid, err) {
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return;
   const d = ctx.d;
-  const note = (d.yardNotes || []).filter(function (n) { return n.id === noteId; })[0];
+  const note = (d.placementNotes || d.yardNotes || []).filter(function (n) { return n.id === noteId; })[0];
   if (!note) return;
   note.tstatus = status;
   if (tid) note.tid = tid;
@@ -3376,9 +3386,9 @@ function applyTranscript_(transcriptId) {
   if (body.status === 'completed') {
     const ctx = findQuoteCtx_(map.qn);
     if (ctx) {
-      const note = (ctx.d.yardNotes || []).filter(function (n) { return n.id === map.noteId; })[0];
+      const note = (ctx.d.placementNotes || ctx.d.yardNotes || []).filter(function (n) { return n.id === map.noteId; })[0];
       if (note) {
-        note.transcript = String(body.text || '').substr(0, YARD_NOTE_MAX_);
+        note.transcript = String(body.text || '').substr(0, PLACEMENT_NOTE_MAX_);
         note.tstatus = 'done';
         delete note.terror;
         ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(ctx.d));
@@ -3813,7 +3823,7 @@ function bulkImportFinish_(st) {
       body: 'Folder: ' + st.folder + '\n' + what + '\n\nReport: ' + url + '\n\n' +
         (st.mode === 'apply'
           ? 'Every quote is on the "' + IMPORT_TAB + '" tab. Nothing has been emailed to anybody.\n' +
-            'They are invisible to the yard app, the haul-out sheets and the 9am reminder until you send one off.'
+            'They are invisible to Harbor Haul Out, the haul-out sheets and the 9am reminder until you send one off.'
           : 'NOTHING HAS BEEN WRITTEN to the quote sheet yet.\n' +
             'Open the report, delete any row you do not want (or change its first cell from IMPORT),\n' +
             'then run bulkImport2_Apply() to import what is left.')
@@ -4066,8 +4076,8 @@ function bulkImportStep() {
 
 
 /* ======================= WHERE A UNIT IS IN THE SEASON ==================
-   One field, four states, and the yard app's three lists are just this field
-   read three ways:
+   One field, four states, and Harbor Haul Out's three lists are just this
+   field read three ways:
 
      ''        nothing has happened yet. A boat in a slip is on TO PULL.
      'pulled'  we took it out of the water. Off the pull list, onto TO STORE.
@@ -4083,23 +4093,35 @@ function bulkImportStep() {
    day's work. Journalling it would put a re-price in the path of a crew member
    tapping "stored" with cold hands, for no reason at all.
 
-   It is carried across a customer save like the payments and the yard log,
-   because the customer's browser has never heard of it and would otherwise
-   wipe the season's progress on their next save.
+   It is carried across a customer save like the payments and the Harbor Haul
+   Out log, because the customer's browser has never heard of it and would
+   otherwise wipe the season's progress on their next save.
+
+   Named `placement`, not `hho`: `hho` already means Heritage Harbor Ottawa
+   elsewhere in this file (hhoAddr / s.hho / hhoMinTotal in
+   pricing-engine.js), and reusing it here for Harbor Haul Out would recreate
+   the exact kind of naming collision this rename exists to remove. Reads fall
+   back to the pre-rename `d.yard` field so a quote saved before the rename
+   keeps its season progress; every write lands on `d.placement` and drops the
+   legacy field.
 ========================================================================= */
-const YARD_STATES_ = {
+const PLACEMENT_STATES_ = {
   '':        { label: 'Not started',     list: 'pull'  },
   'pulled':  { label: 'Pulled',          list: 'store' },
   'dropped': { label: 'Dropped off',     list: 'store' },
   'stored':  { label: 'In storage',      list: 'stored' }
 };
 
-function yardStateOf_(d) {
-  const st = String((d && d.yard && d.yard.state) || '');
-  return YARD_STATES_[st] ? st : '';
+function placementOf_(d) {
+  return (d && (d.placement || d.yard)) || null;
 }
 
-function adminSetYardState(token, qn, state) {
+function placementStateOf_(d) {
+  const st = String((placementOf_(d) && placementOf_(d).state) || '');
+  return PLACEMENT_STATES_[st] ? st : '';
+}
+
+function adminSetPlacementState(token, qn, state) {
   /* Yard work, so the yard permission — the crew who move the boat are the
      crew who record that they moved it. */
   const who = requireAuth_(token, 'keys');
@@ -4107,9 +4129,9 @@ function adminSetYardState(token, qn, state) {
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   const want = String(state || '');
-  if (!YARD_STATES_.hasOwnProperty(want)) return { ok: 0, error: 'Unknown yard state.' };
-  const had = yardStateOf_(d);
-  if (had === want) return { ok: 0, error: 'Already ' + (YARD_STATES_[want].label.toLowerCase()) + '.' };
+  if (!PLACEMENT_STATES_.hasOwnProperty(want)) return { ok: 0, error: 'Unknown state.' };
+  const had = placementStateOf_(d);
+  if (had === want) return { ok: 0, error: 'Already ' + (PLACEMENT_STATES_[want].label.toLowerCase()) + '.' };
 
   /* THE LIABILITY GATE, and the only state it applies to. "Pulled" is a claim
      that we put hands on the unit and took it out of the water, so it cannot
@@ -4127,15 +4149,17 @@ function adminSetYardState(token, qn, state) {
     }
   }
 
-  d.yard = { state: want, at: new Date().toISOString(), by: who.name,
-             prev: had, prevAt: String((d.yard && d.yard.at) || '') };
+  const prev = placementOf_(d);
+  d.placement = { state: want, at: new Date().toISOString(), by: who.name,
+                  prev: had, prevAt: String((prev && prev.at) || '') };
+  delete d.yard;   // fully migrated onto d.placement the moment anything writes it
   /* Payload only. Moving a boat is not a change to what it costs: no status,
      no re-price, no new PDF. */
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
-  auditLog_(who.name, 'Yard state on ' + d.quoteNo + ': ' +
-    (YARD_STATES_[had].label) + ' → ' + YARD_STATES_[want].label);
-  return { ok: 1, msg: YARD_STATES_[want].label + ' — recorded.',
-           yard: { state: want, at: d.yard.at, by: who.name } };
+  auditLog_(who.name, 'Harbor Haul Out state on ' + d.quoteNo + ': ' +
+    (PLACEMENT_STATES_[had].label) + ' → ' + PLACEMENT_STATES_[want].label);
+  return { ok: 1, msg: PLACEMENT_STATES_[want].label + ' — recorded.',
+           placement: { state: want, at: d.placement.at, by: who.name } };
 }
 
 
@@ -4143,46 +4167,53 @@ function adminSetYardState(token, qn, state) {
    One short, current, loud line per unit — "no keys, do not tow", "owner says
    don't touch the canvas", "bad bunk on the trailer".
 
-   IT IS NOT THE YARD LOG AND IT IS NOT THE STAFF NOTE, and keeping the three
-   apart is the whole reason it exists:
+   IT IS NOT THE HARBOR HAUL OUT LOG AND IT IS NOT THE STAFF NOTE, and keeping
+   the three apart is the whole reason it exists:
 
-     staffNote   the office's private reasoning about a quote. One box, rewritten
-                 as understanding changes. Nobody in the yard reads it.
-     yardNotes   append-only history. What was observed, when, by whom. Never
-                 edited, so it accumulates — which is exactly what you do NOT
-                 want somebody scanning a list for.
-     yardAlert   the one thing somebody must know BEFORE they touch this boat.
-                 Set, replaced, and cleared when it stops being true.
+     staffNote        the office's private reasoning about a quote. One box,
+                      rewritten as understanding changes. Nobody in the yard
+                      reads it.
+     placementNotes   append-only history. What was observed, when, by whom.
+                      Never edited, so it accumulates — which is exactly what
+                      you do NOT want somebody scanning a list for.
+     placementAlert   the one thing somebody must know BEFORE they touch this
+                      boat. Set, replaced, and cleared when it stops being
+                      true.
 
    An alert that is a paragraph is not an alert, so it is capped short enough
    to read at a glance on a list row. An alert nobody clears becomes wallpaper,
    so clearing it is one tap from the same place it is set.
 ========================================================================= */
-const YARD_ALERT_MAX_ = 160;
+const PLACEMENT_ALERT_MAX_ = 160;
 
-function adminSetYardAlert(token, qn, text) {
+function placementAlertOf_(d) {
+  return (d && (d.placementAlert || d.yardAlert)) || null;
+}
+
+function adminSetPlacementAlert(token, qn, text) {
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   const t = String(text === null || text === undefined ? '' : text).replace(/\s+/g, ' ').trim();
-  if (t.length > YARD_ALERT_MAX_) {
+  if (t.length > PLACEMENT_ALERT_MAX_) {
     return { ok: 0, error: 'An alert has to be readable at a glance — keep it under ' +
-             YARD_ALERT_MAX_ + ' characters. Anything longer belongs in the yard log.' };
+             PLACEMENT_ALERT_MAX_ + ' characters. Anything longer belongs in the Harbor Haul Out log.' };
   }
-  const had = String((d.yardAlert && d.yardAlert.text) || '');
+  const had = String((placementAlertOf_(d) && placementAlertOf_(d).text) || '');
   if (t === had) return { ok: 0, error: 'Nothing changed.' };
-  if (t) d.yardAlert = { text: t, at: new Date().toISOString(), by: who.name };
-  else delete d.yardAlert;
+  if (t) d.placementAlert = { text: t, at: new Date().toISOString(), by: who.name };
+  else delete d.placementAlert;
+  delete d.yardAlert;   // migrate off the pre-rename field regardless of outcome
   /* Payload only — an alert says nothing about what the unit costs. */
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
   /* The wording goes in the log on purpose: the alert itself is overwritten
      and cleared, so without this there would be no record that anybody was
      ever warned about the canvas. */
-  auditLog_(who.name, t ? 'Yard alert set on ' + d.quoteNo + ': "' + t + '"'
-                        : 'Yard alert cleared on ' + d.quoteNo + ' (was: "' + had + '")');
+  auditLog_(who.name, t ? 'Harbor Haul Out alert set on ' + d.quoteNo + ': "' + t + '"'
+                        : 'Harbor Haul Out alert cleared on ' + d.quoteNo + ' (was: "' + had + '")');
   return { ok: 1, msg: t ? 'Alert set.' : 'Alert cleared.',
-           alert: t ? { text: t, at: d.yardAlert.at, by: who.name } : null };
+           alert: t ? { text: t, at: d.placementAlert.at, by: who.name } : null };
 }
 
 function adminSetStaffNote(token, qn, note) {
@@ -4361,25 +4392,29 @@ function adminLookup(token, qn) {
       at: String(d.termsAcceptedAt || (d.state && d.state.termsAcceptedAt) || '')
     },
     keyLoc: d.keyLoc || '', hhoAddr: d.hhoAddr || '',
-    /* Where this unit is in the season — see YARD_STATES_. */
-    yard: { state: yardStateOf_(d), at: String((d.yard && d.yard.at) || ''),
-            by: String((d.yard && d.yard.by) || '') },
-    /* Whether this unit is cleared to pull — the SAME answer the yard app and
-       the printed sheets get, from the same function, so the console can offer
-       "Mark pulled" with the gate on it rather than working the gate out for
-       itself or going without. */
-    yardAuth: haulAuth_(paid > 0.005, !!d.contractUrl),
-    yardAlert: d.yardAlert
-      ? { text: String(d.yardAlert.text || ''), at: String(d.yardAlert.at || ''),
-          by: String(d.yardAlert.by || '') }
+    /* Where this unit is in the season — see PLACEMENT_STATES_. Named
+       `placement`, not `hho`: that abbreviation already belongs to Heritage
+       Harbor Ottawa (hhoAddr, just above) and reusing it for Harbor Haul Out
+       would collide. */
+    placement: { state: placementStateOf_(d), at: String((placementOf_(d) && placementOf_(d).at) || ''),
+            by: String((placementOf_(d) && placementOf_(d).by) || '') },
+    /* Whether this unit is cleared to pull — the SAME answer Harbor Haul Out
+       and the printed sheets get, from the same function, so the console can
+       offer "Mark pulled" with the gate on it rather than working the gate
+       out for itself or going without. */
+    pullAuth: haulAuth_(paid > 0.005, !!d.contractUrl),
+    placementAlert: placementAlertOf_(d)
+      ? { text: String(placementAlertOf_(d).text || ''), at: String(placementAlertOf_(d).at || ''),
+          by: String(placementAlertOf_(d).by || '') }
       : null,
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
-    /* The yard log — append-only, one entry per observation, newest last. Same
-       privacy bar as the staff note: it is written standing next to the boat
-       and its value is that nobody is composing it for a customer to read. */
-    yardNotes: (d.yardNotes || []).map(function (n) {
+    /* The Harbor Haul Out log — append-only, one entry per observation, newest
+       last. Same privacy bar as the staff note: it is written standing next
+       to the boat and its value is that nobody is composing it for a customer
+       to read. */
+    placementNotes: (d.placementNotes || d.yardNotes || []).map(function (n) {
       return { id: String(n.id || ''), ts: String(n.ts || ''), by: String(n.by || ''),
                text: String(n.text || ''), audioUrl: String(n.audioUrl || ''),
                transcript: String(n.transcript || ''), tstatus: String(n.tstatus || ''),
@@ -4405,7 +4440,7 @@ function adminLookup(token, qn) {
            No" on every golf cart. */
         trailerApplies: !isLandUnit_(d),
         /* Is there a trailer location to record or show? One answer, read by
-           the console's input and the yard app's row alike. */
+           the console's input and Harbor Haul Out's row alike. */
         needsTrailerLoc: needsTrailerLoc_(d, st, trailerLoc),
         needsKeys: !isBike_(d),
         /* Owning a trailer does not mean the boat is on it — see
@@ -4553,7 +4588,7 @@ function recordEmail_(sh, rowNum, d, kind, by) {
    ---------------------------------------------------------------------------
    The two holds do different jobs and both are wanted: the reminder marker
    keeps the 9am nudge off it and restarts the ten days from this send, while
-   IMPORT_TAB keeps it out of the storage view, the yard app, the printed
+   IMPORT_TAB keeps it out of the storage view, Harbor Haul Out, the printed
    haul-out sheets, the balance report and the scan-to-sign lookup. (Not the
    quote page's loader: that one reads a draft on purpose, and a save from it
    leaves the row parked — step 3 of doPost.) Releasing only the marker would
@@ -4740,7 +4775,7 @@ const MAX_UPLOAD_BYTES_ = 25 * 1024 * 1024;
 
    WHAT THE BROWSER GETS IS A CAPABILITY, NOT A CREDENTIAL. The session URI is
    good for exactly one file, into exactly one folder we chose, and expires. The
-   OAuth token never leaves this script — check-yard-app.js asserts that, because
+   OAuth token never leaves this script — check-harbor-haul-out.js asserts that, because
    handing the token out would be handing over the whole Drive.
 
    The CORS leg was probed before building (the upload endpoint echoes our
@@ -5978,7 +6013,7 @@ function adminRepriceApply(token, only, first) {
    legal, one financial, usually two different people in the shop.
 
    THIS LIVES ON THE SERVER because three surfaces now ask the question: the
-   staff console, the printed haul-out sheet, and the yard app. A copy per
+   staff console, the printed haul-out sheet, and Harbor Haul Out. A copy per
    surface is a liability rule that can go stale on two of them without anybody
    noticing, and the one that goes stale is the one that clears a boat it
    should not have. The clients read the answer; none of them computes it.
@@ -6040,7 +6075,7 @@ function adminStorageView(token) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
-            trailerLoc = '', notes = 0, yardState = '', yardAt = '', alert = '';
+            trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -6059,16 +6094,16 @@ function adminStorageView(token) {
           keys = String((st && st.keyLoc !== undefined ? st.keyLoc : pd.keyLoc) || '');
           slip = String((st && st.slipNo !== undefined ? st.slipNo : pd.slipNo) || '');
           trailerLoc = String((st && st.trailerLoc !== undefined ? st.trailerLoc : pd.trailerLoc) || '');
-          yardState = yardStateOf_(pd);
-          yardAt = String((pd.yard && pd.yard.at) || '');
+          placementState = placementStateOf_(pd);
+          placementAt = String((placementOf_(pd) && placementOf_(pd).at) || '');
           /* Short by construction, so carrying it on every row costs nothing
              and saves the crew opening a unit to find out it was urgent. */
-          alert = String((pd.yardAlert && pd.yardAlert.text) || '');
+          alert = String((placementAlertOf_(pd) && placementAlertOf_(pd).text) || '');
           /* The COUNT only. The notes themselves are the detail screen's job —
              shipping every note of every quote through the list would put this
              call straight back over the edge the payload column already pushed
              it over once. */
-          notes = (pd.yardNotes || []).length;
+          notes = (pd.placementNotes || pd.yardNotes || []).length;
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
         } catch (e) {}
@@ -6088,8 +6123,8 @@ function adminStorageView(token) {
           trailerLoc: trailerLoc, notes: notes, phone: fmtPhone(String(r[COL.PHONE - 1] || '')),
           /* Decided here, once, and read by every client. See haulAuth_. */
           auth: haulAuth_(paid > 0.005, contract),
-          /* Which of the yard app's three lists this unit is on. */
-          yardState: yardState, yardAt: yardAt,
+          /* Which of Harbor Haul Out's three lists this unit is on. */
+          placementState: placementState, placementAt: placementAt,
           /* The one thing somebody must know before touching this boat. */
           alert: alert,
           /* Signed agreement on file. Deposit taken and this still false is the
@@ -8169,7 +8204,7 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
 
 /* Is there a trailer for the crew to go and find?
    Asking that of a unit that cannot have one is not a harmless extra row: the
-   yard app renders an unfilled value in its missing-information red, so the
+   Harbor Haul Out renders an unfilled value in its missing-information red, so the
    crew reads a settled fact as a gap somebody forgot to fill in. Chris
    reported exactly that from the yard.
 

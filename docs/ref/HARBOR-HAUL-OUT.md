@@ -1,10 +1,10 @@
-# The yard app
+# Harbor Haul Out
 
-`yard/index.html` — the haul-out list as something you open on a phone,
+`harbor-haul-out/index.html` — the haul-out list as something you open on a phone,
 standing next to the boat. Installable (Add to Home Screen), PIN-gated,
 and deliberately narrow.
 
-*Detail for `yard/index.html` lives here rather than in `CLAUDE.md` so it is
+*Detail for `harbor-haul-out/index.html` lives here rather than in `CLAUDE.md` so it is
 read when it is relevant. `tools/check-docs-coverage.js` fails if any of it
 goes missing.*
 
@@ -28,9 +28,14 @@ is brought to storage it should be moved to a 3rd list."*
 
 ### The state, and why it is a plain field
 
-`d.yard = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'` or
-`'stored'` (`YARD_STATES_`). One field decides the list, so a unit can never be
-on two at once or fall off all three — `check-yard-app.js` walks every
+`d.placement = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'`
+or `'stored'` (`PLACEMENT_STATES_`). Named `placement`, not `hho`: `hho`
+already means Heritage Harbor Ottawa elsewhere in the pricing engine, and
+reusing it here would recreate the exact kind of collision this rename exists
+to remove. Reads fall back to the pre-rename `d.yard` field, so a quote saved
+before the rename keeps its season progress; every write lands on
+`d.placement`. One field decides the list, so a unit can never be on two at
+once or fall off all three — `check-harbor-haul-out.js` walks every
 state × slip combination and asserts exactly that, plus that an unrecognised
 state falls back to a real list rather than making a boat disappear.
 
@@ -39,10 +44,10 @@ use. Those are corrections to what the customer told us: they feed
 `effectiveState_` and they re-run the pricing engine. This is not a correction
 and not an input to a price — it is a fact about a day's work. Journalling it
 would put a re-price in the path of somebody tapping "stored" with cold hands,
-for nothing. The guard fails if `adminSetYardState` ever grows a
+for nothing. The guard fails if `adminSetPlacementState` ever grows a
 `savePdf_`/`recomputeTotals_`/`rebuildLinesFromState_` call.
 
-It **is** carried across a customer save, like the payments and the yard log.
+It **is** carried across a customer save, like the payments and the Harbor Haul Out log.
 The customer's browser has never heard of it, so their next save would
 otherwise wipe the season's progress and put boats that are already in a
 building back on the crew's to-do list.
@@ -56,10 +61,10 @@ the only person who can record the pull is the one whose phone just failed.
 
 | Transition | In the app | On the console | Gated? |
 |---|---|---|---|
-| **Pulled** | button on the **opened unit** only | Yard status card | yes, identically |
-| **Dropped off** | — | Yard status card | no |
-| **Stored** | one tap on the To store row, or the opened unit | Yard status card | no |
-| **Undo** | opened unit, any state | Yard status card | no |
+| **Pulled** | button on the **opened unit** only | Harbor Haul Out status card | yes, identically |
+| **Dropped off** | — | Harbor Haul Out status card | no |
+| **Stored** | one tap on the To store row, or the opened unit | Harbor Haul Out status card | no |
+| **Undo** | opened unit, any state | Harbor Haul Out status card | no |
 
 Two of those placements are deliberate and were changed after the first build:
 
@@ -74,7 +79,7 @@ Two of those placements are deliberate and were changed after the first build:
   happen. The app must still **read** the state — it is how a unit reaches the
   To store list without ever having been in the water — it just cannot set it.
 
-`check-yard-app.js` asserts both from the rendered markup rather than from the
+`check-harbor-haul-out.js` asserts both from the rendered markup rather than from the
 helpers, because a row action is a two-line thing to reinstate by hand and the
 helper is still sitting there. It also asserts the console kept "Mark dropped
 off", since the app gave it up on that understanding.
@@ -83,7 +88,7 @@ off", since the app gave it up on that understanding.
 
 Marking a unit **pulled** is a claim that we put hands on it and took it out of
 the water, so it is refused for anything not `cleared` — in the app the opened
-unit shows the stamp where the button would be, and `adminSetYardState`
+unit shows the stamp where the button would be, and `adminSetPlacementState`
 re-checks `haulAuth_` server-side, because a client is not a permission.
 Otherwise the app becomes the place a rule violation gets written down.
 
@@ -124,7 +129,7 @@ That rule now has three readers — the staff console, the printed haul-out
 sheet, and this app. A copy per reader is a liability rule free to go stale on
 two of them, and the one that goes stale is the one that clears a boat nobody
 signed for. So there is exactly one copy, on the server, and
-`tools/check-yard-app.js` fails if this page looks like it is working the
+`tools/check-harbor-haul-out.js` fails if this page looks like it is working the
 verdict out from `contract` and `deposit` itself.
 
 - **An unstamped row reads as BLOCKED**, on the phone and on the console
@@ -143,9 +148,9 @@ verdict out from `contract` and `deposit` itself.
 ## The alert
 
 One short, current, loud line per unit — *"no keys, do not tow"*, *"owner says
-don't touch the canvas"*, *"bad bunk on the trailer"*. `d.yardAlert`.
+don't touch the canvas"*, *"bad bunk on the trailer"*. `d.placementAlert`.
 
-**Set and cleared on the console only. The yard app displays it and cannot
+**Set and cleared on the console only. Harbor Haul Out displays it and cannot
 touch it.** Chris's call, and it is the one place the app is deliberately
 read-only: the alert is the loud thing, and it stays under one pair of eyes
 rather than being rewritten by whoever is standing nearest the boat. The guard
@@ -170,11 +175,11 @@ why this is a third one rather than a reuse:
 | | What it is | Shape |
 |---|---|---|
 | `staffNote` | the office's private reasoning about a quote | one box, rewritten |
-| `yardNotes` | what was observed, when, by whom | append-only, accumulates |
-| `yardAlert` | what you must know **before touching this boat** | set, replaced, cleared |
+| `placementNotes` | what was observed, when, by whom | append-only, accumulates |
+| `placementAlert` | what you must know **before touching this boat** | set, replaced, cleared |
 
 An alert that is a paragraph is not an alert, so it is capped at 160
-characters and anything longer is pushed to the yard log. An alert nobody
+characters and anything longer is pushed to the Harbor Haul Out log. An alert nobody
 clears becomes wallpaper, so clearing it is one tap from where it is set and
 the Clear button disables itself when there is nothing to clear.
 
@@ -196,10 +201,10 @@ or in the public scan-to-sign lookup — all four checked — and carried across
 customer save, or their next save would take a live warning down with nobody
 deciding to.
 
-## The yard log
+## The Harbor Haul Out log
 
 Append-only, one entry per observation, each stamped with who wrote it and
-when. `adminAddYardNote` is the only way in; there is no edit and no delete.
+when. `adminAddPlacementNote` is the only way in; there is no edit and no delete.
 
 - **It is not the staff note.** The staff note is a single box the office
   rewrites as its understanding of a quote changes. This is a stream of things
@@ -216,7 +221,7 @@ when. `adminAddYardNote` is the only way in; there is no edit and no delete.
   posted payload carries none — it is preserved explicitly like `payments` and
   the staff note. Losing it would destroy observations nobody can reconstruct,
   silently, right after somebody photographs a crack.
-- Written from the app or from the console's **Yard log** card; both go through
+- Written from Harbor Haul Out or from the console's **Harbor Haul Out log** card; both go through
   the same endpoint, gated on the `keys` permission — recording what a unit
   looks like is yard work, the same bar as keys and slip.
 
@@ -250,7 +255,7 @@ absent, or the colour stops meaning anything.
 
 ## Measurements
 
-*"We should have the ability to update dimensions in the yard app."* The tape
+Chris: *"We should have the ability to update dimensions in Harbor Haul Out."* The tape
 measure is in the yard, so the correction is made in the yard. The card sits on
 the opened unit, under **Measurements**, and runs the same two endpoints the
 console's dimension editor does — `adminDimsPreview` then `adminDimsApply` —
@@ -263,7 +268,7 @@ Three things are different here, and all three are the sort that get quietly
 relaxed later:
 
 - **It is its own permission — `measure`, not `keys` and not `adjust`.**
-  Writing a yard note must never buy the ability to re-price a quote, and
+  Writing a Harbor Haul Out note must never buy the ability to re-price a quote, and
   inventing a charge (`adjust`) is a different act from reading a tape over a
   hull. An unset `measure` falls back to `adjust`, so **deploying this changes
   nobody's access on the day**: Chris and Jeff can re-measure because they
@@ -282,13 +287,13 @@ relaxed later:
 - **The app sends measurements only.** The console's editor can also change
   motor counts and override the storage location; those are specification
   changes made at a desk with the customer on the phone, and they stay there.
-  The yard sends the engine's own `DIM_FIELDS` plus *stored on its trailer*.
+  Harbor Haul Out sends the engine's own `DIM_FIELDS` plus *stored on its trailer*.
   A storage move still happens — it just *follows from* the measurements
   rather than being chosen, and the diff says so before the tap.
 
 Because the field list comes from the server (`DIM_FIELDS` in the engine), a
-dimension that starts mattering to the price appears in the yard without this
-file or `yard/index.html` changing.
+dimension that starts mattering to the price appears in Harbor Haul Out without
+this file or `harbor-haul-out/index.html` changing.
 
 Applying reloads the list **before** re-opening the unit: the row's dimensions,
 total and possibly its storage tab have all just changed, and re-opening
@@ -325,7 +330,7 @@ is filed first and kept whatever happens next.
   back out of Drive and pushing it to AssemblyAI is a Drive read and two
   uploads; the person who tapped Save is standing outside holding a phone. A
   one-off trigger is the only way an Apps Script request can start work it does
-  not then wait for. `check-yard-app.js` fails if `adminAddYardNote` ever grows
+  not then wait for. `check-harbor-haul-out.js` fails if `adminAddPlacementNote` ever grows
   a `UrlFetchApp` call.
 - **A recording on its own is a note.** No typed words required — that is the
   whole point for somebody whose hands are full. Equally, audio that cannot be
@@ -354,7 +359,7 @@ enough to be worth it:
   through to the customer quote-loader — otherwise AssemblyAI would be told
   *"Enter both your quote number and last name."* and read it as success.
   Pinned by the guard.
-- **The shared secret is minted on this deployment** (`YARD_HOOK_KEY` in Script
+- **The shared secret is minted on this deployment** (`PLACEMENT_HOOK_KEY` in Script
   Properties, generated once) and a wrong key gets `{ok:0}` and nothing else.
 - **The id rides the POST body, not the query string**, so it stays out of
   execution logs — the same choice the service tracker made.
@@ -483,7 +488,7 @@ became of it instead of guessing.
   client's side of that contract, in about fifty lines.
 - **`API_GET_OK` here must stay a subset of `CONSOLE_GET_FNS_` there.** The
   server refuses a GET naming a write, so a wrong entry is a retry that can only
-  ever fail — in the yard, with nobody to explain it. `check-yard-app.js` reads
+  ever fail — in the yard, with nobody to explain it. `check-harbor-haul-out.js` reads
   both and asserts the subset, and asserts the writes are absent from it.
 - **A write that goes unanswered is never re-sent.** The reply cannot prove
   whether it ran. The app says so in as many words and tells staff to refresh
@@ -498,7 +503,7 @@ became of it instead of guessing.
 It shares `qwtok` / `qwme` with the staff console on purpose: same origin, so
 signing in to either signs you in to both. One PIN entry per phone per shift.
 A cached token may be hours stale, so the first load finds out and drops back
-to the PIN screen rather than showing an empty yard.
+to the PIN screen rather than showing an empty list.
 
 The `keys` permission gates writing. `canWrite()` mirrors `canKeys_`'s fallback
 for roster entries written before that permission existed — `ME` is cached in

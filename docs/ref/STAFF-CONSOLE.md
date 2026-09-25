@@ -164,15 +164,15 @@ it can be texted.
   started relying on is a fallback that fails the day it is needed.
 
 
-## Yard alert and yard status (console)
+## Harbor Haul Out alert and status (console)
 
-Two cards the office owns that drive what the crew sees in the yard app,
+Two cards the office owns that drive what the crew sees in Harbor Haul Out,
 both gated on `keys`:
 
-- **Yard alert** — the one line somebody must know before touching the boat.
+- **Harbor Haul Out alert** — the one line somebody must know before touching the boat.
   Shown on the crew's list, at the top of the unit in the app, and on both
-  printed sheets. Full rules: `docs/ref/YARD-APP.md` § *The alert*.
-- **Yard status** — every transition, including `pulled`. `dropped off` is
+  printed sheets. Full rules: `docs/ref/HARBOR-HAUL-OUT.md` § *The alert*.
+- **Harbor Haul Out status** — every transition, including `pulled`. `dropped off` is
   most naturally recorded here, since a customer driving their boat in is
   something the counter sees first, and it is what puts a trailered unit on the
   crew's **To store** list without it ever having been in the water. `pulled`
@@ -180,7 +180,7 @@ both gated on `keys`:
   (`CLAUDE.md` §9) — when somebody's phone glitches in the yard and they say it
   is out, the person they told has to be able to record it.
   **The gate does not relax for the console**: a unit that is not cleared shows
-  the stamp instead of a button, and `adminSetYardState` re-checks `haulAuth_`
+  the stamp instead of a button, and `adminSetPlacementState` re-checks `haulAuth_`
   server-side whichever surface asked. The gate is about the boat, never about
   who is holding the phone.
 
@@ -243,9 +243,9 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   where it is.
 - **But "where is the trailer" is only a question when there is one.**
   `needsTrailerLoc_` decides, on the server, and both the console's field and
-  the yard app's row follow it — neither client may work it out again. It
+  Harbor Haul Out's row follow it — neither client may work it out again. It
   started life as `!isBike_(d)`, which put an unanswerable row on every boat
-  blocked on stands; the yard app renders an unanswered field in its
+  blocked on stands; Harbor Haul Out renders an unanswered field in its
   missing-information red, so a settled fact read as a gap somebody forgot to
   fill in. Chris reported it from the yard.
   - **Boat or jet ski → follow `hasTrailer`.** The quote page puts the trailer
@@ -256,7 +256,7 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
     one might turn up towed; Chris corrected that flatly, and it had put a red
     *"— not recorded —"* on every cart, which is the same noise aimed at a
     different unit. `trailerApplies` (`!isLandUnit_`) carries the same fact for
-    the *"On a trailer"* row, which the yard app now drops entirely for a land
+    the *"On a trailer"* row, which Harbor Haul Out now drops entirely for a land
     unit rather than printing "No" on every cart.
     `sanitizeMeasured_` refuses a `hasTrailer` change on one, so the rule holds
     against a crafted request too — a trailered cart would move its deposit
@@ -321,7 +321,7 @@ tab, asked once by the places that must exclude both:
 | `bulkTargets_` | the send-to-all recipient list |
 | `balanceReportCheck` | a draft owes nothing |
 | `repriceScan_` | already at today's rates — the engine priced it as it was read |
-| `adminStorageView` | the storage view, the yard app and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
+| `adminStorageView` | the storage view, Harbor Haul Out and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
 | `signLookup_` | the public scan-to-sign lookup; a draft is not a signer |
 | `doGet` launchpref | a spring button on a quote nobody sent |
 
@@ -394,7 +394,7 @@ The bulk import landed alongside the per-row **reminder hold**
 
 - the **marker** keeps the 9am nudge off a row and, when a human finally emails
   the customer, restarts the ten days from *that* send;
-- the **tab** keeps the row out of the storage view, the yard app, the printed
+- the **tab** keeps the row out of the storage view, Harbor Haul Out, the printed
   haul-out sheets, the balance report, send-to-all and the scan-to-sign
   lookup. (Not the quote page's loader — see below: opening a draft is a pull,
   and it leaves the row parked.)
@@ -784,11 +784,11 @@ pay+email+photos+keys; Marina → photos only. Nobody outside the two admins has
 ### Who can re-measure
 
 `adminDimsPreview` / `adminDimsApply` are gated on **`measure`**, not `adjust`.
-They were on `adjust` until the yard app grew a Measurements card, and that
+They were on `adjust` until Harbor Haul Out grew a Measurements card, and that
 would have meant the only people who could correct a dimension were the two who
 never hold the tape.
 
-- **It is not `keys`.** Writing a yard note or recording a key location must
+- **It is not `keys`.** Writing a Harbor Haul Out note or recording a key location must
   never buy the ability to re-price a quote.
 - **It is not `adjust`.** `adjust` is inventing a charge out of nothing.
   Measuring is reading a tape over a hull. They are different acts and they
@@ -801,8 +801,8 @@ never hold the tape.
   exactly where `keys` stops: **Marina has neither**, and photos alone buys
   nothing. An explicit setting always wins, including turning it OFF for
   somebody who could otherwise record yard facts.
-  `permsOf()` in the console and `canMeasure()` in the yard app mirror that
-  fallback — the yard app routes it through its own `canWrite()`, which is
+  `permsOf()` in the console and `canMeasure()` in Harbor Haul Out mirror that
+  fallback — Harbor Haul Out routes it through its own `canWrite()`, which is
   already its copy of `canKeys_`, so the two cannot drift. `ME` is cached in
   localStorage, which is why the mirror has to exist at all.
   `tools/check-perms-pause.js` runs the real roster through it and asserts

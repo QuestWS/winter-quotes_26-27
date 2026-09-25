@@ -28,14 +28,14 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
 | `favicon.png` | GitHub Pages root | **The Quest mark — every page links this one file** |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
-| `yard/index.html` | GitHub Pages `/yard/` | **The yard app** — the haul-out list on a phone, installable, PIN-gated |
-| `yard/manifest.json` | GitHub Pages `/yard/` | What makes the yard app installable (Add to Home Screen) |
+| `harbor-haul-out/index.html` | GitHub Pages `/harbor-haul-out/` | **Harbor Haul Out** — the haul-out list on a phone, installable, PIN-gated |
+| `harbor-haul-out/manifest.json` | GitHub Pages `/harbor-haul-out/` | What makes Harbor Haul Out installable (Add to Home Screen) |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
 - **Repo:** `QuestWS/winter-quotes_26-27`
 - **Customer page:** `https://questws.github.io/winter-quotes_26-27/`
 - **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
-- **Yard app:** `https://questws.github.io/winter-quotes_26-27/yard/` — *add to home screen; same PIN as the console*
+- **Harbor Haul Out** (renamed from "the yard app"): `https://questws.github.io/winter-quotes_26-27/harbor-haul-out/` — *add to home screen; same PIN as the console. `/yard/` redirects here; re-add to home screen for the standalone icon.*
 - **Scan to sign:** `https://questws.github.io/winter-quotes_26-27/sign.html` — *the URL the counter QR code is generated against*
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`
@@ -62,7 +62,7 @@ It appears in **five places that must stay in sync**:
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
 4. `sign.html` → `const API_URL`
-5. `yard/index.html` → `const API_URL`
+5. `harbor-haul-out/index.html` → `const API_URL`
 
 Same URL serves several behaviors: plain `/exec` (quote page lookups + console
 API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a
@@ -198,7 +198,7 @@ request. Open the one that covers what you are about to change — and open it
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
 | `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
 | `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, yard printing |
-| `docs/ref/YARD-APP.md` | `yard/index.html` — the two lists, the yard log, dictation, photos, and why the app decides nothing |
+| `docs/ref/HARBOR-HAUL-OUT.md` | `harbor-haul-out/index.html` — the two lists, the Harbor Haul Out log, dictation, photos, and why the app decides nothing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/adobe-webform-field-map.md` | The Adobe Sign hand-off — what pre-fills, the exact field names, the Adobe-side setup |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |

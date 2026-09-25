@@ -536,13 +536,13 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
                office sees and the yard does not, and it is what puts the unit
                on the crew's To store list. -->
           <!-- One short line the yard crew sees on their list and at the top of
-               the unit's screen. Not the yard log (append-only history) and not
-               the staff note (the office's private reasoning). -->
+               the unit's screen. Not the Harbor Haul Out log (append-only history)
+               and not the staff note (the office's private reasoning). -->
           <div class="card hide" id="alertCard">
-            <h2>Yard alert</h2>
+            <h2>Harbor Haul Out alert</h2>
             <div class="msg" style="margin:0 0 6px">The one thing somebody must know
               <b>before they touch this boat</b> — shown on the crew's list, at the top of the unit
-              in the yard app, and on the printed sheets. Keep it to one line, and
+              in Harbor Haul Out, and on the printed sheets. Keep it to one line, and
               <b>clear it when it stops being true</b>. The customer never sees it.</div>
             <div id="alertNow"></div>
             <input class="txt" id="alertText" maxlength="160" placeholder="e.g. no keys — do not tow">
@@ -553,27 +553,27 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="alertMsg"></div>
           </div>
 
-          <div class="card hide" id="yardStateCard">
-            <h2>Yard status</h2>
-            <div class="msg" style="margin:0 0 6px">Drives the three lists in the yard app.
+          <div class="card hide" id="placementStateCard">
+            <h2>Harbor Haul Out status</h2>
+            <div class="msg" style="margin:0 0 6px">Drives the three lists in Harbor Haul Out.
               Mark a unit <b>dropped off</b> when the customer brings it in — that is what puts it
               on the crew's <b>To store</b> list without it ever having been in the water.</div>
-            <div class="msg" id="yardStateNow" style="margin:0 0 8px"></div>
-            <div id="yardStateBtns"></div>
-            <div class="msg" id="yardStateMsg"></div>
+            <div class="msg" id="placementStateNow" style="margin:0 0 8px"></div>
+            <div id="placementStateBtns"></div>
+            <div class="msg" id="placementStateMsg"></div>
           </div>
 
-          <div class="card hide" id="yardLogCard">
-            <h2>Yard log</h2>
+          <div class="card hide" id="placementLogCard">
+            <h2>Harbor Haul Out log</h2>
             <div class="msg" style="margin:0 0 6px">Observations from the yard, newest last —
-              written from the yard app or here. <b>Append-only:</b> entries are never edited or
+              written from Harbor Haul Out or here. <b>Append-only:</b> entries are never edited or
               deleted, so two people can log the same boat without overwriting each other.
               The customer never sees this.</div>
-            <div id="yardLogList"></div>
-            <textarea class="txt" id="yardNoteText" rows="3"
+            <div id="placementLogList"></div>
+            <textarea class="txt" id="placementNoteText" rows="3"
               placeholder="e.g. gelcoat crack starboard bow, photographed"></textarea>
-            <button class="btn navy" id="yardNoteBtn" onclick="addYardNote()">Add to the log</button>
-            <div class="msg" id="yardNoteMsg"></div>
+            <button class="btn navy" id="placementNoteBtn" onclick="addPlacementNote()">Add to the log</button>
+            <div class="msg" id="placementNoteMsg"></div>
           </div>
 
           <div class="card hide" id="noteCard">
@@ -739,7 +739,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <div class="msg" style="margin-top:0">
           <b>Step 1</b> reads every file and writes a report to Drive — it writes no quotes.
           Read the report, delete any row you don't want, then <b>step 2</b> imports what is
-          left onto the <b>Import</b> tab. Imported quotes are invisible to the yard app, the
+          left onto the <b>Import</b> tab. Imported quotes are invisible to Harbor Haul Out, the
           haul-out sheets and the 9am reminder until you send one off. <b>No customer is emailed.</b></div>
         <div class="msg" id="bulkNow" style="margin:8px 0 0"></div>
         <div id="bulkReportLink" class="msg hide" style="margin:2px 0 0"></div>
@@ -1526,15 +1526,15 @@ function renderQuote(r){
   $('noteCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderStaffNote(r.staffNote);
   /* Same bar as the staff note and the keys card: yard work, not money. */
-  $('yardLogCard').classList.toggle('hide',!P.keys);
-  if(P.keys) renderYardLog(r.yardNotes);
+  $('placementLogCard').classList.toggle('hide',!P.keys);
+  if(P.keys) renderPlacementLog(r.placementNotes);
   $('alertCard').classList.toggle('hide',!P.keys);
-  window._alert=r.yardAlert||null;
+  window._alert=r.placementAlert||null;
   if(P.keys) renderAlert();
-  $('yardStateCard').classList.toggle('hide',!P.keys);
-  window._yardState=r.yard||{state:''};
-  window._yardAuth=r.yardAuth||null;
-  if(P.keys) renderYardState();
+  $('placementStateCard').classList.toggle('hide',!P.keys);
+  window._placementState=r.placement||{state:''};
+  window._pullAuth=r.pullAuth||null;
+  if(P.keys) renderPlacementState();
   $('keysCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
@@ -1608,19 +1608,19 @@ async function doDeleteQuote(){
   }catch(e){setMsg('delMsg',e.message,false);}
   b.disabled=false;
 }
-/* The yard log. Rendered newest LAST, the way a log reads — the newest entry
-   is the one you just wrote, and scrolling to it is how you confirm it landed.
-   Entries are never editable here: append-only is the guarantee, and an edit
-   box would quietly break it. */
-function renderYardLog(list){
-  window._yard=list||[];
-  const box=$('yardLogList');
+/* The Harbor Haul Out log. Rendered newest LAST, the way a log reads — the
+   newest entry is the one you just wrote, and scrolling to it is how you
+   confirm it landed. Entries are never editable here: append-only is the
+   guarantee, and an edit box would quietly break it. */
+function renderPlacementLog(list){
+  window._placementLog=list||[];
+  const box=$('placementLogList');
   if(!box) return;
-  if(!window._yard.length){
+  if(!window._placementLog.length){
     box.innerHTML='<div class="msg" style="padding:4px">Nothing logged yet.</div>';
     return;
   }
-  box.innerHTML=window._yard.map(n=>{
+  box.innerHTML=window._placementLog.map(n=>{
     let when=String(n.ts||'');
     if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
     /* Typed and dictated words are both shown and labelled — "did I say that
@@ -1636,9 +1636,9 @@ function renderYardLog(list){
       '</span>'+play+'<br>'+body+'</div>';
   }).join('');
 }
-/* The same four states the yard app shows, named the same way — the office and
-   the crew talking about different words for the same boat is how a unit ends
-   up recorded twice. */
+/* The same four states Harbor Haul Out shows, named the same way — the office
+   and the crew talking about different words for the same boat is how a unit
+   ends up recorded twice. */
 function renderAlert(){
   const a=window._alert;
   const t=String((a&&a.text)||'');
@@ -1656,7 +1656,7 @@ async function saveAlert(force){
   const b=$('alertBtn'); b.disabled=true;
   setMsg('alertMsg','Saving…');
   try{
-    const r=await api('yardAlert',[QN,t]);
+    const r=await api('placementAlert',[QN,t]);
     if(!r||!r.ok){ setMsg('alertMsg',(r&&r.error)||'Could not save that.',false); return; }
     window._alert=r.alert||null;
     renderAlert();
@@ -1664,16 +1664,16 @@ async function saveAlert(force){
   }catch(e){ setMsg('alertMsg',e.message,false); }
   finally{ b.disabled=false; }
 }
-const YSTATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
-function renderYardState(){
-  const y=window._yardState||{state:''};
+const PLACEMENT_STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+function renderPlacementState(){
+  const y=window._placementState||{state:''};
   const st=String(y.state||'');
   let when=String(y.at||'');
   if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
-  setMsg('yardStateNow','Right now: '+(YSTATE_LABEL[st]||st)+
+  setMsg('placementStateNow','Right now: '+(PLACEMENT_STATE_LABEL[st]||st)+
     (when?' · '+when+(y.by?' · '+y.by:''):''));
   const btn=(to,label,cls)=>'<button class="btn '+(cls||'ghost')+' sm" style="margin:0 6px 6px 0" '+
-    'onclick="setYardState('+JSON.stringify(to).replace(/"/g,'&quot;')+')">'+label+'</button>';
+    'onclick="setPlacementState('+JSON.stringify(to).replace(/"/g,'&quot;')+')">'+label+'</button>';
   let h='';
   /* EVERY transition is available here, "pulled" included.
      The counter and the shop are the same people at Quest — they cover for
@@ -1684,9 +1684,9 @@ function renderYardState(){
      whose phone just failed.
      What does NOT relax is the gate. A unit that is not cleared cannot be
      marked pulled from here either — the button shows why instead, and
-     adminSetYardState re-checks it server-side regardless of which surface
+     adminSetPlacementState re-checks it server-side regardless of which surface
      asked. The gate is about the boat, never about who is holding the phone. */
-  const a=window._yardAuth;
+  const a=window._pullAuth;
   if(st!=='pulled'&&st!=='stored'){
     h+=(a&&a.state==='cleared')
       ? btn('pulled','Mark pulled','navy')
@@ -1696,30 +1696,30 @@ function renderYardState(){
   if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
   if(st!=='stored') h+=btn('stored','Mark in storage');
   if(st) h+=btn('','Undo — back to not started');
-  $('yardStateBtns').innerHTML=h;
+  $('placementStateBtns').innerHTML=h;
 }
-async function setYardState(to){
-  setMsg('yardStateMsg','Saving…');
+async function setPlacementState(to){
+  setMsg('placementStateMsg','Saving…');
   try{
-    const r=await api('yardState',[QN,to]);
-    if(!r||!r.ok){ setMsg('yardStateMsg',(r&&r.error)||'Could not record that.',false); return; }
-    window._yardState=r.yard||{state:to};
-    renderYardState();
-    setMsg('yardStateMsg',r.msg,true); toast(r.msg);
-  }catch(e){ setMsg('yardStateMsg',e.message,false); }
+    const r=await api('placementState',[QN,to]);
+    if(!r||!r.ok){ setMsg('placementStateMsg',(r&&r.error)||'Could not record that.',false); return; }
+    window._placementState=r.placement||{state:to};
+    renderPlacementState();
+    setMsg('placementStateMsg',r.msg,true); toast(r.msg);
+  }catch(e){ setMsg('placementStateMsg',e.message,false); }
 }
-async function addYardNote(){
-  const t=($('yardNoteText').value||'').trim();
-  if(!t){ setMsg('yardNoteMsg','Type a note first.',false); return; }
-  const b=$('yardNoteBtn'); b.disabled=true; b.textContent='Saving…';
-  setMsg('yardNoteMsg','');
+async function addPlacementNote(){
+  const t=($('placementNoteText').value||'').trim();
+  if(!t){ setMsg('placementNoteMsg','Type a note first.',false); return; }
+  const b=$('placementNoteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('placementNoteMsg','');
   try{
-    const r=await api('yardNote',[QN,t]);
-    if(!r||!r.ok){ setMsg('yardNoteMsg',(r&&r.error)||'Could not save that.',false); return; }
-    $('yardNoteText').value='';
-    renderYardLog((window._yard||[]).concat([r.note]));
-    setMsg('yardNoteMsg',r.msg,true); toast('Logged');
-  }catch(e){ setMsg('yardNoteMsg',e.message,false); }
+    const r=await api('placementNote',[QN,t]);
+    if(!r||!r.ok){ setMsg('placementNoteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('placementNoteText').value='';
+    renderPlacementLog((window._placementLog||[]).concat([r.note]));
+    setMsg('placementNoteMsg',r.msg,true); toast('Logged');
+  }catch(e){ setMsg('placementNoteMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Add to the log'; }
 }
 /* Read-only: which terms version this customer accepted, and when. Quotes
@@ -2810,7 +2810,7 @@ function haulDate_(v){
    The sheet has to make all of it obvious to somebody holding it in the yard
    rather than reading it on a screen. */
 /* THE CONSOLE DOES NOT DECIDE THIS. The server does (haulAuth_ in the .gs),
-   because the console, the printed sheet and the yard app all ask the same
+   because the console, the printed sheet and Harbor Haul Out all ask the same
    question and a copy per surface is a liability rule free to go stale on two
    of them. These are accessors, not the rule.
 

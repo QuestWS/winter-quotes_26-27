@@ -174,6 +174,10 @@ textarea.txt{display:block;line-height:1.5;resize:vertical}
 cursor:pointer;transition:background .15s}
 .drop.hot{background:#E2ECF4;border-color:var(--navy)}
 .drop b{color:var(--navy)}
+/* The contract zone sits inside the quote card, under a one-line row, so it
+   uses the same affordance as the photo zone at a size that does not push the
+   line items off a phone screen. */
+.drop.slim{padding:11px 12px;font-size:12.5px;line-height:1.45;margin-top:8px}
 .seg{display:inline-flex;border:1.5px solid var(--navy);border-radius:10px;overflow:hidden;margin-bottom:10px}
 .seg button{border:0;background:#fff;color:var(--navy);padding:9px 18px;font-weight:700;cursor:pointer;font-size:14px}
 .seg button.on{background:var(--navy);color:#fff}
@@ -432,6 +436,8 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <span class="lab">Signed contract</span>
               <span id="contractCtl"></span>
             </div>
+            <div class="drop slim hide" id="contractDrop"></div>
+            <div class="msg hide" id="contractMsg" style="margin-top:6px"></div>
             <input type="file" id="contractFile" accept="application/pdf,image/*" class="hide">
             <details style="margin-top:10px" open><summary style="cursor:pointer;color:var(--muted);font-size:13px">Line items</summary>
               <div id="qLines" style="margin-top:6px"></div>
@@ -819,7 +825,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
-    <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log</p>
+    <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log<br><span id="apiTiming"></span></p>
   </div>
 </div>
 
@@ -872,7 +878,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
+const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -967,10 +973,35 @@ async function settleWrite_(rid){
   }
   return {};
 }
-async function api(fn,args){
+/* How long each call took, because "it feels slow" cannot be fixed and a number
+   can. `ms` is the whole round trip as this browser saw it; `serverMs` is what
+   Apps Script spent answering. The gap is start-up, the redirect and the
+   signal — which no amount of tidying spreadsheet reads will touch. The last
+   one is shown in the footer. */
+const API_TIMINGS=[];
+function apiTiming_(fn,t0,j){
+  const t={fn:fn,ms:Date.now()-t0,serverMs:(j&&typeof j.serverMs==='number')?j.serverMs:null};
+  API_TIMINGS.push(t); if(API_TIMINGS.length>12) API_TIMINGS.shift();
+  try{
+    const el=document.getElementById('apiTiming');
+    if(el) el.textContent='Last call: '+fn+' '+(t.ms/1000).toFixed(1)+'s'+
+      (t.serverMs!==null?' · '+(t.serverMs/1000).toFixed(1)+'s on the server':'');
+  }catch(e){ /* a diagnostic must never break the call it measured */ }
+}
+/* `opts.withQuote` (a quote number, writes only) asks for the refreshed quote on
+   the same answer, as `quote` — one trip for the save and the screen it lands
+   on, instead of the save and then a lookup. Absent on a replayed answer, so
+   afterWrite_ falls back to asking. */
+async function api(fn,args,opts){
+  const t0=Date.now();
+  try{ const j=await apiCall_(fn,args,opts); apiTiming_(fn,t0,j); return j; }
+  catch(e){ apiTiming_(fn,t0,null); throw e; }
+}
+async function apiCall_(fn,args,opts){
   const isRead=!!API_GET_OK[fn];
   const body={api:'console',fn,token:T,args:args||[]};
   if(!isRead) body.rid=apiRid_();
+  if(!isRead&&opts&&opts.withQuote) body.withQuote=opts.withQuote;
   let dropped=null;
   if(!API_USE_GET||!isRead){
     try{
@@ -1005,6 +1036,16 @@ async function api(fn,args){
   /* Both routes lost it, or this one is a write we will not repeat blindly. */
   throw new Error('The server didn\'t receive that request. Nothing was changed. '+
     'Reload the page and try again — if it keeps happening, tell Chris the console can\'t reach the backend.');
+}
+/* Redraw the open quote after a write: from the answer when it carried the
+   quote, otherwise with the lookup it always used. */
+async function afterWrite_(r){
+  /* Only onto the quote it was read for — if staff have moved on, ask for
+     whichever quote is open now, as before. */
+  if(r&&r.quote&&r.quote.ok&&String(r.quote.quoteNo||'').toUpperCase()===String(QN||'').toUpperCase()){
+    renderQuote(r.quote); return;
+  }
+  const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
 }
 function apiDone_(j){
   if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
@@ -1261,10 +1302,10 @@ async function togglePenalty(key,on){
   if(!confirm((on?'Apply ':'Remove ')+p.label+' on '+QN+'?\n\nThe total changes immediately. The customer is not emailed.')) return;
   setMsg('penaltyMsg','Saving…',null);
   try{
-    const r=await api('penalty',[QN,key,on?1:0]);
+    const r=await api('penalty',[QN,key,on?1:0],{withQuote:QN});
     if(!r||!r.ok){ setMsg('penaltyMsg',(r&&r.error)||'Could not do that.',false); return; }
     toast(p.label+(on?' applied':' removed'));
-    const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
+    await afterWrite_(r);
     setMsg('penaltyMsg',r.msg,true);
   }catch(e){ setMsg('penaltyMsg',e.message,false); }
 }
@@ -1399,13 +1440,13 @@ async function applyDims(){
   if(!QN||!window._dimsPending) return;
   const b=$('dimsApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
   try{
-    const r=await api('dimsApply',[QN,window._dimsPending,$('dimsNote').value.trim()]);
+    const r=await api('dimsApply',[QN,window._dimsPending,$('dimsNote').value.trim()],{withQuote:QN});
     if(!r||!r.ok){ setMsg('dimsMsg',(r&&r.error)||'Could not apply that.',false); return; }
     setMsg('dimsMsg',r.msg,true);
     toast(r.movedTo?('Re-priced and moved to '+r.movedTo):'Re-priced');
     $('dimsDiff').classList.add('hide');
     window._dimsPending=null;
-    await doLookup(QN);            // reload: totals, tab and dimensions all moved
+    await afterWrite_(r);          // reload: totals, tab and dimensions all moved
   }catch(e){ setMsg('dimsMsg',e.message,false); }
   finally{ if(b){ b.disabled=false; b.textContent='Apply this change'; } }
 }
@@ -1731,6 +1772,15 @@ function termsText(t){
   if(t.at){ const d=new Date(t.at); when=isNaN(d)?String(t.at):d.toLocaleString(); }
   return 'v'+(t.version||'?')+(when?' · '+when:'');
 }
+/* One expression for "may this person file a contract", because the row, the
+   drop zone and the post-upload re-render all have to agree. */
+function setContractMsg(text,isErr){
+  const m=$('contractMsg');
+  if(!m)return;
+  m.textContent=text||'';
+  m.classList.toggle('err',!!isErr);
+  m.classList.toggle('hide',!text);
+}
 function renderContract(P){
   const c=$('contractCtl');
   const canUp=!!P.pay;
@@ -1746,6 +1796,37 @@ function renderContract(P){
   if(!h) h='<span class="msg" style="margin:0">— not on file —</span>';
   else if(!window._contract) h='<span class="msg" style="margin:0 8px 0 0">— not on file —</span>'+h;
   c.innerHTML=h;
+  /* Drag-and-drop is a desktop convenience, but the same box is the tap
+     target in the yard, so it shows on a phone too and says both. */
+  setContractMsg('',false);
+  const d=$('contractDrop');
+  if(d){
+    d.classList.toggle('hide',!canUp);
+    d.innerHTML=window._contract
+      ? '<b>Drop a signed agreement here to replace it</b><br>or tap to choose a file — PDF or a photo of the signed page'
+      : '<b>Drop the signed agreement here</b><br>or tap to choose a file — PDF or a photo of the signed page';
+  }
+}
+/* The drop and the file picker meet here. A picker is filtered by accept=, a
+   drop is not: whatever is under the cursor arrives, so the checks that the
+   browser did for one path have to be done by hand for the other. Uploading
+   replaces the copy on file, which is why a two-file drop is refused rather
+   than quietly keeping the last one. */
+let CONTRACT_BUSY=false;
+function contractFiles(fileList){
+  if(CONTRACT_BUSY)return;
+  const files=[...(fileList||[])];
+  if(!files.length)return;
+  if(files.length>1){
+    setContractMsg('Drop one file — a second would replace the first, not add to it.',true);
+    return;
+  }
+  const f=files[0];
+  if(!/^application\/pdf$/.test(f.type||'')&&!/^image\//.test(f.type||'')){
+    setContractMsg('That is not a PDF or a photo. Scan or photograph the signed page and drop that.',true);
+    return;
+  }
+  uploadContract(f);
 }
 /* Sending it needs the email permission, an address to send to, and a signing
    link to put in the button. Asking somebody to sign an agreement we already
@@ -1756,18 +1837,22 @@ function syncSignAsk_(P){
   if(b) b.classList.toggle('hide',!(!window._contract&&signAskAllowed_(P)));
 }
 async function uploadContract(f){
-  const c=$('contractCtl');c.innerHTML='<span class="msg">Uploading…</span>';
+  CONTRACT_BUSY=true;
+  const d=$('contractDrop');
+  if(d)d.classList.remove('hot');
+  setContractMsg('Uploading '+f.name+'…',false);
   try{
     const b64=await fileToB64(f);
     const r=await api('uploadContract',[QN,f.name,b64,f.type]);
-    if(!r.ok){c.innerHTML='<span class="msg err">'+r.error+'</span>';return;}
+    if(!r.ok){setContractMsg(r.error,true);return;}
     window._contract=r.url;toast('Signed contract saved');
     /* Same permission set renderQuote used, so the row cannot come back with a
        button it had a second ago — and the emails-card button goes too, since
        there is now a contract on file. */
     renderContract(myPerms_());
     syncSignAsk_(myPerms_());
-  }catch(e){c.innerHTML='<span class="msg err">'+e.message+'</span>';}
+  }catch(e){setContractMsg(e.message,true);}
+  finally{CONTRACT_BUSY=false;}
 }
 function renderRequests(canAdj){
   const b=$('rqBlock');
@@ -1792,9 +1877,9 @@ async function priceReq(i){
   const label=window._rq[i];
   const amt=$('rqAmt'+i).value;
   if(!amt){toast('Enter a price first.');return;}
-  try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value]);
+  try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value],{withQuote:QN});
     if(!r.ok){toast(r.error);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){toast(e.message);}
 }
 function renderSeasonDone(canAdj){
@@ -1833,15 +1918,15 @@ function openSeasonDate(){const e=$('sdDateEd');e.classList.remove('hide');$('sd
 async function saveSeasonDate(){
   const d=$('sdDate').value;if(!d){setMsg('sdMsg','Pick a date first.',false);return;}
   setMsg('sdMsg','Saving…');
-  try{const r=await api('setSeasonDone',[QN,'date',d,$('sdNote').value]);
+  try{const r=await api('setSeasonDone',[QN,'date',d,$('sdNote').value],{withQuote:QN});
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
 async function setSeasonDoneChoice(choice){
-  try{const r=await api('setSeasonDone',[QN,choice,'','']);
+  try{const r=await api('setSeasonDone',[QN,choice,'',''],{withQuote:QN});
     if(!r.ok){setMsg('sdMsg',r.error,false);return;}
-    toast(r.msg);const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    toast(r.msg);await afterWrite_(r);
   }catch(e){setMsg('sdMsg',e.message,false);}
 }
 function renderLines(){
@@ -1861,19 +1946,19 @@ function editLine(i){
 }
 async function saveLine(){
   setMsg('lnMsg','Saving…');
-  try{const r=await api('editLine',[QN,LNIDX,'edit',$('lnAmt').value,$('lnLabel').value]);
+  try{const r=await api('editLine',[QN,LNIDX,'edit',$('lnAmt').value,$('lnLabel').value],{withQuote:QN});
     if(!r.ok){setMsg('lnMsg',r.error,false);return;}
     $('lnEdit').classList.add('hide');toast(r.msg);
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){setMsg('lnMsg',e.message,false);}
 }
 async function delLine(i){
   const l=window._lines.find(x=>x.i===i);
   if(!confirm('Remove this line?\n\n'+l.label+' — '+(l.amt?fmt$(l.amt):'incl.')))return;
-  try{const r=await api('editLine',[QN,i,'delete','','']);
+  try{const r=await api('editLine',[QN,i,'delete','',''],{withQuote:QN});
     if(!r.ok){toast(r.error);return;}
     toast(r.msg);
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){toast(e.message);}
 }
 
@@ -1938,10 +2023,10 @@ async function pvConfirm(){
 }
 async function act(btnId,msgId,fn,args){
   const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
-  try{const r=await api(fn,args);
+  try{const r=await api(fn,args,{withQuote:QN});
     if(!r.ok){setMsg(msgId,r.error,false);b.disabled=false;return;}
     setMsg(msgId,r.msg||'Done.',true);toast(r.msg||'Done');
-    const q=await api('lookup',[QN]);if(q.ok)renderQuote(q);
+    await afterWrite_(r);
   }catch(e){setMsg(msgId,e.message,false);}
   b.disabled=false;
 }
@@ -1972,8 +2057,23 @@ function wireDrop(){
   cam.onchange=()=>{queueFiles(cam.files);cam.value='';};
   const vid=$('videoInput');
   vid.onchange=()=>{queueFiles(vid.files);vid.value='';};
-  const cf=$('contractFile');
-  cf.onchange=()=>{if(cf.files.length)uploadContract(cf.files[0]);cf.value='';};
+  const cf=$('contractFile'),cd=$('contractDrop');
+  cf.onchange=()=>{contractFiles(cf.files);cf.value='';};
+  cd.onclick=()=>{if(!CONTRACT_BUSY)cf.click();};
+  cd.ondragover=e=>{e.preventDefault();if(!CONTRACT_BUSY)cd.classList.add('hot');};
+  cd.ondragleave=()=>cd.classList.remove('hot');
+  cd.ondrop=e=>{e.preventDefault();cd.classList.remove('hot');contractFiles(e.dataTransfer.files);};
+  /* A file dropped next to a zone instead of on it makes the browser navigate
+     away to that file, throwing away the open quote and the sign-in. These
+     swallow the misses; the zones above already preventDefault their own
+     drops, so they still work. */
+  const isFileDrag=e=>!!(e.dataTransfer&&[...(e.dataTransfer.types||[])].indexOf('Files')>-1);
+  /* Not over a real target: the importer's file input is visible and accepts a
+     dropped workbook, and cancelling its drop here would take that away. */
+  const strayDrag=e=>isFileDrag(e)&&!(e.target&&e.target.closest&&
+    e.target.closest('input[type=file], .drop'));
+  window.addEventListener('dragover',e=>{if(strayDrag(e))e.preventDefault();});
+  window.addEventListener('drop',e=>{if(strayDrag(e))e.preventDefault();});
 }
 function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>res(r.result.split(',')[1]);r.onerror=()=>rej(new Error('Read failed'));r.readAsDataURL(f);});}
@@ -2440,8 +2540,12 @@ async function doImport(){
       note:($('impNote')||{}).value||''}]);
     if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Import failed.',false); return; }
     setMsg('impMsg',r.msg,true);
+    /* The row it landed on, because the server now proves it is there by
+       reading it back — say where, so it can be looked at on the sheet. */
     $('impReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>'+
-      'Look it up as <b>'+esc(r.quoteNo)+'</b> to check it before sending anything.</div>';
+      'Look it up as <b>'+esc(r.quoteNo)+'</b> to check it before sending anything.'+
+      (r.row?'<br>On the sheet: '+esc(r.tab)+', row '+esc(r.row)+'.':'')+
+      '</div>';
     IMP=null; toast('Imported '+r.quoteNo);
   }catch(e){ setMsg('impMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Import as a new quote'; }
@@ -3073,6 +3177,10 @@ async function doRestore(mode){
   }catch(e){ setMsg('backupMsg',e.message,false); }
 }
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
+  /* Wake Apps Script while the PIN is being typed or the home screen drawn, so
+     the first real call does not also pay for a cold start. Its answer is
+     never looked at. */
+  api('ping',[]).catch(()=>{});
   new MutationObserver(syncHome).observe(document.querySelector('#appView .wrap'),
     {subtree:true,attributes:true,attributeFilter:['class']});
   $('qn').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});

@@ -133,6 +133,37 @@ put the calls over the edge Google gives up at.
   that follows attaches it instead of searching Drive and downloading the file
   back. That also removes a race: Drive's index is not instant, and the search
   could still be returning the copy `savePdf_` had just trashed.
+- **Every tab is read in one trip** (`quoteTabGrids_`, Sep 2026). A scan of the
+  quote tabs cost three or four round trips *per tab* — is this a quote tab,
+  where does it end, then the columns — and each costs about the same whether it
+  fetches one cell or ten thousand. The storage view, the search and a cold
+  quote lookup now ask the Sheets advanced service instead: one
+  `values.batchGet` for every tab's header cell, one more for the columns of the
+  tabs that turn out to be quote tabs — so the Activity Log and the backups are
+  never read past their header, exactly as before (enabled in
+  `apps-script/appsscript.json`). It **fails
+  safe**: no service, a refusal or an answer of the wrong shape and every
+  caller reads tab by tab as before. It reads `UNFORMATTED_VALUE`, so numbers
+  match `getValues`, but a date comes back as text — which is why nothing that
+  reads a date column goes through it. `tools/check-fast-reads.js` runs both
+  paths over the same sheet and fails on any difference in the answer.
+- **One trip per click.** Almost every button on the quote screen used to save
+  and then call `lookup` — two lots of Apps Script start-up, redirect and
+  signal for one tap. A write can carry `withQuote` and the refreshed quote
+  comes back on its own answer as `quote` (`withQuote_`), read after the write
+  in the same execution. Only on success; a read that fails leaves the write's
+  answer alone; and it is attached *after* `finishRid_`, so the replayable
+  answer never carries a quote that could be stale. With no `quote` on the
+  answer (a replay, an older backend) `afterWrite_` looks the quote up as it
+  always did.
+- **Every answer says what it cost.** `serverMs` rides on every console reply,
+  the console times the whole round trip, and the footer shows the last call:
+  `lookup 2.1s · 0.4s on the server`. The gap is start-up, the redirect and the
+  signal — the part no sheet tidying reaches, and the number that decides
+  whether any further speed work belongs in this file at all.
+- **`ping` does nothing, on purpose.** The console and Harbor Haul Out call it on
+  the sign-in screen so Apps Script has a warm container by the time the PIN
+  is entered. It is on the GET allow-list and needs no session.
 - **A reply with no stamp at all is still accepted** when it isn't the customer
   loader's — an older backend answers exactly that way, so the page and the
   script can be deployed in either order.
@@ -183,6 +214,29 @@ both gated on `keys`:
   the stamp instead of a button, and `adminSetPlacementState` re-checks `haulAuth_`
   server-side whichever surface asked. The gate is about the boat, never about
   who is holding the phone.
+
+## Filing a signed contract
+
+`adminUploadContract`, gated on `pay`, one file per quote — the server trashes
+any prior copy for that quote number before writing the new one. The row shows
+**View** / **Replace**; under it a dashed zone takes a dropped file, and is the
+tap target on a phone.
+
+- **The drop path has to re-check what `accept=` checks.** The file picker is
+  filtered to PDFs and images; a drop is not, so `contractFiles` tests the type
+  by hand. Without it a dropped `.docx` lands in `Signed Contracts/` and reads
+  as filed.
+- **A two-file drop is refused, not silently narrowed.** Uploading replaces, so
+  the second file would erase the first rather than add a page.
+- **A failed upload leaves the buttons in place.** The message has its own line
+  (`#contractMsg`); it used to be written over the controls, which left the row
+  with no way to retry short of a reload. `renderContract` clears it, so an
+  error cannot follow you into the next quote.
+- **Drops that miss a zone are swallowed at the window.** A file dropped on the
+  page makes the browser navigate to it, discarding the open quote and the
+  sign-in. The guard skips `input[type=file]` and `.drop` — the old-sheet
+  importer's input is visible and takes a dropped workbook today.
+
 
 ## Staff notes
 
@@ -320,12 +374,12 @@ tab, asked once by the places that must exclude both:
 | `dailyReminderCheck` | **The one that matters.** It emails customers at 9am on a trigger, unattended. 145 people would get a quote nobody meant to send, hours before anyone could stop it. |
 | `bulkTargets_` | the send-to-all recipient list |
 | `balanceReportCheck` | a draft owes nothing |
-| `repriceScan_` | already at today's rates — the engine priced it as it was read |
 | `adminStorageView` | the storage view, Harbor Haul Out and the printed haul-out sheets: the crew must not see a boat nobody agreed to store |
 | `signLookup_` | the public scan-to-sign lookup; a draft is not a signer |
 | `doGet` launchpref | a spring button on a quote nobody sent |
 
-Staff paths deliberately **do** see it — `adminSearch` so Chris can find one,
+Staff paths deliberately **do** see it — `repriceScan_` so the season re-price
+can move a draft onto new rates (see *Re-pricing a season*), `adminSearch` so Chris can find one,
 `findQuoteCtx_` so he can open, re-price and send it, `readQuoteRows_` so the
 nightly backup carries it. `d.storageTab` is left as the engine computed it, so
 each quote already knows where it belongs; only the *row* is parked.
@@ -433,6 +487,8 @@ that list *is* the instruction. It is ordered deliberately, and
 | `bulkImportStop()` | Ends the run. Nothing already written is undone. |
 | `bulkImportRepair()` | Puts the header row back if a quote is stranded in it, and re-arms the report. See below. |
 | `bulkImportStep()` | **Not for clicking** — the background trigger's handler. |
+| `importAudit()` | Once, after the Sept 19 importer fix. Repairs, then lists every import in the Activity Log that is no longer on the sheet — the ones to run again. Read-only apart from the repair. |
+| `repairImportedRows()` | Called by `importAudit()`; run alone just to repair. Puts back any quote an import stranded in a header row, and lists any quote number that ended up on two rows. Safe to re-run; an import now does the same sweep on its own. |
 
 It first shipped as `bulkImportStart, bulkImportStep, bulkImportScan,
 bulkImportApply, …`: two pieces of machinery above the thing you actually
@@ -608,6 +664,21 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **Imported drafts are included** and re-priced in place on the Import tab —
+  never reported as a storage move, since a parked row always differs from its
+  `d.storageTab`. See *Bulk import* above.
+- **One quote is exempt, and it is one quote — not a category.** `QW-26-1991`
+  was going to a competitor unless we locked her in, so we did: signed, paid
+  in full, price agreed. `FIRM_QUOTE_NO` / `priceIsFirm_` in
+  `pricing-engine.js` hold it out of the scan, and it lapses on its own once
+  rates roll past `FIRM_QUOTE_THROUGH`. It is a single quote number rather
+  than a table on purpose — a second customer should take a change of shape
+  and a conversation. **No other quote is exempt: deposit, signature or
+  neither.** The rate override alone would not have been enough, because it
+  pins one rate while a re-price still moves winterizing, shrinkwrap,
+  retrieval and wash — which on a paid-in-full quote takes the balance off
+  zero. `check-reprice.js` asserts the exemption reaches that quote and no
+  other, and that a deposited quote is still re-priced.
 - **It re-dates as well as re-prices.** `adminRepriceApply` re-stamps
   `d.season` from the live constants, because a quote carrying this season's
   money under last season's pay-by date is wrong on the document the customer
@@ -678,10 +749,15 @@ pricing" template. This reads one and makes a quote here.
 - **Imports price at TODAY's rates** and carry choices, not old figures — an
   imported quote must re-price like every other. Preview writes nothing; the
   import emails nobody; `verify.sh` asserts all three.
-- **Import after the new rate card, not before.** An import prices at whatever
-  is live, so importing first means pricing the whole batch at last season's
-  rates and then re-pricing all of it. Importing afterwards prices it right
-  once.
+- **An import prices at whatever rates are live on the day.** The 2026-27
+  season's imports were run before the new rate card, so they carry 2025-26
+  prices — and the **season re-price includes the Import tab** for exactly that
+  reason. It re-prices a draft where it sits: no move, no email, the reminder
+  hold untouched, status `Imported — re-priced at current rates, not yet sent`.
+  Leaving drafts out of the re-price (as it first shipped, on the theory that
+  an import is always at today's rates) left no way at all to move them onto
+  the new card. `check-reprice.js` runs the real scan over a draft;
+  `check-import-tab.js` asserts it stays parked.
 - **Its quote number is minted server-side** by `uniqueQuoteNo_`, against what
   is already on the sheet. A batch is precisely the shape that makes a blind
   random draw collide — `docs/ref/DATA-AND-MONEY.md`.
@@ -970,3 +1046,55 @@ than printing "Invalid Date" on a sheet somebody is holding.
 - **Key location & HHO address:** required for boat/jetski/golf (keys) and
   golf (HHO street address). $500 tow/start fee warning for boats/jetskis;
   golf carts **cannot be picked up without keys at all**.
+
+
+## Where a written row goes
+
+Every path that adds a row to a quote tab finds the bottom the same way —
+`sh.getLastRow() + 1` — and the importer is the one that did not. It reserved
+its row with `sh.appendRow(new Array(HEADERS.length).fill(''))` and then read
+`sh.getLastRow()`, which looks like "reserve a row and take its number" and is
+not: **a row of empty strings is a row of empty cells**, so the data region
+never grew and `getLastRow()` still pointed at the last row with something in
+it. Every imported quote was written on top of that row.
+
+- On a tab that already had quotes, it landed on the **most recent quote and
+  destroyed it**. In a batch each import ate the one before it, so a morning of
+  imports left one row behind and no sign of the rest.
+- On an empty tab — Golf Cart, E-bike — it landed on the **header row**, where
+  nothing can find it: every scan in this system starts at row 2, and
+  `takenQuoteNos_` stops recognising a tab as a quote tab at all once its
+  header is gone, so that quote's number could be handed out again.
+
+The console said *"Imported as QW-26-3445 on Golf Cart"* in both cases, because
+nothing had checked. Four rules came out of it:
+
+- **`nextQuoteRow_(sh)` is how an appended row is chosen**, and it *throws*
+  rather than return a row that already holds a quote. A write that cannot go
+  where we think it goes is an error, never a silent overwrite.
+- **An import reads the row back before reporting success** — with
+  `findQuoteRow_`, the same row-2-down scan the console will use to find it
+  afterwards, so a quote written where nothing can see it still fails.
+- **`rescueClobberedHeader_` repairs a tab instead of skipping it.** A quote
+  stranded in row 1 is moved to the bottom and the header put back. It acts
+  only when column 3 of row 1 already reads as a full quote number: every tab
+  in the spreadsheet is offered to it, and writing `HEADERS` across the
+  Activity Log would be a worse bug than the one it fixes. The customer save
+  path calls it too — that path rewrites a stale header row, which on such a
+  tab would have finished what the import started.
+- **The sweep runs at the top of every import** (`rescueAllQuoteTabs_`), so the
+  quotes already lost come back by carrying on with the batch rather than
+  waiting for anybody to open the script editor. `repairImportedRows()` does
+  the same across every tab from the editor and reports what it found,
+  duplicate quote numbers included. `importAudit()` runs that repair and then
+  reconciles every `IMPORTED …` line in the Activity Log against what is
+  findable on the sheet, so the quotes overwritten before the fix are a list
+  rather than a hunt. Nothing about those customers is lost — the old
+  per-customer sheet is still on Drive and the PDF that import filed is still
+  in the season folder; it is the row that went, so re-importing is the whole
+  of the fix.
+
+`tools/check-import-write.js` executes all of it against a sheet fake with Apps
+Script's real behaviour — an empty string is not content, `appendRow` writes
+below the last row that is — because the premise is the part a grep cannot
+hold down.

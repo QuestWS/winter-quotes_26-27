@@ -42,12 +42,17 @@ P3.lines.push({sec:'Adjustments',label:'Slipholder discount',calc:'',amt:-50,des
 P3.total=(Number(P3.total)-50).toFixed(2);
 const P4=payload('jetski-inside-detail',{quoteNo:'Q-D',lastName:'Doyle',firstName:'Kim',unit:'Jet ski'});
 const P5={quoteNo:'Q-E',lastName:'Evans',firstName:'Lee',unit:'Boat',total:'900.00',payments:[]}; // no state
+/* An imported draft: parked on the Import tab, while its own storageTab already
+   names the tab it belongs on. The season's imports were run at 2025-2026 rates,
+   so the re-price is the only way they reach the new card. */
+const DRAFT=payload('boat-twin-inboard-full',{quoteNo:'Q-IMP',lastName:'Ingram',firstName:'Val'});
 const LEAD={quoteNo:'Q-LEAD',lastName:'Hyde',firstName:'Jo',unit:'Boat',total:'0.00',state:P1.state};
 
 const TABS=[
   {name:'Inside', rows:[P1,P2,P3]},
   {name:'Inside2',rows:[P4,P5]},
   {name:'Quote Started', rows:[LEAD]},
+  {name:'Import', rows:[DRAFT]},
   {name:'Activity Log', rows:[P1], notQuote:true},
 ];
 const HL=23, COLQN=3, COLPAY=21, COLTOTAL=12, COLUNIT=7, COLLAST=1, COLFIRST=2;
@@ -92,6 +97,9 @@ console.log('=== A. rates UNCHANGED: nothing should move ===');
   check('no quote moves when rates have not changed', r.changed===0, 'changed='+r.changed);
   check('the lead is not in the list', !r.rows.some(x=>x.qn==='Q-LEAD'));
   check('the Activity Log is not treated as quotes', !r.rows.some(x=>x.tab==='Activity Log'));
+  const dr=r.rows.find(x=>x.qn==='Q-IMP');
+  check('an imported draft IS in the re-price', !!dr && !dr.skip, JSON.stringify(dr&&dr.skip));
+  check('a draft is never reported as a storage move', !!dr && !dr.wouldMove, 'wouldMove='+(dr&&dr.wouldMove));
   check('the state-less quote is reported, not priced',
     r.rows.some(x=>x.qn==='Q-E'&&x.skip), JSON.stringify((r.rows.find(x=>x.qn==='Q-E')||{}).skip));
 }
@@ -119,7 +127,10 @@ const bumped=eng.replace(/insideT:\s*([\d.]+)/,(m,v)=>'insideT: '+(Number(v)*1.1
      somebody's unit is a conversation, not a side effect of a bulk job. */
   const dRow=r.rows.find(x=>x.qn==='Q-D');
   check('a quote whose tab would move is flagged, not moved', !!dRow.wouldMove, 'wouldMove='+dRow.wouldMove);
-  check('it is excluded from the change count', r.changed===3 && r.moving===1,
+  const imp=r.rows.find(x=>x.qn==='Q-IMP');
+  check('the imported draft moves to the new rates', !!imp && imp.changed && !imp.wouldMove,
+    imp?(imp.before+' -> '+imp.after):'missing');
+  check('it is excluded from the change count', r.changed===4 && r.moving===1,
     'changed='+r.changed+' moving='+r.moving);
 
   const c=r.rows.find(x=>x.qn==='Q-C');
@@ -148,5 +159,25 @@ console.log('\n=== D. the selection can only narrow ===');
   check('naming a ghost adds nothing', F(wrap,['Q-NOPE']).length===0);
   check('a real pick resolves', F(wrap,['Q-A']).length===1);
 }
-console.log(fails?fails+' re-price violation(s)':'re-price holds: leads out, discounts survive, deposits intact, preview writes nothing');
+/* One customer is locked in (FIRM_QUOTE_NO in pricing-engine.js). The thing
+   worth executing is not that she is skipped — it is that NOBODY ELSE is,
+   paid or not, because a leak here quietly stops charging the new rates. */
+console.log('\n=== E. the one locked-in quote, and only that one ===');
+{
+  const P = require(ROOT + '/pricing-engine.js');
+  check('the locked-in quote is firm at the rates it was agreed for',
+    P.priceIsFirm_(P.FIRM_QUOTE_NO, '2026–2027'), 'en-dash label must match the hyphenated constant');
+  check('it lapses once rates roll past it',
+    !P.priceIsFirm_(P.FIRM_QUOTE_NO, '2027–2028'));
+  ['Q-A', 'Q-B', 'Q-C', 'QW-26-1255', '', null].forEach(qn => {
+    check('no exemption leaks to ' + JSON.stringify(qn), !P.priceIsFirm_(qn, '2026–2027'));
+  });
+
+  /* And in the real scan: a DEPOSITED quote is still re-priced. */
+  const r = build(bumped).adminRepricePreview('t');
+  check('a quote with a deposit on it is still re-priced',
+    r.rows.some(x => x.qn === 'Q-B' && x.changed && !x.skip));
+}
+
+console.log(fails?fails+' re-price violation(s)':'re-price holds: leads out, drafts in, discounts survive, deposits intact, preview writes nothing');
 process.exit(fails?1:0);

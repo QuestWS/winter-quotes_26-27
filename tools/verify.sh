@@ -209,15 +209,19 @@ if [ -f harbor-haul-out/index.html ]; then
       echo "  FAIL trap: $f is not gated on 'measure' — writing a placement note would buy a re-price"; FAIL=1
     fi
   done
-  # Dropped off is what the COUNTER hears; the harbor never sees it happen. And
-  # pulling is made with the unit open, under its alert and its authorisation
+  # Pulling is made with the unit open, under its alert and its authorisation
   # banner, so the pull list records nothing from the row.
   if grep -q "act_(x,'pulled'" harbor-haul-out/index.html; then
     echo "  FAIL trap: the pull list ticks a boat off from the row — pulling is a button on the opened unit"; FAIL=1
   else echo "  OK   trap: the pull list records nothing from the row"; fi
+  # Dropped off is recordable from BOTH surfaces: the counter hears some of
+  # them and the harbor or the lot hears the rest, and whoever hears it first is
+  # the one who has to be able to write it down. Gates belong on the thing, not the desk.
   if grep -q "'Mark dropped off'" harbor-haul-out/index.html; then
-    echo "  FAIL trap: Harbor Haul Out offers 'Mark dropped off' — that is console-only"; FAIL=1
-  else echo "  OK   trap: 'Mark dropped off' is console-only"; fi
+    echo "  OK   trap: Harbor Haul Out can record a drop-off"
+  else
+    echo "  FAIL trap: Harbor Haul Out cannot mark a unit dropped off — the Awaiting list depends on it"; FAIL=1
+  fi
   if grep -q "'Mark dropped off'" admin/index.html; then
     echo "  OK   trap: and the console still has it"
   else
@@ -245,6 +249,13 @@ if [ -f harbor-haul-out/index.html ]; then
     echo "  OK   gate: Harbor Haul Out renders the server's verdict and degrades safely"
   else
     echo "  FAIL gate: Harbor Haul Out"; sed 's/^/       /' "$TMP/hhoapp.txt"; FAIL=1
+  fi
+  # Condition photos go up full size, so the upload has to survive the harbor's
+  # signal instead: drops resume, dead zones wait, a closed app carries on.
+  if node tools/check-harbor-haul-out-uploads.js > "$TMP/hhoup.txt" 2>&1; then
+    echo "  OK   gate: full-size Harbor Haul Out uploads resume after drops and a closed app"
+  else
+    echo "  FAIL gate: Harbor Haul Out uploads"; sed 's/^/       /' "$TMP/hhoup.txt"; FAIL=1
   fi
 else echo "  (harbor-haul-out/index.html not present)"; fi
 
@@ -518,6 +529,16 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: legacy sheet parsing broken"; sed 's/^/       /' "$TMP/leg.txt"; FAIL=1
   fi
+  # WHERE an imported quote lands. The importer reserved its row with an
+  # appendRow of empty strings and then read getLastRow() — which does not move
+  # for a row of empty cells, so every import overwrote the last real row, or
+  # the header row on an empty tab, and was reported as saved either way.
+  # Executed against a sheet fake with Apps Script's real semantics.
+  if node tools/check-import-write.js > "$TMP/impw.txt" 2>&1; then
+    echo "  OK   gate: imported quotes land on a free row"
+  else
+    echo "  FAIL gate: imported quotes can overwrite a row"; sed 's/^/       /' "$TMP/impw.txt"; FAIL=1
+  fi
   # RE-PRICE. This rewrites what customers owe across a whole season, so the
   # rules are executed against a fake sheet with the rates actually moved.
   if node tools/check-reprice.js > "$TMP/rp.txt" 2>&1; then
@@ -608,6 +629,12 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: the console chases a dropped answer instead of guessing"
   else
     echo "  FAIL gate: console recovery broken"; sed 's/^/       /' "$TMP/recov.txt"; FAIL=1
+  fi
+  # One trip for every tab, one trip per click — and the same answers as before.
+  if node tools/check-fast-reads.js > "$TMP/fast.txt" 2>&1; then
+    echo "  OK   gate: batched tab reads match the per-tab reads; a save brings its quote back"
+  else
+    echo "  FAIL gate: fast reads"; sed 's/^/       /' "$TMP/fast.txt"; FAIL=1
   fi
   # Who can actually record a key location today, and which way a broken pause
   # fails. Both are properties of the code, so they are checked by running it.

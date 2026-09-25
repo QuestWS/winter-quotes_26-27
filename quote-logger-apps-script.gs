@@ -480,6 +480,35 @@ function lockinCopy(){
 const QUOTE_RATE_OVERRIDES = {
   'QW-26-1991': { insideNT: 6.74 }   // negotiated inside/non-trailer rate — Sep 2026
 };
+
+/* The other half of that same one-off: QW-26-1991 is signed, paid in full and
+   its price was agreed. It is FIRM through the season below and re-prices
+   normally at the next rollover.
+
+   THIS IS ONE CUSTOMER, NOT A RULE. She was leaving for a competitor if we
+   could not lock her in, so we locked her in. Nobody else is exempt from a
+   pricing update — deposit, signature or neither. It is deliberately a single
+   quote number rather than a table, so adding a second customer takes a
+   change of shape and a conversation, not just another line.
+
+   It is here, beside the rate override, because both halves are the same
+   concession: whoever removes one should be looking straight at the other.
+
+   Why it is needed at all: the override above pins ONE rate. A season
+   re-price would still move her winterizing, shrinkwrap, retrieval and wash
+   onto the new card, and on a paid-in-full quote that takes the balance off
+   zero and bills her for a price we already settled. */
+const FIRM_QUOTE_NO = 'QW-26-1991';
+const FIRM_QUOTE_THROUGH = '2026-2027';
+/* Season labels carry an EN DASH and the line above is hyphenated, so both
+   sides are normalised — a missed match here silently does nothing, which is
+   the only failure mode that costs anybody money. Labels sort correctly as
+   text ('2026-2027' < '2027-2028'), so "not past it yet" is a plain compare. */
+function priceIsFirm_(quoteNo, ratesLabel){
+  if (String(quoteNo || '') !== FIRM_QUOTE_NO) return false;
+  const now = String(ratesLabel || '').replace(/[\u2012-\u2015\u2212]/g, '-').trim();
+  return !!now && now <= FIRM_QUOTE_THROUGH;
+}
 /* Returns the override for this exact quote + rate key, or null if this quote
    has none — callers fall back to the normal PRICES value on null. */
 function rateOverride_(s, key){
@@ -994,7 +1023,12 @@ function doPost(e) {
     const postedTab = d.storageTab || 'No Storage';
     const copies = [];   // {sheet, row} for every copy found, in scan order
     ss.getSheets().forEach(function (other) {
-      if (other.getRange(1, 3).getValue() !== 'Quote #') return;
+      /* A tab whose header row was overwritten by an import is still a quote
+         tab, and the quote stranded in row 1 is invisible to every scan below.
+         Repair it here rather than skipping past it — step 5 rewrites a stale
+         header row, which on such a tab would finish the job the import
+         started and destroy that customer's row outright. */
+      if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
       let r = findQuoteRow_(other, d.quoteNo);
       while (r > 0) {
         const remCell = String(other.getRange(r, COL.REM).getValue() || '');
@@ -1234,6 +1268,10 @@ const CONSOLE_GET_FNS_ = {
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
   listStaff: 1, autoPause: 1,
+  /* Does nothing, on purpose: the console and the yard app call it as they
+     open so Apps Script has a warm container by the time the first real call
+     arrives, and it is the cleanest reading of what an empty call costs. */
+  ping: 1,
   /* "What became of the write I sent?" — see the idempotency section below.
      It is on this list because it is the one question staff must still be able
      to ask when the POST route is the thing that is broken. It reads a cached
@@ -1252,6 +1290,7 @@ const CONSOLE_GET_FNS_ = {
 function consoleFns_(p) {
   return {
     auth:        function (a) { return adminAuth(a[0]); },
+    ping:        function (a) { return adminPing(); },
     lookup:      function (a) { return adminLookup(p.token, a[0]); },
     quoteHtml:   function (a) { return adminQuoteHtml(p.token, a[0]); },
     dimsPreview: function (a) { return adminDimsPreview(p.token, a[0], a[1]); },
@@ -1388,9 +1427,14 @@ function adminJobStatus(token, rid) {
 /* Serve one console call. `verb` is how it arrived; a write that arrives on a
    GET is refused here, so the allow-list cannot be bypassed by crafting a URL. */
 function consoleServe_(p, verb) {
+  const started = Date.now();
   const reply = function (obj) {
     const o = (obj && typeof obj === 'object') ? obj : { ok: 0, error: 'The server gave no answer.' };
     o._api = 'console';   // the stamp: proof this came from the console API
+    /* What this execution spent, so the console can tell a slow sheet from a
+       slow start-up, redirect or signal — the gap between this and the round
+       trip the phone timed is the part no sheet tidying can reach. */
+    o.serverMs = Date.now() - started;
     return ContentService.createTextOutput(JSON.stringify(o))
       .setMimeType(ContentService.MimeType.JSON);
   };
@@ -1410,7 +1454,7 @@ function consoleServe_(p, verb) {
     const rid = String((p && p.rid) || '');
     if (!isWrite || !rid) {
       const plain = FNS[fn]((p && p.args) || []);
-      if (isWrite) invalidateStorageView_();
+      if (isWrite) { invalidateStorageView_(); withQuote_(p, plain); }
       return reply(plain);
     }
     const claim = claimRid_(rid);
@@ -1424,11 +1468,35 @@ function consoleServe_(p, verb) {
     catch (err) { out = { ok: 0, error: String(err.message || err) }; }
     finishRid_(rid, out);
     invalidateStorageView_();
+    /* After finishRid_, so the replayable answer stays small: a replay simply
+       has no `quote` on it, and the console fetches the quote the old way. */
+    withQuote_(p, out);
     return reply(out);
   } catch (err) {
     return reply({ ok: 0, error: String(err.message || err) });
   }
 }
+
+/* The console's "save, then reload the quote" was two trips to Apps Script for
+   every button on the quote screen: start-up, redirect and signal paid twice.
+   A write can now carry `withQuote: <quote no>` and the refreshed quote comes
+   back on the same answer as `quote` — the same thing a `lookup` returns, read
+   after the write in the same execution, so it cannot be the stale copy.
+
+   Only on success, and never allowed to spoil the write's own answer: if the
+   read fails the answer simply has no `quote`, and the console asks for it the
+   old way. The service tracker's writer portal has worked like this since
+   Sep 2026 (withJobPage_ there). */
+function withQuote_(p, out) {
+  const qn = String((p && p.withQuote) || '').trim();
+  if (!qn || !out || typeof out !== 'object' || Number(out.ok) !== 1) return;
+  try {
+    const q = adminLookup(p.token, qn);
+    if (q && Number(q.ok) === 1) out.quote = q;
+  } catch (e) { /* the write stands; the console reloads the quote itself */ }
+}
+
+function adminPing() { return { ok: 1 }; }
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
@@ -1839,6 +1907,90 @@ function findQuoteRow_(sh, quoteNo) {
     if (String(col[i][0]) === String(quoteNo)) return i + 2;
   }
   return -1;
+}
+
+/* ======================= EVERY TAB IN ONE TRIP ==========================
+   Each getRange/getValue/getLastRow is its own round trip to Google, and each
+   costs about the same whether it fetches one cell or ten thousand. A scan of
+   the quote tabs asked three or four of them PER TAB — is this a quote tab,
+   where does it end, then the columns — so the storage view, the search and a
+   cold quote lookup paid for every tab in the spreadsheet one trip at a time.
+
+   The Sheets advanced service answers all of it in `values.batchGet`. The
+   service tracker has run the same kind of read in production since Sep 2026.
+
+   It FAILS SAFE: no service, not authorised, a refused call or an answer of the
+   wrong shape returns null, and every caller falls back to the reads it always
+   did. The price of the service being unavailable is the old speed, never a
+   different answer. The first refusal switches it off for the rest of the
+   execution rather than paying for the same failure on every tab.
+
+   TWO trips, not one, on purpose. The first asks every tab for its header cell
+   (C1); the second reads only the tabs that say 'Quote #'. Reading the spans of
+   every tab in one go would drag the whole Activity Log, the backups and the
+   deleted-quote archive across the wire to be thrown away — the per-tab code
+   never read those past their header, and neither does this.
+
+   `spans` are [firstCol, lastCol] pairs. The answer is aligned with `sheets`:
+   null for a tab that is not a quote tab, otherwise one grid per span, from
+   ROW 1 to the last row any span returned, padded to full width with '' — the
+   same shape getValues gives. UNFORMATTED_VALUE, so a balance comes back a
+   number exactly as getValues returns it. Dates come back as display text
+   rather than Date objects, which is why no caller of this reads a date column.
+
+   It flushes first: the API reads Google's copy directly and would not see a
+   write this execution is still holding (the save a `withQuote` read follows). */
+let _tabGridsOff_ = false;
+function colA1_(n) {
+  if (!(n >= 1 && n <= 26)) throw new Error('colA1_ only covers A..Z');
+  return String.fromCharCode(64 + n);
+}
+function tabA1_(sh) { return "'" + String(sh.getName()).replace(/'/g, "''") + "'!"; }
+function quoteTabGrids_(ss, sheets, spans) {
+  if (_tabGridsOff_ || !sheets.length || !spans.length) return null;
+  if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) return null;
+  try {
+    SpreadsheetApp.flush();
+    const opt = { majorDimension: 'ROWS', valueRenderOption: 'UNFORMATTED_VALUE',
+                  dateTimeRenderOption: 'FORMATTED_STRING' };
+    const heads = Sheets.Spreadsheets.Values.batchGet(ss.getId(), Object.assign({
+      ranges: sheets.map(function (sh) { return tabA1_(sh) + colA1_(COL.QN) + '1'; }) }, opt));
+    const hv = (heads && heads.valueRanges) || [];
+    if (hv.length !== sheets.length) { _tabGridsOff_ = true; return null; }
+    const quoteIdx = [];
+    hv.forEach(function (r, i) {
+      if ((((r && r.values) || [])[0] || [])[0] === 'Quote #') quoteIdx.push(i);
+    });
+    const out = sheets.map(function () { return null; });
+    if (!quoteIdx.length) return out;
+    const ranges = [];
+    quoteIdx.forEach(function (i) {
+      spans.forEach(function (sp) { ranges.push(tabA1_(sheets[i]) + colA1_(sp[0]) + '1:' + colA1_(sp[1])); });
+    });
+    const res = Sheets.Spreadsheets.Values.batchGet(ss.getId(), Object.assign({ ranges: ranges }, opt));
+    const vr = (res && res.valueRanges) || [];
+    if (vr.length !== ranges.length) { _tabGridsOff_ = true; return null; }
+    quoteIdx.forEach(function (sheetIdx, k) {
+      const raw = spans.map(function (sp, j) { return vr[k * spans.length + j].values || []; });
+      let height = 0;
+      raw.forEach(function (g) { if (g.length > height) height = g.length; });
+      out[sheetIdx] = raw.map(function (g, j) {
+        const w = spans[j][1] - spans[j][0] + 1;
+        const grid = [];
+        for (let r = 0; r < height; r++) {
+          const src = g[r] || [];
+          const row = new Array(w);
+          for (let c = 0; c < w; c++) row[c] = (src[c] === undefined || src[c] === null) ? '' : src[c];
+          grid.push(row);
+        }
+        return grid;
+      });
+    });
+    return out;
+  } catch (e) {
+    _tabGridsOff_ = true;
+    return null;
+  }
 }
 
 /* ---------- PDF generation & Drive archive ---------- */
@@ -2723,6 +2875,20 @@ function findQuoteCtx_(qn) {
   const hit = cachedQuoteRow_(ss, want);
   if (hit) { const ctx = build(hit.sh, hit.rowNum); if (ctx) return ctx; }
   const sheets = ss.getSheets();
+  /* A miss used to cost three trips per tab. A batch read of column C on
+     every quote tab finds it; the old loop below stays as the fallback. The first
+     match in tab order wins, exactly as the loop does. */
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  if (grids) {
+    for (let i = 0; i < sheets.length; i++) {
+      if (!grids[i]) continue;
+      const g = grids[i][0];
+      for (let r = 1; r < g.length; r++) {
+        if (String(g[r][0]) === want) return build(sheets[i], r + 1);
+      }
+    }
+    return null;
+  }
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
     if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
@@ -2738,15 +2904,26 @@ function adminSearch(token, query) {
   if (q.length < 2) return { ok: 0, error: 'Type at least 2 letters of the last name.' };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const hits = [];
-  ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    const last = sh.getLastRow();
-    if (last < 2) return;
-    /* Columns 1..DIMS only. Everything this list shows lives in the first
-       eleven columns; reading HEADERS.length pulled the itemised services and
-       the whole JSON payload of every quote in the season across the wire to
-       match a few letters of a surname. */
-    sh.getRange(2, 1, last - 1, COL.DIMS).getValues().forEach(function (r) {
+  const sheets = ss.getSheets();
+  /* Every quote tab in one batch when the Sheets service answers
+     (quoteTabGrids_); the per-tab reads below when it does not. */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS]]);
+  sheets.forEach(function (sh, si) {
+    let body;
+    if (grids) {
+      if (!grids[si]) return;
+      body = grids[si][0].slice(1);
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      /* Columns 1..DIMS only. Everything this list shows lives in the first
+         eleven columns; reading HEADERS.length pulled the itemised services and
+         the whole JSON payload of every quote in the season across the wire to
+         match a few letters of a surname. */
+      body = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+    }
+    body.forEach(function (r) {
       const ln = String(r[COL.LAST - 1] || '').toLowerCase();
       if (!ln || ln.indexOf(q) === -1) return;
       const bal = Number(r[COL.BAL - 1] || 0);
@@ -5520,6 +5697,220 @@ function adminImportPreview(token, fileId, fileName, base64Data, pick) {
   };
 }
 
+/* ===========================================================================
+   WHERE AN APPENDED QUOTE ACTUALLY GOES
+   ---------------------------------------------------------------------------
+   This exists because of a morning of imports that were reported as saved and
+   were not there afterwards. The importer used to do this:
+
+       sh.appendRow(new Array(HEADERS.length).fill(''));
+       const ctx = { d: d, sh: sh, rowNum: sh.getLastRow() };
+
+   which reads like "reserve a row and take its number" and is not. A row of
+   empty strings is a row of EMPTY CELLS: the sheet's data region never grows,
+   and getLastRow() still points at the last row that has something in it. So
+   every imported quote was written ON TOP of that row:
+
+     - on a tab that already had quotes, over the MOST RECENT quote — the
+       import looked fine, and the quote it landed on was destroyed. Import a
+       batch and each one eats the one before it, which is why five that had
+       already been done had to be done again;
+     - on an empty tab (Golf Cart, E-bike), over the HEADER row — where
+       findQuoteRow_ cannot see it, because every scan starts at row 2, and
+       where takenQuoteNos_ stops recognising the tab as a quote tab at all,
+       so the number can be handed out again later. The console said
+       "Imported as QW-26-3445 on Golf Cart", and looking that number up
+       answered "Quote not found".
+
+   Nothing announced either one. So: find the bottom the way every other write
+   path here does (getLastRow() + 1), refuse to write when something is already
+   sitting in the row we picked, and read the number back out of the sheet
+   before telling anybody it was imported.
+=========================================================================== */
+
+/* The first free row on a quote tab. Never row 1, never a row with a quote
+   already in it — this throws instead, because the whole point is that a write
+   that cannot go where we think it goes must be an error and not a silent
+   overwrite. */
+function nextQuoteRow_(sh) {
+  const row = Math.max(sh.getLastRow(), 1) + 1;
+  const here = String(sh.getRange(row, COL.QN).getValue() || '').trim();
+  if (here) {
+    throw new Error('Row ' + row + ' of "' + sh.getName() + '" already holds quote ' +
+      here + ' — nothing was written. Tell Chris.');
+  }
+  return row;
+}
+
+/* A quote tab whose header row was overwritten by the bug above: row 1 holds a
+   real quote that nothing can find. Move it to the bottom, where it is an
+   ordinary row again, and put the header back.
+
+   Deliberately narrow. It acts ONLY when column 3 of row 1 holds something
+   that already reads as a full quote number — not when it is blank, not when
+   it is some other text. Every tab in this spreadsheet gets offered to this
+   function, and writing HEADERS across row 1 of the Activity Log or a tab
+   somebody made by hand would be a far worse bug than the one it repairs.
+
+   Returns the row the quote was moved to, or 0 when there was nothing to
+   rescue (including the ordinary case: row 1 is the header). */
+function rescueClobberedHeader_(sh) {
+  const c3 = String(sh.getRange(1, COL.QN).getValue() || '').trim();
+  if (c3 === HEADERS[COL.QN - 1]) return 0;          // 'Quote #' — nothing wrong
+  if (!c3) return 0;
+  const qn = normalizeQuoteNo(c3, new Date().getFullYear());
+  if (!qn || qn !== c3.toUpperCase()) return 0;      // not a quote number: leave it alone
+  const first = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  /* Computed while row 1 still counts as content, so an otherwise empty tab
+     gives row 2 rather than row 1 again. */
+  const to = Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(to, 1, 1, HEADERS.length).setValues([first]);
+  sh.getRange(to, COL.TOTAL, 1, 2).setNumberFormat('$#,##0.00');
+  sh.getRange(to, COL.ITEMS).setWrap(true);
+  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+  try { sh.setFrozenRows(1); } catch (e) {}
+  return to;
+}
+
+/* The storage tab an import is about to land on: created if it is new, header
+   restored if it is missing, and any quote stranded in row 1 rescued first. */
+function quoteTabFor_(ss, tabName) {
+  let sh = ss.getSheetByName(tabName);
+  if (!sh) {
+    sh = ss.insertSheet(tabName);
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    try { sh.setFrozenRows(1); } catch (e) {}
+    return sh;
+  }
+  rescueClobberedHeader_(sh);
+  if (String(sh.getRange(1, COL.QN).getValue() || '').trim() !== HEADERS[COL.QN - 1]) {
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    try { sh.setFrozenRows(1); } catch (e) {}
+  }
+  return sh;
+}
+
+/* Sweep every tab for a quote stranded in a header row. Runs at the top of an
+   import, so Chris gets the ones already lost back simply by carrying on with
+   the batch — the repair does not wait for anybody to open the script editor.
+   Costs one cell read per tab, which is what takenQuoteNos_ already pays. */
+function rescueAllQuoteTabs_() {
+  const out = [];
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    if (sh.getName() === DELETED_TAB) return;
+    let row = 0;
+    try { row = rescueClobberedHeader_(sh); } catch (e) { row = 0; }
+    if (row) out.push({ tab: sh.getName(), row: row,
+                        quoteNo: String(sh.getRange(row, COL.QN).getValue() || '') });
+  });
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+   ONE-TIME REPAIR, run from the editor: menu Run > repairImportedRows.
+   Does what an import now does on its own, across every tab at once, and then
+   says what it found — including any quote number that ended up on two rows,
+   which is possible because a tab with a clobbered header is invisible to
+   takenQuoteNos_ and its numbers could have been handed out a second time.
+   Writes nothing except the rescues; sends nothing. */
+function repairImportedRows() {
+  const rescued = rescueAllQuoteTabs_();
+  const seen = {}, dupes = [];
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    if (String(sh.getRange(1, COL.QN).getValue() || '') !== HEADERS[COL.QN - 1]) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r, i) {
+      const qn = String(r[0] || '').trim().toUpperCase();
+      if (!qn) return;
+      const where = sh.getName() + ' row ' + (i + 2);
+      if (seen[qn]) dupes.push(qn + ': ' + seen[qn] + ' and ' + where);
+      else seen[qn] = where;
+    });
+  });
+  const lines = [];
+  lines.push(rescued.length
+    ? 'Rescued ' + rescued.length + ' quote(s) out of a header row:'
+    : 'Nothing stranded in a header row — no rescue needed.');
+  rescued.forEach(function (r) { lines.push('  ' + r.quoteNo + ' -> ' + r.tab + ' row ' + r.row); });
+  if (dupes.length) {
+    lines.push('DUPLICATE quote numbers — these need a human:');
+    dupes.forEach(function (t) { lines.push('  ' + t); });
+  } else lines.push('No duplicate quote numbers.');
+  const report = lines.join('\n');
+  console.log(report);
+  try { auditLog_('repairImportedRows', report.replace(/\n/g, ' | ')); } catch (e) {}
+  return report;
+}
+
+/* ---------------------------------------------------------------------------
+   WHAT THE IMPORTS ACTUALLY LEFT BEHIND — run from the editor: importAudit.
+   Repairs first (above), then reconciles: every "IMPORTED …" line in the
+   Activity Log against what is findable on the sheet right now, looked up the
+   way the console looks a quote up. Anything it cannot find was overwritten
+   before this was fixed and has to be imported again.
+
+   Nothing about those customers is gone. The old per-customer sheet is still
+   in the season folder on Drive, and the PDF that import filed is still there
+   too — it is the ROW that was overwritten, and re-importing writes a new one.
+
+   Sends nothing, and writes nothing beyond the rescues. */
+function importAudit() {
+  const repair = repairImportedRows();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('Activity Log');
+  const seen = {};     // quoteNo -> the first log line that mentions it
+  const order = [];
+  if (log && log.getLastRow() > 1) {
+    log.getRange(2, 1, log.getLastRow() - 1, 3).getValues().forEach(function (r) {
+      const action = String(r[2] || '');
+      const m = action.match(/^IMPORTED\s+(QW-\d{2}-\d{3,5})\b(.*)$/);
+      if (!m) return;
+      const qn = m[1].toUpperCase();
+      if (seen[qn]) return;
+      seen[qn] = { when: r[0], who: String(r[1] || ''), rest: m[2].replace(/^\s*—\s*/, '') };
+      order.push(qn);
+    });
+  }
+
+  /* Present on the sheet, by the same rule every other sweep uses: a tab is a
+     quote tab when its column 3 header says so, and a quote is found from row
+     2 down. If it is not visible to that, it is not visible to the console. */
+  const live = {};
+  ss.getSheets().forEach(function (sh) {
+    if (String(sh.getRange(1, COL.QN).getValue() || '') !== HEADERS[COL.QN - 1]) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r, i) {
+      const qn = String(r[0] || '').trim().toUpperCase();
+      if (qn) live[qn] = sh.getName() + ' row ' + (i + 2);
+    });
+  });
+
+  const missing = order.filter(function (qn) { return !live[qn]; });
+  const lines = [repair, ''];
+  lines.push('Imports in the Activity Log: ' + order.length);
+  lines.push('Of those, on the sheet now:  ' + (order.length - missing.length));
+  if (!missing.length) {
+    lines.push('Nothing is missing — every import that was logged is there.');
+  } else {
+    lines.push('');
+    lines.push('MISSING — overwritten before the fix, import these again:');
+    missing.forEach(function (qn) {
+      const s = seen[qn];
+      lines.push('  ' + qn + '  —  ' + s.rest + '   (' + new Date(s.when).toLocaleString() +
+        ', ' + s.who + ')');
+    });
+    lines.push('');
+    lines.push('The old sheet for each is still in the season folder on Drive, so');
+    lines.push('re-importing is the whole of the fix. Nothing was sent to anybody.');
+  }
+  const report = lines.join('\n');
+  console.log(report);
+  return report;
+}
+
 /* Writing it. The imported quote is an ordinary quote from here on: a fresh
    number, priced at TODAY's rates by the shared engine, on the right storage
    tab, with its own PDF. What it carries from the old sheet is the customer's
@@ -5540,6 +5931,13 @@ function adminImportApply(token, state, meta) {
 function importApplyCore_(who, state, meta, tabOverride) {
   if (!state || !state.unit) return { ok: 0, error: 'Nothing to import — preview it first.' };
   meta = meta || {};
+
+  /* Before anything else, put back any quote an earlier import left stranded in
+     a header row. It has to happen here rather than only in quoteTabFor_: the
+     number about to be minted is read off the sheet, and a tab whose header is
+     gone is not counted as a quote tab — so a stranded quote's number could be
+     handed to this customer as well. */
+  rescueAllQuoteTabs_();
 
   const owner = String(meta.owner || '').trim();
   const parts = owner.split(/\s+/);
@@ -5588,30 +5986,15 @@ function importApplyCore_(who, state, meta, tabOverride) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   /* d.storageTab is left as the engine computed it, so the quote knows where it
-     belongs the moment it is sent off; only the ROW is parked elsewhere. */
+     belongs the moment it is sent off; only the ROW is parked elsewhere.
+     NEVER appendRow(blanks) THEN ASK getLastRow() — that is how forty quotes went
+     through row 1 of a brand-new Import tab. nextQuoteRow_ works the row out
+     from the data that is actually there and refuses one that already holds a
+     quote; quoteTabFor_ creates the tab with its header written in place and
+     rescues anything stranded in row 1 first. */
   const tabName = tabOverride || d.storageTab || 'No Storage';
-  let sh = ss.getSheetByName(tabName);
-  if (!sh) {
-    sh = ss.insertSheet(tabName);
-    sh.appendRow(HEADERS);
-    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
-  }
-  /* NEVER appendRow(blanks) THEN ASK getLastRow().
-     A row of empty strings is still blank as far as getLastRow() is concerned,
-     so on a tab whose only content is the header it answered 1 — and the
-     import wrote the quote OVER the header. The next import asked again, got 1
-     again, and overwrote that. The bulk run put forty quotes through row 1 of
-     a brand-new Import tab, left one survivor, and with "Quote #" gone from C1
-     every sheet sweep skipped the tab entirely: the console could not find a
-     single one of them.
-
-     It never showed before because every other caller appends to a tab that
-     already holds quote rows. Creating a fresh tab is what the bulk import
-     added. So: work the row out from the data that is actually there, write
-     the values straight into it, and never leave a blank row behind for the
-     next caller to trip over. Row 1 is the header and is not a target. */
-  const rowNum = Math.max(sh.getLastRow(), 1) + 1;
-  const ctx = { d: d, sh: sh, rowNum: rowNum };
+  const sh = quoteTabFor_(ss, tabName);
+  const ctx = { d: d, sh: sh, rowNum: nextQuoteRow_(sh) };
   sh.getRange(ctx.rowNum, COL.LAST).setValue(d.lastName);
   sh.getRange(ctx.rowNum, COL.FIRST).setValue(d.firstName);
   sh.getRange(ctx.rowNum, COL.QN).setValue(qn);
@@ -5636,11 +6019,23 @@ function importApplyCore_(who, state, meta, tabOverride) {
      write-a-marker, drop-it-on-graduation pattern the lead follow-up uses. */
   sh.getRange(ctx.rowNum, COL.REM).setValue(IMPORT_HOLD_MARK + new Date().toLocaleDateString());
 
+  /* READ IT BACK. "Imported as QW-26-3445" was printed by code that had never
+     checked, and staff spent a morning trusting it. The row is on the sheet or
+     this did not happen — and the same scan the console will use to find it
+     afterwards (from row 2 down, by quote number) is the one that has to find
+     it now, so a quote written somewhere nothing can see it still fails. */
+  const landedRow = findQuoteRow_(sh, qn);
+  if (landedRow !== ctx.rowNum) {
+    return { ok: 0, error: 'The import did not land on the "' + tabName + '" tab — ' +
+      'nothing has been saved under ' + qn + '. Do not re-import until Chris has looked: ' +
+      'run repairImportedRows from the Apps Script editor.' };
+  }
+
   auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
-    d.unit + ', ' + tabName + ', ' + usd_(Number(d.total || 0)) +
+    d.unit + ', ' + tabName + ' row ' + landedRow + ', ' + usd_(Number(d.total || 0)) +
     (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));
 
-  return { ok: 1, quoteNo: qn, tab: tabName, total: usd_(Number(d.total || 0)),
+  return { ok: 1, quoteNo: qn, tab: tabName, row: landedRow, total: usd_(Number(d.total || 0)),
            msg: 'Imported as ' + qn + ' on ' + tabName + '. No customer has been emailed.' };
 }
 
@@ -5848,7 +6243,13 @@ function repriceScan_() {
   ss.getSheets().forEach(function (sh) {
     const tab = sh.getName();
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (isOffstageTab_(tab)) return;              // leads have no pricing; an import is already at today's rates
+    /* Leads have no pricing, so they are out. Imported drafts are IN: they were
+       priced at whatever rates were live on the day of the import, and the
+       season's imports were run under 2025-2026 rates before the 2026-2027
+       card existed. Skipping them here left no way at all to move a draft onto
+       new rates. They are re-priced where they sit — see `draft` below. */
+    if (isStartedTab_(tab)) return;
+    const draft = isImportTab_(tab);
     const last = sh.getLastRow();
     if (last < 2) return;
     sh.getRange(2, 1, last - 1, HEADERS.length).getValues().forEach(function (r, i) {
@@ -5857,7 +6258,7 @@ function repriceScan_() {
       let d = null;
       try { d = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
       const row = {
-        qn: qn, tab: tab, row: i + 2,
+        qn: qn, tab: tab, row: i + 2, draft: draft,
         name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
         unit: String(r[COL.UNIT - 1] || '')
       };
@@ -5870,6 +6271,14 @@ function repriceScan_() {
       row.beforeNum = beforeNum;
       if (!d.state) {
         row.skip = 'saved before selections were stored — re-price by hand';
+        out.push(row); return;
+      }
+      /* The one locked-in quote. Paid quotes are otherwise in scope on
+         purpose — a deposit does not hold a ball-park number — and this is
+         not a second category, it is a single customer we agreed a firm
+         price with. See FIRM_QUOTE_NO in pricing-engine.js. */
+      if (priceIsFirm_(qn, PRICING.ratesLabel)) {
+        row.skip = 'price agreed and firm through ' + FIRM_QUOTE_THROUGH + ' — signed and paid';
         out.push(row); return;
       }
       /* Price a COPY. Nothing here may touch the sheet or the live payload. */
@@ -5885,8 +6294,11 @@ function repriceScan_() {
       row.afterNum = afterNum;
       row.deltaNum = afterNum - beforeNum;
       row.newBalanceNum = afterNum - paid;
+      /* A draft's row is parked on the Import tab while d.storageTab already
+         names where it belongs, so the two always differ and that is not a
+         move. It stays parked; only a send releases it (recordEmail_). */
       const toTab = copy.storageTab || tab;
-      if (toTab !== tab) row.wouldMove = toTab;    // reported, never acted on
+      if (!draft && toTab !== tab) row.wouldMove = toTab;    // reported, never acted on
       out.push(row);
     });
   });
@@ -5982,10 +6394,16 @@ function adminRepriceApply(token, only, first) {
       d.season = seasonStamp();
       /* If the tab moved between preview and now, stop rather than write a
          quote onto the wrong sheet. */
-      if ((d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
+      const parked = isImportTab_(ctx.sh.getName());
+      if (!parked && (d.storageTab || ctx.sh.getName()) !== ctx.sh.getName()) {
         throw new Error('storage location changed — re-price this one by hand');
       }
-      saveQuoteRow_(ctx, 'Re-priced at current rates — not yet sent');
+      /* A draft keeps saying it is an import. saveQuoteRow_ writes the status
+         and never the reminder column or the row's tab, so the reminder hold
+         and the parking both survive a re-price: nobody is emailed and the
+         crew still cannot see it until somebody sends it. */
+      saveQuoteRow_(ctx, parked ? 'Imported — re-priced at current rates, not yet sent'
+                                : 'Re-priced at current rates — not yet sent');
       const afterNum = Number(d.total || 0);
       auditLog_(who.name, 'RE-PRICED ' + x.qn + ': ' + usd_(beforeNum) + ' → ' + usd_(afterNum) +
         (x.locked ? ' (deposit on file, balance follows)' : ''));
@@ -6057,20 +6475,35 @@ function adminStorageView(token) {
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const groups = [];
-  ss.getSheets().forEach(function (sh) {
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+  const sheets = ss.getSheets();
+  /* Every quote tab in one batch (quoteTabGrids_) — this view is dropped by
+     every write, so it is rebuilt often, and it was four trips per tab. The
+     per-tab reads below are the fallback. */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  sheets.forEach(function (sh, si) {
+    if (grids) {
+      if (!grids[si]) return;
+    } else if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
     /* Not a storage area. The crew must not be shown a boat nobody has agreed
        to store, and the haul-out counts must not include one. IMPORT_TAB. */
     if (isImportTab_(sh.getName())) return;
-    const last = sh.getLastRow();
     const rows = [];
-    if (last > 1) {
-      /* Two narrow reads instead of one wide one. Everything shown comes from
-         columns 1..DIMS, plus the payload for keys, slip and the season-done
-         answer — so the itemised services, the customer notes and the link
-         columns never leave the sheet. */
-      const head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
-      const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    let head = [], pays = [];
+    if (grids) {
+      head = grids[si][0].slice(1);
+      pays = grids[si][1].slice(1);
+    } else {
+      const last = sh.getLastRow();
+      if (last > 1) {
+        /* Two narrow reads instead of one wide one. Everything shown comes from
+           columns 1..DIMS, plus the payload for keys, slip and the season-done
+           answer — so the itemised services, the customer notes and the link
+           columns never leave the sheet. */
+        head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+        pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+      }
+    }
+    {
       head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);

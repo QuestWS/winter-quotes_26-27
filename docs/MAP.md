@@ -17,11 +17,12 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
-| `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: three lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
+| `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: four lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
 | `docs/build-guides.py` | ~1,140 | Builds the four staff PDFs in `docs/pdf/` |
+| `docs/build-manual.py` | ~620 | Builds `docs/pdf/5 - Winter Services Program Manual.pdf` — every feature, how-to and permission in one volume. Rebuild when a feature or permission changes; not part of `emailGuides()` |
 
 ## Backend entry points
 
@@ -86,15 +87,20 @@ symptom.
 | Permissions incl. the `keys` and `measure` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_` | `permsOf`, `myPerms_` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
+| Speed: one trip per click, timing, warm-up | `withQuote_`, `adminPing` | `afterWrite_`, `apiTiming_` |
+| Speed: every tab in one read | `quoteTabGrids_` (used by `adminStorageView`, `adminSearch`, `findQuoteCtx_`) | — |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
+| The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |
 | Old-sheet import (one at a time) | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply`, `importApplyCore_` | `previewImport`, `doImport` |
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |
+| Where an appended row goes (and the header-row rescue) | `nextQuoteRow_`, `rescueClobberedHeader_`, `quoteTabFor_`, `rescueAllQuoteTabs_`, `repairImportedRows` | `.gs` |
+| Which imports went missing | `importAudit` | `.gs` (editor) |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
@@ -107,14 +113,15 @@ symptom.
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Deleting a quote (admins only) | `adminDeleteQuote`, `deletedSheet_`, `deletedHeaders_`, `DELETED_TAB` | `renderDeleteQuote`, `doDeleteQuote` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
+| Signed contract on file | `adminUploadContract` | `renderContract`, `contractFiles`, `uploadContract` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
 
 ### Harbor Haul Out
 | Feature | Entry point (server) | Entry point (app) |
 |---|---|---|
-| The three lists | `adminStorageView` | `listOf_`, `pullList_`, `storeList_`, `render`, `setTab` |
-| Moving a unit along (pulled / dropped off / stored) | `PLACEMENT_STATES_`, `adminSetPlacementState`, `placementStateOf_` | `markState`, `renderState`, `act_` (dropped off is console-only; pulled is on the opened unit, not the row) |
-| Search and sort | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
+| The four lists | `adminStorageView` | `listOf_`, `pullList_`, `awaitList_`, `storeList_`, `render`, `setTab` |
+| Moving a unit along (pulled / dropped off / stored) | `PLACEMENT_STATES_`, `adminSetPlacementState`, `placementStateOf_` | `markState`, `renderState`, `act_` (pulled is on the opened unit, not the row; dropped off is a row action on Awaiting and works from the console too) |
+| Search and sort | — | `search_`, `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
 | Re-measuring at the harbor | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
@@ -123,6 +130,7 @@ symptom.
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |
 | Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
+| Full-size uploads that survive a harbor signal | `adminUploadSession` | `putDirect_`, `upAsk_`, `upResume_`, `upWake_` |
 
 ### Customer page
 | Feature | Entry point |
@@ -153,6 +161,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-perms-pause.js` | The `keys` fallback, and that a corrupt pause reads as PAUSED |
 | `check-reprice.js` | A discount survives a season re-price |
 | `check-legacy-import.js` | Old-sheet parsing, including the broken and comparison files |
+| `check-import-write.js` | An imported quote lands on a free row — never on the last quote, never on the header row |
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
@@ -162,4 +171,6 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |
 | `check-quote-numbers.js` | A minted quote number is never one already on the sheet or reserved, and minting rewrites nothing |
 | `check-season-folders.js` | A quote is filed under the rates it is priced at; the en-dash labels resolve to the real folders; a moved quote stays findable |
+| `check-fast-reads.js` | The batched tab read gives exactly the per-tab answer and falls back when refused; a save's answer carries its quote only when it should |
+| `check-harbor-haul-out-uploads.js` | Full-size Harbor Haul Out uploads resume after a drop, wait out no signal, survive the app closing, and land byte-for-byte exactly once |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

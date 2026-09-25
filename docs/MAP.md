@@ -108,6 +108,7 @@ symptom.
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Deleting a quote (admins only) | `adminDeleteQuote`, `deletedSheet_`, `deletedHeaders_`, `DELETED_TAB` | `renderDeleteQuote`, `doDeleteQuote` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
+| Signed contract on file | `adminUploadContract` | `renderContract`, `contractFiles`, `uploadContract` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
 
 ### Harbor Haul Out

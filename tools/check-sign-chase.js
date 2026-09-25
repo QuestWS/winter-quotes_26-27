@@ -16,9 +16,9 @@
    THE EMAIL. It must refuse to build when there is nowhere to send them —
    an "almost there, just sign" with a dead button is worse than no email —
    and it must leave the quote's status column alone, because that column is
-   what the console pill and the yard sheets read. Overwriting "Deposit
+   what the console pill and the storage sheets read. Overwriting "Deposit
    received" with a chase note takes money state off a sheet somebody is
-   holding in the yard.
+   holding at the harbor.
 
    Run by tools/verify.sh. */
 'use strict';
@@ -241,7 +241,7 @@ ok('a unit is cleared if and only if it is both signed and paid');
   else ok('either a deposit or a signature is enough to get onto the plan, as Chris asked');
 }
 
-/* And the paper says so. The sheet is what the yard acts on, and shop printers
+/* And the paper says so. The sheet is what the crew acts on, and shop printers
    are black and white, so the hold must be in WORDS, not a colour. */
 {
   const printed = [];
@@ -294,8 +294,8 @@ else {
   else fail('the sign button does not carry signUrlFor_\'s link — it is building one of its own');
   if (paid.html.indexOf('Quote_Number=QW-26-1255') > -1) ok('the quote number pre-fills');
   else fail('the link does not pre-fill Quote_Number');
-  /* The status column is what the console pill and the yard sheets read. */
-  eq(paid.status, '', 'the chase sets no status — it says nothing about money or the yard');
+  /* The status column is what the console pill and the storage sheets read. */
+  eq(paid.status, '', 'the chase sets no status — it says nothing about money or placement status');
   if (paid.html.indexOf('$500.00') > -1) ok('a quote with a payment says what we have');
   else fail('the paid case does not name the payment');
   if (/slip/i.test(paid.html)) ok('a water unit with no slip on file is asked for one');
@@ -366,7 +366,7 @@ else ok('a lead is never asked to sign');
   if (/if \(built\.status\) ctx\.sh\.getRange\(ctx\.rowNum, COL\.STATUS\)\.setValue\(built\.status\)/.test(send))
     ok('adminSendEmail only stamps a status when the kind has one');
   else fail('adminSendEmail writes built.status unconditionally — a kind with no status would ' +
-            'blank the column the console pill and the yard sheets read');
+            'blank the column the console pill and the storage sheets read');
   if (/recordEmail_\(/.test(send)) ok('the send is still recorded in Email History either way');
   else fail('adminSendEmail no longer records the send');
 }

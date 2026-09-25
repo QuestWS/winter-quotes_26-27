@@ -509,7 +509,7 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   });
   ok('the four writes stay POST-only');
 
-  /* A timer left polling against a phone in the yard is somebody's battery. */
+  /* A timer left polling against a phone at the harbor is somebody's battery. */
   if (/bulkPollStop\(\)/.test(ADMIN)) ok('the poll stops when the card is closed');
   else fail('nothing stops the status poll');
 }

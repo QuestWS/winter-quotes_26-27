@@ -56,7 +56,7 @@ building back on the crew's to-do list.
 
 The console can record **every** transition, because at Quest the counter and
 the shop are the same people (`CLAUDE.md` §9) and *"somebody told me it is
-out"* is an ordinary Tuesday. A phone that glitched in the yard must not mean
+out"* is an ordinary Tuesday. A phone that glitched at the harbor must not mean
 the only person who can record the pull is the one whose phone just failed.
 
 | Transition | In the app | On the console | Gated? |
@@ -75,7 +75,7 @@ Two of those placements are deliberate and were changed after the first build:
   into a building carries none of that weight and is done a row at a time down
   a list, so `Stored ✓` stays on the row.
 - **Dropped off is console-only.** It records that a customer drove their own
-  boat in, which is something the *counter* hears; the yard never sees it
+  boat in, which is something the *counter* hears; the harbor never sees it
   happen. The app must still **read** the state — it is how a unit reaches the
   To store list without ever having been in the water — it just cannot set it.
 
@@ -94,7 +94,7 @@ Otherwise the app becomes the place a rule violation gets written down.
 
 `dropped` is deliberately **not** gated: the customer drove it here themselves,
 we touched nothing, and refusing to record a boat that is visibly sitting in
-the yard would only mean it goes unrecorded.
+the lot would only mean it goes unrecorded.
 
 ### Search and sort
 
@@ -208,7 +208,7 @@ when. `adminAddPlacementNote` is the only way in; there is no edit and no delete
 
 - **It is not the staff note.** The staff note is a single box the office
   rewrites as its understanding of a quote changes. This is a stream of things
-  seen in the yard, and the two answer different questions.
+  seen at the harbor, and the two answer different questions.
 - **Append-only, for two reasons.** Two people on two phones cannot clobber
   each other — a read-modify-write of one text box loses whichever save lands
   second and tells nobody. And *"gelcoat crack on the port side, 12 Oct"* stops
@@ -223,7 +223,7 @@ when. `adminAddPlacementNote` is the only way in; there is no edit and no delete
   silently, right after somebody photographs a crack.
 - Written from Harbor Haul Out or from the console's **Harbor Haul Out log** card; both go through
   the same endpoint, gated on the `keys` permission — recording what a unit
-  looks like is yard work, the same bar as keys and slip.
+  looks like is physical work, the same bar as keys and slip.
 
 ---
 
@@ -256,7 +256,7 @@ absent, or the colour stops meaning anything.
 ## Measurements
 
 Chris: *"We should have the ability to update dimensions in Harbor Haul Out."* The tape
-measure is in the yard, so the correction is made in the yard. The card sits on
+measure is at the harbor, so the correction is made there. The card sits on
 the opened unit, under **Measurements**, and runs the same two endpoints the
 console's dimension editor does — `adminDimsPreview` then `adminDimsApply` —
 so a re-measure taken at the ramp is journalled, audited and re-priced exactly
@@ -322,11 +322,11 @@ in the same hands:
 
 **Not on-device speech recognition.** That is the obvious guess and it is the
 wrong one: it needs a live connection while you talk, it gives up in a noisy
-yard, and it keeps nothing afterwards. **A recording is evidence.** The audio
+harbor, and it keeps nothing afterwards. **A recording is evidence.** The audio
 is the record and the transcript is the convenience — which is why the audio
 is filed first and kept whatever happens next.
 
-- **Nothing slow runs in the request the yard is waiting on.** Reading the file
+- **Nothing slow runs in the request the harbor is waiting on.** Reading the file
   back out of Drive and pushing it to AssemblyAI is a Drive read and two
   uploads; the person who tapped Save is standing outside holding a phone. A
   one-off trigger is the only way an Apps Script request can start work it does
@@ -395,7 +395,7 @@ to Google; Apps Script never sees the bytes.
 
 - **No 25 MB ceiling** — the limit becomes the phone and the patience
 - **No base64 inflation**, so a third less over the air
-- **Resumable**, so a dropped signal in the yard continues instead of restarting
+- **Resumable**, so a dropped signal at the harbor continues instead of restarting
 - Real upload progress, via `XMLHttpRequest` rather than `fetch` — a phone
   pushing 60 MB with no feedback looks identical to a phone doing nothing
 
@@ -474,9 +474,9 @@ photo of a signed page, and a video of a contract is not a thing.
 **The console uploads video one at a time** and uses the same direct-first
 logic. Three at a time is right for stills and wrong for clips.
 
-## Talking to the backend from the yard
+## Talking to the backend from the harbor
 
-The yard is where the dropped-POST problem was found, so this page cannot
+The harbor is where the dropped-POST problem was found, so this page cannot
 pretend it does not exist. A transport failure is not an answer: reads retry
 over GET, and a write carries a `rid` so the app can ask `jobStatus` what
 became of it instead of guessing.
@@ -488,7 +488,7 @@ became of it instead of guessing.
   client's side of that contract, in about fifty lines.
 - **`API_GET_OK` here must stay a subset of `CONSOLE_GET_FNS_` there.** The
   server refuses a GET naming a write, so a wrong entry is a retry that can only
-  ever fail — in the yard, with nobody to explain it. `check-harbor-haul-out.js` reads
+  ever fail — at the harbor, with nobody to explain it. `check-harbor-haul-out.js` reads
   both and asserts the subset, and asserts the writes are absent from it.
 - **A write that goes unanswered is never re-sent.** The reply cannot prove
   whether it ran. The app says so in as many words and tells staff to refresh
@@ -513,7 +513,7 @@ note box on an action the server would still accept.
 `measure` gates the one thing in the app that moves money, and `canMeasure()`
 mirrors `canMeasure_` for the same reason. Its fallback routes through
 `canWrite()` — this file's copy of `canKeys_` — because that *is* the server's
-fallback, so the two cannot drift: whoever can record yard facts can correct a
-measurement. In practice that is the yard crew, which is the point of the card.
+fallback, so the two cannot drift: whoever can record harbor facts can correct a
+measurement. In practice that is the crew, which is the point of the card.
 Without the permission the Measurements card is **absent, not disabled**: a
 permanently dead control is something people learn to tap anyway.

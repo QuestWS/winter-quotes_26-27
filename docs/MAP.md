@@ -96,7 +96,7 @@ symptom.
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
-| Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
+| Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
@@ -117,7 +117,7 @@ symptom.
 | Search and sort | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
-| Re-measuring from the yard | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
+| Re-measuring at the harbor | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
 | The Harbor Haul Out log | `adminAddPlacementNote` | `renderLog`, `saveNote` |
 | Voice notes (record) | `voiceFolder_`, `adminAddPlacementNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |

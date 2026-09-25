@@ -94,7 +94,7 @@ if [ -f admin/index.html ]; then
     "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderPlacementLog" "addPlacementNote" "placementLogCard" "keysTrailerLoc" "renderPlacementState" "setPlacementState" "placementStateCard" "alertCard" "alertbox" "palert" "putDirect" "sendOne" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
-  # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
+  # Chrome and comes up BLANK on iOS Safari — which is what staff use, so the
   # preview was broken for the person who most needs it. It needs
   # allow-same-origin to be written into, and must NEVER get allow-scripts, or a
   # rendered email could execute.
@@ -199,7 +199,7 @@ if [ -f harbor-haul-out/index.html ]; then
     echo "  FAIL trap: needsTrailerLoc_ no longer excludes land units — every golf cart would"; FAIL=1
     echo "       show a trailer row in the colour that means somebody should go and find it out"
   fi
-  # Re-measuring is a money act on a yard phone, so it is its own permission
+  # Re-measuring is a money act on a harbor phone, so it is its own permission
   # and it never travels on `keys`. Checked here as well as in the gate because
   # this is the grep somebody runs when wiring a new endpoint up to the app.
   for f in adminDimsApply adminDimsPreview; do
@@ -209,7 +209,7 @@ if [ -f harbor-haul-out/index.html ]; then
       echo "  FAIL trap: $f is not gated on 'measure' — writing a placement note would buy a re-price"; FAIL=1
     fi
   done
-  # Dropped off is what the COUNTER hears; the yard never sees it happen. And
+  # Dropped off is what the COUNTER hears; the harbor never sees it happen. And
   # pulling is made with the unit open, under its alert and its authorisation
   # banner, so the pull list records nothing from the row.
   if grep -q "act_(x,'pulled'" harbor-haul-out/index.html; then
@@ -372,7 +372,7 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.staffNote'; then
     echo "  OK   trap: staff note survives a customer save"
   else echo "  FAIL trap: a customer save would wipe the staff note"; FAIL=1; fi
-  # Keys/slip is yard work and has its own permission — it must NOT be back on
+  # Keys/slip is physical work and has its own permission — it must NOT be back on
   # `adjust`, or the crew who find out where the keys are cannot record it.
   if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'keys')"; then
     echo "  OK   trap: keys/slip uses its own permission"
@@ -569,8 +569,8 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminRepriceApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
     echo "  FAIL trap: re-price emails customers — that must stay a separate decision"; FAIL=1
   else echo "  OK   trap: re-price emails nobody"; fi
-  # The console API answers on POST and, since a lost POST broke the console in
-  # the yard, on GET too. Writes must stay POST-only and every reply must carry
+  # The console API answers on POST and, since a lost POST broke the console at
+  # the harbor, on GET too. Writes must stay POST-only and every reply must carry
   # the _api stamp — both are executed against the real dispatcher, because a
   # grep cannot tell a refused GET from one that quietly ran a payment twice.
   if node tools/check-console-transport.js > "$TMP/trans.txt" 2>&1; then

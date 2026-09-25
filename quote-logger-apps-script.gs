@@ -76,7 +76,7 @@ const REMINDER_ENABLED = true;
    the switch that stops them.
 
    It lives in Script Properties, NOT in a constant, so it can be flipped from
-   the console in the yard without a deploy — the moment you need it is not the
+   the console at the harbor without a deploy — the moment you need it is not the
    moment to be pasting code. REMINDER_ENABLED / LEAD_FOLLOWUP_ENABLED above
    still work and are the permanent, code-level off switches; this one is the
    operational one, and either being off is enough to stop a send.
@@ -235,7 +235,7 @@ function isStartedQuote_(d) { return String((d && d.storageTab) || '') === START
 
    That makes "is this tab offstage?" the most load-bearing question in the
    import, and the answer has to be asked in every place a quote can reach a
-   customer or the yard. The list below is the whole of it, and the reason each
+   customer or the crew. The list below is the whole of it, and the reason each
    one is on it:
 
      dailyReminderCheck   emails customers at 9am, unattended. 145 people who
@@ -1179,7 +1179,7 @@ function doPost(e) {
       if (after && after.sh) { sh = after.sh; rowNum = after.rowNum; }
     }
     /* A customer save moves a balance and can move a quote to another tab, so
-       the yard sheet staff are about to open must not be the one cached before
+       the storage sheet staff are about to open must not be the one cached before
        it happened. */
     rememberQuoteRow_(d.quoteNo, sh.getName(), rowNum);
     invalidateStorageView_();
@@ -1229,7 +1229,7 @@ function doPost(e) {
    is the worse failure. */
 const CONSOLE_GET_FNS_ = {
   /* Sign-in. Creates a session and counts a failed PIN, so it is not strictly
-     read-only — but see above: without it a broken POST locks the yard out. */
+     read-only — but see above: without it a broken POST locks staff out. */
   auth: 1,
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
@@ -2221,7 +2221,7 @@ function rebuildLinesFromState_(d) {
   d.dims = dimsString(sp.state);
   d.storageTab = storageTabFor(sp.state);
   /* Key location and slip number live at the top level of the payload, which
-     is where the sheet, the yard sheets and the emails read them — but the
+     is where the sheet, the storage sheets and the emails read them — but the
      customer's browser also holds its own copy and posts it on every save. Take
      them from the state that priced this quote so a staff correction survives
      the customer's next save, exactly as a re-measure does.
@@ -2533,14 +2533,14 @@ function adminAuth(pin) {
   return { ok: 1, token: token, name: name, admin: !!st.admin, perms: resolvedPerms_(st) };
 }
 
-/* Recording where the keys are and which slip a boat is in is yard work, not a
+/* Recording where the keys are and which slip a boat is in is physical work, not a
    price change — the people who actually find that out are the crew, who have
    no business changing what a customer owes. So it gets its own permission
    rather than riding on `adjust`.
 
    Roster entries written before this permission existed carry no `keys` field.
    For those, fall back to "anyone already trusted with payments or
-   adjustments", which is the yard staff and the admins, and not the
+   adjustments", which is most staff, and not the
    photos-only account. Once an admin sets it explicitly the stored value wins,
    including turning it OFF. */
 function canKeys_(st) {
@@ -2553,8 +2553,8 @@ function canKeys_(st) {
 /* Re-measuring is its own permission because it is its own act. It re-prices
    a quote, so it is not `keys` -- but it is also not `adjust`, which is the
    permission to invent a charge out of nothing. Measuring is reading a tape
-   over a hull, and the person holding the tape is standing in the yard.
-   Unset falls back to whoever can already record yard facts (`canKeys_`),
+   over a hull, and the person holding the tape is standing at the harbor.
+   Unset falls back to whoever can already record harbor facts (`canKeys_`),
    which is Chris's call, made once he had the card in his hand: the people
    holding the tape are John, Rex and Jess, and gating a re-measure behind
    `adjust` left it with the two admins who never hold one. It stops at the
@@ -2768,7 +2768,7 @@ function adminSearch(token, query) {
  * Deliberately not a link to the filed Drive PDF. That file inherits the
  * season folder's permissions, so a staff member holding a console PIN but not
  * signed into the Quest Google account lands on "Request access" -- which is
- * most of the yard, on their own phones. Rendering here needs nothing but the
+ * most of the crew, on their own phones. Rendering here needs nothing but the
  * session they already have. Read-only, so it takes the same 'view' level as
  * a lookup. */
 /* ================= DIMENSIONS & STORAGE (console) =================
@@ -2884,13 +2884,13 @@ function sanitizeEngines_(e, st) {
    journal as the measurements (`manual.measured`) rather than being written
    into d.state, for exactly the same reason — the customer's browser still
    holds their own copy and would post it back over ours on their next save.
-   effectiveState_ overlays them, so the sheet, the yard sheets, the haul-out
+   effectiveState_ overlays them, so the sheet, the storage sheets, the haul-out
    list and the emails all read the corrected value.
 
    A blank field REMOVES the override rather than storing an empty string, so
    clearing a mistake falls back to whatever the customer told us instead of
    permanently blanking it. */
-/* The yard fields staff correct from the console: journalled into
+/* The fields staff correct from the console: journalled into
    manual.measured, overlaid by effectiveState_, never written into d.state.
    Adding one here is all it takes — sanitizeKeys_, adminKeysApply's audit line
    and both top-level sync loops are all driven off this list, which is the
@@ -3061,7 +3061,7 @@ function adminKeysApply(token, qn, changes) {
   }
 
   const before = effectiveState_(d) || {};
-  /* Snapshot every yard field, not two named ones. The audit line used to name
+  /* Snapshot every field, not two named ones. The audit line used to name
      keys and slip explicitly, so a field added to KEYFIELDS_ later would change
      silently and leave nothing in the log saying who moved it. */
   const beforeVals = {};
@@ -3106,7 +3106,7 @@ function adminKeysApply(token, qn, changes) {
   const priceNote = moved
     ? ' · RE-PRICED at current rates: ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal)
     : '';
-  auditLog_(who.name, 'Yard details updated on ' + d.quoteNo +
+  auditLog_(who.name, 'Harbor details updated on ' + d.quoteNo +
     (bits.length ? ': ' + bits.join(' · ') : '') + priceNote);
 
   return {
@@ -3141,7 +3141,7 @@ function adminKeysApply(token, qn, changes) {
    made standing next to the boat, each one stamped with who saw it and when.
 
    Append-only is the whole point, twice over:
-   - Two people in the yard on two phones cannot clobber each other. A
+   - Two people at the harbor on two phones cannot clobber each other. A
      read-modify-write of one text box would lose whichever save landed second,
      and neither person would ever know.
    - "Gelcoat crack on the port side, 12 Oct" stops being true the moment
@@ -3162,7 +3162,7 @@ function voiceFolder_(ctx) {
 }
 
 function adminAddPlacementNote(token, qn, text, audio) {
-  /* Yard work, so the yard permission — the crew who see the boat are the crew
+  /* Physical work, so the same permission — the crew who see the boat are the crew
      who write this. Same bar as keys and slip, not the money bar. */
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -3233,7 +3233,7 @@ function adminAddPlacementNote(token, qn, text, audio) {
 
    WHY A TRIGGER AND NOT INLINE. Reading the file back out of Drive and pushing
    it to AssemblyAI is slow, and the person who just tapped Save is standing in
-   the yard holding a phone. A one-off time trigger is the only way an Apps
+   the harbor holding a phone. A one-off time trigger is the only way an Apps
    Script request can start work it does not then wait for.
 
    WHAT HAPPENS WITHOUT A KEY. The audio is still recorded, still filed, still
@@ -4122,7 +4122,7 @@ function placementStateOf_(d) {
 }
 
 function adminSetPlacementState(token, qn, state) {
-  /* Yard work, so the yard permission — the crew who move the boat are the
+  /* Physical work, so the same permission — the crew who move the boat are the
      crew who record that they moved it. */
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -4140,7 +4140,7 @@ function adminSetPlacementState(token, qn, state) {
 
      'dropped' is deliberately NOT gated: the customer drove it here
      themselves, we touched nothing, and refusing to record a boat that is
-     visibly sitting in the yard would just mean it goes unrecorded. */
+     visibly sitting in the lot would just mean it goes unrecorded. */
   if (want === 'pulled') {
     const auth = haulAuth_(paymentsTotal_(d) > 0.005, !!d.contractUrl);
     if (auth.state !== 'cleared') {
@@ -4171,7 +4171,7 @@ function adminSetPlacementState(token, qn, state) {
    the three apart is the whole reason it exists:
 
      staffNote        the office's private reasoning about a quote. One box,
-                      rewritten as understanding changes. Nobody in the yard
+                      rewritten as understanding changes. Nobody at the harbor
                       reads it.
      placementNotes   append-only history. What was observed, when, by whom.
                       Never edited, so it accumulates — which is exactly what
@@ -4376,7 +4376,7 @@ function adminLookup(token, qn) {
     /* The customer's own way back into this quote — quote number and last name
        already attached, so nothing to read out over the phone. Built server-
        side by the same quoteLink_ every customer email uses, so what staff copy
-       in the yard is byte-for-byte what the customer was emailed. Empty when
+       at the harbor is byte-for-byte what the customer was emailed. Empty when
        the row has no last name; the console hides the block rather than
        offering a link that opens a blank quote page. */
     quoteUrl: quoteLinkFor_(d),
@@ -4641,7 +4641,7 @@ function adminSendEmail(token, qn, kind, extra) {
     GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
     /* Only when the kind actually has a status to set. An empty one would blank
        the column, and a kind that says nothing about where the quote stands
-       (the sign chase) must leave the money/yard status alone rather than
+       (the sign chase) must leave the money/placement status alone rather than
        overwrite it. The send is still recorded in Email History below. */
     if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
     recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
@@ -4665,7 +4665,7 @@ function ensurePhotoFolders_(ctx) {
   /* A photo folder that already exists is reused BY ITS STORED ID rather than
      by re-deriving where it ought to be. Now that a quote can change season
      folder, re-deriving would build a second, empty folder in the new place
-     and leave the yard's photos in the old one — with the link on the row
+     and leave this unit's photos in the old one — with the link on the row
      still pointing at the old. The stored URL is the truth about where the
      photos actually are. */
   let f = null;
@@ -4745,7 +4745,7 @@ function adminUploadContract(token, qn, fileName, base64Data, mimeType) {
 
    A clip arrives as base64 inside a POST, which inflates it by a third, and
    Apps Script will drop an oversized request rather than explain itself. On a
-   phone in the yard that reads as "the upload just spins and then says it
+   phone at the harbor that reads as "the upload just spins and then says it
    failed" — the exact failure mode this project keeps designing away from. So
    the cap is checked on the client BEFORE the read (so nothing is spent), and
    again here, because a client is not a permission.
@@ -4770,7 +4770,7 @@ const MAX_UPLOAD_BYTES_ = 25 * 1024 * 1024;
 
      - no 25 MB ceiling (the limit becomes the phone and the patience)
      - no base64 inflation, so a third less over the air
-     - resumable, so a dropped signal in the yard continues instead of restarting
+     - resumable, so a dropped signal at the harbor continues instead of restarting
      - nothing to wait for here, so the app is not blocked
 
    WHAT THE BROWSER GETS IS A CAPABILITY, NOT A CREDENTIAL. The session URI is
@@ -6041,7 +6041,7 @@ function adminStorageView(token) {
   requireAuth_(token, 'view');
   /* The heaviest read in the console — every row of every tab, and the payload
      of each one. Two minutes of cache, dropped by any write (see the cache
-     section above), is the difference between a yard sheet that opens and one
+     section above), is the difference between a storage sheet that opens and one
      that times out. */
   /* The cached copy carries the shape it was built with. A deploy that adds a
      field to these rows would otherwise be answered for the next two minutes
@@ -7031,8 +7031,8 @@ function buildEmailFor_(d, kind, extra, photos) {
       html: noticeHtml_(d, intro, btn, true),
       /* Deliberately no status. Every other notice kind stamps the status
          column, but this one says nothing about where the quote is in the
-         money or the yard — overwriting "Deposit received" with "Sign reminder
-         sent" would take that off the console pill and off the yard sheets.
+         money or placement status — overwriting "Deposit received" with "Sign reminder
+         sent" would take that off the console pill and off the storage sheets.
          The send is recorded in Email History either way, which is what staff
          read to answer "have we chased this one?". */
       status: ''
@@ -7082,7 +7082,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const askQ = land
       ? '<b>When would you like us to collect it?</b>'
       : '<b>When would you like to be ' + outPhrase + '?</b>';
-    intro += '<br><br>' + askQ + ' Tap whichever fits below — it helps us plan the yard, and ' +
+    intro += '<br><br>' + askQ + ' Tap whichever fits below — it helps us plan, and ' +
       'you can change it later by calling us.';
 
     let buttons = '';
@@ -7717,7 +7717,7 @@ function customerEmailHtml_(o) {
   /* Season-done survey. Only for customers who have actually committed --
      a deposit or payment in full. Asking someone to book their haul-out
      before they have put money down is asking them to schedule work they
-     have not agreed to buy, and it puts a date in our yard plan that nothing
+     have not agreed to buy, and it puts a date in our haul-out plan that nothing
      backs up. A refund that takes them back to zero drops the question again.
      Never on a receipt. */
   let survey = '';
@@ -7783,7 +7783,7 @@ function surveyBase_(d) {
 
    Every producer goes through here — the console's copyable link, the lead
    follow-up email, and the quote/invoice email — so the link staff copy in the
-   yard and the link the customer got by email can never drift apart. Returns
+   harbor and the link the customer got by email can never drift apart. Returns
    '' when either half is missing rather than a half-built URL that lands on an
    empty quote page; callers hide the button on ''. */
 function quoteLink_(quoteNo, lastName) {
@@ -8206,7 +8206,7 @@ function isBike_(d) { return String(d.unit || '').toLowerCase().indexOf('bike') 
    Asking that of a unit that cannot have one is not a harmless extra row: the
    Harbor Haul Out renders an unfilled value in its missing-information red, so the
    crew reads a settled fact as a gap somebody forgot to fill in. Chris
-   reported exactly that from the yard.
+   reported exactly that from the harbor.
 
    LAND UNITS NEVER HAVE ONE. Golf carts are driven here and e-bikes are
    carried, and Chris was explicit about the carts after an earlier pass gave

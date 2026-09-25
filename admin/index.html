@@ -99,7 +99,7 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 /* The customer's own link to their quote. It exists to be handed over — read
    out on the phone, texted, pasted into an email — so the URL is shown in full
    and selectable rather than hidden behind a button that may have no clipboard
-   permission in whatever browser the yard phone is running. */
+   permission in whatever browser the harbor phone is running. */
 .lnkbox{background:#F4F9FC;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:10px}
 .lnkbox .lab{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
 .lnkbox .row{display:flex;gap:6px;align-items:center;margin-top:6px}
@@ -123,7 +123,7 @@ border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);backgro
 .danger h2{color:var(--red)}
 .btn.red{background:var(--red);color:#fff}.btn.red:hover{filter:brightness(1.06)}
 /* Before/after diff for a re-measure. Money that moves has to be readable at
-   arm's length in the yard, so the amounts are monospaced and aligned and the
+   arm's length at the harbor, so the amounts are monospaced and aligned and the
    direction of the change is carried by colour AND by the +/- sign. */
 .dfrow{display:flex;gap:8px;align-items:baseline;padding:5px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .dfrow .dl{flex:1;min-width:0;overflow-wrap:anywhere}
@@ -301,9 +301,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   .pgHead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:3px solid #000;padding-bottom:6px;margin-bottom:4px}
   .pgHead h1{font-size:20px;margin:0;letter-spacing:.02em}
   .pgHead .meta{font-size:11px;text-align:right}
-  table.yard{width:100%;border-collapse:collapse;font-size:11.5px}
-  table.yard th{text-align:left;border-bottom:1.5px solid #000;padding:5px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
-  table.yard td{border-bottom:.75px solid #999;padding:7px 6px;vertical-align:top}
+  table.printsheet{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.printsheet th{text-align:left;border-bottom:1.5px solid #000;padding:5px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+  table.printsheet td{border-bottom:.75px solid #999;padding:7px 6px;vertical-align:top}
   .cb{width:14px;height:14px;border:1.5px solid #000;display:inline-block}
   /* A unit we may not touch yet. Printers in the shop are black and white, so
      none of this may depend on colour: the row is shaded, boxed on the left,
@@ -312,7 +312,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   tr.noauth td:first-child{border-left:4px solid #000}
   .hold{display:inline-block;border:1.5px solid #000;padding:1px 4px;font-size:9px;
     font-weight:bold;letter-spacing:.06em;white-space:nowrap}
-  /* The paper is what the crew is actually holding in the yard, so an alert
+  /* The paper is what the crew is actually holding at the harbor, so an alert
      has to survive the trip onto it — in words and a box, never a colour. */
   .palert{display:block;border:1.5px solid #000;padding:2px 5px;margin-top:3px;
     font-size:10px;font-weight:bold;text-transform:uppercase}
@@ -389,7 +389,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
          offer different things. -->
     <div id="homeTiles" class="tiles hide">
       <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
-        <span>Who is in each building, with the printable yard sheets and the haul-out list.</span></button>
+        <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile hide" id="bulkTile" onclick="navGo(toggleBulk)"><b>Send to all</b>
         <span>The spring relaunch alert or the end-of-season note, to every customer at once. Preview first — it sends nothing.</span></button>
       <button class="tile hide" id="importTile" onclick="navGo(toggleImport)"><b>Load from an old sheet</b>
@@ -507,7 +507,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               there is nowhere to record. If it does have one, tick <b>Stored on its trailer</b> in
               <b>Unit details &amp; storage</b> — that changes the storage rate, so it re-prices.</div>
             <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
-              told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
+              told us. This is what the storage sheets, the haul-out list and the "you're up next" email use.</div>
             <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
             <div class="msg" id="keysMsg"></div>
           </div>
@@ -533,9 +533,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 
           <!-- Where the unit is in the season. "Dropped off" starts here on
                purpose: a customer driving their boat in is something the
-               office sees and the yard does not, and it is what puts the unit
+               office sees and the harbor does not, and it is what puts the unit
                on the crew's To store list. -->
-          <!-- One short line the yard crew sees on their list and at the top of
+          <!-- One short line the crew sees on their list and at the top of
                the unit's screen. Not the Harbor Haul Out log (append-only history)
                and not the staff note (the office's private reasoning). -->
           <div class="card hide" id="alertCard">
@@ -565,7 +565,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 
           <div class="card hide" id="placementLogCard">
             <h2>Harbor Haul Out log</h2>
-            <div class="msg" style="margin:0 0 6px">Observations from the yard, newest last —
+            <div class="msg" style="margin:0 0 6px">Observations from the harbor, newest last —
               written from Harbor Haul Out or here. <b>Append-only:</b> entries are never edited or
               deleted, so two people can log the same boat without overwriting each other.
               The customer never sees this.</div>
@@ -810,7 +810,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Storage overview</h2>
         <div style="display:flex;gap:8px">
-          <button class="btn navy sm" onclick="printStorage()">Print yard sheets</button>
+          <button class="btn navy sm" onclick="printStorage()">Print storage sheets</button>
           <button class="btn gold sm" onclick="printHaulOut()">Print haul-out list</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
@@ -893,7 +893,7 @@ function apiLostReply_(j){
    TRANSPORT FAILURE IS NOT AN ANSWER
    ---------------------------------------------------------------------------
    Apps Script answers a POST with a redirect to a one-shot googleusercontent
-   URL. On a phone in the yard, on a call that took Google long enough to give
+   URL. On a phone at the harbor, on a call that took Google long enough to give
    up on, that leg comes back 404 — and the old code turned that into
    `Network error (404)` and stopped. Two things went wrong with that:
 
@@ -1027,7 +1027,7 @@ function permsOf(me){
   const p=Object.assign({},(me&&me.perms)||{});
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
   /* Mirrors canMeasure_ in the .gs, whose fallback is canKeys_ — whoever can
-     record yard facts can correct a measurement. Resolved AFTER p.keys above,
+     record harbor facts can correct a measurement. Resolved AFTER p.keys above,
      so it cannot disagree with it. ME is cached, so a session opened before
      this permission existed must resolve the same way the server does rather
      than reading `undefined` as "no". */
@@ -1121,7 +1121,7 @@ function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg
 
    Not a link to the filed Drive PDF on purpose: that file inherits the season
    folder's permissions, so anyone holding a console PIN but not signed into
-   the Quest Google account -- most of the yard, on their own phones -- would
+   the Quest Google account -- most of the crew, on their own phones -- would
    get "Request access" instead of a quote. */
 /* ---------- Dimensions & storage ----------
    Re-measure a unit or move it between storage locations, and let the server
@@ -1129,7 +1129,7 @@ function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg
 
    Nothing is written until the before/after diff has been shown and confirmed.
    These are dollars on a real customer's quote, and a mistyped beam is a very
-   easy thing to do on a phone in the yard. */
+   easy thing to do on a phone at the harbor. */
 let DIMS=null;
 
 function renderDims(d){
@@ -1519,13 +1519,13 @@ function renderQuote(r){
   if(P.measure) renderDims(r.dims);
   /* Keys and slip write into the same journal and re-run the engine (the slip
      number appears in the Heritage Harbor line), so same permission. */
-  /* Keys and slip are yard work, not a price change — own permission, so the
+  /* Keys and slip are physical work, not a price change — own permission, so the
      crew who actually find out where the keys are can record it. */
   /* A note is not money and not a price change; the same trusted-staff bar as
      keys and slip. */
   $('noteCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderStaffNote(r.staffNote);
-  /* Same bar as the staff note and the keys card: yard work, not money. */
+  /* Same bar as the staff note and the keys card: physical work, not money. */
   $('placementLogCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderPlacementLog(r.placementNotes);
   $('alertCard').classList.toggle('hide',!P.keys);
@@ -1680,7 +1680,7 @@ function renderPlacementState(){
      each other, and the boats being pulled are a mile and a half away while
      the ones being worked on are thirty feet away. So "somebody told me it is
      out" is an ordinary Tuesday, not an exception: a phone that glitched in
-     the yard must not mean the only person who can record the pull is the one
+     at the harbor must not mean the only person who can record the pull is the one
      whose phone just failed.
      What does NOT relax is the gate. A unit that is not cleared cannot be
      marked pulled from here either — the button shows why instead, and
@@ -1896,7 +1896,7 @@ async function previewSend(kind,extra){
 /* Put an email into the preview frame.
    ---------------------------------------------------------------------------
    `srcdoc` on a fully-sandboxed iframe renders in Chrome but comes up BLANK on
-   iOS Safari — which is what Chris uses in the yard, so the preview looked
+   iOS Safari — which is what Chris uses at the harbor, so the preview looked
    broken for exactly the person who needs it. Writing into the document works
    everywhere, and needs allow-same-origin (granted) but NOT allow-scripts
    (withheld), so the email still cannot execute anything.
@@ -2094,7 +2094,7 @@ async function loadStorage(){
    A LEAD ROW IS IN NEITHER DEPOSIT BUCKET. Somebody who poked at pricing and
    walked away has no quote to take a deposit on, so counting them as "no
    deposit" would bury the customers who actually owe one. They stay visible
-   under "Everyone", which is where the yard already looks for them. */
+   under "Everyone", which is where staff already look for them. */
 let SFILTER='all';
 const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid'};
 function setStorageFilter(f){ if(!SFILTER_LABEL[f])return; SFILTER=f; renderStorage(); }
@@ -2187,7 +2187,7 @@ async function printStorage(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
-  /* The yard sheets follow the tab you are looking at, and SAY SO in the
+  /* The storage sheets follow the tab you are looking at, and SAY SO in the
      header. A partial sheet that looks like the whole building is how a unit
      gets missed; naming the filter on the paper is what stops that.
      The haul-out list is deliberately not filtered — see printHaulOut. */
@@ -2198,9 +2198,9 @@ async function printStorage(){
     <div class="pg">
       <div class="pgHead">
         <h1>QUEST WATERSPORTS — ${esc(g.tab).toUpperCase()}</h1>
-        <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · ${esc(scope)}</div>
+        <div class="meta">Storage sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · ${esc(scope)}</div>
       </div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th style="width:38px">Done</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
         ${g.rows.map(x=>`<tr>
           <td><span class="cb"></span></td>
@@ -2272,7 +2272,7 @@ async function loadImportList(){
    reported wrong is the one that starts an import.
 
    The poll stops when the card is closed and when the run finishes — a timer
-   left running against a phone in the yard is somebody's battery. */
+   left running against a phone at the harbor is somebody's battery. */
 let BULKTIMER=null;
 function bulkPollStop(){ if(BULKTIMER){ clearTimeout(BULKTIMER); BULKTIMER=null; } }
 function bulkBusy(on){
@@ -2764,7 +2764,7 @@ async function doBulkSend(){
 }
 
 /* ---------- Haul-out list ----------
-   A different sheet from the yard sheet: that one is for walking the rows and
+   A different sheet from the storage sheet: that one is for walking the rows and
    checking units off, this one is for planning the order units come out in.
    Sorted by what the customer asked for, soonest first, because that is the
    question being answered. */
@@ -2777,7 +2777,7 @@ function haulOrder_(x){
 }
 /* Sort on the stored ISO string, print something a person reads at a glance.
    Anything that isn't a plain date goes through untouched rather than
-   becoming "Invalid Date" on a sheet somebody is standing in the yard with. */
+   becoming "Invalid Date" on a sheet somebody is standing at the harbor with. */
 function haulDate_(v){
   const s=String(v||'');
   const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2795,7 +2795,7 @@ function haulDate_(v){
      contract on file, no pull. Not "chase it afterwards" — no pull.
 
      A deposit does NOT authorise the pull. What it does is put the unit on the
-     plan, so the yard can schedule around it while the signature is chased.
+     plan, so staff can schedule around it while the signature is chased.
 
      A signature on its own does not release it either — that one is a MONEY
      hold rather than a liability one, and the sheet says so, because "chase
@@ -2807,7 +2807,7 @@ function haulDate_(v){
      the back, with no checkbox to tick.
 
    Four states, and `why` is what keeps the two holds from reading the same.
-   The sheet has to make all of it obvious to somebody holding it in the yard
+   The sheet has to make all of it obvious to somebody holding it at the harbor
    rather than reading it on a screen. */
 /* THE CONSOLE DOES NOT DECIDE THIS. The server does (haulAuth_ in the .gs),
    because the console, the printed sheet and Harbor Haul Out all ask the same
@@ -2825,7 +2825,7 @@ function haulAuth_(x){
           stamp:'NOT CONFIRMED — DO NOT PULL'};
 }
 function haulHoldText_(a){ return (a&&a.stamp)||'DO NOT PULL'; }
-/* Split the yard into the units that go on the working list (cleared to pull,
+/* Split the units into the ones that go on the working list (cleared to pull,
    plus the deposit-taken ones we are planning around) and the units that are
    held off it entirely. Kept separate from the printing so the rule can be
    executed by tools/check-sign-chase.js rather than eyeballed on paper. */
@@ -2848,8 +2848,8 @@ async function printHaulOut(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
-  /* One list across every storage area — haul-out order is a yard-wide
-     question, not a per-building one. It is NOT narrowed by the deposit tab
+  /* One list across every storage area — haul-out order spans every storage
+     area, not just one building. It is NOT narrowed by the deposit tab
      either: which tab you happen to be looking at must not decide what the
      crew is handed. What DOES narrow it is the signed agreement, per
      haulAuth_ above — that is a liability rule, not a view. */
@@ -2895,7 +2895,7 @@ async function printHaulOut(){
         A deposit is not a signature and a signature is not a deposit — every shaded row is planning
         only, and its stamp says which one is missing.${blocked.length?' '+blocked.length+' further unit'+
         (blocked.length===1?' is':'s are')+' held off this list entirely (see the last page).':''}</div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th style="width:44px">Pull?</th><th>Customer</th><th>Unit / dims</th><th>Storage</th>
             <th>Trailer</th><th>Slip</th><th>Keys</th><th>Requested timing</th></tr>
         ${planRows}
@@ -2916,7 +2916,7 @@ async function printHaulOut(){
       </div>
       <div class="rule">No deposit and no signed agreement. Do not pull, move or work on these units.
         Office: take a deposit and get the agreement signed, then they move onto the haul-out list.</div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th>Customer</th><th>Unit / dims</th><th>Storage</th><th>Quote #</th><th>What is missing</th></tr>
         ${blocked.map(x=>`<tr class="noauth">
           <td><span class="yn">${esc(x.name)}</span></td>
@@ -2926,7 +2926,7 @@ async function printHaulOut(){
           <td><span class="hold">${esc(x.auth.label)}</span>${
             x.lead?'<br><span class="ysub">unfinished quote — never completed</span>':''}</td></tr>`).join('')}
       </table>
-      <div class="pgFoot">This page is for the office, not the yard. Quest Watersports · (815) 433-2200</div>
+      <div class="pgFoot">This page is for the office, not the harbor. Quest Watersports · (815) 433-2200</div>
     </div>`:'';
   $('printArea').innerHTML=planPage+blockedPage;
   window.print();

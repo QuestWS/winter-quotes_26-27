@@ -117,7 +117,7 @@ put the calls over the edge Google gives up at.
 
 - **The storage view is cached for two minutes**, split across CacheService
   entries (`cachePutBig_` / `cacheGetBig_`, 100KB cap each). A missing chunk is
-  a miss, never half a yard sheet.
+  a miss, never half a storage sheet.
 - **Every write drops that cache**, from one place: `consoleServe_` invalidates
   after any function that is *not* on the read-only allow-list. Deriving it from
   that list is the point — a write added later cannot forget to. The customer
@@ -147,7 +147,7 @@ it can be texted.
 
 - **The server builds it, not the console** (`quoteLinkFor_` on `adminLookup`).
   The same `quoteLink_` builds the one inside every customer email, so the link
-  staff hand over in the yard and the link the customer was emailed are the
+  staff hand over at the harbor and the link the customer was emailed are the
   same URL. See `docs/ref/EMAILS.md`.
 - **The URL is shown, not just copied.** `navigator.clipboard` needs a secure
   context and is missing in some in-app browsers; `copyQuoteLink()` falls back
@@ -177,7 +177,7 @@ both gated on `keys`:
   something the counter sees first, and it is what puts a trailered unit on the
   crew's **To store** list without it ever having been in the water. `pulled`
   is here too because the counter and the shop are the same people
-  (`CLAUDE.md` §9) — when somebody's phone glitches in the yard and they say it
+  (`CLAUDE.md` §9) — when somebody's phone glitches at the harbor and they say it
   is out, the person they told has to be able to record it.
   **The gate does not relax for the console**: a unit that is not cleared shows
   the stamp instead of a button, and `adminSetPlacementState` re-checks `haulAuth_`
@@ -201,12 +201,12 @@ having to guess at his own logic a year later.
 ## Keys & slip (console) and the missing-info chase
 
 `Keys & slip` card, gated on its **own `keys` permission** — recording where the
-keys are is yard work, and the crew who find that out have no business changing
+keys are is physical work, and the crew who find that out have no business changing
 what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
 
 - **Roster entries written before the permission existed have no `keys` field.**
   `canKeys_()` falls back to "already trusted with payments or adjustments",
-  which is exactly the yard staff and the admins, so nobody had to run a
+  which is exactly most of the staff, so nobody had to run a
   migration. An explicit setting always wins, including turning it OFF.
   `permsOf()` mirrors that fallback in the console, because `ME` is cached in
   localStorage and a session opened before the deploy would otherwise lose the
@@ -247,7 +247,7 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   started life as `!isBike_(d)`, which put an unanswerable row on every boat
   blocked on stands; Harbor Haul Out renders an unanswered field in its
   missing-information red, so a settled fact read as a gap somebody forgot to
-  fill in. Chris reported it from the yard.
+  fill in. Chris reported it from the harbor.
   - **Boat or jet ski → follow `hasTrailer`.** The quote page puts the trailer
     question to these two and nobody else (`#trailerFs`), so for them the flag
     is the *customer's own answer* — "No trailer, boat is blocked on stands".
@@ -461,7 +461,7 @@ import. `check-import-tab.js` asserts none of the four endpoints so much as
 touches `legacyReadGrid_`.
 
 The card polls `bulkImpState` every 15s while a run is going and stops the
-timer when the card closes — a poll left running against a phone in the yard is
+timer when the card closes — a poll left running against a phone at the harbor is
 somebody's battery. `bulkImpState` is a read and may retry over GET; the four
 writes stay POST-only, so a lost POST can never replay one. Starting a run on
 top of a live one is refused outright, since that would import every file
@@ -793,14 +793,14 @@ never hold the tape.
 - **It is not `adjust`.** `adjust` is inventing a charge out of nothing.
   Measuring is reading a tape over a hull. They are different acts and they
   deserve different answers.
-- **Unset falls back to `canKeys_`** — *whoever can already record yard facts
+- **Unset falls back to `canKeys_`** — *whoever can already record harbor facts
   can correct a measurement.* It shipped falling back to `adjust`, which left
   the only people who could fix a dimension being the two admins who never hold
   the tape; Chris then said plainly to give it to John, Rex and Jess, so the
-  fallback is the yard-facts bar itself rather than a list of names. It stops
+  fallback is the harbor-facts bar itself rather than a list of names. It stops
   exactly where `keys` stops: **Marina has neither**, and photos alone buys
   nothing. An explicit setting always wins, including turning it OFF for
-  somebody who could otherwise record yard facts.
+  somebody who could otherwise record harbor facts.
   `permsOf()` in the console and `canMeasure()` in Harbor Haul Out mirror that
   fallback — Harbor Haul Out routes it through its own `canWrite()`, which is
   already its copy of `canKeys_`, so the two cannot drift. `ME` is cached in
@@ -862,7 +862,7 @@ owes us money" and "who has paid but never signed", asked from a phone.
   page, so reusing that class would have a photo tap silently un-highlight
   whichever storage tab was showing — the same shape as the duplicate-function
   bug above. The guard fails if the tabs ever pick up `.seg`.
-- **Yard sheets follow the tab and say so.** `printStorage` prints the current
+- **Storage sheets follow the tab and say so.** `printStorage` prints the current
   view and names it in the sheet header, because a partial sheet that looks
   like the whole building is how a unit gets missed. The haul-out list is
   **not** narrowed by the tab — which view staff happen to be looking at must
@@ -907,7 +907,7 @@ Chris's rule, and the first half of it is liability rather than bookkeeping:
 too, but differentiate that it's due to payment."*
 
 So **a unit is cleared if and only if both are in.** Four states, decided in
-one place (`haulAuth_`) and used by the haul-out list, the yard sheets and the
+one place (`haulAuth_`) and used by the haul-out list, the storage sheets and the
 storage rows alike:
 
 | On file | State | `why` | What happens |
@@ -939,24 +939,24 @@ storage rows alike:
   haul-out list. That page is headed for the office, carries no timing and no
   tick boxes. Unfinished quotes land here too, marked as such.
 - **The rule is printed on the sheet itself**, in a box above the table. The
-  person holding it in the yard is the person it has to reach.
+  person holding it at the harbor is the person it has to reach.
 - The quote-side answer to all of this is the **Ask them to sign** email —
   above, and `docs/ref/EMAILS.md`.
 
 
 ## Haul-out list
 
-`printHaulOut()` on the storage card — one yard-wide sheet, not one per
-building, because haul-out order is a yard-wide question. Sorted ready-now →
-stated dates ascending → will call → not answered, and it carries what the crew
-needs standing in the yard: customer, unit + dims, storage, trailer or not,
+`printHaulOut()` on the storage card — one sheet across every storage area, not
+one per building, because haul-out order does not stop at a building line.
+Sorted ready-now → stated dates ascending → will call → not answered, and it
+carries what the crew needs standing at the harbor: customer, unit + dims, storage, trailer or not,
 slip, key location, requested timing and any note. Sorting uses the stored ISO
 date; printing uses `haulDate_()`, which passes anything non-ISO through rather
 than printing "Invalid Date" on a sheet somebody is holding.
 - **Email previews render by writing into the frame, not `srcdoc`.** The frame
   is `sandbox="allow-same-origin"` and deliberately **not** `allow-scripts`, so
   a rendered email stays inert. `srcdoc` under a fully-restrictive sandbox works
-  in Chrome and comes up **blank on iOS Safari** — which is what the yard uses,
+  in Chrome and comes up **blank on iOS Safari** — which is what staff use,
   so every email preview was broken for the person who most needs it while every
   desktop test passed. `pvRender()` is the single path for both the per-quote
   preview and the send-to-all sample, and it reports a failure rather than

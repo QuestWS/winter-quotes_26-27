@@ -351,7 +351,7 @@ function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
 /* ---------------------------------------------------------------------------
    TALKING TO THE BACKEND
    ---------------------------------------------------------------------------
-   The yard is where the dropped-POST problem was found in the first place, so
+   The harbor is where the dropped-POST problem was found in the first place, so
    this page cannot pretend it does not exist. Apps Script answers a POST with
    a redirect to a one-shot URL, and on a phone with two bars that leg comes
    back 404 — a transport failure, which is NOT the server saying no.
@@ -473,7 +473,7 @@ function signOut(){
   $('app').classList.add('hide'); $('sheet').classList.add('hide');
   $('login').classList.remove('hide'); $('pin').value='';
 }
-/* The `keys` permission is what lets somebody record yard facts — the same bar
+/* The `keys` permission is what lets somebody record harbor facts — the same bar
    the console puts on keys, slip and the staff note. Mirrors canKeys_'s
    fallback for roster entries written before that permission existed, because
    ME is cached in localStorage and a session opened before it would otherwise
@@ -487,8 +487,8 @@ function canWrite(){
 }
 function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
 /* Mirrors canMeasure_ in the .gs INCLUDING its fallback, which is now
-   canKeys_: whoever can record yard facts can correct a measurement. Chris's
-   call — the people holding the tape are the yard crew, and leaving it on
+   canKeys_: whoever can record harbor facts can correct a measurement. Chris's
+   call — the people holding the tape are the crew, and leaving it on
    `adjust` left it with the two admins who never hold one.
    The mirror matters because ME is cached in localStorage, so a session opened
    before the permission existed must read `undefined` the way the server does
@@ -761,7 +761,7 @@ function renderAlert(){
 /* ---------------------------------------------------------------------------
    MEASUREMENTS
    ---------------------------------------------------------------------------
-   The tape measure is in the yard, so the correction belongs in the yard. What
+   The tape measure is at the harbor, so the correction is made there. What
    is NOT here is everything else the console's dimension editor can do: no
    motor counts, no storage-location override. Those are specification changes
    made at a desk with the customer on the phone. This is "the hull is 26 feet,
@@ -925,7 +925,7 @@ function renderState(){
         : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
     }
     if(st!=='stored') h+=btn('stored','Mark in storage','gold');
-    /* Reversible on purpose: a mis-tap in the yard is certain, and the fix
+    /* Reversible on purpose: a mis-tap at the harbor is certain, and the fix
        must not be a phone call to somebody at a desk. */
     if(st) h+=btn('','Undo — back to not started','ghost');
   }
@@ -1082,7 +1082,7 @@ async function saveNote(){
 
    NOT on-device speech recognition. That was the obvious guess and it is the
    wrong one — it needs a live connection while you talk, it gives up in a noisy
-   yard, and it keeps nothing afterwards. A recording is evidence: it is filed
+   harbor, and it keeps nothing afterwards. A recording is evidence: it is filed
    on the quote and stays playable whether or not anything ever types it up.
 
    THE AUDIO IS THE RECORD, the transcript is the convenience. With no API key

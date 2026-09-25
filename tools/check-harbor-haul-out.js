@@ -10,7 +10,7 @@
    two of the three copies would then be free to go stale, and the one that
    goes stale is the one that clears a boat nobody signed for.
 
-   It also pins the things that only fail in the yard, where nobody is watching
+   It also pins the things that only fail at the harbor, where nobody is watching
    a console: the GET fallback naming a function the server refuses, the
    lost-POST fingerprint drifting from the string it matches, and `capture`
    spreading to the gallery input and killing the gallery on Android.
@@ -235,7 +235,7 @@ Y.ev('ROWS = ' + JSON.stringify([
   else fail('a cleared unit cannot be marked pulled from anywhere in the app');
 
   /* "Mark dropped off" is a console act. It records that a customer drove in,
-     which is something the counter hears — the yard never sees it happen. */
+     which is something the counter hears — the harbor never sees it happen. */
   ['', 'pulled', 'stored'].forEach(function (st) {
     if (/markState\([^)]*dropped/.test(stateOf('C', st)))
       fail('Harbor Haul Out still offers "Mark dropped off" (state ' + JSON.stringify(st) + ') — ' +
@@ -258,7 +258,7 @@ Y.ev('ROWS = ' + JSON.stringify([
       ok('the server re-checks the pull gate rather than trusting the app');
     else fail('adminSetPlacementState does not gate "pulled" on haulAuth_ — a crafted request could ' +
               'record a pull nobody was cleared for');
-    if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the yard permission');
+    if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the harbor permission');
     else fail('adminSetPlacementState is not gated on the keys permission');
     if (/savePdf_|recomputeTotals_|rebuildLinesFromState_/.test(fn))
       fail('moving a boat re-prices it or rebuilds its PDF — it is a fact about a day\'s work, ' +
@@ -266,13 +266,13 @@ Y.ev('ROWS = ' + JSON.stringify([
     else ok('moving a boat touches no money and no paperwork');
   }
   /* EVERY transition works from either surface. The counter and the shop are
-     the same people (CLAUDE.md §9) — a phone that glitched in the yard must not
+     the same people (CLAUDE.md §9) — a phone that glitched at the harbor must not
      mean the only person who can record the pull is the one whose phone failed.
      This was built the other way once and had to be taken back out. */
   const adminHtml = read('admin/index.html');
   if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just Harbor Haul Out');
-  else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches in the ' +
-            'yard, the person they tell has to be able to record it');
+  else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches at the ' +
+            'harbor, the person they tell has to be able to record it');
   /* And it is the ONLY surface that can, since the app gave it up. */
   if (/btn\('dropped'/.test(adminHtml)) ok('the console can mark a unit dropped off');
   else fail('nothing can mark a unit dropped off any more — the app gave that up on the ' +
@@ -351,7 +351,7 @@ Y.ev('ROWS = ' + JSON.stringify([
 
    So: pull every on*= handler out of the real generated markup and run it
    through the JS parser. A handler that will not parse is a control that does
-   nothing when somebody taps it, in the yard, with no error to go on.
+   nothing when somebody taps it, at the harbor, with no error to go on.
    ===================================================================== */
 {
   const rows = [
@@ -410,9 +410,9 @@ Y.ev('ROWS = ' + JSON.stringify([
 
 
 /* =====================================================================
-   2e. RE-MEASURING FROM THE YARD.
+   2e. RE-MEASURING AT THE HARBOR.
    ---------------------------------------------------------------------
-   The tape measure is in the yard, so the correction is made in the yard. But
+   The tape measure is at the harbor, so the correction is made there. But
    a re-measure is the one thing the app does that MOVES MONEY: it re-prices
    the quote and can move the boat to a different building. So three rules,
    and all three are the sort that get quietly relaxed later.
@@ -455,7 +455,7 @@ Y.ev('ROWS = ' + JSON.stringify([
      is cached in localStorage: a session opened before the deploy carries a
      perms object with no `measure` key in it. */
   Y.ev('ME = {name:"Rex",admin:false,perms:{keys:1,photos:1}}');
-  if (Y.ev('canMeasure()') === true) ok('the yard crew can re-measure, which is the point of the card');
+  if (Y.ev('canMeasure()') === true) ok('the crew can re-measure, which is the point of the card');
   else fail('the app hides the card from the people holding the tape — the server now allows ' +
             'them, so this is the two copies disagreeing');
   Y.ev('ME = {name:"Marina",admin:false,perms:{photos:1}}');
@@ -473,10 +473,10 @@ Y.ev('ROWS = ' + JSON.stringify([
       Y.ev('ME = {name:"x",admin:false,perms:' + c[0] + '}');
       const m = Y.ev('canMeasure()'), w = Y.ev('canWrite()');
       if (m !== w) fail('canMeasure() and canWrite() disagree for perms ' + c[0] +
-                        ' — the fallback has drifted from the yard-facts bar it is supposed to be');
+                        ' — the fallback has drifted from the harbor-facts bar it is supposed to be');
       else if (m !== c[1]) fail('perms ' + c[0] + ' resolved to ' + m + ', expected ' + c[1]);
     });
-  ok('the fallback is the yard-facts bar itself, not a second copy of it');
+  ok('the fallback is the harbor-facts bar itself, not a second copy of it');
 
   /* --- 2. preview then apply, never one tap --- */
   const src = SRC.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -558,7 +558,7 @@ Y.ev('ROWS = ' + JSON.stringify([
    ===================================================================== */
 /* The app's retry list must be a SUBSET of what the server allows on GET —
    the server refuses a GET naming a write, so a wrong entry here is a retry
-   that can only ever fail, in the yard, with nobody to explain it. */
+   that can only ever fail, at the harbor, with nobody to explain it. */
 {
   const block = (GAS.match(/const CONSOLE_GET_FNS_ = \{[\s\S]*?\n\};/) || [''])[0];
   if (!block) fail('could not find CONSOLE_GET_FNS_ in the .gs — the subset check cannot run');
@@ -755,11 +755,11 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 {
   const g = GAS;
-  /* Slow work must never run inside the request the yard is waiting on. */
+  /* Slow work must never run inside the request the harbor is waiting on. */
   const save = (g.match(/function adminAddPlacementNote\b[\s\S]*?\n}/m) || [''])[0];
   if (/UrlFetchApp/.test(save))
     fail('adminAddPlacementNote talks to AssemblyAI inline — that is a Drive read and two uploads ' +
-         'with somebody standing in the yard waiting for the button');
+         'with somebody standing at the harbor waiting for the button');
   else ok('the save path does not transcribe inline; it queues');
   if (/queueTranscript_\(/.test(save)) ok('it queues the recording for the trigger to pick up');
   else fail('nothing queues the recording — it would never be typed up');

@@ -101,7 +101,7 @@ request. Open the one that covers what you are about to change — and open it
 | Read this | Before touching |
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
 | `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
-| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, yard printing |
+| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, storage and haul-out printing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |
 `tools/check-docs-coverage.js` fails if a rule that was once written down stops
@@ -160,7 +160,7 @@ in sheet, PDF, email, and page.
 8. Console: preview each email kind, confirm it renders, send one, confirm it
 appears in Email History with the sender's name.
 9. Photos: camera path and gallery path, Winter and Spring subfolders.
-10. Storage view → print yard sheets → one page per area, keys column filled.
+10. Storage view → print storage sheets → one page per area, keys column filled.
 11. Narrow the browser (or use a phone) → hamburger menu appears and works.
 - **`ScriptApp.getService().getUrl()` returns the `/dev` URL** when called from
 a spreadsheet-menu context. `/dev` only works for the logged-in owner —
@@ -197,7 +197,7 @@ equivalents must supply their own inputs.
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
 - He wants **explicit numbered walkthroughs** for anything run from the Apps
 Script editor — function name, where to click, what success looks like.
-- He tests on a **phone**, in the yard, and reports UX friction precisely.
+- He tests on a **phone**, at the harbor, and reports UX friction precisely.
 Take those reports seriously; they've all been real.
 - He values knowing the *tradeoff*, not just the result — flag what you chose
 - In Claude Code this inverts: **edit in place, commit real diffs.** The
@@ -280,7 +280,7 @@ thing to have running across a season rollover, or any window where the prices
 on the page are not the prices we mean.
 - **A property, not a constant.** `REMINDER_ENABLED` / `LEAD_FOLLOWUP_ENABLED`
 are the permanent code-level switches and still work; this is the operational
-one, flippable from a phone in the yard without a deploy. Either being off
+one, flippable from a phone at the harbor without a deploy. Either being off
 - **A corrupt setting reads as PAUSED.** An unparseable property must fail
 towards sending nothing — the other way turns a broken value into an
 unannounced mailshot. `verify.sh` asserts it, and `check-perms-pause.js`
@@ -421,7 +421,7 @@ A 3-option survey (done now / done on a date / will call) rides on customer
 emails — but **only once a deposit or payment exists** (`o.paid > 0`, checked in
 `customerEmailHtml_`). Asking someone to book a haul-out before they've put
 money down is asking them to schedule work they haven't agreed to buy, and it
-puts a date in the yard plan that nothing backs up. A refund back to zero drops
+puts a date in our haul-out plan that nothing backs up. A refund back to zero drops
 the question again; receipts never carry it. The console's Season timing block
 is staff-facing and stays available regardless, for phone calls. Answers post back via `?action=seasondone`. A stated date after Nov 15
 auto-applies the **late retrieval surcharge**, priced from the quote's own
@@ -463,11 +463,11 @@ side, so a posted payload has no such field and would wipe it — preserved
 explicitly like `payments`, and pinned by the save-path fixture.
 - Saving a note touches nothing else: no status, no re-price, no new PDF.
 `Keys & slip` card, gated on its **own `keys` permission** — recording where the
-keys are is yard work, and the crew who find that out have no business changing
+keys are is physical work, and the crew who find that out have no business changing
 what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
 - **Roster entries written before the permission existed have no `keys` field.**
 `canKeys_()` falls back to "already trusted with payments or adjustments",
-which is exactly the yard staff and the admins, so nobody had to run a
+which is exactly most of the staff, so nobody had to run a
 migration. An explicit setting always wins, including turning it OFF.
 `permsOf()` mirrors that fallback in the console, because `ME` is cached in
 localStorage and a session opened before the deploy would otherwise lose the
@@ -642,17 +642,17 @@ so a scope waiting on approval can take the **customer page** down, not just
 the console. Push-only first, run it, then deploy (CLAUDE.md §2, step 3).
 Current roster intent: Chris & Jeff admin (full); John, Rex, Jess →
 pay+email+photos+keys; Marina → photos only. Nobody outside the two admins has
-`printHaulOut()` on the storage card — one yard-wide sheet, not one per
-building, because haul-out order is a yard-wide question. Sorted ready-now →
-stated dates ascending → will call → not answered, and it carries what the crew
-needs standing in the yard: customer, unit + dims, storage, trailer or not,
+`printHaulOut()` on the storage card — one sheet across every storage area, not
+one per building, because haul-out order does not stop at a building line.
+Sorted ready-now → stated dates ascending → will call → not answered, and it
+carries what the crew needs standing at the harbor: customer, unit + dims, storage, trailer or not,
 slip, key location, requested timing and any note. Sorting uses the stored ISO
 date; printing uses `haulDate_()`, which passes anything non-ISO through rather
 than printing "Invalid Date" on a sheet somebody is holding.
 - **Email previews render by writing into the frame, not `srcdoc`.** The frame
 is `sandbox="allow-same-origin"` and deliberately **not** `allow-scripts`, so
 a rendered email stays inert. `srcdoc` under a fully-restrictive sandbox works
-in Chrome and comes up **blank on iOS Safari** — which is what the yard uses,
+in Chrome and comes up **blank on iOS Safari** — which is what staff use,
 so every email preview was broken for the person who most needs it while every
 desktop test passed. `pvRender()` is the single path for both the per-quote
 preview and the send-to-all sample, and it reports a failure rather than

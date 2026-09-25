@@ -1023,7 +1023,12 @@ function doPost(e) {
     const postedTab = d.storageTab || 'No Storage';
     const copies = [];   // {sheet, row} for every copy found, in scan order
     ss.getSheets().forEach(function (other) {
-      if (other.getRange(1, 3).getValue() !== 'Quote #') return;
+      /* A tab whose header row was overwritten by an import is still a quote
+         tab, and the quote stranded in row 1 is invisible to every scan below.
+         Repair it here rather than skipping past it — step 5 rewrites a stale
+         header row, which on such a tab would finish the job the import
+         started and destroy that customer's row outright. */
+      if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
       let r = findQuoteRow_(other, d.quoteNo);
       while (r > 0) {
         const remCell = String(other.getRange(r, COL.REM).getValue() || '');
@@ -5549,6 +5554,220 @@ function adminImportPreview(token, fileId, fileName, base64Data, pick) {
   };
 }
 
+/* ===========================================================================
+   WHERE AN APPENDED QUOTE ACTUALLY GOES
+   ---------------------------------------------------------------------------
+   This exists because of a morning of imports that were reported as saved and
+   were not there afterwards. The importer used to do this:
+
+       sh.appendRow(new Array(HEADERS.length).fill(''));
+       const ctx = { d: d, sh: sh, rowNum: sh.getLastRow() };
+
+   which reads like "reserve a row and take its number" and is not. A row of
+   empty strings is a row of EMPTY CELLS: the sheet's data region never grows,
+   and getLastRow() still points at the last row that has something in it. So
+   every imported quote was written ON TOP of that row:
+
+     - on a tab that already had quotes, over the MOST RECENT quote — the
+       import looked fine, and the quote it landed on was destroyed. Import a
+       batch and each one eats the one before it, which is why five that had
+       already been done had to be done again;
+     - on an empty tab (Golf Cart, E-bike), over the HEADER row — where
+       findQuoteRow_ cannot see it, because every scan starts at row 2, and
+       where takenQuoteNos_ stops recognising the tab as a quote tab at all,
+       so the number can be handed out again later. The console said
+       "Imported as QW-26-3445 on Golf Cart", and looking that number up
+       answered "Quote not found".
+
+   Nothing announced either one. So: find the bottom the way every other write
+   path here does (getLastRow() + 1), refuse to write when something is already
+   sitting in the row we picked, and read the number back out of the sheet
+   before telling anybody it was imported.
+=========================================================================== */
+
+/* The first free row on a quote tab. Never row 1, never a row with a quote
+   already in it — this throws instead, because the whole point is that a write
+   that cannot go where we think it goes must be an error and not a silent
+   overwrite. */
+function nextQuoteRow_(sh) {
+  const row = Math.max(sh.getLastRow(), 1) + 1;
+  const here = String(sh.getRange(row, COL.QN).getValue() || '').trim();
+  if (here) {
+    throw new Error('Row ' + row + ' of "' + sh.getName() + '" already holds quote ' +
+      here + ' — nothing was written. Tell Chris.');
+  }
+  return row;
+}
+
+/* A quote tab whose header row was overwritten by the bug above: row 1 holds a
+   real quote that nothing can find. Move it to the bottom, where it is an
+   ordinary row again, and put the header back.
+
+   Deliberately narrow. It acts ONLY when column 3 of row 1 holds something
+   that already reads as a full quote number — not when it is blank, not when
+   it is some other text. Every tab in this spreadsheet gets offered to this
+   function, and writing HEADERS across row 1 of the Activity Log or a tab
+   somebody made by hand would be a far worse bug than the one it repairs.
+
+   Returns the row the quote was moved to, or 0 when there was nothing to
+   rescue (including the ordinary case: row 1 is the header). */
+function rescueClobberedHeader_(sh) {
+  const c3 = String(sh.getRange(1, COL.QN).getValue() || '').trim();
+  if (c3 === HEADERS[COL.QN - 1]) return 0;          // 'Quote #' — nothing wrong
+  if (!c3) return 0;
+  const qn = normalizeQuoteNo(c3, new Date().getFullYear());
+  if (!qn || qn !== c3.toUpperCase()) return 0;      // not a quote number: leave it alone
+  const first = sh.getRange(1, 1, 1, HEADERS.length).getValues()[0];
+  /* Computed while row 1 still counts as content, so an otherwise empty tab
+     gives row 2 rather than row 1 again. */
+  const to = Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(to, 1, 1, HEADERS.length).setValues([first]);
+  sh.getRange(to, COL.TOTAL, 1, 2).setNumberFormat('$#,##0.00');
+  sh.getRange(to, COL.ITEMS).setWrap(true);
+  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+  try { sh.setFrozenRows(1); } catch (e) {}
+  return to;
+}
+
+/* The storage tab an import is about to land on: created if it is new, header
+   restored if it is missing, and any quote stranded in row 1 rescued first. */
+function quoteTabFor_(ss, tabName) {
+  let sh = ss.getSheetByName(tabName);
+  if (!sh) {
+    sh = ss.insertSheet(tabName);
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    try { sh.setFrozenRows(1); } catch (e) {}
+    return sh;
+  }
+  rescueClobberedHeader_(sh);
+  if (String(sh.getRange(1, COL.QN).getValue() || '').trim() !== HEADERS[COL.QN - 1]) {
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
+    try { sh.setFrozenRows(1); } catch (e) {}
+  }
+  return sh;
+}
+
+/* Sweep every tab for a quote stranded in a header row. Runs at the top of an
+   import, so Chris gets the ones already lost back simply by carrying on with
+   the batch — the repair does not wait for anybody to open the script editor.
+   Costs one cell read per tab, which is what takenQuoteNos_ already pays. */
+function rescueAllQuoteTabs_() {
+  const out = [];
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    if (sh.getName() === DELETED_TAB) return;
+    let row = 0;
+    try { row = rescueClobberedHeader_(sh); } catch (e) { row = 0; }
+    if (row) out.push({ tab: sh.getName(), row: row,
+                        quoteNo: String(sh.getRange(row, COL.QN).getValue() || '') });
+  });
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+   ONE-TIME REPAIR, run from the editor: menu Run > repairImportedRows.
+   Does what an import now does on its own, across every tab at once, and then
+   says what it found — including any quote number that ended up on two rows,
+   which is possible because a tab with a clobbered header is invisible to
+   takenQuoteNos_ and its numbers could have been handed out a second time.
+   Writes nothing except the rescues; sends nothing. */
+function repairImportedRows() {
+  const rescued = rescueAllQuoteTabs_();
+  const seen = {}, dupes = [];
+  SpreadsheetApp.getActiveSpreadsheet().getSheets().forEach(function (sh) {
+    if (String(sh.getRange(1, COL.QN).getValue() || '') !== HEADERS[COL.QN - 1]) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r, i) {
+      const qn = String(r[0] || '').trim().toUpperCase();
+      if (!qn) return;
+      const where = sh.getName() + ' row ' + (i + 2);
+      if (seen[qn]) dupes.push(qn + ': ' + seen[qn] + ' and ' + where);
+      else seen[qn] = where;
+    });
+  });
+  const lines = [];
+  lines.push(rescued.length
+    ? 'Rescued ' + rescued.length + ' quote(s) out of a header row:'
+    : 'Nothing stranded in a header row — no rescue needed.');
+  rescued.forEach(function (r) { lines.push('  ' + r.quoteNo + ' -> ' + r.tab + ' row ' + r.row); });
+  if (dupes.length) {
+    lines.push('DUPLICATE quote numbers — these need a human:');
+    dupes.forEach(function (t) { lines.push('  ' + t); });
+  } else lines.push('No duplicate quote numbers.');
+  const report = lines.join('\n');
+  console.log(report);
+  try { auditLog_('repairImportedRows', report.replace(/\n/g, ' | ')); } catch (e) {}
+  return report;
+}
+
+/* ---------------------------------------------------------------------------
+   WHAT THE IMPORTS ACTUALLY LEFT BEHIND — run from the editor: importAudit.
+   Repairs first (above), then reconciles: every "IMPORTED …" line in the
+   Activity Log against what is findable on the sheet right now, looked up the
+   way the console looks a quote up. Anything it cannot find was overwritten
+   before this was fixed and has to be imported again.
+
+   Nothing about those customers is gone. The old per-customer sheet is still
+   in the season folder on Drive, and the PDF that import filed is still there
+   too — it is the ROW that was overwritten, and re-importing writes a new one.
+
+   Sends nothing, and writes nothing beyond the rescues. */
+function importAudit() {
+  const repair = repairImportedRows();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const log = ss.getSheetByName('Activity Log');
+  const seen = {};     // quoteNo -> the first log line that mentions it
+  const order = [];
+  if (log && log.getLastRow() > 1) {
+    log.getRange(2, 1, log.getLastRow() - 1, 3).getValues().forEach(function (r) {
+      const action = String(r[2] || '');
+      const m = action.match(/^IMPORTED\s+(QW-\d{2}-\d{3,5})\b(.*)$/);
+      if (!m) return;
+      const qn = m[1].toUpperCase();
+      if (seen[qn]) return;
+      seen[qn] = { when: r[0], who: String(r[1] || ''), rest: m[2].replace(/^\s*—\s*/, '') };
+      order.push(qn);
+    });
+  }
+
+  /* Present on the sheet, by the same rule every other sweep uses: a tab is a
+     quote tab when its column 3 header says so, and a quote is found from row
+     2 down. If it is not visible to that, it is not visible to the console. */
+  const live = {};
+  ss.getSheets().forEach(function (sh) {
+    if (String(sh.getRange(1, COL.QN).getValue() || '') !== HEADERS[COL.QN - 1]) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r, i) {
+      const qn = String(r[0] || '').trim().toUpperCase();
+      if (qn) live[qn] = sh.getName() + ' row ' + (i + 2);
+    });
+  });
+
+  const missing = order.filter(function (qn) { return !live[qn]; });
+  const lines = [repair, ''];
+  lines.push('Imports in the Activity Log: ' + order.length);
+  lines.push('Of those, on the sheet now:  ' + (order.length - missing.length));
+  if (!missing.length) {
+    lines.push('Nothing is missing — every import that was logged is there.');
+  } else {
+    lines.push('');
+    lines.push('MISSING — overwritten before the fix, import these again:');
+    missing.forEach(function (qn) {
+      const s = seen[qn];
+      lines.push('  ' + qn + '  —  ' + s.rest + '   (' + new Date(s.when).toLocaleString() +
+        ', ' + s.who + ')');
+    });
+    lines.push('');
+    lines.push('The old sheet for each is still in the season folder on Drive, so');
+    lines.push('re-importing is the whole of the fix. Nothing was sent to anybody.');
+  }
+  const report = lines.join('\n');
+  console.log(report);
+  return report;
+}
+
 /* Writing it. The imported quote is an ordinary quote from here on: a fresh
    number, priced at TODAY's rates by the shared engine, on the right storage
    tab, with its own PDF. What it carries from the old sheet is the customer's
@@ -5569,6 +5788,13 @@ function adminImportApply(token, state, meta) {
 function importApplyCore_(who, state, meta, tabOverride) {
   if (!state || !state.unit) return { ok: 0, error: 'Nothing to import — preview it first.' };
   meta = meta || {};
+
+  /* Before anything else, put back any quote an earlier import left stranded in
+     a header row. It has to happen here rather than only in quoteTabFor_: the
+     number about to be minted is read off the sheet, and a tab whose header is
+     gone is not counted as a quote tab — so a stranded quote's number could be
+     handed to this customer as well. */
+  rescueAllQuoteTabs_();
 
   const owner = String(meta.owner || '').trim();
   const parts = owner.split(/\s+/);
@@ -5617,30 +5843,15 @@ function importApplyCore_(who, state, meta, tabOverride) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   /* d.storageTab is left as the engine computed it, so the quote knows where it
-     belongs the moment it is sent off; only the ROW is parked elsewhere. */
+     belongs the moment it is sent off; only the ROW is parked elsewhere.
+     NEVER appendRow(blanks) THEN ASK getLastRow() — that is how forty quotes went
+     through row 1 of a brand-new Import tab. nextQuoteRow_ works the row out
+     from the data that is actually there and refuses one that already holds a
+     quote; quoteTabFor_ creates the tab with its header written in place and
+     rescues anything stranded in row 1 first. */
   const tabName = tabOverride || d.storageTab || 'No Storage';
-  let sh = ss.getSheetByName(tabName);
-  if (!sh) {
-    sh = ss.insertSheet(tabName);
-    sh.appendRow(HEADERS);
-    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
-  }
-  /* NEVER appendRow(blanks) THEN ASK getLastRow().
-     A row of empty strings is still blank as far as getLastRow() is concerned,
-     so on a tab whose only content is the header it answered 1 — and the
-     import wrote the quote OVER the header. The next import asked again, got 1
-     again, and overwrote that. The bulk run put forty quotes through row 1 of
-     a brand-new Import tab, left one survivor, and with "Quote #" gone from C1
-     every sheet sweep skipped the tab entirely: the console could not find a
-     single one of them.
-
-     It never showed before because every other caller appends to a tab that
-     already holds quote rows. Creating a fresh tab is what the bulk import
-     added. So: work the row out from the data that is actually there, write
-     the values straight into it, and never leave a blank row behind for the
-     next caller to trip over. Row 1 is the header and is not a target. */
-  const rowNum = Math.max(sh.getLastRow(), 1) + 1;
-  const ctx = { d: d, sh: sh, rowNum: rowNum };
+  const sh = quoteTabFor_(ss, tabName);
+  const ctx = { d: d, sh: sh, rowNum: nextQuoteRow_(sh) };
   sh.getRange(ctx.rowNum, COL.LAST).setValue(d.lastName);
   sh.getRange(ctx.rowNum, COL.FIRST).setValue(d.firstName);
   sh.getRange(ctx.rowNum, COL.QN).setValue(qn);
@@ -5665,11 +5876,23 @@ function importApplyCore_(who, state, meta, tabOverride) {
      write-a-marker, drop-it-on-graduation pattern the lead follow-up uses. */
   sh.getRange(ctx.rowNum, COL.REM).setValue(IMPORT_HOLD_MARK + new Date().toLocaleDateString());
 
+  /* READ IT BACK. "Imported as QW-26-3445" was printed by code that had never
+     checked, and staff spent a morning trusting it. The row is on the sheet or
+     this did not happen — and the same scan the console will use to find it
+     afterwards (from row 2 down, by quote number) is the one that has to find
+     it now, so a quote written somewhere nothing can see it still fails. */
+  const landedRow = findQuoteRow_(sh, qn);
+  if (landedRow !== ctx.rowNum) {
+    return { ok: 0, error: 'The import did not land on the "' + tabName + '" tab — ' +
+      'nothing has been saved under ' + qn + '. Do not re-import until Chris has looked: ' +
+      'run repairImportedRows from the Apps Script editor.' };
+  }
+
   auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
-    d.unit + ', ' + tabName + ', ' + usd_(Number(d.total || 0)) +
+    d.unit + ', ' + tabName + ' row ' + landedRow + ', ' + usd_(Number(d.total || 0)) +
     (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));
 
-  return { ok: 1, quoteNo: qn, tab: tabName, total: usd_(Number(d.total || 0)),
+  return { ok: 1, quoteNo: qn, tab: tabName, row: landedRow, total: usd_(Number(d.total || 0)),
            msg: 'Imported as ' + qn + ' on ' + tabName + '. No customer has been emailed.' };
 }
 

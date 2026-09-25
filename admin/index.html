@@ -2505,8 +2505,12 @@ async function doImport(){
       note:($('impNote')||{}).value||''}]);
     if(!r||!r.ok){ setMsg('impMsg',(r&&r.error)||'Import failed.',false); return; }
     setMsg('impMsg',r.msg,true);
+    /* The row it landed on, because the server now proves it is there by
+       reading it back — say where, so it can be looked at on the sheet. */
     $('impReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>'+
-      'Look it up as <b>'+esc(r.quoteNo)+'</b> to check it before sending anything.</div>';
+      'Look it up as <b>'+esc(r.quoteNo)+'</b> to check it before sending anything.'+
+      (r.row?'<br>On the sheet: '+esc(r.tab)+', row '+esc(r.row)+'.':'')+
+      '</div>';
     IMP=null; toast('Imported '+r.quoteNo);
   }catch(e){ setMsg('impMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Import as a new quote'; }

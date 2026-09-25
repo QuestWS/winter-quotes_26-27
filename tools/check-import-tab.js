@@ -455,7 +455,9 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   if (/rowNum\s*=\s*sh\.getLastRow\(\)\s*;/.test(core)) {
     fail('the target row is getLastRow() itself — that is the row that already has data');
   } else ok('the target row is not getLastRow() itself');
-  if (/Math\.max\(sh\.getLastRow\(\),\s*1\)\s*\+\s*1/.test(core)) {
+  const nextRow = (function () { try { return fn('nextQuoteRow_'); } catch (e) { return ''; } })();
+  const defensive = /Math\.max\(sh\.getLastRow\(\),\s*1\)\s*\+\s*1/;
+  if (defensive.test(core) || (/nextQuoteRow_\(sh\)/.test(core) && defensive.test(nextRow))) {
     ok('it writes below the last row with real data, and never to row 1');
   } else fail('importApplyCore_ no longer computes its row defensively — row 1 is the header ' +
               'and must never be a target');

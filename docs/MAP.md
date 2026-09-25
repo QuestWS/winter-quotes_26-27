@@ -97,6 +97,8 @@ symptom.
 | Old-sheet import (one at a time) | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply`, `importApplyCore_` | `previewImport`, `doImport` |
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |
+| Where an appended row goes (and the header-row rescue) | `nextQuoteRow_`, `rescueClobberedHeader_`, `quoteTabFor_`, `rescueAllQuoteTabs_`, `repairImportedRows` | `.gs` |
+| Which imports went missing | `importAudit` | `.gs` (editor) |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
@@ -156,6 +158,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-perms-pause.js` | The `keys` fallback, and that a corrupt pause reads as PAUSED |
 | `check-reprice.js` | A discount survives a season re-price |
 | `check-legacy-import.js` | Old-sheet parsing, including the broken and comparison files |
+| `check-import-write.js` | An imported quote lands on a free row — never on the last quote, never on the header row |
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |

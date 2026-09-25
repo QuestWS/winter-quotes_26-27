@@ -2,7 +2,7 @@
 /* What the console does when the answer never arrives.
    ---------------------------------------------------------------------------
    Apps Script answers a POST with a redirect to a one-shot googleusercontent
-   URL. On a phone in the yard, on a call Google took long enough to give up on,
+   URL. On a phone at the harbor, on a call Google took long enough to give up on,
    that leg comes back 404. Two failures came out of treating that as an answer:
 
    - the storage view threw `Network error (404)` after minutes of waiting and
@@ -82,7 +82,7 @@ const GOT = (fn, method) => sent.filter((r) => r.fn === fn && (!method || r.meth
   let c = makeConsole();
   handler = (r) => (r.method === 'POST'
     ? { status: 404 }
-    : { body: stamped({ ok: 1, groups: [{ tab: 'Yard', count: 2, rows: [] }] }) });
+    : { body: stamped({ ok: 1, groups: [{ tab: 'Lot', count: 2, rows: [] }] }) });
   let out = null, err = null;
   try { out = await c.api('storageView', []); } catch (e) { err = e; }
   if (err) fail('a 404 on the storage view POST still fails outright: ' + err.message);

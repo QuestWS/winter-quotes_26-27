@@ -176,7 +176,7 @@ def doc1():
         [['Quote page', 'Customers', 'A public web page where someone builds a winter quote for a '
           'boat, jet ski, golf cart or e-bike, and can email, print, sign and pay.'],
          ['Staff console', 'Quest staff', 'A PIN-protected page for looking up quotes, taking '
-          'payments, adjusting prices, sending emails, uploading photos and running the yard.'],
+          'payments, adjusting prices, sending emails, uploading photos and running day-to-day operations.'],
          ['Backend + spreadsheet', 'Nobody directly', 'The Google Apps Script that prices, stores, '
           'emails and generates PDFs, plus the Google Sheet that holds every quote.']],
         [1.15 * inch, 1.05 * inch, 4.4 * inch])]
@@ -218,7 +218,7 @@ def doc1():
         'or removing line items; pricing a service the customer asked about; applying late fees; '
         'correcting dimensions, motor counts and storage location; uploading condition photos and '
         'signed contracts; previewing and sending customer emails, individually or to '
-        'everyone; printing yard sheets and the haul-out list; leaving a private note on a quote; '
+        'everyone; printing storage sheets and the haul-out list; leaving a private note on a quote; '
         're-pricing a whole season at current rates; loading a quote out of one of last season\'s '
         'spreadsheets; pausing the automatic emails; managing '
         'staff accounts; and restoring from a backup.')]
@@ -433,7 +433,7 @@ def doc2():
          [perm('email'), 'Previewing and sending customer emails.'],
          [perm('photos'), 'Uploading and viewing condition photos.'],
          [perm('keys'), 'Recording where the keys are and which slip a boat is in, and leaving a '
-           'staff note on a quote. Yard work — it changes nothing a customer owes, so the crew '
+           'staff note on a quote. Physical work — it changes nothing a customer owes, so the crew '
            'who actually find these things out can record them.'],
          [perm('admin'), 'Everything above, plus staff accounts and backup restore. An admin '
            'bypasses the individual permissions entirely.']],
@@ -442,7 +442,7 @@ def doc2():
                   'pay, email, photos and keys. Marina has photos only.', SMALL)]
     g.story += [P('Accounts created before the keys permission existed do not have the setting on '
                   'them at all. Those fall back to "already trusted with payments or adjustments", '
-                  'which is the yard staff and the admins. Ticking or unticking the box on an '
+                  'which is most of the staff. Ticking or unticking the box on an '
                   'account always wins over that fallback, including to turn it off.', SMALL)]
 
     g.story += [P('Finding a quote', H1)]
@@ -577,8 +577,8 @@ def doc2():
     g.story += [table(
         ['Where it goes', 'Permission', 'What it does'],
         [['Storage view', perm('view'), 'Every unit grouped by storage area, with keys and '
-          'balances. "Print yard sheets" gives one page per area for use in the yard; '
-          '"Print haul-out list" gives one sheet for the whole yard, in the order customers '
+          'balances. "Print storage sheets" gives one page per area for walking the units '
+          'off; "Print haul-out list" gives one sheet across every storage area, in the order customers '
           'asked to come out.'],
          ['Send to all', perm('email'), 'The two seasonal announcements, to everyone at once.'],
          ['Load from an old sheet', perm('adjust'), 'Turn one of last season\'s per-customer '
@@ -707,19 +707,19 @@ def doc2():
          ['Clearing a box', 'Falls back to whatever the customer originally told us, rather than '
           'blanking it.']],
         [1.6 * inch, 5.0 * inch])]
-    g.story += [note('This is what the yard actually reads',
-        'What you type here is what appears on the yard sheets, on the haul-out list, and in the '
+    g.story += [note('This is what staff actually read',
+        'What you type here is what appears on the storage sheets, on the haul-out list, and in the '
         '"you\'re up next" email. A line at the top of the card tells you what is still missing — '
         'and if anything is, the haul-out email asks the customer for it directly. Once we have '
         'both, that email says them back instead, so a key location recorded in April gets '
         'checked before somebody drives out in October.')]
 
-    g.story += [P('Printing for the yard', H1)]
+    g.story += [P('Printing for the crew', H1)]
     g.story += [table(
         ['Sheet', 'What it is for'],
-        [['Yard sheets', 'One page per storage area. For walking a building and checking units '
+        [['Storage sheets', 'One page per storage area. For walking a building and checking units '
           'off — what is in here, whose it is, where the keys are.'],
-         ['Haul-out list', 'One page for the whole yard, ordered by when each customer asked to '
+         ['Haul-out list', 'One page across every storage area, ordered by when each customer asked to '
           'come out: ready now first, then stated dates soonest first, then "will call", then '
           'anyone who has not answered. Shows the customer, the unit and its dimensions, storage '
           'area, whether it is on a trailer, the slip number, where the keys are, and any note '

@@ -17,7 +17,7 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
-| `yard/index.html` | ~900 | The yard app: three lists, one unit at a time, the yard log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
+| `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: three lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
@@ -96,30 +96,30 @@ symptom.
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
-| Storage view and yard printing | `adminStorageView` | `printStorage`, `printHaulOut` |
-| Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; yard app `renderSheet` |
+| Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
+| Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
 | Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |
 | Keys, slip and trailer location | `KEYFIELDS_`, `KEYLABELS_`, `sanitizeKeys_`, `adminKeysApply` | `renderKeys`, `saveKeys` |
-| The yard log | `adminAddYardNote`, `YARD_NOTE_MAX_` | `renderYardLog`, `addYardNote` |
-| The per-unit alert (set: console only) | `adminSetYardAlert`, `YARD_ALERT_MAX_` | console `renderAlert`/`saveAlert`; yard app `alert_`/`renderAlert` display only |
+| The Harbor Haul Out log | `adminAddPlacementNote`, `PLACEMENT_NOTE_MAX_` | `renderPlacementLog`, `addPlacementNote` |
+| The per-unit alert (set: console only) | `adminSetPlacementAlert`, `PLACEMENT_ALERT_MAX_` | console `renderAlert`/`saveAlert`; Harbor Haul Out `alert_`/`renderAlert` display only |
 | Staff accounts | `adminAddStaff`, `adminRemoveStaff`, `freshPin_`, `adminCount_` | `addStaff`, `removeStaff` |
 | Deleting a quote (admins only) | `adminDeleteQuote`, `deletedSheet_`, `deletedHeaders_`, `DELETED_TAB` | `renderDeleteQuote`, `doDeleteQuote` |
 | Photos | `adminUploadPhoto` | `refreshPhotos` |
 | Email preview frame | `adminEmailPreview` | `pvRender` |
 
-### Yard app
+### Harbor Haul Out
 | Feature | Entry point (server) | Entry point (app) |
 |---|---|---|
 | The three lists | `adminStorageView` | `listOf_`, `pullList_`, `storeList_`, `render`, `setTab` |
-| Moving a unit along (pulled / dropped off / stored) | `YARD_STATES_`, `adminSetYardState`, `yardStateOf_` | `markState`, `renderState`, `act_` (dropped off is console-only; pulled is on the opened unit, not the row) |
-| Search and sort in the yard | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
+| Moving a unit along (pulled / dropped off / stored) | `PLACEMENT_STATES_`, `adminSetPlacementState`, `placementStateOf_` | `markState`, `renderState`, `act_` (dropped off is console-only; pulled is on the opened unit, not the row) |
+| Search and sort | — | `storeList_`, `toggleSort`, `byLocation_`, `byName_` |
 | May we pull this one | `haulAuth_` | `auth_` (renders it; never decides it) |
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
-| Re-measuring from the yard | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
-| Yard log | `adminAddYardNote` | `renderLog`, `saveNote` |
-| Voice notes (record) | `voiceFolder_`, `adminAddYardNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
+| Re-measuring at the harbor | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
+| The Harbor Haul Out log | `adminAddPlacementNote` | `renderLog`, `saveNote` |
+| Voice notes (record) | `voiceFolder_`, `adminAddPlacementNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |
 | Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
@@ -156,7 +156,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
-| `check-yard-app.js` | The yard app renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, and its GET retry list is a subset of the server's |
+| `check-harbor-haul-out.js` | Harbor Haul Out renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, and its GET retry list is a subset of the server's |
 | `check-sign-chase.js` | A unit is cleared to pull if and only if it is BOTH signed and paid, and the two holds name their own reason; the deposit tabs sort by payment rather than balance; a lead sits outside both; the sign nudge refuses to build rather than ship a dead button |
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |

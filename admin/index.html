@@ -99,7 +99,7 @@ background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bo
 /* The customer's own link to their quote. It exists to be handed over — read
    out on the phone, texted, pasted into an email — so the URL is shown in full
    and selectable rather than hidden behind a button that may have no clipboard
-   permission in whatever browser the yard phone is running. */
+   permission in whatever browser the harbor phone is running. */
 .lnkbox{background:#F4F9FC;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:10px}
 .lnkbox .lab{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:11px}
 .lnkbox .row{display:flex;gap:6px;align-items:center;margin-top:6px}
@@ -123,7 +123,7 @@ border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);backgro
 .danger h2{color:var(--red)}
 .btn.red{background:var(--red);color:#fff}.btn.red:hover{filter:brightness(1.06)}
 /* Before/after diff for a re-measure. Money that moves has to be readable at
-   arm's length in the yard, so the amounts are monospaced and aligned and the
+   arm's length at the harbor, so the amounts are monospaced and aligned and the
    direction of the change is carried by colour AND by the +/- sign. */
 .dfrow{display:flex;gap:8px;align-items:baseline;padding:5px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .dfrow .dl{flex:1;min-width:0;overflow-wrap:anywhere}
@@ -301,9 +301,9 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   .pgHead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:3px solid #000;padding-bottom:6px;margin-bottom:4px}
   .pgHead h1{font-size:20px;margin:0;letter-spacing:.02em}
   .pgHead .meta{font-size:11px;text-align:right}
-  table.yard{width:100%;border-collapse:collapse;font-size:11.5px}
-  table.yard th{text-align:left;border-bottom:1.5px solid #000;padding:5px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
-  table.yard td{border-bottom:.75px solid #999;padding:7px 6px;vertical-align:top}
+  table.printsheet{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.printsheet th{text-align:left;border-bottom:1.5px solid #000;padding:5px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+  table.printsheet td{border-bottom:.75px solid #999;padding:7px 6px;vertical-align:top}
   .cb{width:14px;height:14px;border:1.5px solid #000;display:inline-block}
   /* A unit we may not touch yet. Printers in the shop are black and white, so
      none of this may depend on colour: the row is shaded, boxed on the left,
@@ -312,7 +312,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
   tr.noauth td:first-child{border-left:4px solid #000}
   .hold{display:inline-block;border:1.5px solid #000;padding:1px 4px;font-size:9px;
     font-weight:bold;letter-spacing:.06em;white-space:nowrap}
-  /* The paper is what the crew is actually holding in the yard, so an alert
+  /* The paper is what the crew is actually holding at the harbor, so an alert
      has to survive the trip onto it — in words and a box, never a colour. */
   .palert{display:block;border:1.5px solid #000;padding:2px 5px;margin-top:3px;
     font-size:10px;font-weight:bold;text-transform:uppercase}
@@ -389,7 +389,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
          offer different things. -->
     <div id="homeTiles" class="tiles hide">
       <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
-        <span>Who is in each building, with the printable yard sheets and the haul-out list.</span></button>
+        <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile hide" id="bulkTile" onclick="navGo(toggleBulk)"><b>Send to all</b>
         <span>The spring relaunch alert or the end-of-season note, to every customer at once. Preview first — it sends nothing.</span></button>
       <button class="tile hide" id="importTile" onclick="navGo(toggleImport)"><b>Load from an old sheet</b>
@@ -507,7 +507,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               there is nowhere to record. If it does have one, tick <b>Stored on its trailer</b> in
               <b>Unit details &amp; storage</b> — that changes the storage rate, so it re-prices.</div>
             <div class="msg" style="margin:6px 0 0">Clearing a box falls back to whatever the customer
-              told us. This is what the yard sheets, the haul-out list and the "you're up next" email use.</div>
+              told us. This is what the storage sheets, the haul-out list and the "you're up next" email use.</div>
             <button class="btn navy" id="keysBtn" onclick="saveKeys()">Save keys &amp; slip</button>
             <div class="msg" id="keysMsg"></div>
           </div>
@@ -533,16 +533,16 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 
           <!-- Where the unit is in the season. "Dropped off" starts here on
                purpose: a customer driving their boat in is something the
-               office sees and the yard does not, and it is what puts the unit
+               office sees and the harbor does not, and it is what puts the unit
                on the crew's To store list. -->
-          <!-- One short line the yard crew sees on their list and at the top of
-               the unit's screen. Not the yard log (append-only history) and not
-               the staff note (the office's private reasoning). -->
+          <!-- One short line the crew sees on their list and at the top of
+               the unit's screen. Not the Harbor Haul Out log (append-only history)
+               and not the staff note (the office's private reasoning). -->
           <div class="card hide" id="alertCard">
-            <h2>Yard alert</h2>
+            <h2>Harbor Haul Out alert</h2>
             <div class="msg" style="margin:0 0 6px">The one thing somebody must know
               <b>before they touch this boat</b> — shown on the crew's list, at the top of the unit
-              in the yard app, and on the printed sheets. Keep it to one line, and
+              in Harbor Haul Out, and on the printed sheets. Keep it to one line, and
               <b>clear it when it stops being true</b>. The customer never sees it.</div>
             <div id="alertNow"></div>
             <input class="txt" id="alertText" maxlength="160" placeholder="e.g. no keys — do not tow">
@@ -553,27 +553,27 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="alertMsg"></div>
           </div>
 
-          <div class="card hide" id="yardStateCard">
-            <h2>Yard status</h2>
-            <div class="msg" style="margin:0 0 6px">Drives the three lists in the yard app.
+          <div class="card hide" id="placementStateCard">
+            <h2>Harbor Haul Out status</h2>
+            <div class="msg" style="margin:0 0 6px">Drives the three lists in Harbor Haul Out.
               Mark a unit <b>dropped off</b> when the customer brings it in — that is what puts it
               on the crew's <b>To store</b> list without it ever having been in the water.</div>
-            <div class="msg" id="yardStateNow" style="margin:0 0 8px"></div>
-            <div id="yardStateBtns"></div>
-            <div class="msg" id="yardStateMsg"></div>
+            <div class="msg" id="placementStateNow" style="margin:0 0 8px"></div>
+            <div id="placementStateBtns"></div>
+            <div class="msg" id="placementStateMsg"></div>
           </div>
 
-          <div class="card hide" id="yardLogCard">
-            <h2>Yard log</h2>
-            <div class="msg" style="margin:0 0 6px">Observations from the yard, newest last —
-              written from the yard app or here. <b>Append-only:</b> entries are never edited or
+          <div class="card hide" id="placementLogCard">
+            <h2>Harbor Haul Out log</h2>
+            <div class="msg" style="margin:0 0 6px">Observations from the harbor, newest last —
+              written from Harbor Haul Out or here. <b>Append-only:</b> entries are never edited or
               deleted, so two people can log the same boat without overwriting each other.
               The customer never sees this.</div>
-            <div id="yardLogList"></div>
-            <textarea class="txt" id="yardNoteText" rows="3"
+            <div id="placementLogList"></div>
+            <textarea class="txt" id="placementNoteText" rows="3"
               placeholder="e.g. gelcoat crack starboard bow, photographed"></textarea>
-            <button class="btn navy" id="yardNoteBtn" onclick="addYardNote()">Add to the log</button>
-            <div class="msg" id="yardNoteMsg"></div>
+            <button class="btn navy" id="placementNoteBtn" onclick="addPlacementNote()">Add to the log</button>
+            <div class="msg" id="placementNoteMsg"></div>
           </div>
 
           <div class="card hide" id="noteCard">
@@ -739,7 +739,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
         <div class="msg" style="margin-top:0">
           <b>Step 1</b> reads every file and writes a report to Drive — it writes no quotes.
           Read the report, delete any row you don't want, then <b>step 2</b> imports what is
-          left onto the <b>Import</b> tab. Imported quotes are invisible to the yard app, the
+          left onto the <b>Import</b> tab. Imported quotes are invisible to Harbor Haul Out, the
           haul-out sheets and the 9am reminder until you send one off. <b>No customer is emailed.</b></div>
         <div class="msg" id="bulkNow" style="margin:8px 0 0"></div>
         <div id="bulkReportLink" class="msg hide" style="margin:2px 0 0"></div>
@@ -810,7 +810,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Storage overview</h2>
         <div style="display:flex;gap:8px">
-          <button class="btn navy sm" onclick="printStorage()">Print yard sheets</button>
+          <button class="btn navy sm" onclick="printStorage()">Print storage sheets</button>
           <button class="btn gold sm" onclick="printHaulOut()">Print haul-out list</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
@@ -893,7 +893,7 @@ function apiLostReply_(j){
    TRANSPORT FAILURE IS NOT AN ANSWER
    ---------------------------------------------------------------------------
    Apps Script answers a POST with a redirect to a one-shot googleusercontent
-   URL. On a phone in the yard, on a call that took Google long enough to give
+   URL. On a phone at the harbor, on a call that took Google long enough to give
    up on, that leg comes back 404 — and the old code turned that into
    `Network error (404)` and stopped. Two things went wrong with that:
 
@@ -1027,7 +1027,7 @@ function permsOf(me){
   const p=Object.assign({},(me&&me.perms)||{});
   if(p.keys===undefined||p.keys===null||p.keys==='') p.keys=(p.adjust||p.pay)?1:0;
   /* Mirrors canMeasure_ in the .gs, whose fallback is canKeys_ — whoever can
-     record yard facts can correct a measurement. Resolved AFTER p.keys above,
+     record harbor facts can correct a measurement. Resolved AFTER p.keys above,
      so it cannot disagree with it. ME is cached, so a session opened before
      this permission existed must resolve the same way the server does rather
      than reading `undefined` as "no". */
@@ -1121,7 +1121,7 @@ function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg
 
    Not a link to the filed Drive PDF on purpose: that file inherits the season
    folder's permissions, so anyone holding a console PIN but not signed into
-   the Quest Google account -- most of the yard, on their own phones -- would
+   the Quest Google account -- most of the crew, on their own phones -- would
    get "Request access" instead of a quote. */
 /* ---------- Dimensions & storage ----------
    Re-measure a unit or move it between storage locations, and let the server
@@ -1129,7 +1129,7 @@ function closeResults(){$('resultsCard').classList.add('hide');setMsg('lookupMsg
 
    Nothing is written until the before/after diff has been shown and confirmed.
    These are dollars on a real customer's quote, and a mistyped beam is a very
-   easy thing to do on a phone in the yard. */
+   easy thing to do on a phone at the harbor. */
 let DIMS=null;
 
 function renderDims(d){
@@ -1519,22 +1519,22 @@ function renderQuote(r){
   if(P.measure) renderDims(r.dims);
   /* Keys and slip write into the same journal and re-run the engine (the slip
      number appears in the Heritage Harbor line), so same permission. */
-  /* Keys and slip are yard work, not a price change — own permission, so the
+  /* Keys and slip are physical work, not a price change — own permission, so the
      crew who actually find out where the keys are can record it. */
   /* A note is not money and not a price change; the same trusted-staff bar as
      keys and slip. */
   $('noteCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderStaffNote(r.staffNote);
-  /* Same bar as the staff note and the keys card: yard work, not money. */
-  $('yardLogCard').classList.toggle('hide',!P.keys);
-  if(P.keys) renderYardLog(r.yardNotes);
+  /* Same bar as the staff note and the keys card: physical work, not money. */
+  $('placementLogCard').classList.toggle('hide',!P.keys);
+  if(P.keys) renderPlacementLog(r.placementNotes);
   $('alertCard').classList.toggle('hide',!P.keys);
-  window._alert=r.yardAlert||null;
+  window._alert=r.placementAlert||null;
   if(P.keys) renderAlert();
-  $('yardStateCard').classList.toggle('hide',!P.keys);
-  window._yardState=r.yard||{state:''};
-  window._yardAuth=r.yardAuth||null;
-  if(P.keys) renderYardState();
+  $('placementStateCard').classList.toggle('hide',!P.keys);
+  window._placementState=r.placement||{state:''};
+  window._pullAuth=r.pullAuth||null;
+  if(P.keys) renderPlacementState();
   $('keysCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderKeys(r.keys);
   const owed=(r.balNum||0)>0.005;
@@ -1608,19 +1608,19 @@ async function doDeleteQuote(){
   }catch(e){setMsg('delMsg',e.message,false);}
   b.disabled=false;
 }
-/* The yard log. Rendered newest LAST, the way a log reads — the newest entry
-   is the one you just wrote, and scrolling to it is how you confirm it landed.
-   Entries are never editable here: append-only is the guarantee, and an edit
-   box would quietly break it. */
-function renderYardLog(list){
-  window._yard=list||[];
-  const box=$('yardLogList');
+/* The Harbor Haul Out log. Rendered newest LAST, the way a log reads — the
+   newest entry is the one you just wrote, and scrolling to it is how you
+   confirm it landed. Entries are never editable here: append-only is the
+   guarantee, and an edit box would quietly break it. */
+function renderPlacementLog(list){
+  window._placementLog=list||[];
+  const box=$('placementLogList');
   if(!box) return;
-  if(!window._yard.length){
+  if(!window._placementLog.length){
     box.innerHTML='<div class="msg" style="padding:4px">Nothing logged yet.</div>';
     return;
   }
-  box.innerHTML=window._yard.map(n=>{
+  box.innerHTML=window._placementLog.map(n=>{
     let when=String(n.ts||'');
     if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
     /* Typed and dictated words are both shown and labelled — "did I say that
@@ -1636,9 +1636,9 @@ function renderYardLog(list){
       '</span>'+play+'<br>'+body+'</div>';
   }).join('');
 }
-/* The same four states the yard app shows, named the same way — the office and
-   the crew talking about different words for the same boat is how a unit ends
-   up recorded twice. */
+/* The same four states Harbor Haul Out shows, named the same way — the office
+   and the crew talking about different words for the same boat is how a unit
+   ends up recorded twice. */
 function renderAlert(){
   const a=window._alert;
   const t=String((a&&a.text)||'');
@@ -1656,7 +1656,7 @@ async function saveAlert(force){
   const b=$('alertBtn'); b.disabled=true;
   setMsg('alertMsg','Saving…');
   try{
-    const r=await api('yardAlert',[QN,t]);
+    const r=await api('placementAlert',[QN,t]);
     if(!r||!r.ok){ setMsg('alertMsg',(r&&r.error)||'Could not save that.',false); return; }
     window._alert=r.alert||null;
     renderAlert();
@@ -1664,29 +1664,29 @@ async function saveAlert(force){
   }catch(e){ setMsg('alertMsg',e.message,false); }
   finally{ b.disabled=false; }
 }
-const YSTATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
-function renderYardState(){
-  const y=window._yardState||{state:''};
+const PLACEMENT_STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+function renderPlacementState(){
+  const y=window._placementState||{state:''};
   const st=String(y.state||'');
   let when=String(y.at||'');
   if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
-  setMsg('yardStateNow','Right now: '+(YSTATE_LABEL[st]||st)+
+  setMsg('placementStateNow','Right now: '+(PLACEMENT_STATE_LABEL[st]||st)+
     (when?' · '+when+(y.by?' · '+y.by:''):''));
   const btn=(to,label,cls)=>'<button class="btn '+(cls||'ghost')+' sm" style="margin:0 6px 6px 0" '+
-    'onclick="setYardState('+JSON.stringify(to).replace(/"/g,'&quot;')+')">'+label+'</button>';
+    'onclick="setPlacementState('+JSON.stringify(to).replace(/"/g,'&quot;')+')">'+label+'</button>';
   let h='';
   /* EVERY transition is available here, "pulled" included.
      The counter and the shop are the same people at Quest — they cover for
      each other, and the boats being pulled are a mile and a half away while
      the ones being worked on are thirty feet away. So "somebody told me it is
      out" is an ordinary Tuesday, not an exception: a phone that glitched in
-     the yard must not mean the only person who can record the pull is the one
+     at the harbor must not mean the only person who can record the pull is the one
      whose phone just failed.
      What does NOT relax is the gate. A unit that is not cleared cannot be
      marked pulled from here either — the button shows why instead, and
-     adminSetYardState re-checks it server-side regardless of which surface
+     adminSetPlacementState re-checks it server-side regardless of which surface
      asked. The gate is about the boat, never about who is holding the phone. */
-  const a=window._yardAuth;
+  const a=window._pullAuth;
   if(st!=='pulled'&&st!=='stored'){
     h+=(a&&a.state==='cleared')
       ? btn('pulled','Mark pulled','navy')
@@ -1696,30 +1696,30 @@ function renderYardState(){
   if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
   if(st!=='stored') h+=btn('stored','Mark in storage');
   if(st) h+=btn('','Undo — back to not started');
-  $('yardStateBtns').innerHTML=h;
+  $('placementStateBtns').innerHTML=h;
 }
-async function setYardState(to){
-  setMsg('yardStateMsg','Saving…');
+async function setPlacementState(to){
+  setMsg('placementStateMsg','Saving…');
   try{
-    const r=await api('yardState',[QN,to]);
-    if(!r||!r.ok){ setMsg('yardStateMsg',(r&&r.error)||'Could not record that.',false); return; }
-    window._yardState=r.yard||{state:to};
-    renderYardState();
-    setMsg('yardStateMsg',r.msg,true); toast(r.msg);
-  }catch(e){ setMsg('yardStateMsg',e.message,false); }
+    const r=await api('placementState',[QN,to]);
+    if(!r||!r.ok){ setMsg('placementStateMsg',(r&&r.error)||'Could not record that.',false); return; }
+    window._placementState=r.placement||{state:to};
+    renderPlacementState();
+    setMsg('placementStateMsg',r.msg,true); toast(r.msg);
+  }catch(e){ setMsg('placementStateMsg',e.message,false); }
 }
-async function addYardNote(){
-  const t=($('yardNoteText').value||'').trim();
-  if(!t){ setMsg('yardNoteMsg','Type a note first.',false); return; }
-  const b=$('yardNoteBtn'); b.disabled=true; b.textContent='Saving…';
-  setMsg('yardNoteMsg','');
+async function addPlacementNote(){
+  const t=($('placementNoteText').value||'').trim();
+  if(!t){ setMsg('placementNoteMsg','Type a note first.',false); return; }
+  const b=$('placementNoteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('placementNoteMsg','');
   try{
-    const r=await api('yardNote',[QN,t]);
-    if(!r||!r.ok){ setMsg('yardNoteMsg',(r&&r.error)||'Could not save that.',false); return; }
-    $('yardNoteText').value='';
-    renderYardLog((window._yard||[]).concat([r.note]));
-    setMsg('yardNoteMsg',r.msg,true); toast('Logged');
-  }catch(e){ setMsg('yardNoteMsg',e.message,false); }
+    const r=await api('placementNote',[QN,t]);
+    if(!r||!r.ok){ setMsg('placementNoteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('placementNoteText').value='';
+    renderPlacementLog((window._placementLog||[]).concat([r.note]));
+    setMsg('placementNoteMsg',r.msg,true); toast('Logged');
+  }catch(e){ setMsg('placementNoteMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Add to the log'; }
 }
 /* Read-only: which terms version this customer accepted, and when. Quotes
@@ -1896,7 +1896,7 @@ async function previewSend(kind,extra){
 /* Put an email into the preview frame.
    ---------------------------------------------------------------------------
    `srcdoc` on a fully-sandboxed iframe renders in Chrome but comes up BLANK on
-   iOS Safari — which is what Chris uses in the yard, so the preview looked
+   iOS Safari — which is what Chris uses at the harbor, so the preview looked
    broken for exactly the person who needs it. Writing into the document works
    everywhere, and needs allow-same-origin (granted) but NOT allow-scripts
    (withheld), so the email still cannot execute anything.
@@ -2094,7 +2094,7 @@ async function loadStorage(){
    A LEAD ROW IS IN NEITHER DEPOSIT BUCKET. Somebody who poked at pricing and
    walked away has no quote to take a deposit on, so counting them as "no
    deposit" would bury the customers who actually owe one. They stay visible
-   under "Everyone", which is where the yard already looks for them. */
+   under "Everyone", which is where staff already look for them. */
 let SFILTER='all';
 const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid'};
 function setStorageFilter(f){ if(!SFILTER_LABEL[f])return; SFILTER=f; renderStorage(); }
@@ -2187,7 +2187,7 @@ async function printStorage(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
-  /* The yard sheets follow the tab you are looking at, and SAY SO in the
+  /* The storage sheets follow the tab you are looking at, and SAY SO in the
      header. A partial sheet that looks like the whole building is how a unit
      gets missed; naming the filter on the paper is what stops that.
      The haul-out list is deliberately not filtered — see printHaulOut. */
@@ -2198,9 +2198,9 @@ async function printStorage(){
     <div class="pg">
       <div class="pgHead">
         <h1>QUEST WATERSPORTS — ${esc(g.tab).toUpperCase()}</h1>
-        <div class="meta">Yard sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · ${esc(scope)}</div>
+        <div class="meta">Storage sheet · printed ${today}<br>${g.count} unit${g.count===1?'':'s'} · ${esc(scope)}</div>
       </div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th style="width:38px">Done</th><th>Customer</th><th>Unit / dims</th><th>Keys</th><th>Status</th><th style="text-align:right">Balance</th></tr>
         ${g.rows.map(x=>`<tr>
           <td><span class="cb"></span></td>
@@ -2272,7 +2272,7 @@ async function loadImportList(){
    reported wrong is the one that starts an import.
 
    The poll stops when the card is closed and when the run finishes — a timer
-   left running against a phone in the yard is somebody's battery. */
+   left running against a phone at the harbor is somebody's battery. */
 let BULKTIMER=null;
 function bulkPollStop(){ if(BULKTIMER){ clearTimeout(BULKTIMER); BULKTIMER=null; } }
 function bulkBusy(on){
@@ -2764,7 +2764,7 @@ async function doBulkSend(){
 }
 
 /* ---------- Haul-out list ----------
-   A different sheet from the yard sheet: that one is for walking the rows and
+   A different sheet from the storage sheet: that one is for walking the rows and
    checking units off, this one is for planning the order units come out in.
    Sorted by what the customer asked for, soonest first, because that is the
    question being answered. */
@@ -2777,7 +2777,7 @@ function haulOrder_(x){
 }
 /* Sort on the stored ISO string, print something a person reads at a glance.
    Anything that isn't a plain date goes through untouched rather than
-   becoming "Invalid Date" on a sheet somebody is standing in the yard with. */
+   becoming "Invalid Date" on a sheet somebody is standing at the harbor with. */
 function haulDate_(v){
   const s=String(v||'');
   const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2795,7 +2795,7 @@ function haulDate_(v){
      contract on file, no pull. Not "chase it afterwards" — no pull.
 
      A deposit does NOT authorise the pull. What it does is put the unit on the
-     plan, so the yard can schedule around it while the signature is chased.
+     plan, so staff can schedule around it while the signature is chased.
 
      A signature on its own does not release it either — that one is a MONEY
      hold rather than a liability one, and the sheet says so, because "chase
@@ -2807,10 +2807,10 @@ function haulDate_(v){
      the back, with no checkbox to tick.
 
    Four states, and `why` is what keeps the two holds from reading the same.
-   The sheet has to make all of it obvious to somebody holding it in the yard
+   The sheet has to make all of it obvious to somebody holding it at the harbor
    rather than reading it on a screen. */
 /* THE CONSOLE DOES NOT DECIDE THIS. The server does (haulAuth_ in the .gs),
-   because the console, the printed sheet and the yard app all ask the same
+   because the console, the printed sheet and Harbor Haul Out all ask the same
    question and a copy per surface is a liability rule free to go stale on two
    of them. These are accessors, not the rule.
 
@@ -2825,7 +2825,7 @@ function haulAuth_(x){
           stamp:'NOT CONFIRMED — DO NOT PULL'};
 }
 function haulHoldText_(a){ return (a&&a.stamp)||'DO NOT PULL'; }
-/* Split the yard into the units that go on the working list (cleared to pull,
+/* Split the units into the ones that go on the working list (cleared to pull,
    plus the deposit-taken ones we are planning around) and the units that are
    held off it entirely. Kept separate from the printing so the rule can be
    executed by tools/check-sign-chase.js rather than eyeballed on paper. */
@@ -2848,8 +2848,8 @@ async function printHaulOut(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
   const today=new Date().toLocaleDateString();
-  /* One list across every storage area — haul-out order is a yard-wide
-     question, not a per-building one. It is NOT narrowed by the deposit tab
+  /* One list across every storage area — haul-out order spans every storage
+     area, not just one building. It is NOT narrowed by the deposit tab
      either: which tab you happen to be looking at must not decide what the
      crew is handed. What DOES narrow it is the signed agreement, per
      haulAuth_ above — that is a liability rule, not a view. */
@@ -2895,7 +2895,7 @@ async function printHaulOut(){
         A deposit is not a signature and a signature is not a deposit — every shaded row is planning
         only, and its stamp says which one is missing.${blocked.length?' '+blocked.length+' further unit'+
         (blocked.length===1?' is':'s are')+' held off this list entirely (see the last page).':''}</div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th style="width:44px">Pull?</th><th>Customer</th><th>Unit / dims</th><th>Storage</th>
             <th>Trailer</th><th>Slip</th><th>Keys</th><th>Requested timing</th></tr>
         ${planRows}
@@ -2916,7 +2916,7 @@ async function printHaulOut(){
       </div>
       <div class="rule">No deposit and no signed agreement. Do not pull, move or work on these units.
         Office: take a deposit and get the agreement signed, then they move onto the haul-out list.</div>
-      <table class="yard">
+      <table class="printsheet">
         <tr><th>Customer</th><th>Unit / dims</th><th>Storage</th><th>Quote #</th><th>What is missing</th></tr>
         ${blocked.map(x=>`<tr class="noauth">
           <td><span class="yn">${esc(x.name)}</span></td>
@@ -2926,7 +2926,7 @@ async function printHaulOut(){
           <td><span class="hold">${esc(x.auth.label)}</span>${
             x.lead?'<br><span class="ysub">unfinished quote — never completed</span>':''}</td></tr>`).join('')}
       </table>
-      <div class="pgFoot">This page is for the office, not the yard. Quest Watersports · (815) 433-2200</div>
+      <div class="pgFoot">This page is for the office, not the harbor. Quest Watersports · (815) 433-2200</div>
     </div>`:'';
   $('printArea').innerHTML=planPage+blockedPage;
   window.print();

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-/* The yard app: what it must never decide for itself, and what must survive a
-   phone with two bars.
+/* Harbor Haul Out: what it must never decide for itself, and what must survive
+   a phone with two bars.
    ---------------------------------------------------------------------------
-   yard/index.html is the third surface to ask "may we pull this boat?" — after
-   the staff console and the printed haul-out sheet. The answer is the SERVER's
-   (haulAuth_ in the .gs) and is shipped on every storage row. This guard exists
-   because the cheap thing to do, the next time somebody adds a field, is to
-   work the rule out locally from `deposit` and `contract`; two of the three
-   copies would then be free to go stale, and the one that goes stale is the one
-   that clears a boat nobody signed for.
+   harbor-haul-out/index.html is the third surface to ask "may we pull this
+   boat?" — after the staff console and the printed haul-out sheet. The answer
+   is the SERVER's (haulAuth_ in the .gs) and is shipped on every storage row.
+   This guard exists because the cheap thing to do, the next time somebody
+   adds a field, is to work the rule out locally from `deposit` and `contract`;
+   two of the three copies would then be free to go stale, and the one that
+   goes stale is the one that clears a boat nobody signed for.
 
-   It also pins the things that only fail in the yard, where nobody is watching
+   It also pins the things that only fail at the harbor, where nobody is watching
    a console: the GET fallback naming a function the server refuses, the
    lost-POST fingerprint drifting from the string it matches, and `capture`
    spreading to the gallery input and killing the gallery on Android.
@@ -23,7 +23,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
-const HTML = read('yard/index.html');
+const HTML = read('harbor-haul-out/index.html');
 const GAS = read('quote-logger-apps-script.gs');
 
 let bad = 0;
@@ -53,7 +53,7 @@ function load() {
   };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext(SRC, ctx, { filename: 'yard/index.html' });
+  vm.runInContext(SRC, ctx, { filename: 'harbor-haul-out/index.html' });
   /* `function` declarations land on the context object, but top-level `let`
      and `const` live in the realm's global LEXICAL scope and never become
      properties of it. Reaching them means evaluating an expression in the same
@@ -79,7 +79,7 @@ eq(Y.auth_({ deposit: true, contract: true, auth: { state: 'hold', why: 'payment
 {
   const bare = Y.auth_({ deposit: true, contract: true });
   if (bare.state === 'cleared') {
-    fail('an unstamped row reads as CLEARED in the yard app — a backend that has not deployed ' +
+    fail('an unstamped row reads as CLEARED in Harbor Haul Out — a backend that has not deployed ' +
          'yet would authorise pulling boats nobody signed for');
   } else ok('an unstamped row reads as blocked (it fails towards not touching the boat)');
   if (/DO NOT PULL/.test(String(bare.stamp || ''))) ok('and it still stamps DO NOT PULL');
@@ -90,8 +90,8 @@ eq(Y.auth_({ deposit: true, contract: true, auth: { state: 'hold', why: 'payment
 {
   const js = SRC.replace(/\/\*[\s\S]*?\*\//g, '');      // comments may discuss it
   if (/cleared[\s\S]{0,80}(contract|deposit)/.test(js) && !/a\.state/.test(js)) {
-    fail('the yard app looks like it is working the pull rule out from contract/deposit');
-  } else ok('the yard app carries no rule of its own — it renders what the server stamped');
+    fail('Harbor Haul Out looks like it is working the pull rule out from contract/deposit');
+  } else ok('Harbor Haul Out carries no rule of its own — it renders what the server stamped');
 }
 
 /* =====================================================================
@@ -130,31 +130,31 @@ Y.ev('ROWS = ' + JSON.stringify([
     ['stored',  '',     'stored', 'stored is stored for a trailered unit too']
   ];
   cases.forEach(function (c) {
-    eq(Y.listOf_({ yardState: c[0], slip: c[1] }), c[2], c[3]);
+    eq(Y.listOf_({ placementState: c[0], slip: c[1] }), c[2], c[3]);
   });
   /* The property underneath all of it, asserted rather than reasoned about. */
   const lists = ['pull', 'store', 'stored'];
   let clean = true;
   ['', 'pulled', 'dropped', 'stored'].forEach(function (st) {
     ['', 'B-14'].forEach(function (slip) {
-      const row = { yardState: st, slip: slip };
+      const row = { placementState: st, slip: slip };
       const on = lists.filter(function (L) { return Y.listOf_(row) === L; });
       if (on.length > 1) { clean = false; fail('state ' + JSON.stringify(st) + ' appears on ' + on.join(' and ')); }
     });
   });
   if (clean) ok('no unit is ever on two lists at once');
   /* An unknown state must not vanish a boat. */
-  const odd = Y.listOf_({ yardState: 'teleported', slip: 'B-14' });
+  const odd = Y.listOf_({ placementState: 'teleported', slip: 'B-14' });
   if (odd === '') fail('an unrecognised state made a boat disappear from every list');
   else ok('an unrecognised state falls back to a real list rather than vanishing (' + odd + ')');
 }
 /* Search and sort, on the two lists that have them. */
 {
   Y.ev('ROWS = ' + JSON.stringify([
-    { qn: 'QW-1', name: 'Zeller, Zoe', slip: '', tab: 'Building B', unit: 'Boat', yardState: 'pulled' },
-    { qn: 'QW-2', name: 'Adams, Al',   slip: '', tab: 'Outside',    unit: 'Boat', yardState: 'dropped' },
-    { qn: 'QW-3', name: 'Moss, Mo',    slip: '', tab: 'Building B', unit: 'Jet Ski', yardState: 'pulled' },
-    { qn: 'QW-4', name: 'Quinn, Qi',   slip: '', tab: 'Building B', unit: 'Boat', yardState: 'stored' }
+    { qn: 'QW-1', name: 'Zeller, Zoe', slip: '', tab: 'Building B', unit: 'Boat', placementState: 'pulled' },
+    { qn: 'QW-2', name: 'Adams, Al',   slip: '', tab: 'Outside',    unit: 'Boat', placementState: 'dropped' },
+    { qn: 'QW-3', name: 'Moss, Mo',    slip: '', tab: 'Building B', unit: 'Jet Ski', placementState: 'pulled' },
+    { qn: 'QW-4', name: 'Quinn, Qi',   slip: '', tab: 'Building B', unit: 'Boat', placementState: 'stored' }
   ]));
   Y.ev('SORT = "location"');
   /* Building B before Outside, and inside Building B "Moss" before "Zeller". */
@@ -196,7 +196,7 @@ Y.ev('ROWS = ' + JSON.stringify([
     { qn: 'C', name: 'Clear', slip: 'B-2', tab: 'Building A', unit: 'Boat',
       auth: { state: 'cleared' } },
     { qn: 'S', name: 'Stow',  slip: '',    tab: 'Building A', unit: 'Boat',
-      yardState: 'pulled', auth: { state: 'cleared' } }
+      placementState: 'pulled', auth: { state: 'cleared' } }
   ]));
   Y.ev('TAB = "pull"; render()');
   const pullMarkup = Y.ev('document.getElementById("list").innerHTML');
@@ -218,7 +218,7 @@ Y.ev('ROWS = ' + JSON.stringify([
 
   /* The opened unit: the gate, and the transitions it offers. */
   const stateOf = (qn, st) => {
-    Y.ev('CUR = {quoteNo:' + JSON.stringify(qn) + ', yard:{state:' + JSON.stringify(st || '') + '}}');
+    Y.ev('CUR = {quoteNo:' + JSON.stringify(qn) + ', placement:{state:' + JSON.stringify(st || '') + '}}');
     Y.ev('renderState()');
     return Y.ev('document.getElementById("dState").innerHTML');
   };
@@ -235,15 +235,15 @@ Y.ev('ROWS = ' + JSON.stringify([
   else fail('a cleared unit cannot be marked pulled from anywhere in the app');
 
   /* "Mark dropped off" is a console act. It records that a customer drove in,
-     which is something the counter hears — the yard never sees it happen. */
+     which is something the counter hears — the harbor never sees it happen. */
   ['', 'pulled', 'stored'].forEach(function (st) {
     if (/markState\([^)]*dropped/.test(stateOf('C', st)))
-      fail('the yard app still offers "Mark dropped off" (state ' + JSON.stringify(st) + ') — ' +
+      fail('Harbor Haul Out still offers "Mark dropped off" (state ' + JSON.stringify(st) + ') — ' +
            'Chris asked for that to be console-only');
   });
-  ok('the yard app never offers "Mark dropped off", in any state');
+  ok('Harbor Haul Out never offers "Mark dropped off", in any state');
   /* But the app must still READ it, because the console sets it. */
-  eq(Y.ev('listOf_({yardState:"dropped",slip:"B-9"})'), 'store',
+  eq(Y.ev('listOf_({placementState:"dropped",slip:"B-9"})'), 'store',
      'a unit the console dropped off still reaches the To store list');
   eq(Y.ev('STATE_LABEL.dropped'), 'Dropped off',
      'and the app can still name that state when it opens one');
@@ -251,45 +251,45 @@ Y.ev('ROWS = ' + JSON.stringify([
 /* And the server refuses it too, because a client is not a permission. */
 {
   const gas = GAS;
-  const fn = (gas.match(/function adminSetYardState\b[\s\S]*?\n}/m) || [''])[0];
-  if (!fn) fail('there is no adminSetYardState on the server');
+  const fn = (gas.match(/function adminSetPlacementState\b[\s\S]*?\n}/m) || [''])[0];
+  if (!fn) fail('there is no adminSetPlacementState on the server');
   else {
     if (/haulAuth_\(/.test(fn) && /'pulled'/.test(fn))
       ok('the server re-checks the pull gate rather than trusting the app');
-    else fail('adminSetYardState does not gate "pulled" on haulAuth_ — a crafted request could ' +
+    else fail('adminSetPlacementState does not gate "pulled" on haulAuth_ — a crafted request could ' +
               'record a pull nobody was cleared for');
-    if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the yard permission');
-    else fail('adminSetYardState is not gated on the keys permission');
+    if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the harbor permission');
+    else fail('adminSetPlacementState is not gated on the keys permission');
     if (/savePdf_|recomputeTotals_|rebuildLinesFromState_/.test(fn))
       fail('moving a boat re-prices it or rebuilds its PDF — it is a fact about a day\'s work, ' +
            'not a change to what the customer owes');
     else ok('moving a boat touches no money and no paperwork');
   }
   /* EVERY transition works from either surface. The counter and the shop are
-     the same people (CLAUDE.md §9) — a phone that glitched in the yard must not
+     the same people (CLAUDE.md §9) — a phone that glitched at the harbor must not
      mean the only person who can record the pull is the one whose phone failed.
      This was built the other way once and had to be taken back out. */
   const adminHtml = read('admin/index.html');
-  if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just the app');
-  else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches in the ' +
-            'yard, the person they tell has to be able to record it');
+  if (/btn\('pulled'/.test(adminHtml)) ok('the console can record a pull, not just Harbor Haul Out');
+  else fail('the console cannot mark a unit pulled — when somebody\'s phone glitches at the ' +
+            'harbor, the person they tell has to be able to record it');
   /* And it is the ONLY surface that can, since the app gave it up. */
   if (/btn\('dropped'/.test(adminHtml)) ok('the console can mark a unit dropped off');
   else fail('nothing can mark a unit dropped off any more — the app gave that up on the ' +
             'understanding the console kept it, and the To store list depends on it');
   /* But the gate does not relax for it. */
-  if (/_yardAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
+  if (/_pullAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
     ok('and the console gates that button on the same cleared/not-cleared answer');
   else fail('the console offers "Mark pulled" without checking whether the unit is cleared');
   /* Which means the server has to send it that answer. */
-  if (/yardAuth: haulAuth_\(/.test(gas)) ok('adminLookup ships the pull verdict to the console');
-  else fail('adminLookup does not return yardAuth, so the console is gating on undefined — ' +
+  if (/pullAuth: haulAuth_\(/.test(gas)) ok('adminLookup ships the pull verdict to the console');
+  else fail('adminLookup does not return pullAuth, so the console is gating on undefined — ' +
             'it would either always block or always allow');
 
-  /* It has to survive the customer's next save like the rest of the yard state. */
-  const carry = (gas.match(/if \(oldD\.yard\)/) || [''])[0];
-  if (carry) ok('yard progress survives a customer save');
-  else fail('a customer save would wipe the season\'s yard progress');
+  /* It has to survive the customer's next save like the rest of the placement state. */
+  const carry = (gas.match(/if \(oldD\.placement\)/) || [''])[0];
+  if (carry) ok('placement progress survives a customer save');
+  else fail('a customer save would wipe the season\'s placement progress');
 }
 
 /* =====================================================================
@@ -324,19 +324,19 @@ Y.ev('ROWS = ' + JSON.stringify([
 {
   /* Short by construction, or it stops being scannable. */
   const g = GAS;
-  const fn = (g.match(/function adminSetYardAlert\b[\s\S]*?\n}/m) || [''])[0];
-  if (!fn) fail('there is no adminSetYardAlert on the server');
+  const fn = (g.match(/function adminSetPlacementAlert\b[\s\S]*?\n}/m) || [''])[0];
+  if (!fn) fail('there is no adminSetPlacementAlert on the server');
   else {
-    if (/YARD_ALERT_MAX_/.test(fn)) ok('the alert is length-capped so it stays readable at a glance');
+    if (/PLACEMENT_ALERT_MAX_/.test(fn)) ok('the alert is length-capped so it stays readable at a glance');
     else fail('nothing caps the alert length — a paragraph on every row is not an alert');
-    if (/delete d\.yardAlert/.test(fn)) ok('an empty alert clears it rather than storing a blank');
+    if (/delete d\.placementAlert/.test(fn)) ok('an empty alert clears it rather than storing a blank');
     else fail('clearing an alert does not remove it');
     if (/auditLog_/.test(fn)) ok('setting and clearing are both logged, since the alert itself is overwritten');
     else fail('an alert can be set and cleared with no record that anybody was warned');
     if (/savePdf_|recomputeTotals_/.test(fn)) fail('setting an alert re-prices or rebuilds the PDF');
     else ok('setting an alert touches no money and no paperwork');
   }
-  if (/if \(oldD\.yardAlert\)/.test(g)) ok('an alert survives a customer save');
+  if (/if \(oldD\.placementAlert\)/.test(g)) ok('an alert survives a customer save');
   else fail('a customer save would take a live warning down with nobody deciding to');
 }
 
@@ -351,7 +351,7 @@ Y.ev('ROWS = ' + JSON.stringify([
 
    So: pull every on*= handler out of the real generated markup and run it
    through the JS parser. A handler that will not parse is a control that does
-   nothing when somebody taps it, in the yard, with no error to go on.
+   nothing when somebody taps it, at the harbor, with no error to go on.
    ===================================================================== */
 {
   const rows = [
@@ -389,16 +389,16 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('the row builders go through the escaping helper, not JSON.stringify');
 }
 
-/* The alert is READ ONLY in the yard. Setting it lives on the console, so
-   the loud thing stays under one pair of eyes instead of being rewritten by
+/* The alert is READ ONLY in Harbor Haul Out. Setting it lives on the console,
+   so the loud thing stays under one pair of eyes instead of being rewritten by
    whoever is standing nearest the boat. */
 {
-  if (/function saveAlert|api\('yardAlert'/.test(SRC))
-    fail('the yard app can still write an alert — alerts are set on the console only');
-  else ok('the yard app only displays alerts, it cannot set them');
+  if (/function saveAlert|api\('placementAlert'/.test(SRC))
+    fail('Harbor Haul Out can still write an alert — alerts are set on the console only');
+  else ok('Harbor Haul Out only displays alerts, it cannot set them');
   if (/id="alertText"/.test(HTML))
-    fail('the yard app still carries an alert editor, which shows an empty box on every unit');
-  else ok('there is no alert editor in the yard app');
+    fail('Harbor Haul Out still carries an alert editor, which shows an empty box on every unit');
+  else ok('there is no alert editor in Harbor Haul Out');
   /* And nothing renders at all when there is no alert to show. */
   if (Y.alert_({ alert: '' }) !== '') fail('an empty alert still renders a strip');
   else if (Y.alert_({ alert: '   ' }) !== '') fail('a whitespace-only alert still renders a strip');
@@ -410,9 +410,9 @@ Y.ev('ROWS = ' + JSON.stringify([
 
 
 /* =====================================================================
-   2e. RE-MEASURING FROM THE YARD.
+   2e. RE-MEASURING AT THE HARBOR.
    ---------------------------------------------------------------------
-   The tape measure is in the yard, so the correction is made in the yard. But
+   The tape measure is at the harbor, so the correction is made there. But
    a re-measure is the one thing the app does that MOVES MONEY: it re-prices
    the quote and can move the boat to a different building. So three rules,
    and all three are the sort that get quietly relaxed later.
@@ -433,7 +433,7 @@ Y.ev('ROWS = ' + JSON.stringify([
     if (!fn) { fail('there is no ' + name + ' on the server'); return; }
     if (/requireAuth_\(token, 'measure'\)/.test(fn)) ok(name + ' is gated on the measure permission');
     else if (/requireAuth_\(token, 'keys'\)/.test(fn))
-      fail(name + ' is gated on `keys` — writing a yard note would then buy the ability to ' +
+      fail(name + ' is gated on `keys` — writing a placement note would then buy the ability to ' +
            're-price a quote, which is not what anybody granted');
     else fail(name + ' is not gated on the measure permission: ' +
               (fn.match(/requireAuth_\([^)]*\)/) || ['(no requireAuth_ at all)'])[0]);
@@ -455,7 +455,7 @@ Y.ev('ROWS = ' + JSON.stringify([
      is cached in localStorage: a session opened before the deploy carries a
      perms object with no `measure` key in it. */
   Y.ev('ME = {name:"Rex",admin:false,perms:{keys:1,photos:1}}');
-  if (Y.ev('canMeasure()') === true) ok('the yard crew can re-measure, which is the point of the card');
+  if (Y.ev('canMeasure()') === true) ok('the crew can re-measure, which is the point of the card');
   else fail('the app hides the card from the people holding the tape — the server now allows ' +
             'them, so this is the two copies disagreeing');
   Y.ev('ME = {name:"Marina",admin:false,perms:{photos:1}}');
@@ -473,16 +473,16 @@ Y.ev('ROWS = ' + JSON.stringify([
       Y.ev('ME = {name:"x",admin:false,perms:' + c[0] + '}');
       const m = Y.ev('canMeasure()'), w = Y.ev('canWrite()');
       if (m !== w) fail('canMeasure() and canWrite() disagree for perms ' + c[0] +
-                        ' — the fallback has drifted from the yard-facts bar it is supposed to be');
+                        ' — the fallback has drifted from the harbor-facts bar it is supposed to be');
       else if (m !== c[1]) fail('perms ' + c[0] + ' resolved to ' + m + ', expected ' + c[1]);
     });
-  ok('the fallback is the yard-facts bar itself, not a second copy of it');
+  ok('the fallback is the harbor-facts bar itself, not a second copy of it');
 
   /* --- 2. preview then apply, never one tap --- */
   const src = SRC.replace(/\/\*[\s\S]*?\*\//g, '');
   const prev = (src.match(/async function previewDims\b[\s\S]*?\n}/m) || [''])[0];
   const appl = (src.match(/async function applyDims\b[\s\S]*?\n}/m) || [''])[0];
-  if (!prev || !appl) fail('previewDims/applyDims are not both in the yard app');
+  if (!prev || !appl) fail('previewDims/applyDims are not both in Harbor Haul Out');
   else {
     if (/dimsApply/.test(prev))
       fail('previewDims applies the change — the point of a preview is that it writes nothing');
@@ -504,24 +504,25 @@ Y.ev('ROWS = ' + JSON.stringify([
 
   /* --- 3. measurements only --- */
   const collect = (src.match(/function collectDims\b[\s\S]*?\n}/m) || [''])[0];
-  if (!collect) fail('there is no collectDims in the yard app');
+  if (!collect) fail('there is no collectDims in Harbor Haul Out');
   else {
     if (/engines/.test(collect))
-      fail('the yard app sends motor changes — that is a specification change made at a desk');
-    else ok('the yard app sends no motor changes');
+      fail('Harbor Haul Out sends motor changes — that is a specification change made at a desk');
+    else ok('Harbor Haul Out sends no motor changes');
     if (/\bstorage\b/.test(collect))
-      fail('the yard app sends a storage-location override — where a boat is STORED follows ' +
+      fail('Harbor Haul Out sends a storage-location override — where a boat is STORED follows ' +
            'from its size, and overriding it is a console decision');
-    else ok('the yard app sends no storage override; a move follows from the measurements');
+    else ok('Harbor Haul Out sends no storage override; a move follows from the measurements');
     if (/DIMS\.fields/.test(collect) && /hasTrailer/.test(collect))
       ok('it sends the engine\'s own dimension fields, plus whether it is on its trailer');
     else fail('collectDims does not read the server-supplied field list — a dimension added to ' +
-              'DIM_FIELDS would not appear in the yard');
+              'DIM_FIELDS would not appear in Harbor Haul Out');
   }
-  /* Every key the yard can send has to be one the server will actually take.
-     A field in DIM_FIELDS that is not in MEASURABLE_NUM_ renders an input in
-     the yard, is dropped silently by sanitizeMeasured_, and comes back as
-     "Nothing changed." with no explanation of which box was ignored. */
+  /* Every key Harbor Haul Out can send has to be one the server will actually
+     take. A field in DIM_FIELDS that is not in MEASURABLE_NUM_ renders an
+     input in Harbor Haul Out, is dropped silently by sanitizeMeasured_, and
+     comes back as "Nothing changed." with no explanation of which box was
+     ignored. */
   {
     const eng = read('pricing-engine.js');
     const blk = (eng.match(/const DIM_FIELDS = \{[\s\S]*?\n\};/) || [''])[0];
@@ -533,9 +534,9 @@ Y.ev('ROWS = ' + JSON.stringify([
       const orphan = keys.filter(function (k) { return accepted.indexOf(k) < 0; });
       if (orphan.length)
         fail('DIM_FIELDS offers ' + orphan.join(', ') + ' but MEASURABLE_NUM_ does not accept ' +
-             'it — the yard would render that box, drop what was typed in it, and answer ' +
+             'it — Harbor Haul Out would render that box, drop what was typed in it, and answer ' +
              '"Nothing changed."');
-      else ok('every dimension the yard can render (' + keys.length + ') is one the server accepts');
+      else ok('every dimension Harbor Haul Out can render (' + keys.length + ') is one the server accepts');
     }
   }
   /* It has to render nothing at all for somebody who cannot use it. A dead
@@ -557,7 +558,7 @@ Y.ev('ROWS = ' + JSON.stringify([
    ===================================================================== */
 /* The app's retry list must be a SUBSET of what the server allows on GET —
    the server refuses a GET naming a write, so a wrong entry here is a retry
-   that can only ever fail, in the yard, with nobody to explain it. */
+   that can only ever fail, at the harbor, with nobody to explain it. */
 {
   const block = (GAS.match(/const CONSOLE_GET_FNS_ = \{[\s\S]*?\n\};/) || [''])[0];
   if (!block) fail('could not find CONSOLE_GET_FNS_ in the .gs — the subset check cannot run');
@@ -574,13 +575,13 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('read ' + Object.keys(allowed).length + ' functions the server answers on GET');
   const GETOK = Y.ev('API_GET_OK') || {};
   const mine = Object.keys(GETOK);
-  if (!mine.length) fail('the yard app has no GET allow-list at all');
+  if (!mine.length) fail('Harbor Haul Out has no GET allow-list at all');
   const rogue = mine.filter((f) => !allowed[f]);
-  if (rogue.length) fail('the yard app would retry over GET: ' + rogue.join(', ') +
+  if (rogue.length) fail('Harbor Haul Out would retry over GET: ' + rogue.join(', ') +
     ' — the server refuses those on GET, so the retry can only fail');
   else ok('every function the app retries over GET is one the server answers there (' + mine.length + ')');
   /* And the writes must NOT be on it. */
-  ['yardNote', 'uploadPhoto', 'keysApply'].forEach((w) => {
+  ['placementNote', 'uploadPhoto', 'keysApply'].forEach((w) => {
     if (GETOK[w]) fail(w + ' is on the app\'s GET list — a link that changes something can be followed twice');
   });
   ok('the app never tries to send a write as a GET');
@@ -617,11 +618,11 @@ Y.ev('ROWS = ' + JSON.stringify([
      That is exactly what a single combined input did. And `multiple` alongside
      `capture` is its own version of the same bug: the spec says capture implies
      one file, and Chrome on Android drops capture when multiple is present. */
-  const PAGES = [['yard/index.html', HTML], ['admin/index.html', adminHtml]];
+  const PAGES = [['harbor-haul-out/index.html', HTML], ['admin/index.html', adminHtml]];
   /* Which input plays which role, by id — the signed-contract upload also takes
      image/*, and it is not condition media. */
   const ROLES = {
-    'yard/index.html':  { photo: 'camIn',       video: 'vidIn',      gallery: 'galIn' },
+    'harbor-haul-out/index.html':  { photo: 'camIn',       video: 'vidIn',      gallery: 'galIn' },
     'admin/index.html': { photo: 'cameraInput', video: 'videoInput', gallery: 'photoFiles' }
   };
   const inputById = (html, id) => (html.match(new RegExp('<input[^>]*id="' + id + '"[^>]*>')) || [])[0];
@@ -655,8 +656,8 @@ Y.ev('ROWS = ' + JSON.stringify([
     fail('the signed-contract input now accepts video — that is not condition media');
   else ok('the signed-contract input was left alone');
   /* Client-side, so nothing is spent reading a file that cannot be sent. */
-  if (/MAX_UPLOAD_MB/.test(SRC)) ok('the yard app refuses an oversized file before reading it');
-  else fail('the yard app will read and base64 a file the server is going to refuse');
+  if (/MAX_UPLOAD_MB/.test(SRC)) ok('Harbor Haul Out refuses an oversized file before reading it');
+  else fail('Harbor Haul Out will read and base64 a file the server is going to refuse');
   if (/MAX_UPLOAD_MB/.test(adminHtml)) ok('the console does too');
   else fail('the console has no size check');
   /* And server-side, because a client is not a permission. */
@@ -707,26 +708,26 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 {
   /* Add to Home Screen is the point of the page being separate. */
-  const man = JSON.parse(read('yard/manifest.json'));
+  const man = JSON.parse(read('harbor-haul-out/manifest.json'));
   eq(man.display, 'standalone', 'the manifest asks for a standalone window');
   if (String(man.start_url || '').startsWith('/')) {
-    fail('manifest start_url is absolute — this deploys under /winter-quotes_26-27/yard/ on Pages, ' +
+    fail('manifest start_url is absolute — this deploys under /winter-quotes_26-27/harbor-haul-out/ on Pages, ' +
          'so an absolute path installs an app that opens the wrong site');
   } else ok('manifest start_url is relative, so it survives the Pages subpath');
   if (!/<link rel="manifest"/.test(HTML)) fail('the page does not link its manifest');
   else ok('the page links its manifest');
   (man.icons || []).forEach((i) => {
-    const p = path.join(ROOT, 'yard', i.src);
-    if (!fs.existsSync(p)) fail('manifest icon ' + i.src + ' does not resolve from /yard/');
+    const p = path.join(ROOT, 'harbor-haul-out', i.src);
+    if (!fs.existsSync(p)) fail('manifest icon ' + i.src + ' does not resolve from /harbor-haul-out/');
   });
-  ok('every manifest icon resolves from /yard/');
+  ok('every manifest icon resolves from /harbor-haul-out/');
 }
 {
   /* Same deployment as everything else, or the app talks to an orphan. */
   const mine = (HTML.match(/AKfycb[A-Za-z0-9_-]*/) || [''])[0];
   const theirs = (GAS.match(/AKfycb[A-Za-z0-9_-]*/) || [''])[0];
   if (mine && theirs && mine === theirs) ok('the app points at the same /exec deployment as the backend');
-  else fail('the yard app\'s API URL does not match the backend\'s: ' + mine + ' vs ' + theirs);
+  else fail('Harbor Haul Out\'s API URL does not match the backend\'s: ' + mine + ' vs ' + theirs);
 }
 
 /* =====================================================================
@@ -741,7 +742,7 @@ Y.ev('ROWS = ' + JSON.stringify([
   /* On-device speech recognition was the obvious guess and is the wrong
      method — it keeps nothing, so there is no evidence afterwards. */
   if (/webkitSpeechRecognition|SpeechRecognition/.test(SRC))
-    fail('the yard app still uses browser speech recognition — the service tracker records ' +
+    fail('Harbor Haul Out still uses browser speech recognition — the service tracker records ' +
          'audio and transcribes server-side, and a recording is evidence where a live ' +
          'transcript is not');
   else ok('voice notes are recorded, not live-transcribed on the device');
@@ -754,11 +755,11 @@ Y.ev('ROWS = ' + JSON.stringify([
 }
 {
   const g = GAS;
-  /* Slow work must never run inside the request the yard is waiting on. */
-  const save = (g.match(/function adminAddYardNote\b[\s\S]*?\n}/m) || [''])[0];
+  /* Slow work must never run inside the request the harbor is waiting on. */
+  const save = (g.match(/function adminAddPlacementNote\b[\s\S]*?\n}/m) || [''])[0];
   if (/UrlFetchApp/.test(save))
-    fail('adminAddYardNote talks to AssemblyAI inline — that is a Drive read and two uploads ' +
-         'with somebody standing in the yard waiting for the button');
+    fail('adminAddPlacementNote talks to AssemblyAI inline — that is a Drive read and two uploads ' +
+         'with somebody standing at the harbor waiting for the button');
   else ok('the save path does not transcribe inline; it queues');
   if (/queueTranscript_\(/.test(save)) ok('it queues the recording for the trigger to pick up');
   else fail('nothing queues the recording — it would never be typed up');
@@ -855,7 +856,7 @@ function uploadHarness(opts) {
   };
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext(SRC, ctx, { filename: 'yard/index.html' });
+  vm.runInContext(SRC, ctx, { filename: 'harbor-haul-out/index.html' });
   vm.runInContext('ME={name:"Rex",admin:true,perms:{photos:1}};CUR={quoteNo:"QW-26-1255"}', ctx);
   return { ctx, els, sent };
 }
@@ -914,8 +915,8 @@ async function uploadChecks() {
 }
 
 uploadChecks().then(function () {
-  if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the yard app'); process.exit(1); }
-  console.log('yard app: renders the server\'s verdict rather than forming one, lists slip boats for ' +
+  if (bad) { console.error('FAIL: ' + bad + ' problem(s) with Harbor Haul Out'); process.exit(1); }
+  console.log('Harbor Haul Out: renders the server\'s verdict rather than forming one, lists slip boats for ' +
               'pulling and everything for placing, uploads straight to Drive with a relay behind it, ' +
               'and degrades safely on a bad connection');
 });

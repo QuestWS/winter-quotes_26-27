@@ -6,7 +6,7 @@
    first is the formatter mangling a number nobody can then call — an
    extension, an international number, a half-typed one. The second is a new
    render site that prints the raw value, which looks fine in review and only
-   shows up when somebody prints a yard sheet.
+   shows up when somebody prints a storage sheet.
 
    So this runs the real function over the awkward inputs, and then asserts
    that no display site in the backend reaches d.phone without it. */

@@ -120,12 +120,12 @@ if (runs.adminLateFee !== 2 || Number(plain.ok) !== 1 || Number(plain2.ok) !== 1
 } else ok('a write with no request id is unchanged — it runs every time');
 
 /* ---- 5. any write drops the storage-view cache ---- */
-const big = JSON.stringify({ ok: 1, groups: [{ tab: 'Yard', count: 1, rows: [{ pad: 'x'.repeat(200000) }] }] });
+const big = JSON.stringify({ ok: 1, groups: [{ tab: 'Lot', count: 1, rows: [{ pad: 'x'.repeat(200000) }] }] });
 if (!ctx.cachePutBig_('storageView', big, 120)) fail('a storage view larger than one cache entry could not be stored');
 else if (ctx.cacheGetBig_('storageView') !== big) fail('a chunked storage view did not come back byte-for-byte');
 else ok('the storage view survives being split across cache entries (' + Math.round(big.length / 1024) + 'KB)');
 
-/* a single missing chunk must be a miss, never half a yard sheet */
+/* a single missing chunk must be a miss, never half a storage sheet */
 store.delete('storageView:1');
 if (ctx.cacheGetBig_('storageView') !== null) fail('a storage view with a missing chunk was served anyway');
 else ok('a storage view missing a chunk is a miss, not a partial answer');

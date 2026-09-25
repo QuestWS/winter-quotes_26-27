@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quest Harbor Haul Out</title>
+<!-- Staff-only, PIN-gated, and of no use to anybody who lands on it by
+     accident. It should never turn up in a search result. -->
+<meta name="robots" content="noindex, nofollow">
+<!-- One Quest mark for the whole site: favicon.png at the repo root. From
+     /harbor-haul-out/ that is one level up — the failure this rule exists to
+     catch is a path that is right from the root and 404s from a subfolder. -->
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../favicon.png">
+<!-- Add to Home Screen is the whole reason this is a separate page rather than
+     another console card: the crew opens it like an app, one tap, no browser
+     chrome, already signed in. -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14293E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Harbor Haul Out">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- The shared Quest palette. Linked, not re-typed — same bargain sign.html
+     makes, and tools/check-design-tokens.js holds every copy to this file. -->
+<link rel="stylesheet" href="../quest.css">
+<style>
+/* Everything below is specific to this page. Anything another Quest page would
+   also want belongs in quest.css instead.
+
+   DESIGNED FOR A GLOVE AND A GLARE. Every tap target is at least 44px, the
+   type does not go below 14px, and nothing important is carried by colour
+   alone — this is used outdoors, in November, by somebody holding a phone in
+   one hand and a set of keys in the other. */
+*{-webkit-tap-highlight-color:transparent}
+body{background:var(--ice);overscroll-behavior-y:none}
+
+/* ---- top bar ---- */
+.bar{position:sticky;top:0;z-index:40;background:var(--navy);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 10px) 14px 0;box-shadow:0 2px 10px rgba(20,41,62,.25)}
+.bar .row1{display:flex;align-items:center;gap:10px;min-height:34px}
+.bar .ttl{font-family:var(--disp);font-size:21px;letter-spacing:.04em;font-weight:700;
+  text-transform:uppercase;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .who{font-size:12px;color:#B9CDDD;white-space:nowrap}
+.bar .out{background:none;border:1px solid #2C4E73;color:#B9CDDD;border-radius:8px;
+  padding:7px 10px;font-size:12px;font-family:var(--body);cursor:pointer;min-height:34px}
+/* Tabs live in the bar so they survive the list scrolling under them. */
+.tabs{display:flex;margin-top:10px}
+.tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;color:#9FC3DC;
+  font-family:var(--body);font-size:14px;font-weight:700;padding:11px 4px;cursor:pointer;min-height:46px}
+.tabs button.on{color:#fff;border-bottom-color:var(--gold)}
+.tabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.8;margin-left:5px}
+
+.wrap{max-width:720px;margin:0 auto;padding:12px 12px calc(env(safe-area-inset-bottom) + 28px)}
+.msg{font-size:13.5px;color:var(--muted);margin:6px 2px}
+.msg.err{color:var(--warn)}
+.msg.ok{color:var(--ok)}
+
+/* ---- list ---- */
+.grp{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;color:var(--navy);
+  font-size:17px;margin:16px 2px 6px;padding-bottom:5px;border-bottom:2px solid var(--gold)}
+.grp:first-child{margin-top:4px}
+.grp .c{float:right;font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:0}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 13px;margin-bottom:8px;cursor:pointer;display:block;width:100%;text-align:left;
+  font-family:var(--body);font-size:15px;color:var(--ink);min-height:56px}
+.card:active{background:var(--frost-soft)}
+/* The row's own action — "Pulled", "Stored". Its own tap target with real
+   padding and a divider above it, because a crew member ticking twenty boats
+   in a row must not open a detail sheet by accident, and must not tick the
+   wrong boat by accident either. */
+.card .act{display:block;width:100%;margin-top:10px;padding:12px;border-radius:9px;
+  border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-family:var(--body);
+  font-size:14.5px;font-weight:700;cursor:pointer;min-height:46px}
+.card .act.done{background:#fff;color:var(--navy)}
+.card .act[disabled]{background:#fff;color:var(--muted);border-color:var(--line);cursor:not-allowed}
+/* Search and sort, shown only on the lists where there are enough units for
+   either to matter. */
+.filter{display:flex;gap:8px;margin:4px 0 8px}
+.filter input{flex:1;min-width:0;font-family:var(--body);font-size:16px;padding:10px 12px;
+  border:1.5px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);min-height:44px}
+.filter button{flex:0 0 auto;font-family:var(--body);font-size:13.5px;font-weight:700;
+  padding:10px 13px;border-radius:9px;border:1.5px solid var(--navy);background:#fff;
+  color:var(--navy);cursor:pointer;min-height:44px;white-space:nowrap}
+.card .nm{font-weight:700;color:var(--navy);font-size:16px}
+.card .sub{color:var(--muted);font-size:13px;margin-top:2px}
+.card .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.slip{font-family:var(--mono);font-weight:600;color:var(--navy);white-space:nowrap}
+.badge{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;
+  margin-top:6px;letter-spacing:.03em}
+.badge.stop{background:var(--warn);color:#fff}
+.badge.money{background:var(--gold-soft);color:#7A5714;border:1px solid var(--gold)}
+.badge.none{background:#fff;color:var(--muted);border:1px solid var(--line)}
+.badge.note{background:var(--frost-soft);color:var(--navy);margin-left:6px}
+/* THE ALERT. Deliberately NOT the solid red of "do not pull" and not the gold
+   of a money hold — those two mean "stop", and an alert means "read this
+   first". An outlined warning strip reads as urgent without competing with
+   the thing that can stop a boat being moved at all. Carried by an icon AND
+   the word, never by colour alone: this is read outdoors in November. */
+.alert{display:flex;gap:7px;align-items:flex-start;background:var(--warn-bg);
+  border-left:4px solid var(--warn);border-radius:6px;padding:8px 10px;margin-top:8px;
+  font-size:13.5px;font-weight:600;color:#6B3A14;line-height:1.35}
+.alert .i{flex:0 0 auto;font-size:15px}
+.sheet .alert{margin:0;border-radius:0;border-left:0;border-top:3px solid var(--warn);
+  padding:13px 14px;font-size:15px}
+
+/* ---- detail sheet ---- */
+.sheet{position:fixed;inset:0;z-index:60;background:var(--ice);overflow-y:auto;
+  -webkit-overflow-scrolling:touch}
+.sheet.hide{display:none}
+.shead{position:sticky;top:0;background:var(--navy);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;display:flex;align-items:flex-start;gap:10px}
+.shead .t{flex:1;min-width:0}
+.shead .t b{font-family:var(--disp);font-size:20px;letter-spacing:.03em;display:block}
+.shead .t span{font-family:var(--mono);font-size:12px;color:#B9CDDD}
+.shead .x{background:none;border:1px solid #2C4E73;color:#fff;border-radius:8px;
+  font-size:18px;line-height:1;padding:9px 13px;cursor:pointer;min-height:44px;min-width:44px}
+.auth{padding:12px 14px;font-weight:700;font-size:14.5px;letter-spacing:.02em}
+.auth.stop{background:var(--warn);color:#fff}
+.auth.money{background:var(--gold-soft);color:#7A5714;border-bottom:2px solid var(--gold)}
+.auth.go{background:var(--ok-bg);color:var(--ok);border-bottom:2px solid var(--ok)}
+.auth small{display:block;font-weight:400;font-size:12.5px;margin-top:3px;opacity:.9}
+.blk{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:13px;margin-bottom:10px}
+.blk h3{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;font-size:15px;
+  color:var(--navy);margin-bottom:8px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line);
+  font-size:14.5px}
+.kv:last-child{border-bottom:0}
+.kv span{color:var(--muted);flex:0 0 auto}
+.kv b{color:var(--ink);text-align:right;word-break:break-word}
+.kv b.miss{color:var(--warn);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:9px;
+  border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-family:var(--body);
+  font-size:15px;font-weight:700;padding:12px 16px;cursor:pointer;text-decoration:none;min-height:48px}
+.btn.ghost{background:#fff;color:var(--navy)}
+.btn.gold{background:var(--gold);border-color:var(--gold)}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.55}
+.btn.rec{background:var(--warn);border-color:var(--warn)}
+.row2{display:flex;gap:8px}.row2>*{flex:1}
+textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--ink);resize:vertical}
+/* 16px is not a taste. Anything smaller and iOS zooms the page in when the
+   field takes focus, which on a phone held one-handed beside a boat means the
+   next tap lands somewhere else entirely. */
+input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--ink)}
+.fld{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);margin-bottom:4px}
+.chk{display:flex;align-items:center;gap:9px;font-size:15px;color:var(--ink);padding:9px 0}
+.chk input{width:21px;height:21px;accent-color:var(--navy)}
+.dfrow{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:5px 0;
+  border-bottom:1px dashed var(--line)}
+.dfrow:last-child{border-bottom:0}
+.dfrow .dl{color:var(--ink)}
+.dfrow .da{font-family:var(--mono);white-space:nowrap;color:var(--muted)}
+.dfrow.add .dl{color:var(--ok)}
+.dfrow.rem .dl{color:var(--warn);text-decoration:line-through}
+.dbox{background:var(--frost-soft);border:1px solid var(--frost);border-radius:9px;padding:11px;margin-top:10px}
+.dbox .tot{display:flex;justify-content:space-between;font-weight:700;color:var(--navy);
+  font-size:15px;margin-top:8px;padding-top:8px;border-top:1px solid var(--frost)}
+.logrow{border-left:3px solid var(--frost);padding:7px 0 7px 10px;margin-bottom:8px;font-size:14.5px}
+.logrow .w{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.thumbs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.hide{display:none!important}
+.upchip{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 64px);
+  background:var(--navy);color:#fff;border-radius:10px;padding:10px 14px;font-size:13.5px;
+  z-index:70;box-shadow:0 6px 18px rgba(20,41,62,.35);display:flex;align-items:center;gap:10px}
+.upchip .bar{flex:1;height:6px;background:#2C4E73;border-radius:99px;overflow:hidden}
+.upchip .bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .2s}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 18px);
+  background:var(--navy-deep);color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;
+  opacity:0;pointer-events:none;transition:opacity .18s;z-index:80;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+
+/* ---- login ---- */
+.login{max-width:340px;margin:12vh auto 0;padding:0 20px;text-align:center}
+.login h1{font-family:var(--disp);text-transform:uppercase;letter-spacing:.06em;color:var(--navy);
+  font-size:27px;margin-bottom:4px}
+.login p{color:var(--muted);font-size:14px;margin-bottom:18px}
+.pin{width:100%;font-family:var(--mono);font-size:26px;letter-spacing:.35em;text-align:center;
+  padding:14px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--navy)}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login" class="login">
+  <h1>Harbor Haul Out</h1>
+  <p>Haul-out list. Same PIN as the staff console.</p>
+  <input class="pin" id="pin" type="tel" inputmode="numeric" autocomplete="off"
+         maxlength="8" placeholder="••••" aria-label="Staff PIN">
+  <button class="btn wide" id="loginBtn" style="margin-top:12px" onclick="doLogin()">Sign in</button>
+  <div class="msg" id="loginMsg"></div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app" class="hide">
+  <div class="bar">
+    <div class="row1">
+      <div class="ttl">Harbor Haul Out</div>
+      <div class="who" id="who"></div>
+      <button class="out" onclick="signOut()">Sign out</button>
+    </div>
+    <!-- The three states a unit moves through, in the order it moves through
+         them. Left to right is the season. -->
+    <div class="tabs">
+      <button id="tabPull" class="on" onclick="setTab('pull')">To pull<span class="n" id="nPull"></span></button>
+      <button id="tabStore" onclick="setTab('store')">To store<span class="n" id="nStore"></span></button>
+      <button id="tabStored" onclick="setTab('stored')">Stored<span class="n" id="nStored"></span></button>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="filter hide" id="filterBar">
+      <input id="q" type="search" placeholder="Search name, quote # or slip"
+             autocomplete="off" autocapitalize="none" oninput="render()" aria-label="Search">
+      <button id="sortBtn" onclick="toggleSort()">Location</button>
+    </div>
+    <div class="msg" id="listMsg">Loading…</div>
+    <div id="list"></div>
+    <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
+  </div>
+</div>
+
+<!-- ===================== DETAIL ===================== -->
+<div id="sheet" class="sheet hide">
+  <div class="shead">
+    <div class="t"><b id="dName"></b><span id="dQn"></span></div>
+    <button class="x" onclick="closeSheet()" aria-label="Close">✕</button>
+  </div>
+  <div id="dAuth"></div>
+  <div id="dAlert"></div>
+  <div class="wrap">
+    <div id="dCall"></div>
+    <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
+    <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
+    <div class="blk hide" id="dimsBlk">
+      <h3>Measurements</h3>
+      <div class="msg" id="dimsNow" style="margin-top:0"></div>
+      <div id="dimsFields"></div>
+      <div id="dimsNoteWrap" class="hide" style="margin-top:8px">
+        <label class="fld" for="dimsNote">Why (optional)</label>
+        <input class="txt" id="dimsNote" placeholder="Measured at the ramp">
+      </div>
+      <button class="btn wide" id="dimsPrevBtn" style="margin-top:10px" onclick="previewDims()">Price the change</button>
+      <div id="dimsDiff" class="hide"></div>
+      <div class="msg" id="dimsMsg"></div>
+    </div>
+    <div class="blk">
+      <h3>Harbor Haul Out log</h3>
+      <div id="dLog"></div>
+      <textarea class="txt" id="noteText" rows="3" placeholder="What you can see from here…"></textarea>
+      <div id="recBox" style="margin-top:8px"></div>
+      <button class="btn wide" id="noteBtn" style="margin-top:8px" onclick="saveNote()">Save note</button>
+      <div class="msg" id="noteMsg"></div>
+    </div>
+    <div class="blk">
+      <h3>Condition photos &amp; video</h3>
+      <div class="msg" id="photoCounts" style="margin-top:0">—</div>
+      <div class="row2" style="margin-top:8px">
+        <button class="btn ghost" onclick="$('camIn').click()">📷 Photo</button>
+        <button class="btn ghost" onclick="$('vidIn').click()">🎥 Video</button>
+      </div>
+      <button class="btn ghost wide" style="margin-top:8px" onclick="$('galIn').click()">Choose from gallery</button>
+      <!-- TWO camera inputs, one per kind, and that is not tidiness.
+           `capture` tells the phone to open the camera, but it cannot tell it
+           WHICH MODE to open in — so an accept list naming both image/* and
+           video/* is ambiguous and the browser gives up and shows the gallery
+           picker instead. That is exactly what happened when video was added
+           to a single combined input.
+           `multiple` is off both of them for the same class of reason: the
+           spec says capture implies a single file, and Chrome on Android
+           ignores capture outright when multiple is present.
+           The GALLERY input is the one that must never carry capture — on
+           Android that would force the camera and remove the gallery. -->
+      <input type="file" id="camIn" class="hide" accept="image/*" capture="environment">
+      <input type="file" id="vidIn" class="hide" accept="video/*" capture="environment">
+      <input type="file" id="galIn" class="hide" accept="image/*,video/*" multiple>
+      <div class="msg" id="upMsg"></div>
+      <div style="margin-top:8px"><button class="btn ghost wide" id="openFolder" onclick="openFolder()">Open photo folder</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Uploads belong to the QUOTE, not to whatever screen is open, so their
+     progress lives out here. Close the unit, go back to the list, keep
+     ticking boats off — the clip keeps going. -->
+<div class="upchip hide" id="upChip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ===========================================================================
+   HARBOR HAUL OUT — the haul-out list as an app
+   ---------------------------------------------------------------------------
+   Three lists, and they are one field read three ways (PLACEMENT_STATES_ in the
+   .gs). Left to right is the season:
+
+     TO PULL   every unit with a slip number that has not been pulled yet —
+               the boats still in the water, in the order the customer asked
+               for. Ticking one off moves it along and it leaves this list.
+     TO STORE  everything waiting for a spot: the ones we pulled, and the ones
+               the customer drove in themselves (marked dropped off on the
+               console). This is the crew's actual work queue.
+     STORED    in its spot, done. Kept rather than hidden, because "did we
+               already put that one away" is a question people ask.
+
+   The two storage lists are searchable and sort by location or by name; the
+   pull list is not, because its order IS the information — it is the order the
+   customers asked for and re-sorting it would lose that.
+
+   It is a separate page rather than another console card because it is used
+   with one hand, outdoors, in November: big targets, no horizontal scrolling,
+   nothing important carried by colour alone, and Add to Home Screen so it
+   opens like an app instead of a bookmark.
+
+   IT DECIDES NOTHING. Whether a unit may be pulled is the server's answer
+   (haulAuth_ in the .gs), shipped on every row; this page renders it. Three
+   surfaces now ask that question — the console, the printed sheet and this —
+   and a copy per surface is a liability rule free to go stale on two of them.
+=========================================================================== */
+const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+const $=id=>document.getElementById(id);
+/* Same storage keys as the staff console, deliberately: both are served from
+   the same origin, so signing in on one signs you in on the other. One PIN
+   entry per phone per shift instead of two. */
+let T=localStorage.getItem('qwtok')||'', ME=null;
+try{ ME=JSON.parse(localStorage.getItem('qwme')||'null'); }catch(e){ ME=null; }
+let ROWS=[], TAB='pull', CUR=null, PHOTOURL='';
+
+function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+/* A JS string literal safe to drop inside a DOUBLE-QUOTED HTML attribute.
+   ---------------------------------------------------------------------------
+   JSON.stringify emits double quotes. Put that straight into onclick="..." and
+   the first one ENDS THE ATTRIBUTE: the browser is left with the handler
+   `openQuote(` — a syntax error — and the tap silently does nothing.
+
+   Every row tap and every action button in this app shipped dead because of
+   exactly that. Nothing threw, nothing logged, the markup looked right in the
+   source; it only showed up as "tapping names does not load anything".
+   Use this for any value going into an on*= handler. */
+function jsArg_(v){ return JSON.stringify(String(v)).replace(/"/g,'&quot;'); }
+function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2800); }
+function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
+  m.className='msg '+(ok===true?'ok':ok===false?'err':''); }
+
+/* ---------------------------------------------------------------------------
+   TALKING TO THE BACKEND
+   ---------------------------------------------------------------------------
+   The harbor is where the dropped-POST problem was found in the first place, so
+   this page cannot pretend it does not exist. Apps Script answers a POST with
+   a redirect to a one-shot URL, and on a phone with two bars that leg comes
+   back 404 — a transport failure, which is NOT the server saying no.
+
+   This is a deliberately small subset of the staff console's transport, not a
+   copy of it. The hard half lives on the SERVER and is shared: the GET
+   allow-list is enforced there, and a write's request id is claimed there, so
+   asking twice replays one answer instead of doing the work twice. What is
+   here is only the client's side of that contract:
+
+     reads   POST, and on a transport failure retry over GET.
+     writes  POST carrying a rid; on a transport failure ask jobStatus over GET
+             what actually became of it, rather than guessing.
+
+   API_GET_OK must stay a SUBSET of the server's CONSOLE_GET_FNS_ — the server
+   refuses a GET naming a write, so a wrong entry here is a retry that can only
+   ever fail. tools/check-harbor-haul-out.js asserts the subset by reading both. */
+const API_GET_OK={auth:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
+function terr_(m,c){ const e=new Error(m); e.transport=(c===undefined?0:c); return e; }
+function isTerr_(e){ return !!(e&&e.transport!==undefined); }
+function wait_(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function rid_(){
+  try{ if(window.crypto&&window.crypto.randomUUID) return window.crypto.randomUUID(); }catch(e){}
+  return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+}
+/* The fingerprint of a lost call: doGet's customer quote-loader answering a
+   question it was never asked. Matched on wording, which is fragile, so
+   check-harbor-haul-out.js pins it against the .gs's real string. */
+function lost_(j){
+  return !!(j&&!j._api&&Number(j.ok)===0&&typeof j.error==='string'&&
+            /quote number and last name/i.test(j.error));
+}
+async function read_(res){
+  if(!res.ok) throw terr_('Network error ('+res.status+')',res.status);
+  try{ return await res.json(); }
+  catch(e){ throw terr_('The server’s reply could not be read.',res.status); }
+}
+async function post_(body){
+  let res;
+  try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(body)}); }
+  catch(e){ throw terr_('Could not reach the server.',0); }
+  return read_(res);
+}
+async function get_(body){
+  const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
+    '&token='+encodeURIComponent(body.token||'')+
+    '&args='+encodeURIComponent(JSON.stringify(body.args||[]))+'&t='+Date.now();
+  if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
+  let res;
+  try{ res=await fetch(u,{method:'GET',redirect:'follow'}); }
+  catch(e){ throw terr_('Could not reach the server.',0); }
+  return read_(res);
+}
+/* A write whose answer went missing. Never re-send it — the reply cannot prove
+   whether it ran. Ask instead, over GET, because POST is the route that broke. */
+async function settle_(rid){
+  toast('Connection dropped — checking whether that saved…');
+  let unknown=0;
+  for(let i=0;i<10;i++){
+    await wait_(i?2500:1500);
+    let s=null;
+    try{ s=await get_({fn:'jobStatus',token:T,args:[rid]}); }catch(e){ continue; }
+    if(!s||!s._api||Number(s.ok)!==1) continue;
+    if(s.state==='done') return {reply:s.reply};
+    if(s.state==='running'){ unknown=0; continue; }
+    if(++unknown>=4) return {never:true};
+  }
+  return {};
+}
+async function api(fn,args){
+  const isRead=!!API_GET_OK[fn];
+  const body={api:'console',fn:fn,token:T,args:args||[]};
+  if(!isRead) body.rid=rid_();
+  let dropped=null;
+  try{
+    const j=await post_(body);
+    if(!lost_(j)) return j;
+    dropped=terr_('The request never reached the console API.',0);
+  }catch(e){
+    if(!isTerr_(e)) throw e;
+    dropped=e;
+  }
+  if(isRead){
+    /* The route the customer page has used all season. Worth one retry. */
+    const j=await get_(body);
+    if(!lost_(j)) return j;
+    throw dropped;
+  }
+  const out=await settle_(body.rid);
+  if(out.reply) return out.reply;
+  if(out.never) return {ok:0,error:'That did not reach the server — nothing was saved. Try again.'};
+  /* Neither confirmed nor refuted. Say exactly that: telling somebody it
+     failed is how the same note gets written twice, or a real one gets lost. */
+  return {ok:0,error:'The connection dropped and the server has not said what happened. '+
+    'Do NOT send it again — pull down to refresh in a moment and check whether it is there.'};
+}
+
+/* ---------------------------------------------------------------------------
+   SIGN IN
+--------------------------------------------------------------------------- */
+async function doLogin(){
+  const pin=($('pin').value||'').trim();
+  if(!pin){ setMsg('loginMsg','Enter your PIN.',false); return; }
+  const b=$('loginBtn'); b.disabled=true; b.textContent='Checking…';
+  setMsg('loginMsg','');
+  try{
+    const r=await api('auth',[pin]);
+    if(!r||!r.ok){ setMsg('loginMsg',(r&&r.error)||'Could not sign in.',false); return; }
+    T=r.token; ME={name:r.name,admin:!!r.admin,perms:r.perms||{}};
+    try{ localStorage.setItem('qwtok',T); localStorage.setItem('qwme',JSON.stringify(ME)); }catch(e){}
+    showApp();
+  }catch(e){ setMsg('loginMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Sign in'; }
+}
+function signOut(){
+  T=''; ME=null;
+  try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); }catch(e){}
+  $('app').classList.add('hide'); $('sheet').classList.add('hide');
+  $('login').classList.remove('hide'); $('pin').value='';
+}
+/* The `keys` permission is what lets somebody record harbor facts — the same bar
+   the console puts on keys, slip and the staff note. Mirrors canKeys_'s
+   fallback for roster entries written before that permission existed, because
+   ME is cached in localStorage and a session opened before it would otherwise
+   lose the note box on an action the server still accepts. */
+function canWrite(){
+  if(!ME) return false;
+  if(ME.admin) return true;
+  const p=ME.perms||{};
+  if(p.keys===undefined||p.keys===null||p.keys==='') return !!(p.adjust||p.pay);
+  return !!p.keys;
+}
+function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
+/* Mirrors canMeasure_ in the .gs INCLUDING its fallback, which is now
+   canKeys_: whoever can record harbor facts can correct a measurement. Chris's
+   call — the people holding the tape are the crew, and leaving it on
+   `adjust` left it with the two admins who never hold one.
+   The mirror matters because ME is cached in localStorage, so a session opened
+   before the permission existed must read `undefined` the way the server does
+   rather than as a flat no. canWrite() is already this file's copy of
+   canKeys_, so the fallback goes through it and cannot drift from it. */
+function canMeasure(){
+  if(!ME) return false;
+  if(ME.admin) return true;
+  const p=ME.perms||{};
+  if(p.measure===undefined||p.measure===null||p.measure==='') return canWrite();
+  return !!p.measure;
+}
+
+function showApp(){
+  $('login').classList.add('hide');
+  $('app').classList.remove('hide');
+  $('who').textContent=(ME&&ME.name)||'';
+  loadList();
+}
+
+/* ---------------------------------------------------------------------------
+   THE TWO LISTS
+--------------------------------------------------------------------------- */
+async function loadList(force){
+  setMsg('listMsg','Loading Harbor Haul Out…');
+  if(force) $('list').innerHTML='';
+  try{
+    const r=await api('storageView',[]);
+    if(!r||!r.ok){
+      /* An expired session is the overwhelmingly likely cause out here. */
+      if(/sign in|session|token/i.test(String(r&&r.error||''))){ signOut(); return; }
+      setMsg('listMsg',(r&&r.error)||'Could not load Harbor Haul Out.',false); return;
+    }
+    ROWS=[];
+    (r.groups||[]).forEach(function(g){
+      if(g.lead) return;                 // a lead has no unit with us
+      (g.rows||[]).forEach(function(x){ ROWS.push(Object.assign({tab:g.tab},x)); });
+    });
+    render();
+  }catch(e){ setMsg('listMsg',e.message,false); }
+}
+/* Ready now → stated dates → will call → not answered. Same order the printed
+   haul-out sheet uses, so the app and the paper agree about what is next. */
+function order_(x){
+  const sd=x.seasonDone||null;
+  if(!sd||!sd.choice) return {rank:3,label:'Not answered',key:''};
+  if(sd.choice==='now') return {rank:0,label:'Ready now',key:''};
+  if(sd.choice==='date') return {rank:1,label:dateTxt_(sd.date),key:String(sd.date||'')};
+  return {rank:2,label:'Will call',key:''};
+}
+function dateTxt_(v){
+  const s=String(v||''), m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return s||'Date given';
+  const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  return isNaN(d)?s:d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+}
+function sort_(a,b){
+  const A=order_(a),B=order_(b);
+  if(A.rank!==B.rank) return A.rank-B.rank;
+  if(A.key&&B.key) return A.key.localeCompare(B.key);
+  return String(a.name).localeCompare(String(b.name));
+}
+/* The server stamps every row; this only reads it, and an unstamped row reads
+   as blocked. Failing the other way would let a backend that has not deployed
+   yet clear a boat nobody signed for. */
+function auth_(x){
+  const a=x&&x.auth;
+  if(a&&a.state) return a;
+  return {state:'blocked',why:'both',label:'NOT CONFIRMED',stamp:'NOT CONFIRMED — DO NOT PULL'};
+}
+/* One field, three lists. A row's state decides which list it is on; nothing
+   else does, so a unit can never be on two at once or fall off all three. */
+function state_(x){ return String((x&&x.placementState)||''); }
+function listOf_(x){
+  const st=state_(x);
+  if(st==='stored') return 'stored';
+  if(st==='pulled'||st==='dropped') return 'store';
+  /* Nothing has happened yet: it is only on the crew's radar if it is in the
+     water. A trailered boat nobody has dropped off yet is not their problem. */
+  return String(x.slip||'').trim() ? 'pull' : '';
+}
+function pullList_(){ return ROWS.filter(x=>listOf_(x)==='pull').sort(sort_); }
+/* Location first, then name — "which building am I standing in" is the
+   question, and within a building a name is how you find the row. Sorting by
+   name alone is for when somebody at the counter has a customer on the phone. */
+function byLocation_(a,b){
+  return String(a.tab||'').localeCompare(String(b.tab||''))||
+         String(a.name||'').localeCompare(String(b.name||''));
+}
+function byName_(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); }
+function storeList_(which){
+  const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
+  const hit=ROWS.filter(x=>listOf_(x)===which).filter(function(x){
+    if(!q) return true;
+    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
+  });
+  return hit.sort(SORT==='name'?byName_:byLocation_);
+}
+
+let SORT='location';
+function setTab(t){
+  TAB=t;
+  $('tabPull').classList.toggle('on',t==='pull');
+  $('tabStore').classList.toggle('on',t==='store');
+  $('tabStored').classList.toggle('on',t==='stored');
+  /* Search and sort belong to the two storage lists. The pull list's order is
+     the information, so it gets neither. */
+  $('filterBar').classList.toggle('hide',t==='pull');
+  render();
+}
+function toggleSort(){
+  SORT=SORT==='location'?'name':'location';
+  $('sortBtn').textContent=SORT==='location'?'Location':'Name';
+  render();
+}
+function badge_(x){
+  const a=auth_(x);
+  if(a.state==='cleared') return '';
+  const cls=a.why==='signature'?'stop':a.why==='payment'?'money':'none';
+  return '<span class="badge '+cls+'">'+esc(a.stamp||a.label)+'</span>';
+}
+/* On the row, not just behind a tap. The whole point is that somebody loading
+   the app sees which boats need reading about before they walk over to one. */
+function alert_(x){
+  /* Trimmed before the test: a cleared field can leave whitespace behind, and
+     a strip containing one space is still a strip on every row. */
+  const t=String((x&&x.alert)||'').trim();
+  return t?'<div class="alert"><span class="i">\u26A0</span><span>'+esc(t)+'</span></div>':'';
+}
+function notes_(x){
+  return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';
+}
+/* A div rather than a <button>, because the row carries its own action button
+   and a button inside a button is invalid and behaves differently in every
+   browser. Keyboard access is kept explicitly. */
+function row_(x,right,action){
+  const qn=jsArg_(x.qn);
+  return '<div class="card" role="button" tabindex="0" onclick="openQuote('+qn+')" '+
+    'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openQuote('+qn+');}">'+
+    '<div class="ln"><span class="nm">'+esc(x.name)+'</span>'+
+    '<span class="slip">'+esc(right||'')+'</span></div>'+
+    '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
+      (x.dims?' · '+esc(x.dims):'')+'</div>'+
+    alert_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
+}
+/* The one-tap move along the line, used by the To store list only. The pull
+   list deliberately has no such button: pulling a boat is the act the whole
+   liability rule exists for, so it is made with the unit open, underneath its
+   authorisation banner and its alert. Putting an already-pulled boat into a
+   building carries none of that, and it is done a row at a time down a list.
+
+   stopPropagation matters: without it the tap also opens the detail sheet, and
+   the crew member watches a panel slide over the list they were working down.
+   The `pulled` guard below stays even though no caller passes it any more —
+   it is the kind of thing a later edit re-introduces by hand. */
+function act_(x,to,label){
+  if(!canWrite()) return '';
+  const a=auth_(x);
+  if(to==='pulled'&&a.state!=='cleared'){
+    return '<button class="act" disabled title="'+esc(a.stamp)+'">'+esc(a.stamp)+'</button>';
+  }
+  return '<button class="act" onclick="event.stopPropagation();markState('+
+    jsArg_(x.qn)+','+jsArg_(to)+')">'+esc(label)+'</button>';
+}
+function render(){
+  const counts={pull:0,store:0,stored:0};
+  ROWS.forEach(function(x){ const l=listOf_(x); if(counts[l]!==undefined) counts[l]++; });
+  $('nPull').textContent=counts.pull;
+  $('nStore').textContent=counts.store;
+  $('nStored').textContent=counts.stored;
+
+  if(TAB==='pull'){
+    const pull=pullList_();
+    setMsg('listMsg',pull.length
+      ? pull.length+' still in the water, in the order they asked for. Open one to mark it pulled.'
+      : 'Nothing left in the water — every boat with a slip has been pulled.');
+    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip))).join('');
+    return;
+  }
+
+  const rows=storeList_(TAB);
+  const q=String(($('q')&&$('q').value)||'').trim();
+  if(!rows.length){
+    setMsg('listMsg',q?'Nothing matches “'+q+'”.'
+      :TAB==='store'?'Nothing waiting for a spot. Boats appear here once they are pulled, or marked dropped off on the console.'
+      :'Nothing put away yet.');
+    $('list').innerHTML='';
+    return;
+  }
+  setMsg('listMsg',rows.length+' unit'+(rows.length===1?'':'s')+
+    (q?' matching “'+q+'”':'')+
+    (TAB==='store'?' waiting for a spot.':' put away.')+
+    (SORT==='location'?' Sorted by location.':' Sorted by name.'));
+
+  if(SORT==='name'){
+    $('list').innerHTML=rows.map(x=>row_(x,rowRight_(x),
+      TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
+    return;
+  }
+  /* By location means grouped by it — a heading you can find by eye beats a
+     column you have to read on every row. */
+  const by={};
+  rows.forEach(function(x){ (by[x.tab||'—']=by[x.tab||'—']||[]).push(x); });
+  $('list').innerHTML=Object.keys(by).sort(function(a,b){
+    const w=t=>t==='No Storage'?2:1;
+    return w(a)-w(b)||a.localeCompare(b);
+  }).map(function(t){
+    return '<div class="grp">'+esc(t)+'<span class="c">'+by[t].length+'</span></div>'+
+      by[t].map(x=>row_(x,rowRight_(x),TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
+  }).join('');
+}
+/* What the right-hand column says depends on what you are looking for: on the
+   way in it is where the boat came from, once away it is where it went. */
+function rowRight_(x){
+  /* Grouped by location the heading already says where it is, so repeating it
+     on every row is noise. Sorted by name there are no headings, so it is the
+     only way to know. */
+  if(TAB==='stored') return SORT==='location' ? '' : String(x.tab||'');
+  const st=state_(x);
+  return st==='pulled' ? 'Pulled' : st==='dropped' ? 'Dropped off' : '';
+}
+
+/* Move a unit along the line. Called from a row and from the detail sheet, so
+   it updates whichever of the two is on screen and never re-fetches the whole
+   list for one tick — the crew is working down a list and a full reload would
+   scroll them back to the top. */
+async function markState(qn,to){
+  const row=ROWS.filter(x=>x.qn===qn)[0];
+  const before=row?state_(row):'';
+  if(row) row.placementState=to;                  // optimistic: the list moves now
+  if(CUR&&CUR.quoteNo===qn) CUR.placement={state:to};
+  render();
+  if(TAB!=='pull'&&CUR&&CUR.quoteNo===qn) renderState();
+  try{
+    const r=await api('placementState',[qn,to]);
+    if(!r||!r.ok){
+      if(row) row.placementState=before;            // put it back where it was
+      if(CUR&&CUR.quoteNo===qn) CUR.placement={state:before};
+      render(); if(CUR&&CUR.quoteNo===qn) renderState();
+      toast((r&&r.error)||'Could not record that.');
+      return;
+    }
+    if(row){ row.placementState=to; row.placementAt=(r.placement&&r.placement.at)||''; }
+    if(CUR&&CUR.quoteNo===qn) CUR.placement=r.placement||{state:to};
+    render(); if(CUR&&CUR.quoteNo===qn) renderState();
+    toast(r.msg||'Recorded');
+  }catch(e){
+    if(row) row.placementState=before;
+    if(CUR&&CUR.quoteNo===qn) CUR.placement={state:before};
+    render(); if(CUR&&CUR.quoteNo===qn) renderState();
+    toast(e.message);
+  }
+}
+/* READ ONLY HERE. Alerts are set and cleared on the console, never from
+   here — Chris's call, and it keeps the loud thing under one pair of eyes
+   rather than letting whoever is standing nearest the boat rewrite it.
+
+   Renders NOTHING when there is no alert: an empty warning strip on every
+   unit is how people stop seeing the strip that matters. */
+function renderAlert(){
+  const a=CUR&&CUR.placementAlert;
+  const t=String((a&&a.text)||'').trim();
+  $('dAlert').innerHTML=t
+    ? '<div class="alert"><span class="i">\u26A0</span><span>'+esc(t)+
+      (a.by?'<br><span style="font-weight:400;font-size:12px">set by '+esc(a.by)+'</span>':'')+
+      '</span></div>'
+    : '';
+}
+
+/* ---------------------------------------------------------------------------
+   MEASUREMENTS
+   ---------------------------------------------------------------------------
+   The tape measure is at the harbor, so the correction is made there. What
+   is NOT here is everything else the console's dimension editor can do: no
+   motor counts, no storage-location override. Those are specification changes
+   made at a desk with the customer on the phone. This is "the hull is 26 feet,
+   not 24".
+
+   Two acts, never one. `dimsPreview` writes nothing and says what the change
+   would cost; `dimsApply` is a separate deliberate tap. That matters more here
+   than on the console -- a re-measure moves money, and the person making it is
+   holding a phone in one hand and a bow line in the other.
+
+   Field list comes from the server (DIM_FIELDS in the engine), so a dimension
+   that starts mattering to the price appears here without this file changing.
+--------------------------------------------------------------------------- */
+let DIMS=null;
+function renderDims(d){
+  DIMS=d||null;
+  const blk=$('dimsBlk');
+  /* No card at all rather than a disabled one: a permanently dead control is
+     something people learn to tap anyway. */
+  if(!canMeasure()){ blk.classList.add('hide'); return; }
+  blk.classList.remove('hide');
+  $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
+  setMsg('dimsMsg',''); PENDING=null;
+  $('dimsNote').value='';
+  if(!DIMS||!DIMS.editable){
+    $('dimsFields').innerHTML='';
+    $('dimsNoteWrap').classList.add('hide');
+    $('dimsPrevBtn').classList.add('hide');
+    $('dimsNow').textContent=(DIMS&&DIMS.why)||'This quote cannot be re-priced automatically.';
+    return;
+  }
+  $('dimsPrevBtn').classList.remove('hide');
+  $('dimsNoteWrap').classList.remove('hide');
+  /* Say plainly whose numbers these are. "They told us 24" and "we measured
+     26" are the same two figures and completely different conversations. */
+  const measured=DIMS.measured&&Object.keys(DIMS.measured).length;
+  $('dimsNow').innerHTML=measured
+    ? 'On file: <b>'+esc(DIMS.text||'—')+'</b> — Quest-measured.<br>The customer originally gave '+
+      esc(DIMS.customerText||'—')+'.'
+    : 'On file: <b>'+esc(DIMS.text||'—')+'</b> — as the customer entered it.';
+  const rows=(DIMS.fields||[]).map(f=>
+    '<div><label class="fld">'+esc(f.label)+'</label>'+
+    '<input class="txt dimf" data-key="'+esc(f.key)+'" inputmode="decimal" value="'+
+    esc(String(f.value))+'"></div>').join('');
+  const trailer=DIMS.unitKind==='boat'
+    ? '<label class="chk"><input type="checkbox" id="dimsTrailer"'+(DIMS.hasTrailer?' checked':'')+
+      '> Stored on its trailer</label>'
+    : '';
+  $('dimsFields').innerHTML=(rows?'<div class="row2" style="margin-top:8px">'+rows+'</div>':'')+trailer;
+}
+/* Send only what actually differs, so the journal records a measurement
+   somebody changed rather than every field on the form. */
+function collectDims(){
+  const out={};
+  if(!DIMS||!DIMS.editable) return out;
+  Array.prototype.forEach.call(document.querySelectorAll('#dimsFields .dimf'),function(el){
+    const k=el.getAttribute('data-key'), v=String(el.value||'').trim();
+    const was=(DIMS.fields.filter(f=>f.key===k)[0]||{}).value;
+    if(v!==''&&String(v)!==String(was)) out[k]=v;
+  });
+  const tr=$('dimsTrailer');
+  if(tr&&!!tr.checked!==!!DIMS.hasTrailer) out.hasTrailer=tr.checked?1:0;
+  return out;
+}
+let PENDING=null;
+async function previewDims(){
+  if(!CUR) return;
+  const changes=collectDims();
+  if(!Object.keys(changes).length){
+    setMsg('dimsMsg','Change a measurement first.',false);
+    $('dimsDiff').classList.add('hide'); return;
+  }
+  const b=$('dimsPrevBtn'); b.disabled=true; b.textContent='Pricing…';
+  setMsg('dimsMsg','');
+  try{
+    const r=await api('dimsPreview',[CUR.quoteNo,changes]);
+    if(!r||!r.ok){
+      setMsg('dimsMsg',(r&&r.error)||'Could not price that.',false);
+      $('dimsDiff').classList.add('hide'); return;
+    }
+    PENDING=changes;
+    drawDiff(r);
+  }catch(e){ setMsg('dimsMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Price the change'; }
+}
+function drawDiff(r){
+  const lines=(r.diff||[]).map(function(x){
+    const cls=x.kind==='added'?' add':x.kind==='removed'?' rem':'';
+    const amt=x.kind==='changed'?esc(x.was)+' → '+esc(x.now):esc(x.now||x.was||'');
+    return '<div class="dfrow'+cls+'"><span class="dl">'+esc(x.label)+'</span>'+
+           '<span class="da">'+amt+'</span></div>';
+  }).join('');
+  const moved=r.beforeTab!==r.afterTab
+    ? '<div class="dfrow"><span class="dl">Storage</span><span class="da">'+
+      esc(r.beforeTab)+' → '+esc(r.afterTab)+'</span></div>' : '';
+  const dims=r.beforeDims!==r.afterDims
+    ? '<div class="dfrow"><span class="dl">Dimensions</span><span class="da">'+
+      esc(r.beforeDims)+' → '+esc(r.afterDims)+'</span></div>' : '';
+  /* Flags are the reason a beam is worth measuring twice: the server says "too
+     wide for inside" and a human decides, here as on the console. */
+  const flags=(r.flags||[]).map(f=>'<div class="alert"><span class="i">⚠</span><span>'+
+    esc(f)+'</span></div>').join('');
+  $('dimsDiff').innerHTML='<div class="dbox">'+dims+moved+
+    (lines||'<div class="dfrow"><span class="dl">No line items change</span><span class="da"></span></div>')+
+    '<div class="tot"><span>'+esc(r.beforeTotal)+' → '+esc(r.afterTotal)+'</span>'+
+    '<span>'+esc(r.delta)+'</span></div>'+
+    '<div class="dfrow"><span class="dl">New balance</span><span class="da">'+esc(r.newBalance)+'</span></div>'+
+    '</div>'+flags+
+    '<button class="btn wide gold" id="dimsApplyBtn" style="margin-top:9px" onclick="applyDims()">Apply this change</button>'+
+    '<button class="btn ghost wide" style="margin-top:7px" onclick="cancelDims()">Cancel</button>'+
+    '<div class="msg">Nothing is emailed. Tell the counter if the customer needs to know.</div>';
+  $('dimsDiff').classList.remove('hide');
+}
+function cancelDims(){ PENDING=null; $('dimsDiff').classList.add('hide'); setMsg('dimsMsg',''); }
+async function applyDims(){
+  if(!CUR||!PENDING) return;
+  const qn=CUR.quoteNo;
+  const b=$('dimsApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
+  try{
+    const r=await api('dimsApply',[qn,PENDING,String($('dimsNote').value||'').trim()]);
+    if(!r||!r.ok){
+      setMsg('dimsMsg',(r&&r.error)||'Could not apply that.',false);
+      if(b){ b.disabled=false; b.textContent='Apply this change'; }
+      return;
+    }
+    PENDING=null;
+    toast(r.msg||'Re-priced');
+    /* The row's dimensions, its total and possibly its storage tab all just
+       changed, so the cached list is wrong. Reload it BEFORE re-opening the
+       unit -- the sheet reads the row for dims, tab and the pull
+       authorisation, and re-opening against a stale row would show the old
+       figures back again a second after the toast said otherwise. */
+    await loadList();
+    await openQuote(qn);
+    if(r.flags&&r.flags.length) toast(r.flags[0]);
+  }catch(e){
+    setMsg('dimsMsg',e.message,false);
+    if(b){ b.disabled=false; b.textContent='Apply this change'; }
+  }
+}
+
+const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+function renderState(){
+  const box=$('dState');
+  if(!box||!CUR) return;
+  const st=String((CUR.placement&&CUR.placement.state)||'');
+  const when=String((CUR.placement&&CUR.placement.at)||'');
+  let whenTxt='';
+  if(when){ const d=new Date(when); whenTxt=isNaN(d)?when:d.toLocaleString(); }
+  const row=ROWS.filter(x=>x.qn===CUR.quoteNo)[0]||{};
+  const a=auth_(row);
+  let h='<div class="kv"><span>Right now</span><b>'+esc(STATE_LABEL[st]||st)+'</b></div>';
+  if(whenTxt) h+='<div class="kv"><span>Recorded</span><b>'+esc(whenTxt)+
+    ((CUR.placement&&CUR.placement.by)?' · '+esc(CUR.placement.by):'')+'</b></div>';
+  if(canWrite()){
+    const btn=(to,label,cls)=>'<button class="btn '+(cls||'')+' wide" style="margin-top:8px" '+
+      'onclick="markState('+jsArg_(CUR.quoteNo)+','+jsArg_(to)+')">'+label+'</button>';
+    if(st!=='pulled'&&st!=='stored'){
+      h+=a.state==='cleared'
+        ? btn('pulled','Mark pulled')
+        : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
+    }
+    if(st!=='stored') h+=btn('stored','Mark in storage','gold');
+    /* Reversible on purpose: a mis-tap at the harbor is certain, and the fix
+       must not be a phone call to somebody at a desk. */
+    if(st) h+=btn('','Undo — back to not started','ghost');
+  }
+  box.innerHTML=h;
+}
+
+/* ---------------------------------------------------------------------------
+   ONE UNIT
+--------------------------------------------------------------------------- */
+async function openQuote(qn){
+  CUR=null; PHOTOURL='';
+  $('sheet').classList.remove('hide');
+  $('dName').textContent='Loading…'; $('dQn').textContent=qn;
+  $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
+  $('dAlert').innerHTML='';
+  $('dimsBlk').classList.add('hide'); $('dimsFields').innerHTML='';
+  $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
+  setMsg('dimsMsg',''); DIMS=null; PENDING=null;
+  $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
+  $('photoCounts').textContent='—';
+  window.scrollTo(0,0);
+  try{
+    const r=await api('lookup',[qn]);
+    if(!r||!r.ok){ $('dName').textContent='Not found'; setMsg('noteMsg',(r&&r.error)||'Could not open that quote.',false); return; }
+    CUR=r; renderSheet(r);
+    if(canPhotos()) refreshPhotos(qn);
+  }catch(e){ $('dName').textContent='Error'; setMsg('noteMsg',e.message,false); }
+}
+function closeSheet(){ $('sheet').classList.add('hide'); stopDictation(); }
+function renderSheet(r){
+  const listRow=ROWS.filter(x=>x.qn===r.quoteNo)[0]||{};
+  $('dName').textContent=r.name||r.quoteNo;
+  $('dQn').textContent=r.quoteNo+(r.unit?' · '+r.unit:'');
+
+  /* THE FIRST THING ON THE SCREEN is whether this boat may be touched. */
+  const a=auth_(listRow);
+  const box=a.state==='cleared'
+    ? '<div class="auth go">CLEARED TO PULL<small>Signed agreement and a deposit both on file.</small></div>'
+    : a.state==='hold'
+      ? '<div class="auth '+(a.why==='payment'?'money':'stop')+'">'+esc(a.stamp)+
+        '<small>'+(a.why==='payment'
+          ? 'They have signed, but nothing has been paid. Plan around it — do not pull it.'
+          : 'A deposit is in, but nobody has signed. Plan around it — do not pull it.')+'</small></div>'
+      : '<div class="auth stop">DO NOT TOUCH — NOT AUTHORISED<small>No deposit and no signed agreement. '+
+        'Not a unit to move, work on or pull.</small></div>';
+  $('dAuth').innerHTML=box;
+
+  const phone=String(r.phone||'');
+  const tel=phone.replace(/[^0-9]/g,'');
+  $('dCall').innerHTML=tel
+    ? '<a class="btn wide gold" href="tel:'+esc(tel)+'">📞 Call '+esc(r.name||'')+' — '+esc(phone)+'</a>'
+    : '<div class="msg">No phone number on this quote.</div>';
+
+  const o=order_(listRow);
+  const kv=(k,v,miss)=>'<div class="kv"><span>'+k+'</span><b'+(miss?' class="miss"':'')+'>'+v+'</b></div>';
+  const or=t=>t?esc(t):'<span class="miss">— not recorded —</span>';
+  const keys=r.keys||{};
+  /* Land units are not towed — golf carts are driven here and e-bikes are
+     carried — so the whole subject is dropped rather than printing
+     "On a trailer: No" on every cart. trailerApplies is the server's answer;
+     an older backend that does not send it falls back to showing the row, so a
+     boat never loses it. */
+  const towable=keys.trailerApplies===undefined?true:!!keys.trailerApplies;
+  const trailerTxt=keys.hasTrailer===true?'Yes':keys.hasTrailer===false?'No':'—';
+  $('dFacts').innerHTML=
+    kv('Unit',esc(r.unit||'')+(r.ymm?' · '+esc(r.ymm):''))+
+    (listRow.dims?kv('Dimensions',esc(listRow.dims)):'')+
+    kv('Storage',esc(listRow.tab||'—'))+
+    kv('Slip',or(keys.slipNo))+
+    kv('Keys',or(keys.keyLoc))+
+    (towable?kv('On a trailer',trailerTxt):'')+
+    /* Absent unless there is a trailer to find. An unfilled value renders in
+       the missing-information red, which claims somebody should go and find it
+       out — on a boat blocked on stands, or on any land unit, that is a chase
+       with no quarry. Where it IS shown and empty, the red is earned: we know
+       there is a trailer and nobody has said where. The row above already says
+       whether there is one at all. */
+    (keys.needsTrailerLoc?kv('Trailer is',or(keys.trailerLoc)):'')+
+    kv('Requested timing',esc(o.label))+
+    kv('Balance',esc(r.balance||''));
+
+  renderAlert();
+  renderState();
+  renderDims(r.dims);
+  renderLog(r.placementNotes||[]);
+  const w=canWrite();
+  $('noteBtn').disabled=!w;
+  $('noteText').disabled=!w;
+  drawRecorder();
+  if(!w) setMsg('noteMsg','Your account cannot add notes here. Ask an admin for the keys permission.');
+  $('openFolder').classList.toggle('hide',!canPhotos());
+}
+function renderLog(list){
+  if(!list.length){ $('dLog').innerHTML='<div class="msg" style="margin-top:0">Nothing logged yet.</div>'; return; }
+  $('dLog').innerHTML=list.map(function(n){
+    let when=String(n.ts||'');
+    if(when){ const d=new Date(when); if(!isNaN(d)) when=d.toLocaleString(); }
+    /* Typed words and dictated words are both shown, and labelled, because
+       "did I say that or type it" matters when somebody is reading it back to
+       a customer six weeks later. */
+    let body=n.text?esc(n.text):'';
+    if(n.transcript){
+      body+=(body?'<br>':'')+'<i>“'+esc(n.transcript)+'”</i>';
+    }else if(n.tstatus==='pending'){
+      body+=(body?'<br>':'')+'<span class="w">typing up the recording…</span>';
+    }else if(n.tstatus==='failed'){
+      body+=(body?'<br>':'')+'<span class="w">recording saved, but it was not typed up'+
+        (n.terror?' — '+esc(n.terror):'')+'</span>';
+    }
+    if(!body) body='<span class="w">(recording)</span>';
+    const player=n.audioUrl
+      ? '<div style="margin-top:5px"><a href="'+esc(n.audioUrl)+'" target="_blank" rel="noopener">▶ Play recording</a></div>'
+      : '';
+    return '<div class="logrow">'+body+player+
+      '<div class="w">'+esc(n.by||'—')+' · '+esc(when)+'</div></div>';
+  }).join('');
+}
+async function saveNote(){
+  if(!CUR) return;
+  const t=($('noteText').value||'').trim();
+  /* A recording on its own is a note. Somebody with cold hands should be able
+     to press record, talk, and save without typing anything. */
+  if(!t&&!RECBLOB){ setMsg('noteMsg','Record something or type something first.',false); return; }
+  if(REC){ setMsg('noteMsg','Stop the recording first.',false); return; }
+  const b=$('noteBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('noteMsg','');
+  try{
+    let audio=null;
+    if(RECBLOB){
+      const b64=await blobB64_(RECBLOB);
+      if(!b64){ setMsg('noteMsg','That recording could not be read. Try again, or type the note.',false); return; }
+      audio={b64:b64,mime:RECBLOB.type||'audio/webm',ext:recExt_(RECBLOB.type)};
+    }
+    const r=await api('placementNote',[CUR.quoteNo,t,audio]);
+    if(!r||!r.ok){ setMsg('noteMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('noteText').value='';
+    RECBLOB=null; drawRecorder();
+    CUR.placementNotes=(CUR.placementNotes||[]).concat([r.note]);
+    renderLog(CUR.placementNotes);
+    /* Keep the list badge honest without re-fetching the whole list. */
+    ROWS.forEach(x=>{ if(x.qn===CUR.quoteNo) x.notes=(x.notes||0)+1; });
+    setMsg('noteMsg','Saved.',true); toast('Logged');
+  }catch(e){ setMsg('noteMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save note'; }
+}
+
+/* ---------------------------------------------------------------------------
+   VOICE NOTES
+   ---------------------------------------------------------------------------
+   The same method as the service tracker's mechanic app (QuestWS/servicetracker),
+   deliberately, so the two apps behave the same way in the same hands: record
+   with MediaRecorder, upload the audio WITH the note, and let the server hand
+   it to AssemblyAI and fill the words in underneath when the webhook returns.
+
+   NOT on-device speech recognition. That was the obvious guess and it is the
+   wrong one — it needs a live connection while you talk, it gives up in a noisy
+   harbor, and it keeps nothing afterwards. A recording is evidence: it is filed
+   on the quote and stays playable whether or not anything ever types it up.
+
+   THE AUDIO IS THE RECORD, the transcript is the convenience. With no API key
+   on the deployment the recording still saves and still plays; only the text
+   is missing, and the note says so.
+--------------------------------------------------------------------------- */
+let REC=null, RECBLOB=null, RECTIMER=null, RECSECS=0;
+function recSupported_(){
+  return typeof MediaRecorder!=='undefined' &&
+         !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+}
+function recMime_(){
+  if(typeof MediaRecorder==='undefined') return undefined;
+  return ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg']
+    .find(t=>MediaRecorder.isTypeSupported(t));
+}
+function recExt_(mime){
+  const m=String(mime||'');
+  if(m.indexOf('mp4')>-1) return 'm4a';
+  if(m.indexOf('ogg')>-1) return 'ogg';
+  return 'webm';
+}
+function drawRecorder(){
+  const box=$('recBox');
+  if(!box) return;
+  if(!recSupported_()){
+    box.innerHTML='<div class="msg" style="margin:0">This browser will not record audio — type the note instead.</div>';
+    return;
+  }
+  if(RECBLOB){
+    /* Hear it back before it goes. A recording of thirty seconds of wind is
+       worth knowing about while you are still standing there. */
+    box.innerHTML='<audio controls style="width:100%" src="'+URL.createObjectURL(RECBLOB)+'"></audio>'+
+      '<button class="btn ghost wide" style="margin-top:6px" onclick="discardRec()">Discard recording</button>';
+    return;
+  }
+  box.innerHTML=REC
+    ? '<button class="btn rec wide" onclick="stopRec()">■ Stop recording ('+RECSECS+'s)</button>'
+    : '<button class="btn ghost wide" onclick="startRec()">🎙 Record a voice note</button>';
+}
+function discardRec(){ RECBLOB=null; drawRecorder(); }
+async function startRec(){
+  if(!recSupported_()){ setMsg('noteMsg','This browser cannot record audio. Type the note instead.',false); return; }
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ setMsg('noteMsg','Microphone access was blocked. Allow it for this site, or type the note instead.',false); return; }
+  const mime=recMime_(), chunks=[];
+  try{ REC=new MediaRecorder(stream,mime?{mimeType:mime}:undefined); }
+  catch(e){ setMsg('noteMsg','Could not start recording: '+e.message,false); return; }
+  REC.ondataavailable=ev=>{ if(ev.data&&ev.data.size) chunks.push(ev.data); };
+  REC.onstop=function(){
+    const blob=new Blob(chunks,{type:(REC&&REC.mimeType)||'audio/webm'});
+    if(blob.size) RECBLOB=blob;
+    stream.getTracks().forEach(t=>t.stop());
+    REC=null; clearInterval(RECTIMER); RECTIMER=null;
+    drawRecorder();
+  };
+  REC.start();
+  RECSECS=0; drawRecorder();
+  RECTIMER=setInterval(()=>{ RECSECS++; drawRecorder(); },1000);
+  setMsg('noteMsg','Recording. Say what you can see; tap Stop when you are done.');
+}
+function stopRec(){ if(REC){ try{ REC.stop(); }catch(e){} } }
+/* Called when the sheet closes, so a recording never keeps the microphone
+   open on a unit nobody is looking at any more. */
+function stopDictation(){
+  if(REC){ try{ REC.stop(); }catch(e){} }
+  if(RECTIMER){ clearInterval(RECTIMER); RECTIMER=null; }
+  REC=null; RECBLOB=null; RECSECS=0;
+}
+function blobB64_(b){
+  return new Promise(res=>{
+    const rd=new FileReader();
+    rd.onload=()=>res(String(rd.result).split(',')[1]);
+    rd.onerror=()=>res(null);
+    rd.readAsDataURL(b);
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   PHOTOS — the same folders and the same endpoint the console uses
+--------------------------------------------------------------------------- */
+async function refreshPhotos(qn){
+  try{
+    const r=await api('photoInfo',[qn]);
+    if(r&&r.ok){
+      PHOTOURL=r.url||'';
+      $('photoCounts').textContent='Winter: '+r.counts.winter+' · Spring: '+r.counts.spring+' file(s) on record';
+    }
+  }catch(e){}
+}
+function openFolder(){ if(PHOTOURL) window.open(PHOTOURL,'_blank'); else toast('No photo folder yet.'); }
+function b64_(f){
+  return new Promise(res=>{
+    const rd=new FileReader();
+    rd.onload=()=>res(String(rd.result).split(',')[1]);
+    rd.onerror=()=>res(null);
+    rd.readAsDataURL(f);
+  });
+}
+/* Checked before anything is read off the disk. A clip goes over the wire as
+   base64, which is a third bigger again, and an oversized POST is dropped by
+   Apps Script without an explanation — on a phone that reads as a spinner and
+   then a failure nobody can act on. Refusing early, by name and by size, is
+   the whole difference. */
+const MAX_UPLOAD_MB=25;
+function tooBig_(f){ return f && f.size > MAX_UPLOAD_MB*1048576; }
+/* ---------------------------------------------------------------------------
+   UPLOADS DO NOT BLOCK THE APP
+   ---------------------------------------------------------------------------
+   Chris: "I dont want to slow the app down with upload times." So an upload is
+   queued against the QUOTE and pumped in the background. The sheet can close,
+   the list can be scrolled, boats can be ticked off — a 60MB clip keeps going
+   in a chip at the bottom of the screen. Only closing the app stops it.
+
+   Each file is tried DIRECT first (the phone PUTs straight to Drive, no size
+   ceiling, resumable, no base64) and falls back to the old base64-through-
+   Apps-Script path if that is refused for any reason — including a CORS
+   preflight we could not test without a staff PIN. The fallback keeps the
+   25 MB ceiling, because that path still has it, and says so plainly rather
+   than failing quietly.
+--------------------------------------------------------------------------- */
+let UPQ=[], UPRUN=false, UPDONE=0, UPFAIL=0, UPSKIP=[];
+function upChip_(txt,pct){
+  const c=$('upChip');
+  if(!c) return;
+  if(txt===null){ c.classList.add('hide'); c.innerHTML=''; return; }
+  c.classList.remove('hide');
+  c.innerHTML='<span>'+esc(txt)+'</span>'+
+    (pct===null?'':'<span class="bar"><i style="width:'+Math.max(0,Math.min(100,pct))+'%"></i></span>');
+}
+/* The direct leg. XHR rather than fetch purely for upload progress: a phone
+   pushing 60MB with no feedback looks identical to a phone doing nothing. */
+function putDirect_(url,file,onPct){
+  return new Promise(function(res){
+    let x;
+    try{ x=new XMLHttpRequest(); }catch(e){ return res({ok:0,reason:'no-xhr'}); }
+    x.open('PUT',url,true);
+    x.setRequestHeader('Content-Type',file.type||'application/octet-stream');
+    if(x.upload) x.upload.onprogress=e=>{ if(e.lengthComputable) onPct(Math.round(100*e.loaded/e.total)); };
+    /* A CORS refusal surfaces here as a status-0 error with no detail — which
+       is exactly the case the fallback exists for, so it is not an error yet. */
+    x.onerror=()=>res({ok:0,reason:'blocked'});
+    x.onabort=()=>res({ok:0,reason:'blocked'});
+    x.onload=()=>res(x.status>=200&&x.status<300?{ok:1}:{ok:0,reason:'http-'+x.status});
+    try{ x.send(file); }catch(e){ res({ok:0,reason:'blocked'}); }
+  });
+}
+async function uploadOne_(job){
+  const f=job.file;
+  /* 1. Straight to Drive. */
+  try{
+    const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size]);
+    if(sess&&sess.ok&&sess.url){
+      const r=await putDirect_(sess.url,f,p=>upChip_(job.label,p));
+      if(r.ok) return {ok:1,how:'direct'};
+      /* Anything other than "the browser would not let us" is a real failure
+         and must not be retried down a path with a smaller ceiling. */
+      if(String(r.reason||'').indexOf('http-')===0) return {ok:0,error:'Drive refused the upload ('+r.reason+').'};
+    }
+  }catch(e){ /* fall through */ }
+  /* 2. The old path, which still has the ceiling. */
+  if(f.size>MAX_UPLOAD_MB*1048576){
+    return {ok:0,error:f.name+' ('+Math.round(f.size/1048576)+' MB) could not go direct, and the '+
+      'backup route caps at '+MAX_UPLOAD_MB+' MB. Try again on wifi, or shoot a shorter clip.'};
+  }
+  const data=await b64_(f);
+  if(!data) return {ok:0,error:'That file could not be read.'};
+  const r=await api('uploadPhoto',[job.qn,job.season,f.name||('photo-'+Date.now()+'.jpg'),data,f.type]);
+  return (r&&r.ok)?{ok:1,how:'relay'}:{ok:0,error:(r&&r.error)||'Upload failed.'};
+}
+async function upPump_(){
+  if(UPRUN) return;
+  UPRUN=true;
+  while(UPQ.length){
+    const job=UPQ.shift();
+    const left=UPQ.length;
+    job.label=job.name+(left?' (+'+left+' more)':'');
+    upChip_(job.label,0);
+    let out;
+    try{ out=await uploadOne_(job); }catch(e){ out={ok:0,error:e.message}; }
+    if(out.ok) UPDONE++; else { UPFAIL++; UPSKIP.push(out.error||'failed'); }
+    /* Keep the open unit's counts honest without reloading anything. */
+    if(CUR&&CUR.quoteNo===job.qn&&canPhotos()) refreshPhotos(job.qn);
+  }
+  UPRUN=false;
+  const bits=[];
+  if(UPDONE) bits.push(UPDONE+' uploaded');
+  if(UPFAIL) bits.push(UPFAIL+' failed');
+  upChip_(bits.join(' · ')+(UPSKIP.length?' — tap to see why':''),null);
+  if(UPSKIP.length) setMsg('upMsg',UPSKIP.join(' '),false);
+  else setMsg('upMsg',UPDONE+' uploaded.',true);
+  toast(bits.join(' · ')||'Done');
+  UPDONE=0; UPFAIL=0; UPSKIP=[];
+  setTimeout(()=>upChip_(null),6000);
+}
+async function upload(files){
+  if(!CUR||!files||!files.length) return;
+  if(!canPhotos()){ setMsg('upMsg','Your account cannot upload photos or video.',false); return; }
+  const list=Array.prototype.slice.call(files);
+  if(!list.length) return;
+  /* Queued against the quote that is open NOW, so closing the sheet does not
+     send a clip to whichever boat gets opened next. */
+  const qn=CUR.quoteNo;
+  list.forEach(f=>UPQ.push({file:f,qn:qn,season:'winter',name:f.name||'file'}));
+  setMsg('upMsg',list.length+' queued — you can keep working, it uploads in the background.');
+  upPump_();
+}
+$('camIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('vidIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('galIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
+$('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+
+/* A cached token may be hours old and already expired; loadList finds out and
+   drops back to the PIN screen rather than showing an empty list. */
+if(T&&ME) showApp(); else $('login').classList.remove('hide');
+</script>
+</body>
+</html>

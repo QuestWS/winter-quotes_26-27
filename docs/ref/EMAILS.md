@@ -36,7 +36,7 @@ invoice email (`customerEmailHtml_`, as `o.quoteUrl` — "View my quote online",
 worded *invoice* once a payment exists), the 10-day auto-reminder, the lead
 follow-up ("Finish my quote"), the console's copyable **Customer link** block,
 and the sheet menu's *Show customer link*. That is what stops the link staff
-read out in the yard from differing from the one the customer was emailed.
+read out at the harbor from differing from the one the customer was emailed.
 
 It returns `''` when either half is missing rather than a half-built URL that
 lands on an empty quote page — **every caller must hide its button on `''`**,
@@ -88,9 +88,9 @@ the storage view tags in red (`docs/ref/STAFF-CONSOLE.md`).
   `doPost` already refuses a lead row a customer copy, and this is the same
   boundary on the staff-clicked path.
 - **It sets no status.** Every other notice kind stamps the status column, but
-  this one says nothing about where the quote is in the money or the yard —
+  this one says nothing about where the quote is in the money or placement status —
   overwriting `Deposit received` with a chase note would take that off the
-  console pill and off the yard sheets somebody is holding. `adminSendEmail`
+  console pill and off the storage sheets somebody is holding. `adminSendEmail`
   only writes `built.status` when there is one. The send still lands in Email
   History, which is what staff read to answer "have we chased this one?".
 - **It asks for the slip only when we don't have one**, and only for a water
@@ -145,7 +145,7 @@ human**: the 10-day reminder and the lead follow-up.
   on the page are not the prices we mean.
 - **A property, not a constant.** `REMINDER_ENABLED` / `LEAD_FOLLOWUP_ENABLED`
   are the permanent code-level switches and still work; this is the operational
-  one, flippable from a phone in the yard without a deploy. Either being off
+  one, flippable from a phone at the harbor without a deploy. Either being off
   stops a send.
 - **A corrupt setting reads as PAUSED.** An unparseable property must fail
   towards sending nothing — the other way turns a broken value into an

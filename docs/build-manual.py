@@ -78,7 +78,7 @@ def manual():
         ['5. Scan to sign', 'The counter QR-code page'],
         ['6. The staff console — a quote', 'Every card on an open quote'],
         ['7. The staff console — season tools', 'Storage view, storage sheets, send to all, re-price, imports, pause, staff, restore'],
-        ['8. Harbor Haul Out', 'The three lists, pulling and storing, notes, voice, photos, measurements'],
+        ['8. Harbor Haul Out', 'The four lists, pulling and storing, notes, voice, photos, measurements'],
         ['9. Emails', 'Every email, who sends it, and the only two that send themselves'],
         ['10. Money rules', 'Deposits, payments, refunds, credits, the payment lock, fees'],
         ['11. The spreadsheet and Drive', 'Tabs, folders, backups, what never to do by hand'],
@@ -372,8 +372,10 @@ def manual():
            'If the console says it lost the reply, it checks what happened — <b>do not record '
            'the payment again</b> until you have reloaded the quote and looked.'),
         ('Upload a signed contract', 'pay', [
-            'On the quote card, <b>Signed contract → Upload signed copy</b> (or <b>Replace</b>).',
-            'Choose the PDF from Adobe, or take a photo of a paper signature.',
+            'On the quote card, under <b>Signed contract</b>: on a computer, <b>drag the file onto '
+            'the dashed box</b>; on a phone, tap the box (or <b>Upload signed copy</b> / <b>Replace</b>).',
+            'Use the PDF from Adobe, or a photo of a paper signature. One file at a time — a new '
+            'one replaces the old. Anything that is not a PDF or an image is refused.',
             'The link then appears on the quote, the "Ask them to sign" buttons disappear, and '
             'if a deposit is already in, the unit becomes cleared to pull.',
         ], None),
@@ -382,7 +384,8 @@ def manual():
             '<b>Take photo</b> or <b>Record video</b> opens the camera; <b>Upload from '
             'gallery</b> picks existing files (several at once).',
             'Watch the progress bar; <b>Open folder</b> shows the Drive folder.',
-        ], 'Large videos upload directly to Drive and continue if the signal drops.'),
+        ], 'Photos and videos go up full size. Large files upload directly to Drive and resume '
+           'if the signal drops.'),
         ('Keys &amp; slip', 'keys', [
             'Fill in where the keys will be, the slip number, and (if the unit has a trailer) '
             'where the trailer is.',
@@ -408,7 +411,8 @@ def manual():
         ], 'Maximum 160 characters. Set only from the console; the customer never sees it.'),
         ('Harbor Haul Out status', 'keys', [
             'Tap the new state: <b>Pulled</b>, <b>Dropped off</b>, <b>Stored</b>, or undo.',
-            'Use <b>Dropped off</b> when a customer drives their unit in — that puts it on the '
+            'Use <b>Dropped off</b> when a customer drives their unit in (this can also be done in '
+            'Harbor Haul Out) — that puts it on the '
             '<b>To store</b> list in Harbor Haul Out.',
         ], '<b>Pulled</b> is refused unless the unit is cleared (signed <b>and</b> paid).'),
         ('Harbor Haul Out log', 'keys', [
@@ -507,7 +511,9 @@ def manual():
         'whose storage area would change are listed, not moved.',
         'Select all, or tick the ones to apply → apply. It runs in batches of 15 and takes a '
         'snapshot of the spreadsheet first (link shown).',
-        'Discounts and adjustments survive; deposits are untouched, so balances move. '
+        'Discounts and adjustments survive; deposits are untouched, so balances move. One '
+        'quote, QW-26-1991, is held at its agreed price through 2026–2027 and is never '
+        're-priced — every other quote is, paid or not. '
         '<b>Nobody is emailed</b> — use Send to all or per-quote emails afterwards.',
     ])
 
@@ -568,6 +574,8 @@ def manual():
     s += [table(['List', 'Shows', 'Order'], [
         ['To pull', 'Units in a slip not yet pulled', 'The order customers asked for — '
          'deliberately not re-sortable'],
+        ['Awaiting', 'No slip number and nothing recorded yet — waiting for the customer to bring '
+         'it in (or a boat in the water whose slip is missing)', 'Search; the timing customers asked for'],
         ['To store', 'Everything pulled, plus everything marked dropped off', 'Search; sort by '
          'location (grouped) or name'],
         ['Stored', 'Everything put away', 'Search; sort by location or name'],
@@ -580,13 +588,17 @@ def manual():
         'a hold stamp, or <b>DO NOT TOUCH — NOT AUTHORISED</b>.',
         '<b>To pull a unit:</b> open it and tap <b>Mark pulled</b>. Only offered when cleared; '
         'otherwise the button shows the hold stamp instead.',
+        '<b>Customer brought it in:</b> tap <b>Dropped off</b> on the Awaiting row (or <b>Mark '
+        'dropped off</b> on the opened unit). Not gated — the customer brought it, we touched '
+        'nothing. Only offered before anything else is recorded.',
         '<b>To store:</b> tap <b>Stored</b> on the To store row — no need to open each one.',
         '<b>Mark in storage</b> is also on the opened unit. <b>Undo — back to not started</b> '
         'fixes a mis-tap.',
         '<b>Refresh</b> reloads the lists.',
     ])
-    s += [P('Dropped off is recorded from the console only (the counter sees the customer '
-            'arrive). The alert is set and cleared from the console only.', SMALL)]
+    s += [P('Every unit is on exactly one list. A boat you know is in the water but shows on '
+            '<b>Awaiting</b> is missing its slip number — record it (Keys &amp; slip) and it moves to '
+            'To pull. The alert is set and cleared from the console only.', SMALL)]
     s += [P('On an opened unit', H2)]
     s += [B('<b>Facts</b> — slip, keys, trailer, storage, requested timing, balance. Red means '
             'missing information somebody should find out.')]
@@ -595,8 +607,10 @@ def manual():
             'Voice Notes folder and typed up automatically once the AssemblyAI key is installed '
             '(Section 13).')]
     s += [B('<b>Photos &amp; video</b> — separate buttons for camera photo, camera video, and '
-            '<b>Choose from gallery</b>. Always filed as Winter. Uploads continue in the '
-            'background (a chip at the bottom) — keep working; only closing the app stops them.')]
+            '<b>Choose from gallery</b>. Always filed as Winter, always full size. Uploads run in the '
+            'background (a chip at the bottom) — keep working. A dropped signal resumes where it '
+            'stopped, no signal waits and sends when it returns, and a closed app or dead battery '
+            'carries on the next time the app is opened. The screen stays awake while files go.')]
     s += [B('<b>Measurements</b> — edit the dimensions and "stored on its trailer" → <b>Price '
             'the change</b> → review → <b>Apply this change</b>. Re-prices the quote; nobody is '
             'emailed. Motors and a chosen storage move stay in the console.')]
@@ -719,6 +733,10 @@ def manual():
         ['checkRestoreAccess()', 'Before first restore', '"Both permissions are granted…"'],
         ['bulkImport1_Scan() / 2_Apply()', 'Fallback for the console buttons', 'Emails a report / imports approved rows'],
         ['bulkImportStatus / Continue / Stop / Repair', 'If a bulk import misbehaves', 'Shown in the log'],
+        ['importAudit()', 'Once, after the Sept 19 importer fix', 'Repairs, then lists imports in the '
+         'Activity Log that are no longer on the sheet — the ones to run again'],
+        ['repairImportedRows()', 'To repair only', 'Puts back any quote stranded in a header row and '
+         'lists any quote number on two rows. Imports now do this themselves.'],
         ['emailGuides()', 'After the guides change', 'Guides emailed to Chris'],
     ], [1.9 * inch, 1.5 * inch, 3.2 * inch])]
 
@@ -776,6 +794,8 @@ def manual():
         ['A unit won\'t mark as Pulled', 'It is not signed and paid. Fix that first.'],
         ['Voice note says it was not typed up', 'The AssemblyAI key isn\'t installed; the recording is still saved.'],
         ['The storage view is slow the first time', 'It is cached for two minutes after the first load.'],
+        ['Wondering how slow the console is', 'The footer shows the last call\'s time, and how much of '
+         'it was spent on the server.'],
     ], [2.4 * inch, 4.2 * inch])]
 
     # ------------------------------------------------------------------
@@ -795,7 +815,7 @@ def manual():
         ['Move them to inside storage', 'Unit details &amp; storage', perm('measure')],
         ['Record keys / slip', 'Keys &amp; slip', perm('keys')],
         ['Warn staff about a unit', 'Harbor Haul Out alert', perm('keys')],
-        ['Mark a unit dropped off', 'Harbor Haul Out status', perm('keys')],
+        ['Mark a unit dropped off', 'Harbor Haul Out app (Awaiting) or status card', perm('keys')],
         ['Mark a unit pulled / stored', 'Harbor Haul Out app, or its status card', perm('keys')],
         ['Note something about a unit', 'Harbor Haul Out log (or a voice note in the app)', perm('keys')],
         ['Photograph a unit', 'Photos card / Harbor Haul Out', perm('photos')],

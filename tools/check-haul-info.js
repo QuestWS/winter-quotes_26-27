@@ -177,10 +177,10 @@ console.log('\n=== 6. pricing is untouched by a keys edit ===');
 }
 
 console.log('\n=== 6b. "where is the trailer" is only asked when there is one ===');
-/* Asking it of a boat blocked on stands is not a harmless extra row: the yard
-   app renders an unanswered field as "— not recorded —" in the colour it uses
-   for missing information, so the crew reads a settled fact as a gap. Chris
-   reported exactly that.
+/* Asking it of a boat blocked on stands is not a harmless extra row: Harbor
+   Haul Out renders an unanswered field as "— not recorded —" in the colour it
+   uses for missing information, so the crew reads a settled fact as a gap.
+   Chris reported exactly that.
    The subtlety is WHOSE answer `hasTrailer` is. The quote page only shows the
    trailer question to boats and jet skis, so a golf cart's flag sits at the
    default false and is not an answer at all. */
@@ -230,29 +230,30 @@ console.log('\n=== 6b. "where is the trailer" is only asked when there is one ==
 
 console.log('\n=== 6c. both clients read that one answer ===');
 {
-  const yard=fs.readFileSync(path.join(ROOT,'yard/index.html'),'utf8');
+  const hho=fs.readFileSync(path.join(ROOT,'harbor-haul-out/index.html'),'utf8');
   const admin=fs.readFileSync(path.join(ROOT,'admin/index.html'),'utf8');
-  check('the yard app gates the trailer row on the server\'s answer',
-        /needsTrailerLoc\?kv\('Trailer is'/.test(yard));
+  check('Harbor Haul Out gates the trailer row on the server\'s answer',
+        /needsTrailerLoc\?kv\('Trailer is'/.test(hho));
   check('and drops the "On a trailer" row entirely for a land unit',
-        /towable\?kv\('On a trailer'/.test(yard));
+        /towable\?kv\('On a trailer'/.test(hho));
   check('the console gates its trailer input on the same field',
         /keysTrailerWrap'\)\.classList\.toggle\('hide',!k\.needsTrailerLoc\)/.test(admin));
   /* Neither client may work the rule out for itself — that is how two copies
      drift and one of them starts asking again. */
-  [['yard/index.html',yard],['admin/index.html',admin]].forEach(function(pair){
+  [['harbor-haul-out/index.html',hho],['admin/index.html',admin]].forEach(function(pair){
     const js=pair[1].replace(/\/\*[\s\S]*?\*\//g,'').replace(/<!--[\s\S]*?-->/g,'');
     check(pair[0]+' does not re-derive it from hasTrailer',
           !/needsTrailerLoc\s*=[^=]/.test(js));
   });
   /* A golf cart's facts should not mention trailers at all. */
-  check('the yard app knows which units can be towed',
-        /trailerApplies/.test(yard));
+  check('Harbor Haul Out knows which units can be towed',
+        /trailerApplies/.test(hho));
   check('and the server tells it',
         /trailerApplies: !isLandUnit_\(d\)/.test(gas));
   /* Belt and braces: no surface offers the checkbox for a land unit, so this
      only fires on a crafted request -- but a cart carrying hasTrailer would
-     move its deposit as well as putting the question back on the yard screen. */
+     move its deposit as well as putting the question back on the Harbor Haul
+     Out screen. */
   const san=(gas.match(/function sanitizeMeasured_[\s\S]*?\n}/m)||[''])[0];
   check('the server refuses to mark a land unit as trailered',
         /golf[\s\S]{0,80}ebike|ebike[\s\S]{0,80}golf/.test(san));

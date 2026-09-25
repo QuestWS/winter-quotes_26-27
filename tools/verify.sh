@@ -40,7 +40,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
-    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddYardNote" "YARD_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "adminUploadSession" "MAX_DIRECT_BYTES_" "uploadType=resumable" "YARD_STATES_" "adminSetYardState" "yardStateOf_" "adminSetYardAlert" "YARD_ALERT_MAX_" "yardAlert" \
+    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddPlacementNote" "PLACEMENT_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "adminUploadSession" "MAX_DIRECT_BYTES_" "uploadType=resumable" "PLACEMENT_STATES_" "adminSetPlacementState" "placementStateOf_" "adminSetPlacementAlert" "PLACEMENT_ALERT_MAX_" "placementAlert" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -91,10 +91,10 @@ if [ -f admin/index.html ]; then
     "previewReprice" "doReprice" "repriceCard" "pvRender" "saveStaffNote" "noteCard" "previewImport" "doImport" "importCard" "bulkWrap" "bulkStart" "bulkPoll" "bulkRepair" "bulkImpState" \
     "renderQuoteLink" "copyQuoteLink" "linkBox" \
     "setStorageFilter" "renderStorage" "storageTabs" "tagred" "em_signreminder" "signAskAllowed_" \
-    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderYardLog" "addYardNote" "yardLogCard" "keysTrailerLoc" "renderYardState" "setYardState" "yardStateCard" "alertCard" "alertbox" "palert" "putDirect" "sendOne" \
+    "haulAuth_" "haulPartition_" "NOT AUTHORISED" "DO NOT PULL" "renderPlacementLog" "addPlacementNote" "placementLogCard" "keysTrailerLoc" "renderPlacementState" "setPlacementState" "placementStateCard" "alertCard" "alertbox" "palert" "putDirect" "sendOne" \
     "API_GET_OK" "apiLostReply_" "API_USE_GET"
   # The email preview frame. srcdoc under a fully-restrictive sandbox renders in
-  # Chrome and comes up BLANK on iOS Safari — which is what the yard uses, so the
+  # Chrome and comes up BLANK on iOS Safari — which is what staff use, so the
   # preview was broken for the person who most needs it. It needs
   # allow-same-origin to be written into, and must NEVER get allow-scripts, or a
   # rendered email could execute.
@@ -161,30 +161,30 @@ if [ -f admin/index.html ]; then
   else echo "  OK   trap: .txt textareas fill their card"; fi
 else echo "  (admin/index.html not present)"; fi
 
-echo "== Yard app =="
-if [ -f yard/index.html ]; then
-  extract_scripts yard/index.html "$TMP/yard.js"; check_js "$TMP/yard.js" "yard/index.html"
-  sweep yard/index.html "yard" \
+echo "== Harbor Haul Out =="
+if [ -f harbor-haul-out/index.html ]; then
+  extract_scripts harbor-haul-out/index.html "$TMP/hho.js"; check_js "$TMP/hho.js" "harbor-haul-out/index.html"
+  sweep harbor-haul-out/index.html "harbor-haul-out" \
     "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" "putDirect_" "uploadOne_" "upPump_" "upChip_" "uploadSession" \
-    "uploadPhoto" "yardNote" "manifest.json" "storageView" \
+    "uploadPhoto" "placementNote" "manifest.json" "storageView" \
     "renderDims" "previewDims" "applyDims" "collectDims" "canMeasure" "dimsBlk" "dimsPreview" "dimsApply"
   # One big script here too, so the same shadowing trap applies.
-  DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/yard.js" \
+  DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/hho.js" \
          | grep -oE '[A-Za-z0-9_$]+$' | sort | uniq -d)
   if [ -n "$DUPY" ]; then
-    echo "  FAIL trap: duplicate function name(s) in the yard app:"; echo "$DUPY" | sed 's/^/         /'; FAIL=1
-  else echo "  OK   trap: no duplicate function names in the yard app"; fi
+    echo "  FAIL trap: duplicate function name(s) in Harbor Haul Out:"; echo "$DUPY" | sed 's/^/         /'; FAIL=1
+  else echo "  OK   trap: no duplicate function names in Harbor Haul Out"; fi
   # "Where is the trailer" is only a question when there is a trailer. Asking
-  # it of a boat blocked on stands renders as "— not recorded —" in the yard
-  # app's missing-information red, so a settled fact reads as a gap. One answer,
-  # on the server; neither client may work it out again.
+  # it of a boat blocked on stands renders as "— not recorded —" in Harbor Haul
+  # Out's missing-information red, so a settled fact reads as a gap. One
+  # answer, on the server; neither client may work it out again.
   if grep -q "needsTrailerLoc: needsTrailerLoc_(" quote-logger-apps-script.gs; then
     echo "  OK   trap: the trailer question is gated on there being a trailer"
   else
     echo "  FAIL trap: needsTrailerLoc is not coming from needsTrailerLoc_ — a boat on stands"; FAIL=1
     echo "       would be asked where its trailer is"
   fi
-  for f in yard/index.html admin/index.html; do
+  for f in harbor-haul-out/index.html admin/index.html; do
     if grep -qE "(needs|show)TrailerLoc *=[^=]" "$f"; then
       echo "  FAIL trap: $f re-derives the trailer rule — that is a second copy of it"; FAIL=1
     else echo "  OK   trap: $f renders the server's trailer answer"; fi
@@ -199,24 +199,24 @@ if [ -f yard/index.html ]; then
     echo "  FAIL trap: needsTrailerLoc_ no longer excludes land units — every golf cart would"; FAIL=1
     echo "       show a trailer row in the colour that means somebody should go and find it out"
   fi
-  # Re-measuring is a money act on a yard phone, so it is its own permission
+  # Re-measuring is a money act on a harbor phone, so it is its own permission
   # and it never travels on `keys`. Checked here as well as in the gate because
   # this is the grep somebody runs when wiring a new endpoint up to the app.
   for f in adminDimsApply adminDimsPreview; do
     if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'measure')"; then
       echo "  OK   trap: $f is gated on the measure permission"
     else
-      echo "  FAIL trap: $f is not gated on 'measure' — writing a yard note would buy a re-price"; FAIL=1
+      echo "  FAIL trap: $f is not gated on 'measure' — writing a placement note would buy a re-price"; FAIL=1
     fi
   done
-  # Dropped off is what the COUNTER hears; the yard never sees it happen. And
+  # Dropped off is what the COUNTER hears; the harbor never sees it happen. And
   # pulling is made with the unit open, under its alert and its authorisation
   # banner, so the pull list records nothing from the row.
-  if grep -q "act_(x,'pulled'" yard/index.html; then
+  if grep -q "act_(x,'pulled'" harbor-haul-out/index.html; then
     echo "  FAIL trap: the pull list ticks a boat off from the row — pulling is a button on the opened unit"; FAIL=1
   else echo "  OK   trap: the pull list records nothing from the row"; fi
-  if grep -q "'Mark dropped off'" yard/index.html; then
-    echo "  FAIL trap: the yard app offers 'Mark dropped off' — that is console-only"; FAIL=1
+  if grep -q "'Mark dropped off'" harbor-haul-out/index.html; then
+    echo "  FAIL trap: Harbor Haul Out offers 'Mark dropped off' — that is console-only"; FAIL=1
   else echo "  OK   trap: 'Mark dropped off' is console-only"; fi
   if grep -q "'Mark dropped off'" admin/index.html; then
     echo "  OK   trap: and the console still has it"
@@ -241,12 +241,12 @@ if [ -f yard/index.html ]; then
     echo "  FAIL gate: Import release"; sed 's/^/       /' "$TMP/imprel.txt"; FAIL=1
   fi
   # The pull rule belongs to the server. Three surfaces ask it; one answers.
-  if node tools/check-yard-app.js > "$TMP/yardapp.txt" 2>&1; then
-    echo "  OK   gate: yard app renders the server's verdict and degrades safely"
+  if node tools/check-harbor-haul-out.js > "$TMP/hhoapp.txt" 2>&1; then
+    echo "  OK   gate: Harbor Haul Out renders the server's verdict and degrades safely"
   else
-    echo "  FAIL gate: yard app"; sed 's/^/       /' "$TMP/yardapp.txt"; FAIL=1
+    echo "  FAIL gate: Harbor Haul Out"; sed 's/^/       /' "$TMP/hhoapp.txt"; FAIL=1
   fi
-else echo "  (yard/index.html not present)"; fi
+else echo "  (harbor-haul-out/index.html not present)"; fi
 
 echo "== Pricing engine parity =="
 if [ -f pricing-engine.js ]; then
@@ -334,44 +334,45 @@ if [ -f quote-logger-apps-script.gs ]; then
     if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
       echo "  FAIL trap: $f can show the staff note to a customer"; FAIL=1
     else echo "  OK   trap: $f cannot leak the staff note"; fi
-    # The yard log is written standing next to the boat and its whole value is
-    # that nobody is composing it for a customer to read. Same bar, same paths.
-    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'yardNotes'; then
-      echo "  FAIL trap: $f can show the yard log to a customer"; FAIL=1
-    else echo "  OK   trap: $f cannot leak the yard log"; fi
+    # The Harbor Haul Out log is written standing next to the boat and its whole
+    # value is that nobody is composing it for a customer to read. Same bar,
+    # same paths.
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'placementNotes'; then
+      echo "  FAIL trap: $f can show the Harbor Haul Out log to a customer"; FAIL=1
+    else echo "  OK   trap: $f cannot leak the Harbor Haul Out log"; fi
     # And the alert, which is blunter than either — "no keys, do not tow" is
     # written for the crew, not for the person who owns the boat.
-    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'yardAlert'; then
-      echo "  FAIL trap: $f can show the yard alert to a customer"; FAIL=1
-    else echo "  OK   trap: $f cannot leak the yard alert"; fi
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q 'placementAlert'; then
+      echo "  FAIL trap: $f can show the Harbor Haul Out alert to a customer"; FAIL=1
+    else echo "  OK   trap: $f cannot leak the Harbor Haul Out alert"; fi
   done
   # ...nor the endpoint the customer's own page reads.
   if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'staffNote'; then
     echo "  FAIL trap: the load endpoint returns the staff note to the customer page"; FAIL=1
   else echo "  OK   trap: staff note never reaches the customer page"; fi
-  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'yardNotes'; then
-    echo "  FAIL trap: the load endpoint returns the yard log to the customer page"; FAIL=1
-  else echo "  OK   trap: yard log never reaches the customer page"; fi
-  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'yardAlert'; then
-    echo "  FAIL trap: the load endpoint returns the yard alert to the customer page"; FAIL=1
-  else echo "  OK   trap: yard alert never reaches the customer page"; fi
+  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'placementNotes'; then
+    echo "  FAIL trap: the load endpoint returns the Harbor Haul Out log to the customer page"; FAIL=1
+  else echo "  OK   trap: Harbor Haul Out log never reaches the customer page"; fi
+  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'placementAlert'; then
+    echo "  FAIL trap: the load endpoint returns the Harbor Haul Out alert to the customer page"; FAIL=1
+  else echo "  OK   trap: Harbor Haul Out alert never reaches the customer page"; fi
   # The public scan-to-sign lookup answers on a guessable quote number alone.
-  if awk '/^function signLookup_/,/^}/' quote-logger-apps-script.gs | grep -qE 'yardAlert|yardNotes'; then
-    echo "  FAIL trap: the public sign lookup exposes yard notes or alerts"; FAIL=1
+  if awk '/^function signLookup_/,/^}/' quote-logger-apps-script.gs | grep -qE 'placementAlert|placementNotes'; then
+    echo "  FAIL trap: the public sign lookup exposes placement notes or alerts"; FAIL=1
   else echo "  OK   trap: the public sign lookup exposes neither"; fi
   # Append-only is the guarantee. Nothing may rewrite or drop an entry.
-  if grep -qE 'yardNotes\s*=\s*\[\]|yardNotes\.splice|yardNotes\.shift|yardNotes\.pop' quote-logger-apps-script.gs; then
-    echo "  FAIL trap: something truncates or edits the yard log — it is append-only"; FAIL=1
-  else echo "  OK   trap: the yard log is only ever appended to"; fi
+  if grep -qE 'placementNotes\s*=\s*\[\]|placementNotes\.splice|placementNotes\.shift|placementNotes\.pop' quote-logger-apps-script.gs; then
+    echo "  FAIL trap: something truncates or edits the Harbor Haul Out log — it is append-only"; FAIL=1
+  else echo "  OK   trap: the Harbor Haul Out log is only ever appended to"; fi
   # It exists only on this side, so a customer save has to be made to carry it.
-  if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.yardNotes'; then
-    echo "  OK   trap: yard log survives a customer save"
-  else echo "  FAIL trap: a customer save would wipe the yard log"; FAIL=1; fi
+  if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.placementNotes'; then
+    echo "  OK   trap: Harbor Haul Out log survives a customer save"
+  else echo "  FAIL trap: a customer save would wipe the Harbor Haul Out log"; FAIL=1; fi
   # It exists only on this side, so a customer save must be made to carry it.
   if awk '/const lockedByPayment/,/3\) Target tab/' quote-logger-apps-script.gs | grep -q 'oldD.staffNote'; then
     echo "  OK   trap: staff note survives a customer save"
   else echo "  FAIL trap: a customer save would wipe the staff note"; FAIL=1; fi
-  # Keys/slip is yard work and has its own permission — it must NOT be back on
+  # Keys/slip is physical work and has its own permission — it must NOT be back on
   # `adjust`, or the crew who find out where the keys are cannot record it.
   if awk '/^function adminKeysApply/,/^}/' quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'keys')"; then
     echo "  OK   trap: keys/slip uses its own permission"
@@ -568,8 +569,8 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminRepriceApply/,/^}/' quote-logger-apps-script.gs | grep -qE 'GmailApp|MailApp|sendCustomerEmail_|buildEmailFor_'; then
     echo "  FAIL trap: re-price emails customers — that must stay a separate decision"; FAIL=1
   else echo "  OK   trap: re-price emails nobody"; fi
-  # The console API answers on POST and, since a lost POST broke the console in
-  # the yard, on GET too. Writes must stay POST-only and every reply must carry
+  # The console API answers on POST and, since a lost POST broke the console at
+  # the harbor, on GET too. Writes must stay POST-only and every reply must carry
   # the _api stamp — both are executed against the real dispatcher, because a
   # grep cannot tell a refused GET from one that quietly ran a payment twice.
   if node tools/check-console-transport.js > "$TMP/trans.txt" 2>&1; then
@@ -855,7 +856,7 @@ SECRETS=$(git grep -nIE '\b[0-9a-f]{32}\b' -- '*.gs' '*.html' '*.js' '*.json' '*
 if [ -n "$SECRETS" ]; then
   echo "  FAIL trap: something that looks like an API key or secret is in a source file:"
   echo "$SECRETS" | sed 's/^/         /'
-  echo "         Keys belong in Script Properties (docs/ref/YARD-APP.md), never here."
+  echo "         Keys belong in Script Properties (docs/ref/HARBOR-HAUL-OUT.md), never here."
   FAIL=1
 else echo "  OK   trap: no API keys or secrets in source files"; fi
 # The positive half: the key must be READ from Script Properties, which is the
@@ -871,9 +872,9 @@ U_GAS=$(grep -o 'AKfycb[A-Za-z0-9_-]*' quote-logger-apps-script.gs 2>/dev/null |
 U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head -1)
 U_ADM=$(grep -o 'AKfycb[A-Za-z0-9_-]*' admin/index.html 2>/dev/null | sort -u | head -1)
 U_SIGN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' sign.html 2>/dev/null | sort -u | head -1)
-U_YARD=$(grep -o 'AKfycb[A-Za-z0-9_-]*' yard/index.html 2>/dev/null | sort -u | head -1)
-echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  yard:  ${U_YARD:-none}"
-if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_YARD:-$U_GAS}" != "$U_GAS" ]; }; then
+U_HHO=$(grep -o 'AKfycb[A-Za-z0-9_-]*' harbor-haul-out/index.html 2>/dev/null | sort -u | head -1)
+echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  harbor-haul-out: ${U_HHO:-none}"
+if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_HHO:-$U_GAS}" != "$U_GAS" ]; }; then
   echo "  FAIL: deployment URLs do not match across files"; FAIL=1
 else echo "  OK   all present URLs match"; fi
 

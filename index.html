@@ -835,7 +835,7 @@ function setUnit(u){
 }
 /* Write a decimal-feet value back into a pair of ft/in boxes. The engine's
    fmtFtIn does the rounding, so the boxes can never disagree with the string
-   printed on the quote, the PDF or the yard sheet. */
+   printed on the quote, the PDF or the storage sheet. */
 function setFtIn(key,val){
   const wrap=document.querySelector(`[data-ftin="${key}"]`);
   if(!wrap) return;

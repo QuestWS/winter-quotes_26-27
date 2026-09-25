@@ -9,9 +9,9 @@
    ONE OF THOSE PATHS IS UNATTENDED. dailyReminderCheck runs at 9am on a
    trigger and emails customers. If the Import tab is ever in its scan, 145
    people get a quote nobody meant to send, before anybody is awake to stop it.
-   That is what this file exists for. The rest -- the yard lists, the money
-   report, the public lookups -- are the same rule applied where the cost is
-   lower.
+   That is what this file exists for. The rest -- Harbor Haul Out's lists, the
+   money report, the public lookups -- are the same rule applied where the cost
+   is lower.
 
    Checked by EXECUTING the predicates and by reading the real scan bodies out
    of the .gs, because "the tab is excluded" is a property of the code and a
@@ -69,7 +69,7 @@ const MUST_EXCLUDE = [
   ['dailyReminderCheck', 'emails customers at 9am on a trigger, with nobody watching'],
   ['bulkTargets_',       'builds the send-to-all recipient list'],
   ['balanceReportCheck', 'reports money owed; a draft owes nothing'],
-  ['adminStorageView',   'the storage view, the yard app and the printed haul-out sheets'],
+  ['adminStorageView',   'the storage view, Harbor Haul Out and the printed haul-out sheets'],
   ['signLookup_',        'the public scan-to-sign lookup']
 ];
 MUST_EXCLUDE.forEach(function (pair) {
@@ -118,7 +118,7 @@ MUST_EXCLUDE.forEach(function (pair) {
      that can correct an imported quote's selections before it is sent. The
      skip is what made Chris's imported quotes read "Quote not found." on the
      customer page. Everything a draft must stay out of is a PUSH — email, the
-     yard lists, the money report — and those are asserted above. */
+     Harbor Haul Out lists, the money report — and those are asserted above. */
   if (!loader) ok('a draft can be opened on the quote page with its number and last name');
   else fail('doGet\'s quote loader skips the Import tab again — an imported quote reads ' +
             '"Quote not found." on the customer page, and nothing can fix its selections');
@@ -141,7 +141,7 @@ MUST_EXCLUDE.forEach(function (pair) {
     ok('a save from the quote page leaves a parked draft on the Import tab');
   } else {
     fail('doPost writes a parked draft to its storage tab — opening an imported quote ' +
-         'and saving it would publish it to the storage view, the yard app and the ' +
+         'and saving it would publish it to the storage view, Harbor Haul Out and the ' +
          'printed haul-out sheets without anybody sending it');
   }
   /* The customer's own "Email me this quote" is a send like any other, and
@@ -283,7 +283,7 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   if (/importApplyCore_\([\s\S]{0,400}?IMPORT_TAB\)/.test(one)) {
     ok('every imported quote is parked on the Import tab');
   } else fail('the bulk run does not force IMPORT_TAB — quotes would scatter onto the storage ' +
-              'tabs and straight into the yard lists');
+              'tabs and straight into Harbor Haul Out\'s lists');
 
   /* A duplicate is reported, not imported. */
   if (/if \(dupe\)[\s\S]{0,400}?st\.skipped\+\+/.test(one)) ok('a duplicate is skipped and reported');
@@ -330,7 +330,7 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   const rec = fn('recordEmail_');
   if (/leaveImportTab_\(/.test(rec)) ok('every send site unparks the row, not just the console');
   else fail('recordEmail_ does not move a sent quote off the Import tab — it would stay ' +
-            'invisible to the yard app and the haul-out sheets after the customer was quoted');
+            'invisible to Harbor Haul Out and the haul-out sheets after the customer was quoted');
   if (/releaseImportHold_\(/.test(rec)) ok('and still releases the reminder hold');
   else fail('recordEmail_ no longer releases the import hold');
 
@@ -530,7 +530,7 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   });
   ok('the four writes stay POST-only');
 
-  /* A timer left polling against a phone in the yard is somebody's battery. */
+  /* A timer left polling against a phone at the harbor is somebody's battery. */
   if (/bulkPollStop\(\)/.test(ADMIN)) ok('the poll stops when the card is closed');
   else fail('nothing stops the status poll');
 }

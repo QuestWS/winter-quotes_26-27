@@ -6,7 +6,7 @@
 
    1. WHO CAN RECORD KEYS AND SLIPS. The permission was added after the roster
       was written, so no existing staff record has a `keys` field. Whether the
-      yard crew can actually use the card today depends on the fallback, not on
+      crew can actually use the card today depends on the fallback, not on
       the permission's existence — so the real roster is run through it.
 
    2. WHICH WAY A BROKEN PAUSE FAILS. An unreadable setting must stop the
@@ -71,7 +71,7 @@ console.log('\n=== 2b. who can re-measure, on TODAY\'S roster (no `measure` fiel
    It shipped falling back to `adjust`, which meant the only people who could
    correct a dimension were the two admins who never hold the tape. Chris then
    said plainly: give it to John, Rex and Jess. So the fallback is `canKeys_`
-   — whoever can already record yard facts can correct a measurement — and it
+   — whoever can already record harbor facts can correct a measurement — and it
    stops exactly where `keys` stops. Marina has neither.
 
    These are the real people and their real current permissions. Nobody has a
@@ -80,13 +80,13 @@ const wantM={Chris:true,Jeff:true,John:true,Rex:true,Jess:true,Marina:false};
 for(const n of Object.keys(roster))
   check(n.padEnd(7)+' can re-measure', B.canMeasure_(roster[n])===wantM[n],
         'got '+B.canMeasure_(roster[n])+' want '+wantM[n]);
-check('it lands on exactly the people who can record yard facts',
+check('it lands on exactly the people who can record harbor facts',
       Object.keys(roster).every(n=>B.canMeasure_(roster[n])===B.canKeys_(roster[n])));
 check('photos alone still buys nothing',
       B.canMeasure_({admin:false,perms:{photos:1}})===false);
 check('granting `measure` is enough on its own',
       B.canMeasure_({admin:false,perms:{photos:1,measure:1}})===true);
-check('and it can be taken away from somebody who could record yard facts',
+check('and it can be taken away from somebody who could record harbor facts',
       B.canMeasure_({admin:false,perms:{keys:1,measure:0}})===false);
 check('0 as a string is still OFF',  B.canMeasure_({admin:false,perms:{keys:1,measure:'0'}})===false);
 check('empty string falls back',     B.canMeasure_({admin:false,perms:{keys:1,measure:''}})===true);
@@ -101,7 +101,7 @@ for(const n of ['John','Marina']){
 }
 check('other permissions survive untouched',
   JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0,measure:0}));
-check('and the yard crew resolve as able to re-measure',
+check('and the crew resolve as able to re-measure',
   JSON.stringify(B.resolvedPerms_(roster.John))===JSON.stringify({pay:1,adjust:0,email:1,photos:1,keys:1,measure:1}));
 
 console.log('\n=== 4. the pause ===');
@@ -181,5 +181,5 @@ console.log('\n=== 6. only a real pause -> running restarts the clocks ===');
         !/clocks restart from now/.test(notices[notices.length-1]||''));
 }
 
-console.log(fails?fails+' permission/pause violation(s)':'permissions and pause hold: yard crew can record keys, a broken pause stops sending, and lifting it restarts the clocks');
+console.log(fails?fails+' permission/pause violation(s)':'permissions and pause hold: crew can record keys, a broken pause stops sending, and lifting it restarts the clocks');
 process.exit(fails?1:0);

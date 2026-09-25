@@ -1,7 +1,7 @@
 {
-  "name": "Quest Yard — Haul-Out",
-  "short_name": "Quest Yard",
-  "description": "The haul-out list, in the yard: who is being pulled, where the keys and the trailer are, and a log you can add to standing next to the boat.",
+  "name": "Quest Harbor Haul Out",
+  "short_name": "Harbor Haul Out",
+  "description": "The haul-out list, at the harbor: who is being pulled, where the keys and the trailer are, and a log you can add to standing next to the boat.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

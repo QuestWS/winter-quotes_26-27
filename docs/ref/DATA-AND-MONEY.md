@@ -182,7 +182,7 @@ and files under 2026-2027 today.
   different totals is worse than none.
 - **A photo folder that exists is reused by its stored id**, never by
   re-deriving the path — otherwise a quote changing season would get a second,
-  empty folder while the yard's photos stayed in the old one.
+  empty folder while this unit's photos stayed in the old one.
 - **The pre-restore snapshot belongs to the season, not a quote**, so it stays
   on `getFolder_()`, which now follows the current season automatically.
 - `tools/check-season-folders.js` executes all of it, including the rollover.

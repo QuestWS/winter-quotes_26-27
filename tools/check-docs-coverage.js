@@ -86,7 +86,7 @@ fs.readdirSync(path.join(ROOT, 'docs/ref')).forEach(f => {
      makes the map look wrong about functions that are really there, so adding
      a surface means adding it here too. */
   const src = ['quote-logger-apps-script.gs', 'index.html', 'admin/index.html',
-               'sign.html', 'yard/index.html', 'pricing-engine.js', 'terms-config.js']
+               'sign.html', 'harbor-haul-out/index.html', 'pricing-engine.js', 'terms-config.js']
     .map(read).join('\n');
   const tools = fs.readdirSync(path.join(ROOT, 'tools'));
   const named = new Set((map.match(/`[A-Za-z_][A-Za-z0-9_]*_?`/g) || [])

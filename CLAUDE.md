@@ -28,14 +28,14 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
 | `favicon.png` | GitHub Pages root | **The Quest mark — every page links this one file** |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
-| `yard/index.html` | GitHub Pages `/yard/` | **The yard app** — the haul-out list on a phone, installable, PIN-gated |
-| `yard/manifest.json` | GitHub Pages `/yard/` | What makes the yard app installable (Add to Home Screen) |
+| `harbor-haul-out/index.html` | GitHub Pages `/harbor-haul-out/` | **Harbor Haul Out** — the haul-out list on a phone, installable, PIN-gated |
+| `harbor-haul-out/manifest.json` | GitHub Pages `/harbor-haul-out/` | What makes Harbor Haul Out installable (Add to Home Screen) |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
 - **Repo:** `QuestWS/winter-quotes_26-27`
 - **Customer page:** `https://questws.github.io/winter-quotes_26-27/`
 - **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
-- **Yard app:** `https://questws.github.io/winter-quotes_26-27/yard/` — *add to home screen; same PIN as the console*
+- **Harbor Haul Out** (renamed from "the yard app"): `https://questws.github.io/winter-quotes_26-27/harbor-haul-out/` — *add to home screen; same PIN as the console. `/yard/` redirects here; re-add to home screen for the standalone icon.*
 - **Scan to sign:** `https://questws.github.io/winter-quotes_26-27/sign.html` — *the URL the counter QR code is generated against*
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`
@@ -62,7 +62,7 @@ It appears in **five places that must stay in sync**:
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
 4. `sign.html` → `const API_URL`
-5. `yard/index.html` → `const API_URL`
+5. `harbor-haul-out/index.html` → `const API_URL`
 
 Same URL serves several behaviors: plain `/exec` (quote page lookups + console
 API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a
@@ -197,8 +197,8 @@ request. Open the one that covers what you are about to change — and open it
 |---|---|
 | `docs/ref/DATA-AND-MONEY.md` | The payload, sheet columns, the manual-ops journal, re-pricing replay, drift, payments, balances, the payment lock |
 | `docs/ref/QUOTE-PAGE.md` | `index.html` and `sign.html` — motors, detail options, resuming a quote, the terms/lead gate, the scan-to-sign page, the season-done survey |
-| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, yard printing |
-| `docs/ref/YARD-APP.md` | `yard/index.html` — the two lists, the yard log, dictation, photos, and why the app decides nothing |
+| `docs/ref/STAFF-CONSOLE.md` | `admin/index.html` — permissions, staff notes, keys & slip, the dimension editor, season re-price, the old-sheet importer, backup restore, deleting a quote, storage and haul-out printing |
+| `docs/ref/HARBOR-HAUL-OUT.md` | `harbor-haul-out/index.html` — the two lists, the Harbor Haul Out log, dictation, photos, and why the app decides nothing |
 | `docs/ref/EMAILS.md` | Anything that sends: the shared builder, the automatic-email pause, send-to-all |
 | `docs/adobe-webform-field-map.md` | The Adobe Sign hand-off — what pre-fills, the exact field names, the Adobe-side setup |
 | `docs/MAP.md` | Finding where a feature is implemented before grepping for it |
@@ -292,7 +292,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 8. Console: preview each email kind, confirm it renders, send one, confirm it
    appears in Email History with the sender's name.
 9. Photos: camera path and gallery path, Winter and Spring subfolders.
-10. Storage view → print yard sheets → one page per area, keys column filled.
+10. Storage view → print storage sheets → one page per area, keys column filled.
 11. Narrow the browser (or use a phone) → hamburger menu appears and works.
 
 ---
@@ -319,7 +319,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
   over GET; **writes must never become GET-able**. `docs/ref/STAFF-CONSOLE.md`.
 - **Apps Script answers a POST with a redirect to a one-shot URL, and that leg
   404s** when the call ran long enough for Google to give up — on a phone, in
-  the yard, on a call that rebuilds a PDF and sends two emails. A transport
+  the harbor, on a call that rebuilds a PDF and sends two emails. A transport
   failure is therefore **not an answer**: reads fall through to GET and retry,
   and a write carries a `rid` so the console can ask `jobStatus` what actually
   happened instead of reporting a payment as failed while its receipt is already
@@ -370,7 +370,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 ## 9. Working with Chris
 - He wants **explicit numbered walkthroughs** for anything run from the Apps
   Script editor — function name, where to click, what success looks like.
-- He tests on a **phone**, in the yard, and reports UX friction precisely.
+- He tests on a **phone**, at the harbor, and reports UX friction precisely.
   Take those reports seriously; they've all been real.
 - He values knowing the *tradeoff*, not just the result — flag what you chose
   not to do and why.
@@ -379,7 +379,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
   it doesn't apply when Claude Code owns the files directly. Still deliver
   whole files if Chris ever asks for one to paste manually.
 - **The counter and the shop are the same people.** There is no clean split
-  between "office" and "yard" staff at Quest — they cover for each other and
+  between "office" and "harbor" staff at Quest — they cover for each other and
   work together. Do **not** design a feature so that only one surface can
   record something on the grounds that it "happens somewhere else": the boats
   being pulled are a mile and a half away, the boats being worked on are thirty

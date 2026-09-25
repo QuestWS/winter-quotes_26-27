@@ -250,6 +250,13 @@ if [ -f harbor-haul-out/index.html ]; then
   else
     echo "  FAIL gate: Harbor Haul Out"; sed 's/^/       /' "$TMP/hhoapp.txt"; FAIL=1
   fi
+  # Condition photos go up full size, so the upload has to survive the harbor's
+  # signal instead: drops resume, dead zones wait, a closed app carries on.
+  if node tools/check-harbor-haul-out-uploads.js > "$TMP/hhoup.txt" 2>&1; then
+    echo "  OK   gate: full-size Harbor Haul Out uploads resume after drops and a closed app"
+  else
+    echo "  FAIL gate: Harbor Haul Out uploads"; sed 's/^/       /' "$TMP/hhoup.txt"; FAIL=1
+  fi
 else echo "  (harbor-haul-out/index.html not present)"; fi
 
 echo "== Pricing engine parity =="
@@ -622,6 +629,12 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: the console chases a dropped answer instead of guessing"
   else
     echo "  FAIL gate: console recovery broken"; sed 's/^/       /' "$TMP/recov.txt"; FAIL=1
+  fi
+  # One trip for every tab, one trip per click — and the same answers as before.
+  if node tools/check-fast-reads.js > "$TMP/fast.txt" 2>&1; then
+    echo "  OK   gate: batched tab reads match the per-tab reads; a save brings its quote back"
+  else
+    echo "  FAIL gate: fast reads"; sed 's/^/       /' "$TMP/fast.txt"; FAIL=1
   fi
   # Who can actually record a key location today, and which way a broken pause
   # fails. Both are properties of the code, so they are checked by running it.

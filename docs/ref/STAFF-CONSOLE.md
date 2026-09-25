@@ -133,6 +133,37 @@ put the calls over the edge Google gives up at.
   that follows attaches it instead of searching Drive and downloading the file
   back. That also removes a race: Drive's index is not instant, and the search
   could still be returning the copy `savePdf_` had just trashed.
+- **Every tab is read in one trip** (`quoteTabGrids_`, Sep 2026). A scan of the
+  quote tabs cost three or four round trips *per tab* — is this a quote tab,
+  where does it end, then the columns — and each costs about the same whether it
+  fetches one cell or ten thousand. The storage view, the search and a cold
+  quote lookup now ask the Sheets advanced service instead: one
+  `values.batchGet` for every tab's header cell, one more for the columns of the
+  tabs that turn out to be quote tabs — so the Activity Log and the backups are
+  never read past their header, exactly as before (enabled in
+  `apps-script/appsscript.json`). It **fails
+  safe**: no service, a refusal or an answer of the wrong shape and every
+  caller reads tab by tab as before. It reads `UNFORMATTED_VALUE`, so numbers
+  match `getValues`, but a date comes back as text — which is why nothing that
+  reads a date column goes through it. `tools/check-fast-reads.js` runs both
+  paths over the same sheet and fails on any difference in the answer.
+- **One trip per click.** Almost every button on the quote screen used to save
+  and then call `lookup` — two lots of Apps Script start-up, redirect and
+  signal for one tap. A write can carry `withQuote` and the refreshed quote
+  comes back on its own answer as `quote` (`withQuote_`), read after the write
+  in the same execution. Only on success; a read that fails leaves the write's
+  answer alone; and it is attached *after* `finishRid_`, so the replayable
+  answer never carries a quote that could be stale. With no `quote` on the
+  answer (a replay, an older backend) `afterWrite_` looks the quote up as it
+  always did.
+- **Every answer says what it cost.** `serverMs` rides on every console reply,
+  the console times the whole round trip, and the footer shows the last call:
+  `lookup 2.1s · 0.4s on the server`. The gap is start-up, the redirect and the
+  signal — the part no sheet tidying reaches, and the number that decides
+  whether any further speed work belongs in this file at all.
+- **`ping` does nothing, on purpose.** The console and Harbor Haul Out call it on
+  the sign-in screen so Apps Script has a warm container by the time the PIN
+  is entered. It is on the GET allow-list and needs no session.
 - **A reply with no stamp at all is still accepted** when it isn't the customer
   loader's — an older backend answers exactly that way, so the page and the
   script can be deployed in either order.

@@ -494,10 +494,50 @@ held.
 Chris: *"I dont want to slow the app down with upload times."* A file is queued
 against the **quote**, not the screen, and pumped in the background with a chip
 at the bottom. Close the unit, go back to the list, keep ticking boats off — a
-60 MB clip keeps going. Only closing the app stops it.
+60 MB clip keeps going.
 
 Queued against the quote that was open when it started, so closing the sheet
 cannot send a clip to whichever boat gets opened next.
+
+### Condition photos are never shrunk
+
+Chris, Sep 2026: *"dont shrink the winter apps pics because they illustrate
+potential damage, quality is important there."* The file goes to Drive exactly
+as the camera wrote it — no resizing, no re-encoding, the camera's own type.
+(The service tracker shrinks its shop-floor photos to 1600px; that is right
+there and wrong here.) So the speed work on this path is all about keeping
+full-size files moving on a harbor signal, never about making them smaller:
+
+- **8 MB chunks** (`UP_CHUNK`, a multiple of Drive's 256 KiB). Each is committed
+  as it lands, so a drop costs the chunk in flight, not the clip. A file under
+  one chunk still goes in a single PUT, as it always did.
+- **A drop is waited out, not failed.** Mid-upload, the app waits for signal,
+  asks Drive how much it has (`upAsk_`: a `Content-Range: bytes */size` PUT,
+  answered 308 with a `Range`), and carries on from there. It does **not**
+  fall back to the relay on a drop — that would restart the whole file through
+  Apps Script, capped at 25 MB. The relay is only for a browser that refuses
+  the direct PUT before a single byte moves, which is the CORS case it was
+  built for.
+- **When Drive cannot say how far it got** (a 308 with no `Range` the browser
+  is allowed to read), the file starts again on a fresh session — once. An
+  unfinished resumable session creates nothing in Drive, so neither a restart
+  nor a resume can leave a half-file or a duplicate.
+- **No signal at all parks the file**, says so ("waiting for signal"), and it
+  goes by itself on the browser's `online` event or the next time the app
+  opens. An upload-session request that was lost on the way (`lost:1` from
+  `api`) parks the same way: a session is harmless to ask for twice.
+- **The queue survives the app closing.** Each file is kept on the phone in
+  IndexedDB (`quest-yard-uploads`) with its Drive session URL until Drive
+  confirms it; `upResume_` picks them up when the app opens. A locked screen,
+  a swiped-away app or a dead battery no longer loses the upload. No IndexedDB
+  (a private tab) means the queue lives in memory, as it used to.
+- **The screen is kept on while files are going** (Wake Lock, where the phone
+  has it), because a phone that locks itself suspends the page and the upload
+  with it.
+
+`tools/check-harbor-haul-out-uploads.js` runs the real queue against a fake Drive that
+honours `Content-Range` and drops connections on cue, and checks the bytes Drive
+assembles are the bytes the phone was handed.
 
 ### The rest
 

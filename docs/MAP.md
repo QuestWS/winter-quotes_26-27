@@ -87,6 +87,8 @@ symptom.
 | Permissions incl. the `keys` and `measure` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_` | `permsOf`, `myPerms_` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
+| Speed: one trip per click, timing, warm-up | `withQuote_`, `adminPing` | `afterWrite_`, `apiTiming_` |
+| Speed: every tab in one read | `quoteTabGrids_` (used by `adminStorageView`, `adminSearch`, `findQuoteCtx_`) | — |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
@@ -128,6 +130,7 @@ symptom.
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |
 | Bad connection | `consoleServe_`, `adminJobStatus` | `api`, `settle_`, `lost_` |
+| Full-size uploads that survive a harbor signal | `adminUploadSession` | `putDirect_`, `upAsk_`, `upResume_`, `upWake_` |
 
 ### Customer page
 | Feature | Entry point |
@@ -168,4 +171,6 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |
 | `check-quote-numbers.js` | A minted quote number is never one already on the sheet or reserved, and minting rewrites nothing |
 | `check-season-folders.js` | A quote is filed under the rates it is priced at; the en-dash labels resolve to the real folders; a moved quote stays findable |
+| `check-fast-reads.js` | The batched tab read gives exactly the per-tab answer and falls back when refused; a save's answer carries its quote only when it should |
+| `check-harbor-haul-out-uploads.js` | Full-size Harbor Haul Out uploads resume after a drop, wait out no signal, survive the app closing, and land byte-for-byte exactly once |
 | `check-docs-coverage.js` | No rule has vanished from `CLAUDE.md` + `docs/ref/` |

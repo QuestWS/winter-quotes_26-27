@@ -62,7 +62,7 @@ def manual():
     s += [P('How to use this manual', H1)]
     s += [P(
         'This is the complete reference for Quest Watersports\' winter services program: the '
-        'customer quote page, the scan-to-sign page, the staff console, the yard app, the '
+        'customer quote page, the scan-to-sign page, the staff console, Harbor Haul Out, the '
         'emails, the spreadsheet and the owner-only jobs in Google Apps Script. Each section says '
         '<b>what the feature is for</b>, <b>how to do it step by step</b>, and <b>which '
         'permission it needs</b>. Section 15 is a one-page "I want to…" index.')]
@@ -73,12 +73,12 @@ def manual():
     s += [table(['Section', 'Covers'], [
         ['1. The system at a glance', 'The pieces, the web addresses, and a season from start to finish'],
         ['2. Permission levels', 'Every permission, who holds it, and the full action-by-permission matrix'],
-        ['3. Signing in', 'PINs, sessions, lock-outs, the console and yard app together'],
+        ['3. Signing in', 'PINs, sessions, lock-outs, the console and Harbor Haul Out together'],
         ['4. The customer quote page', 'What customers see and do; helping a customer over the phone'],
         ['5. Scan to sign', 'The counter QR-code page'],
         ['6. The staff console — a quote', 'Every card on an open quote'],
-        ['7. The staff console — season tools', 'Storage view, yard sheets, send to all, re-price, imports, pause, staff, restore'],
-        ['8. The yard app', 'The three lists, pulling and storing, notes, voice, photos, measurements'],
+        ['7. The staff console — season tools', 'Storage view, storage sheets, send to all, re-price, imports, pause, staff, restore'],
+        ['8. Harbor Haul Out', 'The three lists, pulling and storing, notes, voice, photos, measurements'],
         ['9. Emails', 'Every email, who sends it, and the only two that send themselves'],
         ['10. Money rules', 'Deposits, payments, refunds, credits, the payment lock, fees'],
         ['11. The spreadsheet and Drive', 'Tabs, folders, backups, what never to do by hand'],
@@ -98,7 +98,7 @@ def manual():
         ['Quote page', 'Customers (and staff helping them)', 'questws.github.io/winter-quotes_26-27/'],
         ['Scan to sign', 'Customers at the service counter', 'questws.github.io/winter-quotes_26-27/sign.html'],
         ['Staff console', 'All staff, PIN required', 'questws.github.io/winter-quotes_26-27/admin/'],
-        ['Yard app', 'Yard crew, PIN required (same PIN)', 'questws.github.io/winter-quotes_26-27/yard/ — add to home screen'],
+        ['Harbor Haul Out', 'Staff at the harbor, PIN required (same PIN)', 'questws.github.io/winter-quotes_26-27/harbor-haul-out/ — add to home screen (the old /yard/ link forwards here)'],
         ['Spreadsheet', 'Owner; read by everything', '"Winter Quotes 2026-2027" in questwsottawa@gmail.com'],
         ['Drive season folder', 'Owner; links shown in the console', 'Quote PDFs, Unit Photos/, Signed Contracts/, Voice Notes/'],
         ['Legacy console', 'Fallback only', 'The web-app URL with ?page=admin — same PINs'],
@@ -118,10 +118,10 @@ def manual():
         '<b>Schedule.</b> Customers who have paid are asked when they want their unit out '
         '(done now / on a date / will call). Late answers after the pay-by date add the late '
         'retrieval surcharge automatically.',
-        '<b>Haul out.</b> The office prints the haul-out list; the crew works the <b>To pull</b> '
-        'list in the yard app. Only units that are <b>both signed and paid</b> may be pulled.',
-        '<b>Store.</b> Pulled and dropped-off units appear on <b>To store</b>; the crew taps '
-        '<b>Stored ✓</b>. Staff send "We have your unit". Photos, measurements, key and slip '
+        '<b>Haul out.</b> The office prints the haul-out list; staff at the harbor work the <b>To pull</b> '
+        'list in Harbor Haul Out. Only units that are <b>both signed and paid</b> may be pulled.',
+        '<b>Store.</b> Pulled and dropped-off units appear on <b>To store</b>; staff tap '
+        '<b>Stored</b>. Staff send "We have your unit". Photos, measurements, key and slip '
         'details are recorded as they are learned; measurements re-price the quote.',
         '<b>Winter.</b> Balance reports reach Chris on the 1st and 15th (Nov–Apr). Late-fee '
         'warnings and late fees are staff decisions, applied from the console.',
@@ -144,8 +144,8 @@ def manual():
         '<b>Activity Log</b> tab with the staff member\'s name.')]
     s += [table(['Permission', 'Shown in Staff panel as', 'What it allows'], [
         [perm('view'), 'Anyone signed in', 'Search and open quotes, print quotes, the storage '
-         'overview, printing yard sheets and the haul-out list, copying the customer link, the '
-         'yard app lists.'],
+         'overview, printing storage sheets and the haul-out list, copying the customer link, the '
+         'Harbor Haul Out lists.'],
         [perm('pay'), 'Payments', 'Record payments, deposits and refunds; upload a signed contract.'],
         [perm('adjust'), 'Adjustments', 'Change what a customer owes: discounts/adjustments, edit '
          'or delete lines, late fees, penalties, price a quote request, season timing, season '
@@ -153,10 +153,10 @@ def manual():
         [perm('email'), 'Emails', 'Preview and send any customer email, including "Ask them to '
          'sign" and Send to all.'],
         [perm('photos'), 'Photos', 'Upload condition photos and video; open the photo folder.'],
-        [perm('keys'), 'Keys &amp; slip', 'Yard facts: keys, slip, trailer location, yard alert, '
-         'yard status (pulled / dropped off / stored), yard log, staff notes, voice notes.'],
+        [perm('keys'), 'Keys &amp; slip', 'Physical work: keys, slip, trailer location, Harbor Haul Out '
+         'alert, status (pulled / dropped off / stored) and log, staff notes, voice notes.'],
         [perm('measure'), 'Re-measure', 'Correct dimensions, trailer, motors and storage '
-         'location — which re-prices the quote. Console and yard app.'],
+         'location — which re-prices the quote. Console and Harbor Haul Out.'],
         [perm('admin'), 'Admin', 'Everything above, plus: staff accounts and PINs, delete a '
          'quote, restore from backup, pause automatic emails, bulk-import a whole folder.'],
     ], [0.95 * inch, 1.35 * inch, 4.3 * inch])]
@@ -165,7 +165,7 @@ def manual():
     s += [B('<b>keys</b> — if never set for someone, they have it when they already hold '
             '<b>pay</b> or <b>adjust</b>.')]
     s += [B('<b>measure</b> — if never set, they have it when they have <b>keys</b>. So '
-            'whoever can record yard facts can correct a measurement.')]
+            'whoever can record physical-work facts can correct a measurement.')]
     s += [B('An explicit setting always wins, including switching it <b>off</b>.')]
 
     s += [P('The roster as seeded', H2)]
@@ -177,15 +177,15 @@ def manual():
         ['Jess', '—', 'yes', '—', 'yes', 'yes', 'yes', '—*'],
         ['Marina', '—', '—', '—', '—', 'yes', '—', '—'],
     ], [1.1 * inch] + [0.785 * inch] * 7)]
-    s += [P('* Re-measure was seeded <b>off</b> for John, Rex and Jess. Chris has said the yard '
-            'crew should re-measure — turn it on in the Staff panel (<b>Re-measure</b> button) if it '
+    s += [P('* Re-measure was seeded <b>off</b> for John, Rex and Jess. Chris has said the staff '
+            'who handle the boats should re-measure — turn it on in the Staff panel (<b>Re-measure</b> button) if it '
             'is not on already. The live roster is whatever the <b>Staff '
             '&amp; permissions</b> panel shows — check there.', SMALL)]
 
     s += [P('Changing someone\'s permissions', H2)]
     s += [P('Needs ' + '<font color="#A6341F"><b>admin</b></font>.')]
     s += steps([
-        'Console → ☰ menu → <b>Staff &amp; permissions</b>.',
+        'Console → menu (the three-line button, top right) → <b>Staff &amp; permissions</b>.',
         'Find the person. Each permission is a button; a highlighted button is on. Tap to '
         'toggle.',
         '<b>New account:</b> type a name and tick the starting permissions → <b>Create '
@@ -201,8 +201,8 @@ def manual():
     matrix = [
         ['Search / open a quote', perm('view'), 'Quote number, or at least 2 letters of the last name'],
         ['Print quote, copy customer link', perm('view'), ''],
-        ['Storage overview; print yard sheets / haul-out list', perm('view'), ''],
-        ['Yard app — see the lists and units', perm('view'), ''],
+        ['Storage overview; print storage sheets / haul-out list', perm('view'), ''],
+        ['Harbor Haul Out — see the lists and units', perm('view'), ''],
         ['Record payment / deposit / refund', perm('pay'), 'Optional receipt email'],
         ['Upload a signed contract', perm('pay'), 'PDF or photo of the signed page'],
         ['Adjustment (discount or charge)', perm('adjust'), 'Optional email of updated copy'],
@@ -216,11 +216,11 @@ def manual():
         ['Bulk import a whole season folder', perm('admin'), ''],
         ['Send any customer email / "Ask them to sign"', perm('email'), 'Always previewed first'],
         ['Send to all (spring / fall)', perm('email'), 'Recipient picker; preview first'],
-        ['Condition photos and video', perm('photos'), 'Console and yard app'],
+        ['Condition photos and video', perm('photos'), 'Console and Harbor Haul Out'],
         ['Keys, slip, trailer location', perm('keys'), ''],
-        ['Yard alert (set / clear)', perm('keys'), 'Console only — the yard app shows it'],
-        ['Yard status: pulled / dropped off / stored / undo', perm('keys'), 'Pull only if cleared'],
-        ['Yard log entry (typed or voice)', perm('keys'), 'Append-only'],
+        ['Harbor Haul Out alert (set / clear)', perm('keys'), 'Console only — the app shows it'],
+        ['Harbor Haul Out status: pulled / dropped off / stored / undo', perm('keys'), 'Pull only if cleared'],
+        ['Harbor Haul Out log entry (typed or voice)', perm('keys'), 'Append-only'],
         ['Staff notes', perm('keys'), 'Never seen by the customer'],
         ['Re-measure / change storage / motors', perm('measure'), 'Re-prices; preview then apply'],
         ['Staff accounts, PINs, permissions', perm('admin'), ''],
@@ -233,19 +233,21 @@ def manual():
     # ------------------------------------------------------------------
     section(g, '3. Signing in')
     s += steps([
-        'Open the staff console or the yard app on any phone or computer.',
+        'Open the staff console or Harbor Haul Out on any phone or computer.',
         'Type your 4-digit PIN → <b>Log in</b> / <b>Sign in</b>.',
-        'You stay signed in for <b>12 hours</b>. The console and the yard app share the '
+        'You stay signed in for <b>12 hours</b>. The console and Harbor Haul Out share the '
         'sign-in on the same phone, so one PIN per shift covers both.',
-        '<b>Log out</b> is in the ☰ menu (console) or at the top of the yard app. Always log '
+        '<b>Log out</b> is in the menu (console) or at the top of Harbor Haul Out. Always log '
         'out on a shared or borrowed device.',
     ])
     s += [note('Wrong PINs',
         'After <b>10 wrong PINs</b> sign-in pauses for everyone for 15 minutes and Chris is '
         'emailed. Wait it out; if it keeps happening, reset PINs from the Staff panel.', 'ice')]
-    s += [P('Installing the yard app on a phone', H2)]
+    s += [P('Installing Harbor Haul Out on a phone', H2)]
     s += steps([
-        'Open questws.github.io/winter-quotes_26-27/yard/ in Safari (iPhone) or Chrome (Android).',
+        'Open questws.github.io/winter-quotes_26-27/harbor-haul-out/ in Safari (iPhone) or Chrome (Android). '
+        'A home-screen icon installed from the old /yard/ address still works — it forwards here — '
+        'but re-adding it from the new address is cleaner.',
         'iPhone: Share → <b>Add to Home Screen</b>. Android: ⋮ menu → <b>Add to Home screen</b> '
         '/ <b>Install app</b>.',
         'Open it from the new icon and sign in with your PIN.',
@@ -285,14 +287,14 @@ def manual():
         'Zelle and ACH do not.',
     ])
     s += [P('Things the page does on its own', H2)]
-    s += [B('Warns about anything the crew will need that is missing — slip, Heritage Harbor '
+    s += [B('Warns about anything staff will need that is missing — slip, Heritage Harbor '
             'pickup address, key location, email. Golf carts cannot be picked up without keys; '
             'boats and jet skis without keys risk a tow/start fee.')]
     s += [B('Saves the quote to the correct storage tab and files a PDF in Drive.')]
     s += [B('Once a payment is recorded the page goes <b>read-only</b> with a gold banner and '
             'says <b>Invoice</b>; the customer can view but not change it.')]
     s += [B('The server re-prices every save with the same rules. If the page and server '
-            'disagree, the server\'s figure is kept and service@ gets a ⚠️ PRICE DRIFT email.')]
+            'disagree, the server\'s figure is kept and service@ gets a PRICE DRIFT email.')]
 
     s += [P('Getting back to a quote', H2)]
     s += [P(
@@ -342,7 +344,7 @@ def manual():
         'Type in the search box — a quote number (QW-26-1255 or just 1255), or at least two '
         'letters of the last name ("Kuj") → <b>Look up</b>. Phone and email are not searched.',
         'One match opens directly; several show a <b>Matches</b> list — tap the one you want.',
-        '✕ on any panel closes it.',
+        'The X at the top of any panel closes it.',
     ])
     s += [P('The quote card (everyone)', H2)]
     s += [B('<b>Name, status pill, Total / Paid / Balance.</b> A negative balance is a '
@@ -356,7 +358,7 @@ def manual():
     s += [B('<b>Signed contract</b> — the link, or "not on file" with Upload '
             '(<font color="#1E6B3A"><b>pay</b></font>) and <b>Ask them to sign</b> '
             '(<font color="#1D3A57"><b>email</b></font>).')]
-    s += [B('<b>Line items</b> — Edit / ✕ beside each line '
+    s += [B('<b>Line items</b> — Edit / X beside each line '
             '(<font color="#C08A22"><b>adjust</b></font>).')]
     s += [B('<b>Email history</b> — every email sent for this quote, when, and by whom.')]
 
@@ -398,18 +400,18 @@ def manual():
             'Tell the customer with the <b>Dimensions updated</b> email (it attaches the new PDF).',
         ], 'Works after a deposit — quote, deposit, pull, measure, re-bill is the normal order. '
            'A beam over the limit is flagged, never moved automatically.'),
-        ('Yard alert', 'keys', [
-            'Type one line the crew must read before touching the unit — "no keys, do not tow".',
-            '<b>Save alert</b>. It shows on the yard app list, at the top of the unit, and on '
+        ('Harbor Haul Out alert', 'keys', [
+            'Type one line anyone must read before touching the unit — "no keys, do not tow".',
+            '<b>Save alert</b>. It shows on Harbor Haul Out list, at the top of the unit, and on '
             'both printed sheets.',
             '<b>Clear it</b> as soon as it stops being true.',
         ], 'Maximum 160 characters. Set only from the console; the customer never sees it.'),
-        ('Yard status', 'keys', [
+        ('Harbor Haul Out status', 'keys', [
             'Tap the new state: <b>Pulled</b>, <b>Dropped off</b>, <b>Stored</b>, or undo.',
             'Use <b>Dropped off</b> when a customer drives their unit in — that puts it on the '
-            'crew\'s <b>To store</b> list.',
+            '<b>To store</b> list in Harbor Haul Out.',
         ], '<b>Pulled</b> is refused unless the unit is cleared (signed <b>and</b> paid).'),
-        ('Yard log', 'keys', [
+        ('Harbor Haul Out log', 'keys', [
             'Type what was observed — "gelcoat crack starboard bow, photographed".',
             '<b>Add to the log</b>. Stamped with your name and the time.',
         ], 'Append-only: entries are never edited or deleted.'),
@@ -429,7 +431,7 @@ def manual():
            'later removed, service@ is emailed a REVIEW note.'),
         ('Edit or delete a line', 'adjust', [
             'Line items → <b>Edit</b> on the line; change amount and/or wording → <b>Save change</b>.',
-            'Or tap <b>✕</b> to delete the line.',
+            'Or tap <b>X</b> to delete the line.',
         ], None),
         ('Late fee', 'adjust', [
             'The card appears only when a balance is owed, and suggests an amount (a first fee '
@@ -463,32 +465,32 @@ def manual():
 
     # ------------------------------------------------------------------
     section(g, '7. The staff console — season tools')
-    s += [P('These live in the ☰ menu and on the home tiles; each appears only for staff '
+    s += [P('These live in the menu (three-line button) and on the home tiles; each appears only for staff '
             'allowed to use it.')]
 
     s += [P('Storage overview — <font color="#4A81A6">view</font>', H2)]
     s += steps([
-        '☰ → <b>Storage view</b>. Every unit grouped by storage area.',
+        'Menu → <b>Storage view</b>. Every unit grouped by storage area.',
         'Tabs across the top: <b>Everyone</b>, <b>No deposit</b>, <b>Deposit paid</b> — for '
         '"who still owes a deposit" and "who paid but never signed".',
         'Tags on each row: <b>NO CONTRACT — DO NOT PULL</b> (red: paid, not signed), <b>NO '
         'DEPOSIT — DO NOT PULL</b> (gold: signed, not paid), <b>not authorised</b> (neither).',
-        '<b>Print yard sheets</b> — one page per storage area for the tab you are on, with keys '
-        'and alerts. <b>Print haul-out list</b> — the yard-wide pull order.',
+        '<b>Print storage sheets</b> — one page per storage area for the tab you are on, with keys '
+        'and alerts. <b>Print haul-out list</b> — the pull order across every storage area.',
     ])
     s += [note('The pull rule — Chris\'s rule',
         'A unit is <b>cleared to pull only when it is both signed and paid</b>. Paid but not '
         'signed, or signed but not paid, is a <b>HOLD</b>: on the haul-out list for planning, '
         'shaded, stamped DO NOT PULL, with no tick box. Neither is on a separate '
         '<b>DO NOT TOUCH — NOT AUTHORISED</b> page for the office. The server decides this; '
-        'the console, the paper and the yard app just show it.')]
+        'the console, the paper and Harbor Haul Out just show it.')]
     s += [P('The haul-out list is sorted: ready now → requested dates (earliest first) → will '
             'call → no answer. It shows customer, unit and size, storage, trailer, slip, keys, '
             'timing, alerts and notes.', SMALL)]
 
     s += [P('Send to all — <font color="#1D3A57">email</font>', H2)]
     s += steps([
-        '☰ → <b>Send to all</b>. No quote needs to be open.',
+        'Menu → <b>Send to all</b>. No quote needs to be open.',
         'Choose <b>Spring</b> (skips No Storage customers) or <b>Fall</b> (everyone).',
         '<b>See who this goes to</b> — counts per tab, anyone without an email, a quota warning '
         'over 400, and a checkbox list with everyone ticked. Untick anyone to leave out.',
@@ -499,7 +501,7 @@ def manual():
 
     s += [P('Re-price at current rates — <font color="#C08A22">adjust</font>', H2)]
     s += steps([
-        '☰ → <b>Re-price at current rates</b> → <b>See what would change</b>. Nothing is written.',
+        'Menu → <b>Re-price at current rates</b> → <b>See what would change</b>. Nothing is written.',
         'Review each quote\'s before → after → difference, and the season net change. Imported '
         'drafts are included (shown as tab Import). Quotes '
         'whose storage area would change are listed, not moved.',
@@ -514,7 +516,7 @@ def manual():
     s += [P('Turns last season\'s one-spreadsheet-per-customer files into quotes here, priced at '
             'today\'s rates. Broken (#REF!) files are recovered from the master price sheet.')]
     s += steps([
-        '<b>One file:</b> ☰ → <b>Load from an old sheet</b> → pick the file → <b>Read it</b>. '
+        '<b>One file:</b> Menu → <b>Load from an old sheet</b> → pick the file → <b>Read it</b>. '
         'Check the preview (it flags comparison sheets, multiple units, and anything priced '
         'differently) → <b>Import as a new quote</b>.',
         '<b>Whole folder (admin):</b> same card → <b>1 · Scan the folder</b>. It runs in the '
@@ -526,7 +528,7 @@ def manual():
         'the Import tab looks wrong: <b>Check &amp; repair the Import tab</b>.',
     ])
     s += [note('Imported quotes are drafts',
-        'A quote on the Import tab is invisible to the yard, the storage view, send-to-all, the '
+        'A quote on the Import tab is invisible to Harbor Haul Out, the storage view, send-to-all, the '
         'balance report and the 9am reminder. It is <b>released</b> — moved onto its real '
         'storage tab — the first time anyone emails it to the customer (staff, or the customer '
         'using "Email me this quote"). Imports are priced at the rates live on the day; the '
@@ -535,7 +537,7 @@ def manual():
 
     s += [P('Automatic emails (pause / resume) — <font color="#A6341F">admin</font>', H2)]
     s += steps([
-        '☰ → <b>Automatic emails</b> → <b>Pause automatic emails</b>. This stops the 10-day '
+        'Menu → <b>Automatic emails</b> → <b>Pause automatic emails</b>. This stops the 10-day '
         'reminder and the lead follow-up. A banner shows for all staff while paused.',
         'To resume, the same card → <b>Resume automatic emails</b>. Resuming <b>restarts the clocks</b>: no reminders for 10 '
         'days and no lead follow-ups for 24 hours — so a season-rollover blast can\'t follow '
@@ -549,7 +551,7 @@ def manual():
     s += [P('Restore from a backup — <font color="#A6341F">admin</font>', H2)]
     s += steps([
         'Save the <b>.xlsx</b> from a nightly backup email (6pm daily, to Chris).',
-        '☰ → <b>Restore from backup</b> → choose the file. It compares it with the live sheet; '
+        'Menu → <b>Restore from backup</b> → choose the file. It compares it with the live sheet; '
         'nothing is written yet.',
         'Choose <b>Put back the missing quotes</b> (safe) or <b>Also overwrite the ones that '
         'differ</b> (only if you are sure the live copies are wrong).',
@@ -558,8 +560,8 @@ def manual():
     ])
 
     # ------------------------------------------------------------------
-    section(g, '8. The yard app')
-    s += [P('The haul-out list as a phone app for the crew. Same PIN as the console. Anyone '
+    section(g, '8. Harbor Haul Out (the phone app)')
+    s += [P('The haul-out list as a phone app for whoever is at the harbor or the lot. Same PIN as the console. Anyone '
             'can view; recording anything needs <font color="#4A81A6"><b>keys</b></font>; '
             'measurements need <font color="#4A81A6"><b>measure</b></font>; photos need '
             '<font color="#5C7185"><b>photos</b></font>.')]
@@ -572,23 +574,23 @@ def manual():
     ], [1.0 * inch, 2.7 * inch, 2.9 * inch])]
     s += [P('Everyday use', H2)]
     s += steps([
-        'Open the app and pick a list. A ⚠ strip on a row is a <b>yard alert</b> — read it '
+        'Open the app and pick a list. A warning strip on a row is an <b>alert</b> — read it '
         'before walking over.',
         'Tap a unit to open it. The first thing shown is the verdict: <b>CLEARED TO PULL</b>, '
         'a hold stamp, or <b>DO NOT TOUCH — NOT AUTHORISED</b>.',
         '<b>To pull a unit:</b> open it and tap <b>Mark pulled</b>. Only offered when cleared; '
         'otherwise the button shows the hold stamp instead.',
-        '<b>To store:</b> tap <b>Stored ✓</b> on the To store row — no need to open each one.',
+        '<b>To store:</b> tap <b>Stored</b> on the To store row — no need to open each one.',
         '<b>Mark in storage</b> is also on the opened unit. <b>Undo — back to not started</b> '
         'fixes a mis-tap.',
         '<b>Refresh</b> reloads the lists.',
     ])
     s += [P('Dropped off is recorded from the console only (the counter sees the customer '
-            'arrive). The yard alert is set and cleared from the console only.', SMALL)]
+            'arrive). The alert is set and cleared from the console only.', SMALL)]
     s += [P('On an opened unit', H2)]
     s += [B('<b>Facts</b> — slip, keys, trailer, storage, requested timing, balance. Red means '
             'missing information somebody should find out.')]
-    s += [B('<b>Yard log</b> — type a note → <b>Save note</b>; or tap record for a <b>voice '
+    s += [B('<b>Log</b> — type a note → <b>Save note</b>; or tap record for a <b>voice '
             'note</b> (stop, play back, discard or save). The recording is filed in the unit\'s '
             'Voice Notes folder and typed up automatically once the AssemblyAI key is installed '
             '(Section 13).')]
@@ -689,7 +691,7 @@ def manual():
         ['Adjust selected quote (no email) / Adjust &amp; email customer', 'Adjustment card'],
         ['Email updated quote to customer', 'Re-send invoice'],
         ['Show customer link for selected quote', 'Customer link'],
-        ['Edit / remove line items', 'Line items → Edit / ✕'],
+        ['Edit / remove line items', 'Line items → Edit / X'],
         ['Price a quote request', 'Quote requests → Price this'],
         ['Record payment / deposit', 'Record payment card'],
         ['Add late fee / Send late-fee warning email', 'Late fee card / Late fee warning'],
@@ -734,9 +736,9 @@ def manual():
     s += [B('By hand: paste the file → Save → <b>Deploy → Manage deployments → pencil → '
             'Version: New version → Deploy</b>.')]
     s += [B('<b>Never "New deployment"</b> — it creates a new web address and silently cuts off '
-            'the quote page, console and yard app.')]
+            'the quote page, console and Harbor Haul Out.')]
     s += [B('To undo: Manage deployments → pencil → pick the previous version.')]
-    s += [B('The quote page, console and yard app update when changes are merged to <b>main</b> '
+    s += [B('The quote page, console and Harbor Haul Out update when changes are merged to <b>main</b> '
             'on GitHub. Hard-refresh (Ctrl+Shift+R) to see them.')]
 
     s += [P('The season rollover (when the 2026–2027 rate card arrives)', H2)]
@@ -767,7 +769,7 @@ def manual():
         ['An old version of a page', 'Hard-refresh (Ctrl+Shift+R, or close and reopen the app).'],
         ['Customer says "Quote not found"', 'Check the quote number and the last name as stored; '
          'send them the Customer link from the console.'],
-        ['⚠️ PRICE DRIFT email', 'The customer\'s page and the server disagreed; the server\'s figure '
+        ['PRICE DRIFT email', 'The customer\'s page and the server disagreed; the server\'s figure '
          'was kept. Check the quote.'],
         ['"could NOT re-apply — REVIEW" email', 'A staff change\'s target line was removed by the '
          'customer. Re-apply the discount/edit by hand.'],
@@ -789,14 +791,14 @@ def manual():
         ['Charge a late fee', 'Late fee warning, then Late fee', perms('email', 'adjust')],
         ['Price something they asked about', 'Quote requests → Price this', perm('adjust')],
         ['Record when they want it out', 'Season timing', perm('adjust')],
-        ['Fix the boat\'s size', 'Unit details &amp; storage / yard app Measurements', perm('measure')],
+        ['Fix the boat\'s size', 'Unit details &amp; storage / Harbor Haul Out Measurements', perm('measure')],
         ['Move them to inside storage', 'Unit details &amp; storage', perm('measure')],
         ['Record keys / slip', 'Keys &amp; slip', perm('keys')],
-        ['Warn the crew about a unit', 'Yard alert', perm('keys')],
-        ['Mark a unit dropped off', 'Yard status', perm('keys')],
-        ['Mark a unit pulled / stored', 'Yard app, or Yard status', perm('keys')],
-        ['Note something about a unit', 'Yard log (or voice note in the yard app)', perm('keys')],
-        ['Photograph a unit', 'Photos card / yard app', perm('photos')],
+        ['Warn staff about a unit', 'Harbor Haul Out alert', perm('keys')],
+        ['Mark a unit dropped off', 'Harbor Haul Out status', perm('keys')],
+        ['Mark a unit pulled / stored', 'Harbor Haul Out app, or its status card', perm('keys')],
+        ['Note something about a unit', 'Harbor Haul Out log (or a voice note in the app)', perm('keys')],
+        ['Photograph a unit', 'Photos card / Harbor Haul Out', perm('photos')],
         ['Print the haul-out list', 'Storage view → Print haul-out list', perm('view')],
         ['Email everyone in spring', 'Send to all → Spring', perm('email')],
         ['Move the season to new prices', 'Re-price at current rates', perm('adjust')],

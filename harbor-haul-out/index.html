@@ -50,9 +50,9 @@ body{background:var(--ice);overscroll-behavior-y:none}
 /* Tabs live in the bar so they survive the list scrolling under them. */
 .tabs{display:flex;margin-top:10px}
 .tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;color:#9FC3DC;
-  font-family:var(--body);font-size:14px;font-weight:700;padding:11px 4px;cursor:pointer;min-height:46px}
+  font-family:var(--body);font-size:13px;font-weight:700;padding:11px 2px;cursor:pointer;min-height:46px}
 .tabs button.on{color:#fff;border-bottom-color:var(--gold)}
-.tabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.8;margin-left:5px}
+.tabs button .n{font-family:var(--mono);font-size:12px;font-weight:400;opacity:.8;margin-left:4px}
 
 .wrap{max-width:720px;margin:0 auto;padding:12px 12px calc(env(safe-area-inset-bottom) + 28px)}
 .msg{font-size:13.5px;color:var(--muted);margin:6px 2px}
@@ -205,10 +205,12 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
       <div class="who" id="who"></div>
       <button class="out" onclick="signOut()">Sign out</button>
     </div>
-    <!-- The three states a unit moves through, in the order it moves through
-         them. Left to right is the season. -->
+    <!-- The four states a unit moves through, in the order it moves through
+         them. Left to right is the season, and the first two are the two ways
+         a unit arrives: we fetch it, or the customer brings it. -->
     <div class="tabs">
       <button id="tabPull" class="on" onclick="setTab('pull')">To pull<span class="n" id="nPull"></span></button>
+      <button id="tabAwait" onclick="setTab('await')">Awaiting<span class="n" id="nAwait"></span></button>
       <button id="tabStore" onclick="setTab('store')">To store<span class="n" id="nStore"></span></button>
       <button id="tabStored" onclick="setTab('stored')">Stored<span class="n" id="nStored"></span></button>
     </div>
@@ -295,20 +297,31 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
 /* ===========================================================================
    HARBOR HAUL OUT — the haul-out list as an app
    ---------------------------------------------------------------------------
-   Three lists, and they are one field read three ways (PLACEMENT_STATES_ in the
-   .gs). Left to right is the season:
+   Four lists, and they are one field read four ways (PLACEMENT_STATES_ in the
+   .gs). Left to right is the season, and the first two are the two ways a
+   unit gets here at all — we fetch it, or the customer brings it:
 
      TO PULL   every unit with a slip number that has not been pulled yet —
                the boats still in the water, in the order the customer asked
                for. Ticking one off moves it along and it leaves this list.
+     AWAITING  nothing recorded and no slip number: as far as the system knows
+               it is still at the customer's, waiting to be dropped off. A
+               boat CANNOT be pulled without a slip — we would not know where
+               to go — so a boat that is really in the water shows up here
+               instead of there, and that is the point: this list is how a
+               missing slip number becomes visible instead of silent.
      TO STORE  everything waiting for a spot: the ones we pulled, and the ones
-               the customer drove in themselves (marked dropped off on the
-               console). This is the crew's actual work queue.
+               the customer drove in themselves. The actual work queue.
      STORED    in its spot, done. Kept rather than hidden, because "did we
                already put that one away" is a question people ask.
 
-   The two storage lists are searchable and sort by location or by name; the
-   pull list is not, because its order IS the information — it is the order the
+   Every row is on exactly one of the four. Before Awaiting existed a unit with
+   no slip and nothing recorded was on NONE of them — 30 of 35 quotes, invisible
+   on the phone.
+
+   Searchable: Awaiting, To store and Stored. Sorted: the storage lists by
+   location or name, Awaiting by the timing the customer asked for. The pull
+   list has neither, because its order IS the information — it is the order the
    customers asked for and re-sorting it would lose that.
 
    It is a separate page rather than another console card because it is used
@@ -566,11 +579,28 @@ function listOf_(x){
   const st=state_(x);
   if(st==='stored') return 'stored';
   if(st==='pulled'||st==='dropped') return 'store';
-  /* Nothing has happened yet: it is only on the crew's radar if it is in the
-     water. A trailered boat nobody has dropped off yet is not their problem. */
-  return String(x.slip||'').trim() ? 'pull' : '';
+  /* Nothing recorded yet, so which of the two arrivals is this? A slip number
+     is the only thing that says "in the water, we go and get it" — without one
+     we would not know where to go, so it is waiting to be dropped off until
+     somebody says otherwise. It is a LIST either way: a boat that is really in
+     the water and simply has no slip on file has to be visible somewhere, and
+     being on the wrong list is how anybody finds out. */
+  return String(x.slip||'').trim() ? 'pull' : 'await';
 }
 function pullList_(){ return ROWS.filter(x=>listOf_(x)==='pull').sort(sort_); }
+/* Name, quote number, slip, unit, storage area — whatever the person happens
+   to know. Shared by the three lists that are long enough to need finding. */
+function search_(rows){
+  const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
+  if(!q) return rows;
+  return rows.filter(function(x){
+    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
+  });
+}
+/* Soonest-first, the same order the pull list and the printed sheet use: a
+   unit that said "ready now" and still is not here is the one worth a call,
+   and it is the likeliest place a slip number went unrecorded. */
+function awaitList_(){ return search_(ROWS.filter(x=>listOf_(x)==='await')).sort(sort_); }
 /* Location first, then name — "which building am I standing in" is the
    question, and within a building a name is how you find the row. Sorting by
    name alone is for when somebody at the counter has a customer on the phone. */
@@ -580,23 +610,22 @@ function byLocation_(a,b){
 }
 function byName_(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); }
 function storeList_(which){
-  const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
-  const hit=ROWS.filter(x=>listOf_(x)===which).filter(function(x){
-    if(!q) return true;
-    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
-  });
-  return hit.sort(SORT==='name'?byName_:byLocation_);
+  return search_(ROWS.filter(x=>listOf_(x)===which)).sort(SORT==='name'?byName_:byLocation_);
 }
 
 let SORT='location';
 function setTab(t){
   TAB=t;
   $('tabPull').classList.toggle('on',t==='pull');
+  $('tabAwait').classList.toggle('on',t==='await');
   $('tabStore').classList.toggle('on',t==='store');
   $('tabStored').classList.toggle('on',t==='stored');
-  /* Search and sort belong to the two storage lists. The pull list's order is
-     the information, so it gets neither. */
+  /* The pull list's order is the information, so it gets neither search nor
+     sort. Awaiting gets the search — thirty boats is too many to scan for one
+     name — but not the sort, for the same reason the pull list has none: it is
+     in the order the customers said they would be ready. */
   $('filterBar').classList.toggle('hide',t==='pull');
+  $('sortBtn').classList.toggle('hide',t==='await');
   render();
 }
 function toggleSort(){
@@ -634,11 +663,16 @@ function row_(x,right,action){
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
     alert_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
 }
-/* The one-tap move along the line, used by the To store list only. The pull
-   list deliberately has no such button: pulling a boat is the act the whole
-   liability rule exists for, so it is made with the unit open, underneath its
-   authorisation banner and its alert. Putting an already-pulled boat into a
-   building carries none of that, and it is done a row at a time down a list.
+/* The one-tap move along the line, used by the Awaiting and To store lists.
+   The pull list deliberately has no such button: pulling a boat is the act the
+   whole liability rule exists for, so it is made with the unit open, underneath
+   its authorisation banner and its alert. Putting an already-pulled boat into a
+   building carries none of that, and neither does writing down that a customer
+   has arrived with theirs — both are done a row at a time down a list.
+
+   "Dropped off" is ungated on purpose, here and on the server: the customer
+   drove it in themselves and we touched nothing, so refusing to record a boat
+   that is visibly sitting in the yard would only mean it goes unrecorded.
 
    stopPropagation matters: without it the tap also opens the detail sheet, and
    the crew member watches a panel slide over the list they were working down.
@@ -654,9 +688,10 @@ function act_(x,to,label){
     jsArg_(x.qn)+','+jsArg_(to)+')">'+esc(label)+'</button>';
 }
 function render(){
-  const counts={pull:0,store:0,stored:0};
+  const counts={pull:0,await:0,store:0,stored:0};
   ROWS.forEach(function(x){ const l=listOf_(x); if(counts[l]!==undefined) counts[l]++; });
   $('nPull').textContent=counts.pull;
+  $('nAwait').textContent=counts.await;
   $('nStore').textContent=counts.store;
   $('nStored').textContent=counts.stored;
 
@@ -669,11 +704,34 @@ function render(){
     return;
   }
 
+  /* AWAITING DROP-OFF. Two jobs, and the second is why it exists: record a
+     unit the moment somebody sees it arrive, and make a missing slip number
+     something you can SEE rather than something the app quietly swallows. The
+     right-hand column is what the customer said about timing, because a boat
+     that answered "ready now" and is sitting on this list is either late or
+     missing its slip. */
+  if(TAB==='await'){
+    const rows=awaitList_();
+    const q0=String(($('q')&&$('q').value)||'').trim();
+    if(!rows.length){
+      setMsg('listMsg',q0?'Nothing matches \u201C'+q0+'\u201D.'
+        :'Nothing waiting. Every unit is either in the water with a slip, here, or put away.');
+      $('list').innerHTML='';
+      return;
+    }
+    setMsg('listMsg',rows.length+' not here yet'+(q0?' matching \u201C'+q0+'\u201D':'')+
+      ', soonest first. No slip number on file for these \u2014 if one is actually in the '+
+      'water, its slip needs recording before it can be pulled.');
+    $('list').innerHTML=rows.map(x=>row_(x,order_(x).label,
+      act_(x,'dropped','Dropped off \u2713'))).join('');
+    return;
+  }
+
   const rows=storeList_(TAB);
   const q=String(($('q')&&$('q').value)||'').trim();
   if(!rows.length){
     setMsg('listMsg',q?'Nothing matches “'+q+'”.'
-      :TAB==='store'?'Nothing waiting for a spot. Boats appear here once they are pulled, or marked dropped off on the console.'
+      :TAB==='store'?'Nothing waiting for a spot. Boats appear here once they are pulled, or marked dropped off.'
       :'Nothing put away yet.');
     $('list').innerHTML='';
     return;
@@ -924,6 +982,11 @@ function renderState(){
         ? btn('pulled','Mark pulled')
         : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
     }
+    /* Nothing recorded yet: the other way a unit arrives. Not gated — see
+       act_ — and offered from the opened unit as well as from the Awaiting
+       row, because whoever hears it first is the one who records it and they
+       may well be standing here reading the notes. */
+    if(st==='') h+=btn('dropped','Mark dropped off','ghost');
     if(st!=='stored') h+=btn('stored','Mark in storage','gold');
     /* Reversible on purpose: a mis-tap at the harbor is certain, and the fix
        must not be a phone call to somebody at a desk. */

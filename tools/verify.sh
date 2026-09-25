@@ -209,15 +209,19 @@ if [ -f harbor-haul-out/index.html ]; then
       echo "  FAIL trap: $f is not gated on 'measure' — writing a placement note would buy a re-price"; FAIL=1
     fi
   done
-  # Dropped off is what the COUNTER hears; the harbor never sees it happen. And
-  # pulling is made with the unit open, under its alert and its authorisation
+  # Pulling is made with the unit open, under its alert and its authorisation
   # banner, so the pull list records nothing from the row.
   if grep -q "act_(x,'pulled'" harbor-haul-out/index.html; then
     echo "  FAIL trap: the pull list ticks a boat off from the row — pulling is a button on the opened unit"; FAIL=1
   else echo "  OK   trap: the pull list records nothing from the row"; fi
+  # Dropped off is recordable from BOTH surfaces: the counter hears some of
+  # them and the harbor or the lot hears the rest, and whoever hears it first is
+  # the one who has to be able to write it down. Gates belong on the thing, not the desk.
   if grep -q "'Mark dropped off'" harbor-haul-out/index.html; then
-    echo "  FAIL trap: Harbor Haul Out offers 'Mark dropped off' — that is console-only"; FAIL=1
-  else echo "  OK   trap: 'Mark dropped off' is console-only"; fi
+    echo "  OK   trap: Harbor Haul Out can record a drop-off"
+  else
+    echo "  FAIL trap: Harbor Haul Out cannot mark a unit dropped off — the Awaiting list depends on it"; FAIL=1
+  fi
   if grep -q "'Mark dropped off'" admin/index.html; then
     echo "  OK   trap: and the console still has it"
   else

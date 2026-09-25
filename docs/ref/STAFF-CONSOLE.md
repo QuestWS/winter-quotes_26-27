@@ -136,8 +136,11 @@ put the calls over the edge Google gives up at.
 - **Every tab is read in one trip** (`quoteTabGrids_`, Sep 2026). A scan of the
   quote tabs cost three or four round trips *per tab* — is this a quote tab,
   where does it end, then the columns — and each costs about the same whether it
-  fetches one cell or ten thousand. The storage view, the search and a cold
-  quote lookup now ask the Sheets advanced service instead: one
+  fetches one cell or ten thousand. The storage view, the search, a cold
+  quote lookup — and, since Sep 2026, the four reads a **customer** waits on:
+  the save's prior-copy scan (`priorQuoteCopies_`), the resume-my-quote
+  loader, the scan-to-sign lookup and the taken-number scan behind minting a
+  quote number — now ask the Sheets advanced service instead: one
   `values.batchGet` for every tab's header cell, one more for the columns of the
   tabs that turn out to be quote tabs — so the Activity Log and the backups are
   never read past their header, exactly as before (enabled in

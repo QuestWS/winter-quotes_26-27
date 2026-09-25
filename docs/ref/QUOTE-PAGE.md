@@ -66,6 +66,17 @@ the same `?quote=…&ln=…` URL, all built by `quoteLink_` server-side
 entry point**, not a one-off — a change to it, or to the fields it fills, is a
 change to every one of those paths.
 
+**What the customer waits on is batched.** The reads on the customer's own
+critical path — minting a quote number at the contact gate
+(`takenQuoteNos_`), the resume loader, the scan-to-sign lookup and the save's
+prior-copy scan (`priorQuoteCopies_`) — go through `quoteTabGrids_`: two
+Sheets-API trips for every tab instead of three or four round trips per tab.
+Each keeps its per-tab reads as the fallback and must give exactly the same
+answer through either; `tools/check-fast-reads.js` runs both over one fixture
+and fails on any difference. Anything added to these paths has to clear the
+same bar — see *why the console got slow* in
+[STAFF-CONSOLE.md](STAFF-CONSOLE.md).
+
 
 ## Terms acceptance & lead capture
 Name, phone and email are **required** before a customer can leave the start

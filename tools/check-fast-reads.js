@@ -4,10 +4,13 @@
    1. EVERY TAB IN TWO TRIPS. quoteTabGrids_ reads every tab's header, then
       every quote tab, with two Sheets API batchGets instead of three or four
       trips per tab — and never reads a non-quote tab past its header. The storage view, the
-      search and a cold quote lookup must give EXACTLY the answer the per-tab
-      reads give — on a sheet with blank rows, short rows, a non-quote tab, an
-      Import tab and an apostrophe in a tab name — and must fall back to those
-      reads whenever the service is missing or refuses.
+      search, a cold quote lookup — and the paths a CUSTOMER waits on: the
+      save's copy scan (priorQuoteCopies_), the resume-my-quote loader, the
+      scan-to-sign lookup and the taken-number scan behind minting — must give
+      EXACTLY the answer the per-tab reads give — on a sheet with blank rows,
+      short rows, a non-quote tab, an Import tab and an apostrophe in a tab
+      name — and must fall back to those reads whenever the service is missing
+      or refuses.
    2. ONE TRIP PER CLICK. A console write carrying `withQuote` comes back with
       the refreshed quote on the same answer — only when the write succeeded,
       never when the read fails, and never inside the replayable rid answer.
@@ -90,7 +93,9 @@ function row(o) {
   const r = new Array(23).fill('');
   r[0] = o.last || ''; r[1] = o.first || ''; r[2] = o.qn || ''; r[3] = o.bal === undefined ? '' : o.bal;
   r[5] = o.status || ''; r[6] = o.unit || ''; r[7] = o.phone || ''; r[9] = o.ymm || ''; r[10] = o.dims || '';
+  r[19] = o.rem || '';
   r[20] = o.payload === undefined ? JSON.stringify({ quoteNo: o.qn, keyLoc: 'hook 4', payments: o.paid ? [{ amt: o.paid }] : [] }) : o.payload;
+  r[22] = o.photos || '';
   return r;
 }
 const HEAD = ['Last Name', 'First Name', 'Quote #'];
@@ -114,7 +119,7 @@ function tabs() {
 }
 
 function backend(withSheets, opts) {
-  const f = makeBook(tabs());
+  const f = makeBook((opts && opts.tabs) || tabs());
   const noop = () => {};
   const cache = {};
   const ctx = {
@@ -226,6 +231,114 @@ const J = (v) => JSON.stringify(v);
   else ok(uses + ' console writes take the refreshed quote from their own answer');
   if (!/async function afterWrite_\(r\)[\s\S]{0,400}api\('lookup',\[QN\]\)/.test(ADMIN)) fail('afterWrite_ no longer falls back to a lookup when the answer has no quote');
   else ok('with no quote on the answer (a replay, an older backend) the console still looks it up');
+}
+
+/* ---- 1b. the customer paths ride the same batch read ----
+   The customer save's copy scan, the resume-my-quote loader, the scan-to-sign
+   lookup and the taken-number scan behind minting a quote number all paid a
+   header read plus a column scan PER TAB while a customer sat waiting. Each
+   one now goes through quoteTabGrids_ and must give exactly the answer the
+   per-tab reads give, at two batch reads plus the odd row-level read. */
+function tabsWithResumable() {
+  const t = tabs();
+  t.filter((x) => x.name === 'No Storage')[0].rows.push(
+    row({ last: 'Willow', first: 'W', qn: 'QW-26-1007',
+          payload: JSON.stringify({ quoteNo: 'QW-26-1007', total: 100, deposit: 50,
+                                    state: { storage: 'none' }, payments: [] }) }));
+  return t;
+}
+{
+  const cases = [
+    { quote: 'QW-26-1007', ln: 'Willow' },   // resumable: the payload carries state
+    { quote: 'QW-26-1001', ln: 'Alder' },    // stored before state existed
+    { quote: 'QW-26-1003', ln: 'Cedar' },    // no payload at all
+    { quote: 'QW-26-1001', ln: 'Wrong' },    // right number, wrong name
+    { quote: 'QW-26-9999', ln: 'Alder' }     // no such quote
+  ];
+  const run = (k, c) => k.ctx.doGet({ parameter: c })._text;
+  const slow = backend(false, { tabs: tabsWithResumable() });
+  const fast = backend(true, { tabs: tabsWithResumable() });
+  const broken = backend(true, { tabs: tabsWithResumable(), brokenSheets: true });
+  const a = cases.map((c) => run(slow, c));
+  const b = cases.map((c) => run(fast, c));
+  const c2 = cases.map((c) => run(broken, c));
+  if (J(a) !== J(b)) fail('the customer quote loader answers differently from the batch read:\n       ' + J(a) + '\n       ' + J(b));
+  else if (a[0].indexOf('"ok":1') === -1) fail('the loader fixture never resumed a quote: ' + a[0]);
+  else ok('the customer quote loader answers identically from one batch read and from the per-tab reads (resume, no state, no payload, wrong name, unknown)');
+  if (J(a) !== J(c2)) fail('a refused batch read changes the loader\'s answer');
+  else ok('the loader falls back to the per-tab reads when the batch read is refused');
+}
+{
+  const slow = backend(false, { tabs: tabsWithResumable() });
+  const fast = backend(true, { tabs: tabsWithResumable() });
+  slow.ctx.doGet({ parameter: { quote: 'QW-26-1007', ln: 'Willow' } });
+  fast.ctx.doGet({ parameter: { quote: 'QW-26-1007', ln: 'Willow' } });
+  if (fast.stats.batch !== 2 || fast.stats.trips !== 1)
+    fail('resuming a quote cost ' + fast.stats.batch + ' batch read(s) + ' + fast.stats.trips + ' trip(s); want 2 + 1 (the payload)');
+  else ok('resuming a quote costs the two batch reads plus one payload read (was ' + slow.stats.trips + ' round trips on this sheet)');
+}
+{
+  const want = ['QW-26-1001', 'QW-26-1005', 'QW-26-9999'];
+  const slow = backend(false), fast = backend(true);
+  const a = want.map((q) => slow.ctx.signLookup_(q));
+  const b = want.map((q) => fast.ctx.signLookup_(q));
+  if (J(a) !== J(b)) fail('the scan-to-sign lookup answers differently from the batch read:\n       ' + J(a) + '\n       ' + J(b));
+  else if (!a[0].ok || a[1].ok || a[2].ok) fail('the sign-lookup fixture is wrong (want found, import hidden, unknown hidden): ' + J(a));
+  else ok('the scan-to-sign lookup is identical from one batch read and from the per-tab reads, and an unsent import stays invisible');
+  const one = backend(true);
+  one.ctx.signLookup_('QW-26-1001');
+  if (one.stats.batch !== 2 || one.stats.trips !== 1)
+    fail('a sign lookup cost ' + one.stats.batch + ' batch read(s) + ' + one.stats.trips + ' trip(s); want 2 + 1 (the payload)');
+  else ok('a sign lookup costs the two batch reads plus one payload read');
+}
+function tabsWithArchive() {
+  return tabs().concat([{ name: 'Deleted Quotes',
+    rows: [['Last Name', 'First Name', 'Quote # (deleted)'], ['Gone', 'G', 'QW-26-0001']] }]);
+}
+{
+  const slow = backend(false, { tabs: tabsWithArchive() });
+  const fast = backend(true, { tabs: tabsWithArchive() });
+  const a = Object.keys(slow.ctx.takenQuoteNos_()).sort();
+  const b = Object.keys(fast.ctx.takenQuoteNos_()).sort();
+  if (J(a) !== J(b)) fail('the taken-number scan differs between the batch read and the per-tab reads:\n       ' + J(a) + '\n       ' + J(b));
+  else if (a.indexOf('QW-26-0001') === -1 || a.indexOf('QW-26-1005') === -1)
+    fail('the taken-number fixture is missing the deleted-quote archive or the import: ' + J(a));
+  else ok('minting a quote number sees the same taken set either way — the archive and the Import tab included');
+  if (fast.stats.batch !== 2 || fast.stats.trips !== 2)
+    fail('the taken-number scan cost ' + fast.stats.batch + ' batch read(s) + ' + fast.stats.trips + ' trip(s); want 2 + 2 (the archive, whose header deliberately does not say Quote #)');
+  else ok('the taken-number scan costs two batch reads, plus the archive tab it must still read the slow way (was ' + slow.stats.trips + ')');
+}
+function tabsWithDuplicate() {
+  const t = tabs();
+  t.filter((x) => x.name === 'No Storage')[0].rows.push(
+    row({ last: 'Birch', first: 'B', qn: 'QW-26-1002', rem: 'Reminder sent 9/20', photos: 'https://drive/x' }));
+  return t;
+}
+{
+  const pick = (p) => ({ copies: p.copies.map((c) => c.sheet.getName() + ':' + c.row),
+                         rem: p.carriedReminder, payload: p.oldPayloadJson, photos: p.oldPhotos });
+  const want = ['QW-26-1002', 'QW-26-1004', 'QW-26-9999'];
+  const slow = backend(false, { tabs: tabsWithDuplicate() });
+  const fast = backend(true, { tabs: tabsWithDuplicate() });
+  const ssS = slow.ctx.SpreadsheetApp.getActiveSpreadsheet();
+  const ssF = fast.ctx.SpreadsheetApp.getActiveSpreadsheet();
+  const a = want.map((q) => pick(slow.ctx.priorQuoteCopies_(ssS, q, 'No Storage')));
+  const b = want.map((q) => pick(fast.ctx.priorQuoteCopies_(ssF, q, 'No Storage')));
+  if (J(a) !== J(b)) fail('a save\'s copy scan differs between the batch read and the per-tab reads:\n       ' + J(a) + '\n       ' + J(b));
+  else if (a[0].copies.length !== 2 || a[0].photos !== 'https://drive/x' || a[0].rem !== 'Reminder sent 9/20')
+    fail('the duplicate fixture did not produce two copies with the carried cells: ' + J(a));
+  else ok('a customer save finds its prior copies — duplicates across tabs included — identically from one batch read and from the per-tab reads');
+}
+{
+  const slow = backend(false, { tabs: tabsWithDuplicate() });
+  const fast = backend(true, { tabs: tabsWithDuplicate() });
+  slow.ctx.priorQuoteCopies_(slow.ctx.SpreadsheetApp.getActiveSpreadsheet(), 'QW-26-1002', 'No Storage');
+  fast.ctx.priorQuoteCopies_(fast.ctx.SpreadsheetApp.getActiveSpreadsheet(), 'QW-26-1002', 'No Storage');
+  /* Two batch reads, one carried-cells span per copy found, and one header
+     probe per non-quote tab — the clobbered-header rescue must still look. */
+  if (fast.stats.batch !== 2 || fast.stats.trips !== 4)
+    fail('a save\'s copy scan cost ' + fast.stats.batch + ' batch read(s) + ' + fast.stats.trips + ' trip(s); want 2 + 4 (two copies, two rescue probes)');
+  else ok('a save\'s copy scan costs two batch reads, a span per copy and a rescue probe per non-quote tab (was ' + slow.stats.trips + ' round trips)');
 }
 
 /* ---- 3. the manifest turns the service on ---- */

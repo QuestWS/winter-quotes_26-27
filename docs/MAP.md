@@ -93,6 +93,7 @@ symptom.
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
+| The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |
 | Old-sheet import (one at a time) | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply`, `importApplyCore_` | `previewImport`, `doImport` |
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |

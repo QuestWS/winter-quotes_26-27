@@ -159,5 +159,25 @@ console.log('\n=== D. the selection can only narrow ===');
   check('naming a ghost adds nothing', F(wrap,['Q-NOPE']).length===0);
   check('a real pick resolves', F(wrap,['Q-A']).length===1);
 }
+/* One customer is locked in (FIRM_QUOTE_NO in pricing-engine.js). The thing
+   worth executing is not that she is skipped — it is that NOBODY ELSE is,
+   paid or not, because a leak here quietly stops charging the new rates. */
+console.log('\n=== E. the one locked-in quote, and only that one ===');
+{
+  const P = require(ROOT + '/pricing-engine.js');
+  check('the locked-in quote is firm at the rates it was agreed for',
+    P.priceIsFirm_(P.FIRM_QUOTE_NO, '2026–2027'), 'en-dash label must match the hyphenated constant');
+  check('it lapses once rates roll past it',
+    !P.priceIsFirm_(P.FIRM_QUOTE_NO, '2027–2028'));
+  ['Q-A', 'Q-B', 'Q-C', 'QW-26-1255', '', null].forEach(qn => {
+    check('no exemption leaks to ' + JSON.stringify(qn), !P.priceIsFirm_(qn, '2026–2027'));
+  });
+
+  /* And in the real scan: a DEPOSITED quote is still re-priced. */
+  const r = build(bumped).adminRepricePreview('t');
+  check('a quote with a deposit on it is still re-priced',
+    r.rows.some(x => x.qn === 'Q-B' && x.changed && !x.skip));
+}
+
 console.log(fails?fails+' re-price violation(s)':'re-price holds: leads out, drafts in, discounts survive, deposits intact, preview writes nothing');
 process.exit(fails?1:0);

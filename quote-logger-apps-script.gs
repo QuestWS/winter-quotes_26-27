@@ -1068,35 +1068,12 @@ function doPost(e) {
        Deleting against the posted tab and then writing to the rebuilt one
        would leave the quote on two tabs at once. Deletion happens in step 3b,
        once the final tab is known. */
-    let carriedReminder = '';
-    let oldPayloadJson = '';
-    let oldPhotos = '';
     const postedTab = d.storageTab || 'No Storage';
-    const copies = [];   // {sheet, row} for every copy found, in scan order
-    ss.getSheets().forEach(function (other) {
-      /* A tab whose header row was overwritten by an import is still a quote
-         tab, and the quote stranded in row 1 is invisible to every scan below.
-         Repair it here rather than skipping past it — step 5 rewrites a stale
-         header row, which on such a tab would finish the job the import
-         started and destroy that customer's row outright. */
-      if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
-      let r = findQuoteRow_(other, d.quoteNo);
-      while (r > 0) {
-        const remCell = String(other.getRange(r, COL.REM).getValue() || '');
-        /* A lead's follow-up marker lives in the reminder column (the lead tab
-           is skipped by dailyReminderCheck, so the column is free there). It
-           must NOT ride along when the quote graduates to a real tab, or the
-           genuine 10-day reminder would see a reminder already sent and stay
-           silent forever. */
-        if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(postedTab))) {
-          carriedReminder = carriedReminder || remCell;
-        }
-        oldPayloadJson = oldPayloadJson || String(other.getRange(r, COL.PAYLOAD).getValue() || '');
-        oldPhotos = oldPhotos || String(other.getRange(r, COL.PHOTOS).getValue() || '');
-        copies.push({ sheet: other, row: r });
-        r = findQuoteRowFrom_(other, d.quoteNo, r + 1);
-      }
-    });
+    const prior = priorQuoteCopies_(ss, d.quoteNo, postedTab);
+    const carriedReminder = prior.carriedReminder;
+    const oldPayloadJson = prior.oldPayloadJson;
+    const oldPhotos = prior.oldPhotos;
+    const copies = prior.copies;   // {sheet, row} for every copy found, in scan order
 
     // 2) Merge / LOCK. Once a payment exists, the customer page may no longer
     //    change the quote — a locked save keeps the official version and only
@@ -1225,13 +1202,24 @@ function doPost(e) {
       paid0,
       oldPhotos || (d.photosUrl || '')
     ];
-    const existing = findQuoteRow_(sh, d.quoteNo);
+    /* Where the quote already sits on the destination tab, known from the
+       step-1 scan rather than re-scanned: pruneQuoteCopies_ kept the FIRST
+       copy on this tab, and within the tab it only deleted rows BELOW that
+       one, so its row number is still good — trusting it here is exactly as
+       safe as the prune that just used it. */
+    const kept = copies.filter(function (c) { return c.sheet.getName() === tabName; })[0];
+    const existing = kept ? kept.row : -1;
     /* let, not const: a save that emails the customer their copy releases a
        parked draft below, and the row physically moves to another tab. */
     let rowNum = existing > 0 ? existing : sh.getLastRow() + 1;
     if (existing > 0) {
-      row[COL.REM - 1] = sh.getRange(rowNum, COL.REM).getValue() || carriedReminder;
-      row[COL.PHOTOS - 1] = sh.getRange(rowNum, COL.PHOTOS).getValue() || row[COL.PHOTOS - 1];
+      /* Re-read the reminder and photos from the live row, in one span — the
+         9am trigger can have stamped a reminder between the step-1 scan and
+         now (the PDF render sits in between), and losing that mark would send
+         the customer a second reminder tomorrow. */
+      const live = sh.getRange(rowNum, COL.REM, 1, COL.PHOTOS - COL.REM + 1).getValues()[0];
+      row[COL.REM - 1] = live[0] || carriedReminder;
+      row[COL.PHOTOS - 1] = live[COL.PHOTOS - COL.REM] || row[COL.PHOTOS - 1];
     } else row[COL.REM - 1] = carriedReminder;
     if (sh.getRange(1, HEADERS.length).getValue() !== HEADERS[HEADERS.length-1]) {
       sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
@@ -1766,9 +1754,27 @@ function doGet(e) {
     if (!qn || !ln) return out({ ok: 0, error: 'Enter both your quote number and last name.' });
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheets = ss.getSheets();
+    /* The customer is sitting on the quote page waiting for this, so the scan
+       rides quoteTabGrids_: last name and quote number for every quote tab in
+       two Sheets-API trips, then one read for the matched row's payload. The
+       per-tab reads below stay as the fallback and must land on the same row
+       (tools/check-fast-reads.js compares the two answers). */
+    const grids = quoteTabGrids_(ss, sheets, [[COL.LAST, COL.QN]]);
     for (let i = 0; i < sheets.length; i++) {
       const sh = sheets[i];
-      if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+      let rowNum = -1;
+      let rowLn = '';
+      if (grids) {
+        if (!grids[i]) continue;
+        const g = grids[i][0];
+        for (let r = 1; r < g.length && rowNum <= 0; r++) {
+          if (String(g[r][COL.QN - COL.LAST]) === qn) {
+            rowNum = r + 1;
+            rowLn = String(g[r][0] || '').trim().toLowerCase();
+          }
+        }
+        if (rowNum <= 0) continue;
+      } else if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
       /* THE IMPORT TAB IS IN THIS SCAN, DELIBERATELY.
          -------------------------------------------------------------------
          An imported quote is still a draft -- the crew must not see it, the
@@ -1786,9 +1792,11 @@ function doGet(e) {
          What keeps a draft a draft is the row's hold marker and its tab, and
          both survive an edit (see step 3 of doPost). A human send is still
          the only thing that releases either. IMPORT_TAB. */
-      const rowNum = findQuoteRow_(sh, qn);
-      if (rowNum <= 0) continue;
-      const rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
+      if (rowNum <= 0) {
+        rowNum = findQuoteRow_(sh, qn);
+        if (rowNum <= 0) continue;
+        rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
+      }
       if (rowLn !== ln) return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
       const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
       if (!payloadJson) return out({ ok: 0, error: 'This quote was saved before loading existed — call (815) 433-2200 and we\'ll pull it up.' });
@@ -1813,8 +1821,10 @@ function doGet(e) {
 
 // NOTE: Quote # deliberately stays in column 3 across layouts
 function findQuoteRowFrom_(sh, quoteNo, startRow) {
-  if (!quoteNo || sh.getLastRow() < startRow) return -1;
-  const col = sh.getRange(startRow, 3, sh.getLastRow() - startRow + 1, 1).getValues();
+  if (!quoteNo) return -1;
+  const last = sh.getLastRow();   // one trip, asked once — it used to be asked twice
+  if (last < startRow) return -1;
+  const col = sh.getRange(startRow, 3, last - startRow + 1, 1).getValues();
   for (let i = 0; i < col.length; i++) {
     if (String(col[i][0]) === String(quoteNo)) return i + startRow;
   }
@@ -1860,22 +1870,40 @@ const QNO_LOCK_MS_ = 8000;
    recognised as a quote tab at all. */
 function takenQuoteNos_() {
   const taken = {};
+  const add = function (v) {
+    const qn = String(v || '').trim();
+    if (qn) taken[qn.toUpperCase()] = 1;
+  };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.getSheets().forEach(function (sh) {
+  const sheets = ss.getSheets();
+  /* This runs while a customer stands at the contact gate waiting for their
+     quote number, so the scan rides quoteTabGrids_ — two Sheets-API trips for
+     every tab — and falls back to the per-tab reads when the service does not
+     answer. Same numbers either way (tools/check-fast-reads.js holds it to
+     that). */
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  sheets.forEach(function (sh, i) {
+    if (grids && grids[i]) {
+      const col = grids[i][0];
+      for (let r = 1; r < col.length; r++) add(col[r][0]);
+      return;
+    }
     /* Quote tabs, plus the deleted-quote archive. A number that has been used
        once is never handed out again: reissuing one would have the Activity
        Log, the archive and a live row all describing a different customer
        under the same number, and savePdf_ would replace one customer's PDF
        with another's. The archive's header row says 'Quote # (deleted)' in
        column 3 precisely so every OTHER sweep skips it, which is why it is
-       matched here by name rather than by that header. */
-    if (sh.getRange(1, 3).getValue() !== 'Quote #' && sh.getName() !== DELETED_TAB) return;
+       matched here by name rather than by that header — and why the batch
+       read above never covers it: the archive is read the slow way even when
+       the service answers. */
+    if (sh.getName() !== DELETED_TAB) {
+      if (grids) return;   // the batch read already said this is not a quote tab
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    }
     const last = sh.getLastRow();
     if (last < 2) return;
-    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
-      const qn = String(r[0] || '').trim();
-      if (qn) taken[qn.toUpperCase()] = 1;
-    });
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) { add(r[0]); });
   });
   return taken;
 }
@@ -1953,12 +1981,71 @@ function uniqueQuoteNo_(proposed) {
 }
 
 function findQuoteRow_(sh, quoteNo) {
-  if (!quoteNo || sh.getLastRow() < 2) return -1;
-  const col = sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues(); // Quote #
-  for (let i = 0; i < col.length; i++) {
-    if (String(col[i][0]) === String(quoteNo)) return i + 2;
-  }
-  return -1;
+  return findQuoteRowFrom_(sh, quoteNo, 2);
+}
+
+/* Step 1 of a customer save, as one testable read: every prior copy of the
+   quote, in tab order, plus the cells a save carries over — the reminder, the
+   stored payload and the photos, taken from the FIRST copy that has each.
+
+   This scan is what a customer sat waiting on: it used to pay a header read
+   plus a column scan for every tab in the spreadsheet, one trip each, before
+   the PDF was even started. It now rides quoteTabGrids_ — every tab's Quote #
+   column in two Sheets-API trips — and falls back to the per-tab reads
+   whenever the service does not answer, giving EXACTLY the same result either
+   way (tools/check-fast-reads.js holds it to that). The carried cells are one
+   span read per copy (REM..PHOTOS) instead of three single cells.
+
+   A tab whose header check fails is still offered to rescueClobberedHeader_,
+   exactly as before: a tab whose header row was overwritten by an import is
+   still a quote tab, and the quote stranded in row 1 is invisible to every
+   scan below. Repairing it here rather than skipping past it matters because
+   step 5 of the save rewrites a stale header row, which on such a tab would
+   finish the job the import started and destroy that customer's row outright.
+   A repaired tab is re-scanned with the per-tab reads, because the batch read
+   predates the repair. */
+function priorQuoteCopies_(ss, quoteNo, postedTab) {
+  const found = { copies: [], carriedReminder: '', oldPayloadJson: '', oldPhotos: '' };
+  const collect = function (sheet, r) {
+    const span = sheet.getRange(r, COL.REM, 1, COL.PHOTOS - COL.REM + 1).getValues()[0];
+    const remCell = String(span[0] || '');
+    /* A lead's follow-up marker lives in the reminder column (the lead tab
+       is skipped by dailyReminderCheck, so the column is free there). It
+       must NOT ride along when the quote graduates to a real tab, or the
+       genuine 10-day reminder would see a reminder already sent and stay
+       silent forever. */
+    if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(postedTab))) {
+      found.carriedReminder = found.carriedReminder || remCell;
+    }
+    found.oldPayloadJson = found.oldPayloadJson || String(span[COL.PAYLOAD - COL.REM] || '');
+    found.oldPhotos = found.oldPhotos || String(span[COL.PHOTOS - COL.REM] || '');
+    found.copies.push({ sheet: sheet, row: r });
+  };
+  const scanTab = function (sh) {
+    let r = findQuoteRow_(sh, quoteNo);
+    while (r > 0) {
+      collect(sh, r);
+      r = findQuoteRowFrom_(sh, quoteNo, r + 1);
+    }
+  };
+  const sheets = ss.getSheets();
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  sheets.forEach(function (other, i) {
+    if (grids) {
+      if (!grids[i]) {
+        if (rescueClobberedHeader_(other)) scanTab(other);
+        return;
+      }
+      const col = grids[i][0];
+      for (let r = 1; r < col.length; r++) {
+        if (String(col[r][0]) === String(quoteNo)) collect(other, r + 1);
+      }
+      return;
+    }
+    if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
+    scanTab(other);
+  });
+  return found;
 }
 
 /* ======================= EVERY TAB IN ONE TRIP ==========================
@@ -8466,17 +8553,39 @@ function maskLastName_(name) {
    slip at save time and the one staff typed into the console weeks later is
    the one that must reach Adobe. */
 function signLookup_(quoteNo) {
-  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  /* A customer is standing at the counter waiting on this, so it rides
+     quoteTabGrids_ — the first eleven columns of every quote tab in two
+     Sheets-API trips, then one read for the matched row's payload — with the
+     per-tab reads kept as the fallback. Same answer either way
+     (tools/check-fast-reads.js compares them). */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS]]);
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
     if (isOffstageTab_(sh.getName())) continue;  // a lead is not a signer, and nor is an unsent import
-    const rowNum = findQuoteRow_(sh, quoteNo);
-    if (rowNum <= 0) continue;
-    const row = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
+    let rowNum = -1;
+    let row = null;         // columns 1..DIMS at least; the fallback reads the whole row
+    let payloadJson = '';
+    if (grids) {
+      if (!grids[i]) continue;
+      const g = grids[i][0];
+      for (let r = 1; r < g.length && rowNum <= 0; r++) {
+        if (String(g[r][COL.QN - 1]) === String(quoteNo)) { rowNum = r + 1; row = g[r]; }
+      }
+      if (rowNum <= 0) continue;
+      payloadJson = String(sh.getRange(rowNum, COL.PAYLOAD).getValue() || '');
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+      rowNum = findQuoteRow_(sh, quoteNo);
+      if (rowNum <= 0) continue;
+      const full = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
+      row = full;
+      payloadJson = String(full[COL.PAYLOAD - 1] || '');
+    }
     let slip = '';
     try {
-      const d = JSON.parse(row[COL.PAYLOAD - 1] || '{}');
+      const d = JSON.parse(payloadJson || '{}');
       const st = effectiveState_(d) || d.state || {};
       slip = String(st.slipNo || '').trim();
     } catch (e) {}

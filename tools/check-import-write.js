@@ -103,7 +103,8 @@ const B = new Function('ENGINE', 'SpreadsheetApp', 'console', [
   'const normalizeQuoteNo = ENGINE.normalizeQuoteNo;',
   'function auditLog_(){}',
   fn('nextQuoteRow_'), fn('rescueClobberedHeader_'), fn('quoteTabFor_'),
-  fn('rescueAllQuoteTabs_'), fn('repairImportedRows'), fn('findQuoteRow_'),
+  fn('rescueAllQuoteTabs_'), fn('repairImportedRows'),
+  fn('findQuoteRowFrom_'), fn('findQuoteRow_'),
   'return {HEADERS,COL,nextQuoteRow_,rescueClobberedHeader_,quoteTabFor_,' +
   'rescueAllQuoteTabs_,repairImportedRows,findQuoteRow_};'
 ].join('\n'));
@@ -276,9 +277,15 @@ console.log('=== 7. the old pattern cannot come back ===');
   check('a failed read-back reports failure, not a quote number',
     /did not land on the/.test(body));
   check('stranded rows are swept at the top of an import', /rescueAllQuoteTabs_\(\);/.test(body));
-  const post = (gas.match(/const copies = \[\];[\s\S]*?\n    \}\);/m) || [''])[0];
+  /* The scan lives in priorQuoteCopies_ now (one batch read instead of a trip
+     per tab), and the repair must survive in BOTH of its branches: the batch
+     read cannot see a clobbered tab (its header no longer says 'Quote #'), so
+     each branch offers the tab to the rescue itself. */
+  const helper = (gas.match(/^function priorQuoteCopies_[\s\S]*?\n}/m) || [''])[0];
+  check('the customer save path reads its copies through priorQuoteCopies_',
+    /priorQuoteCopies_\(ss, d\.quoteNo/.test(gas));
   check('the customer save path repairs a clobbered tab instead of skipping it',
-    /rescueClobberedHeader_\(other\)/.test(post));
+    (helper.match(/rescueClobberedHeader_\(other\)/g) || []).length >= 2);
 }
 
 console.log(fails ? '\nFAILED: ' + fails : '\nAll import-write checks passed.');

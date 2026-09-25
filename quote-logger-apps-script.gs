@@ -339,7 +339,12 @@ const RULES = {
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
   insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
-  hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
+  /* Heritage Harbor slipholder discount, by services total: [at least, $ off].
+     Highest tier that fits wins; under the lowest tier there is no discount.
+     The customer never sees this table or any amount from it — the quote
+     page only asks whether they are a slipholder and which slip. Staff
+     approve the suggested figure in the console (hhoDiscountLine below). */
+  hhoTiers:[[4000,200],[3000,150],[2000,100],[1000,50],[500,25]],
   retrieveSmallMaxLOA:36,
 };
 
@@ -680,9 +685,10 @@ function computeFlags_(s){
 function computeQuote(s){
   const L=[], loa=s.loa||0, beam=s.beam||0, lwt=s.lwt||0, T=s.hasTrailer, u=s.unit;
   const need=[];
-  /* tbd: this line prices at 0 today but is not free — the customer's own
-     total decides it, and staff fill it in afterward. The ticket renderer
-     prints "TBD" instead of "incl." when it sees this flag. */
+  /* tbd: a line that prices at 0 today but is not free — staff fill it in
+     afterward, and the ticket renderer prints "TBD" instead of "incl.". No
+     line uses it right now (the slipholder discount did, until it moved to
+     hhoDiscountLine); it stays so the next one does not have to rebuild it. */
   const add=(sec,label,amt,calc,desc,tbd)=>L.push({sec,label,amt,calc,desc,tbd});
 
   /* ---- flat-rate units ---- */
@@ -710,10 +716,7 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho){
-      if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-      add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-    }
+    if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
     return {lines:L, need, rq:[], flags:computeFlags_(s)};
   }
 
@@ -795,13 +798,61 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho){
-    if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-    add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-  }
+  /* Slipholders get no line here. The discount is never priced from the
+     customer's own selections — see hhoDiscountLine. */
+  if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
   return {lines:L, need, rq, flags:computeFlags_(s)};
+}
+
+/* ---- Heritage Harbor slipholder discount ----
+   The customer only tells us they are a slipholder and which slip. Nothing on
+   the quote page prices the discount, so there is no figure to watch climb
+   while they pile on services they mean to cancel later. Staff approve it in
+   the console, and the approval lives in the manual journal as `manual.hho`:
+
+     { status:'approved'|'declined', amt:null|number, by, at }
+
+   amt null  = follow the tier table, re-worked out from the services total
+               every time the lines change — remove the detailing and the
+               discount drops to whatever tier the smaller total earns.
+   amt number = a staff-set figure that stays put whatever the total does.
+
+   No journal entry means "awaiting approval": nothing is applied.
+
+   The services total leaves out staff Adjustments (a late fee or another
+   discount must not move the tier) and the discount line itself. Both the
+   page and the server call withHhoDiscount() last, after everything else, so
+   the two cannot disagree about the base. */
+const HHO_DISCOUNT_SEC = 'Discounts';
+function hhoDiscountFor(servicesTotal){
+  const t=Number(servicesTotal)||0;
+  for(const tier of RULES.hhoTiers) if(t>=tier[0]) return tier[1];
+  return 0;
+}
+function hhoServicesTotal(lines){
+  return (lines||[]).reduce(function(a,l){
+    return (l.hho||l.sec==='Adjustments') ? a : a+Number(l.amt||0);
+  },0);
+}
+function hhoDiscountLine(lines, s, op){
+  if(!op || op.status!=='approved') return null;
+  const fixed = op.amt!=null && op.amt!=='' && isFinite(Number(op.amt));
+  const amt = fixed ? Math.abs(Number(op.amt)) : hhoDiscountFor(hhoServicesTotal(lines));
+  if(!(amt>0)) return null;
+  const slip=String((s&&s.slipNo)||'').trim();
+  return { sec:HHO_DISCOUNT_SEC, label:'Heritage Harbor slipholder discount'+(slip?' — slip '+slip:''),
+           calc:'', amt:-amt, hho:true,
+           desc: fixed ? '' : 'Tiered on your final services total, so adding or removing services can change it' };
+}
+/* Drop any discount line already there and put the current one back, so this
+   is safe to call as often as the lines change. */
+function withHhoDiscount(lines, s, op){
+  const out=(lines||[]).filter(function(l){ return !l.hho; });
+  const line=hhoDiscountLine(out, s, op);
+  if(line) out.push(line);
+  return out;
 }
 
 /* Which spreadsheet tab a quote belongs on. Shared because BOTH sides decide
@@ -1297,6 +1348,7 @@ function consoleFns_(p) {
     dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
+    hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
@@ -2114,7 +2166,7 @@ function usd_(n) {
 /* ================= MANUAL QUOTE ADJUSTMENTS =================
  * In the spreadsheet: click any cell in a quote's row, then use the
  * "Quest Quotes" menu -> "Adjust selected quote...". Enter an amount
- * (negative for discounts, e.g. -50 for the Slipholder discount) and a
+ * (negative for discounts, e.g. -50 for a courtesy discount) and a
  * description. The quote's totals, PDF, and spreadsheet row update, and
  * the customer is emailed the revised quote automatically if we have
  * their email address. Run repeatedly for multiple adjustments. */
@@ -2143,6 +2195,13 @@ function onOpen() {
 }
 
 function recomputeTotals_(d) {
+  /* The Heritage Harbor slipholder discount is tiered on the services total,
+     so it is worked out again here — the one place every mutation already
+     passes through — rather than in each of them. Remove a service anywhere
+     (line editor, customer re-save, re-measure, re-price) and an approved
+     tiered discount follows the new total; a staff-fixed one stays put. With
+     no approval in the journal this only strips a stale line. */
+  d.lines = withHhoDiscount(d.lines || [], effectiveState_(d) || d.state || {}, d.manual && d.manual.hho);
   const newTotal = (d.lines || []).reduce(function (a, l) { return a + Number(l.amt || 0); }, 0);
   const depBase = Number(d.depositBase || d.deposit || 0);
   d.total = newTotal.toFixed(2);
@@ -2158,7 +2217,9 @@ function recomputeTotals_(d) {
  *   manual.removed:     [label, ...]                    lines deleted
  *   manual.edits:       [{label, newAmt, newLabel}]     lines changed (label = original wizard label)
  *   manual.priced:      [{rqLabel, label, amt, sec}]    quote-requests given a price
- *   manual.adjustments: [{label, amt}]                  added charge/discount lines */
+ *   manual.adjustments: [{label, amt}]                  added charge/discount lines
+ *   manual.hho:         {status, amt, by, at}           slipholder discount approval —
+ *                       replayed by recomputeTotals_, see hhoDiscountLine in the engine */
 function applyManualOps_(d) {
   const m = d.manual;
   const res = { applied: 0, skipped: 0, notes: [] };
@@ -2310,6 +2371,87 @@ function adminPenalty(token, qn, which, on) {
     total: usd_(after), on: want };
 }
 
+/* ---- Heritage Harbor slipholder discount (console) ----
+   The customer only says they are a slipholder and which slip; the quote page
+   shows no discount and no amount. Staff see the tier's suggestion here and
+   approve it, change it, or remove it. The decision is journalled as
+   manual.hho and applied by recomputeTotals_ — see hhoDiscountLine in the
+   engine for what `amt` null vs a number means. Nobody is emailed. */
+function hhoInfo_(d) {
+  const st = effectiveState_(d) || d.state || {};
+  const op = (d.manual && d.manual.hho) || null;
+  const lines = d.lines || [];
+  const base = hhoServicesTotal(lines);
+  const tier = hhoDiscountFor(base);
+  const cur = lines.find(function (l) { return l.hho; });
+  const fixed = !!(op && op.amt != null);
+  return {
+    asked: !!st.hho,
+    slip: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim(),
+    status: op ? op.status : 'pending',
+    fixed: fixed, fixedAmt: fixed ? Number(op.amt) : null,
+    base: usd_(base), tier: tier,
+    applied: cur ? Math.abs(Number(cur.amt || 0)) : 0,
+    by: (op && op.by) || '', at: (op && op.at) || '',
+    /* A slipholder discount typed in by hand through the Adjustment card
+       before this card existed would stack with an approval here. */
+    lookalike: lines.filter(function (l) {
+      return l.sec === 'Adjustments' && /heritage|slip\s*-?holder/i.test(l.label);
+    }).map(function (l) { return l.label + ' (' + usd_(l.amt) + ')'; }),
+    tiers: RULES.hhoTiers
+  };
+}
+
+/* One decision, three ways in: the console card, the console line editor and
+   the sheet-menu line editor. Mutates d and re-totals; the caller saves. */
+function hhoSetDecision_(d, action, amt, byName) {
+  const m = ensureManual_(d);
+  const before = Number(d.total || 0);
+  if (action === 'decline') {
+    m.hho = { status: 'declined', amt: null, by: byName, at: new Date().toISOString() };
+  } else if (action === 'approve') {
+    let fixed = null;
+    const raw = String(amt == null ? '' : amt).replace(/[$,\s]/g, '');
+    if (raw !== '') {
+      const a = Math.abs(Number(raw));
+      if (!isFinite(a)) return { ok: 0, error: 'Enter a valid amount.' };
+      if (a < 0.005) return { ok: 0, error: 'Enter an amount above $0 — or use Remove if there is no discount.' };
+      /* Typing the tier's own figure means "the tier", which keeps following
+         the total. Only a different figure is pinned. */
+      const tier = hhoDiscountFor(hhoServicesTotal(d.lines));
+      if (Math.abs(a - tier) > 0.005) fixed = Math.round(a * 100) / 100;
+    }
+    m.hho = { status: 'approved', amt: fixed, by: byName, at: new Date().toISOString() };
+  } else {
+    return { ok: 0, error: 'Unknown action.' };
+  }
+  recomputeTotals_(d);
+  const after = Number(d.total || 0);
+  const cur = (d.lines || []).find(function (l) { return l.hho; });
+  const what = action === 'decline' ? 'Slipholder discount removed.'
+    : cur ? 'Slipholder discount approved at ' + usd_(Math.abs(cur.amt)) +
+            (m.hho.amt == null ? ' (follows the tier).' : ' (fixed).')
+    : 'Slipholder discount approved, but the services total is under the lowest tier, so it is $0 for now.';
+  return { ok: 1, msg: what + ' Total ' + usd_(before) + ' \u2192 ' + usd_(after) + '.', before: before, after: after };
+}
+
+function hhoLineEdit_(d, action, newAmt, byName) {
+  return action === 'delete' ? hhoSetDecision_(d, 'decline', null, byName)
+                             : hhoSetDecision_(d, 'approve', newAmt, byName);
+}
+
+function adminHho(token, qn, action, amt) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const r = hhoSetDecision_(d, String(action || ''), amt, who.name);
+  if (!r.ok) return r;
+  saveQuoteRow_(ctx);
+  auditLog_(who.name, 'Slipholder discount on ' + (d.quoteNo || qn) + ': ' + r.msg);
+  return { ok: 1, msg: r.msg + ' The customer has not been emailed.', total: usd_(d.total), hho: hhoInfo_(d) };
+}
+
 function serverPrice_(d) {
   const st = effectiveState_(d);
   if (!st) return { ok: false, reason: 'no wizard state in payload' };
@@ -2327,11 +2469,11 @@ function serverPrice_(d) {
       sec: l.sec, label: l.label, calc: l.calc || '',
       amt: Number(l.amt || 0), desc: l.desc || ''
     };
-    /* tbd marks a line that prices at 0 today but is not actually free — the
-       Heritage Harbor Slipholder discount, worked out from the customer's own
-       total and priced later by staff. Drop it here and the console and PDF
-       print "incl." for a discount nobody has priced yet, which reads as
-       "this is free" rather than "ask Quest." */
+    /* tbd marks a line that prices at 0 today but is not actually free, to be
+       priced later by staff. Drop it here and the console and PDF print
+       "incl." for something nobody has priced yet, which reads as "this is
+       free" rather than "ask Quest." (The slipholder discount used to be one;
+       it is now applied from the journal — hhoDiscountLine in the engine.) */
     if (l.tbd) out.tbd = true;
     return out;
   });
@@ -2452,7 +2594,8 @@ function applyAdjustment_(ctx) {
   const amt = Number(String(amtResp.getResponseText()).replace(/[$,\s]/g, ''));
   if (!isFinite(amt) || amt === 0) { ui.alert('Enter a non-zero number, e.g. -50 or 125.50'); return false; }
   const descResp = ui.prompt('Adjust quote ' + ctx.quoteNo,
-    'Description shown on the quote (e.g. "Heritage Harbor Slipholder discount — slip B-14").', ui.ButtonSet.OK_CANCEL);
+    'Description shown on the quote (e.g. "Courtesy discount — late haul-out last spring").\n' +
+    'Slipholder discounts: approve them on the console\'s Heritage Harbor card instead.', ui.ButtonSet.OK_CANCEL);
   if (descResp.getSelectedButton() !== ui.Button.OK) return false;
   const desc = String(descResp.getResponseText()).trim();
   if (!desc) { ui.alert('A description is required — it appears on the customer quote.'); return false; }
@@ -2565,6 +2708,15 @@ function editLineItems() {
   if (act.getSelectedButton() !== ui.Button.OK) return;
   const raw = String(act.getResponseText()).trim();
   const m = ensureManual_(d);
+
+  if (line.hho) {
+    const r = hhoLineEdit_(d, raw.toUpperCase() === 'DELETE' ? 'delete' : 'edit',
+                           String(raw.split('|')[0]).replace(/[$,\s]/g, ''), 'sheet menu');
+    if (!r.ok) { ui.alert(r.error); return; }
+    saveQuoteRow_(ctx);
+    ui.alert(r.msg + '\n\nNo email sent — use "Email updated quote to customer" when ready.');
+    return;
+  }
 
   if (raw.toUpperCase() === 'DELETE') {
     if (line.sec === 'Adjustments') {
@@ -4275,7 +4427,7 @@ function bulkImportStep() {
    otherwise wipe the season's progress on their next save.
 
    Named `placement`, not `hho`: `hho` already means Heritage Harbor Ottawa
-   elsewhere in this file (hhoAddr / s.hho / hhoMinTotal in
+   elsewhere in this file (hhoAddr / s.hho / hhoTiers in
    pricing-engine.js), and reusing it here for Harbor Haul Out would recreate
    the exact kind of naming collision this rename exists to remove. Reads fall
    back to the pre-rename `d.yard` field so a quote saved before the rename
@@ -4537,6 +4689,7 @@ function adminLookup(token, qn) {
                  amt: usd_(PRICES[k === 'lateRetrieval' ? 'lateRetrieval' : 'pumpout']) };
       });
     })(),
+    hho: hhoInfo_(d),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
     /* Whether there is a signing link to send at all, not the link itself —
@@ -6653,6 +6806,16 @@ function adminEditLine(token, qn, idx, action, newAmt, newLabel) {
   if (!(idx >= 0 && idx < d.lines.length)) return { ok: 0, error: 'Bad line number.' };
   const line = d.lines[idx];
   const m = ensureManual_(d);
+  /* The slipholder discount is not a journal line like the rest: it is
+     rebuilt from manual.hho every time totals are. Deleting or editing it
+     here is the same decision as the Heritage Harbor card's Remove / Approve. */
+  if (line.hho) {
+    const r = hhoLineEdit_(d, action === 'delete' ? 'delete' : 'edit', newAmt, who.name);
+    if (!r.ok) return r;
+    saveQuoteRow_(ctx);
+    auditLog_(who.name, 'Slipholder discount on ' + d.quoteNo + ': ' + r.msg);
+    return { ok: 1, msg: r.msg + ' No email sent yet.' };
+  }
   if (action === 'delete') {
     if (line.sec === 'Adjustments') {
       const ai = m.adjustments.findIndex(function (a) { return a.label === line.label; });
@@ -8889,6 +9052,14 @@ function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
     (d._flags && d._flags.length
       ? 'Flags:       ' + d._flags.map(function (f) { return f.msg; }).join(' | ')
       : null),
+    (function () {
+      const h = hhoInfo_(d);
+      if (!h.asked && h.status === 'pending') return null;
+      return 'Slipholder:  ' + (h.slip ? 'slip ' + h.slip : 'no slip given') + ' — discount ' +
+        (h.status === 'approved' ? 'approved' + (h.applied ? ' at $' + h.applied.toFixed(2) : '')
+         : h.status === 'declined' ? 'removed by staff'
+         : 'AWAITING APPROVAL in the console (tier suggests $' + h.tier.toFixed(2) + ' on ' + h.base + ' of services)');
+    })(),
     'Quote #:     ' + d.quoteNo,
     'Storage tab: ' + tabName,
     'Quote PDF:   ' + (pdfUrl || '(PDF generation failed — see Apps Script executions log)'),

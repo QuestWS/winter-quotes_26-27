@@ -557,7 +557,7 @@ aside.ticket{position:sticky;top:18px}
     <h2>Your winter quote</h2>
     <p class="lead">Everything you picked, itemized on the ticket. Look it over, add any notes, then continue to sign your agreement and pay online.</p>
     <div class="timingOnly" style="display:none;margin-bottom:12px">
-      <label class="opt hhoOpt" style="margin-bottom:0"><input type="checkbox" data-chk="hho"><div><div class="t">Heritage Harbor Slipholder</div><div class="d">Discount applied by Quest staff on your final quote</div></div></label>
+      <label class="opt hhoOpt" style="margin-bottom:0"><input type="checkbox" data-chk="hho"><div><div class="t">I'm a Heritage Harbor slipholder</div><div class="d">Check this if your boat is in a slip at Heritage Harbor, and tell us which one</div></div></label>
       <div class="hhoSlipWrap" style="display:none;margin:8px 0 0 34px"><label class="f">Slip number</label><input type="text" class="hhoSlipInput" placeholder="e.g. B-14" style="max-width:180px"></div>
     </div>
 
@@ -649,7 +649,7 @@ aside.ticket{position:sticky;top:18px}
 <!-- Heritage Harbor slip number modal -->
 <div class="modal-back" id="hhoModal" role="dialog" aria-modal="true" aria-labelledby="hhoModalTitle">
   <div class="modal">
-    <h3 id="hhoModalTitle">Slip Number:</h3>
+    <h3 id="hhoModalTitle">Which slip is yours?</h3>
     <input type="text" id="hhoModalSlip" placeholder="e.g. B-14" aria-label="Slip number" style="width:100%;margin:2px 0 18px" autocomplete="off">
     <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn ghost" type="button" onclick="cancelHhoModal()">Cancel</button>
@@ -885,9 +885,11 @@ function syncStartUI(){
 function openSkiModal(){ $('#skiModal').classList.add('open'); }
 function closeSkiModal(){ $('#skiModal').classList.remove('open'); }
 
-/* Heritage Harbor only ever applies to a slipholder, and staff can't work out
-   a discount without knowing which slip — so checking the box does not commit
-   the selection by itself. It opens this modal, which is the only path that
+/* Being a Heritage Harbor slipholder means nothing to us without the slip —
+   it is how we know which boat to go and get — so checking the box does not
+   commit the selection by itself. No discount is shown or mentioned here: staff
+   approve it in the console (docs/ref/QUOTE-PAGE.md § Heritage Harbor).
+   Checking the box opens this modal, which is the only path that
    sets S.hho=true: cancel, backdrop, Escape, or Confirm with nothing typed all
    leave the checkbox exactly where it started, unchecked. */
 function uncheckHho_(){
@@ -1045,6 +1047,9 @@ function computeLines(){
     (MANUAL.priced||[]).forEach(pr=>{ r.L.push({sec:pr.sec||'Additional services',label:pr.label,calc:'',amt:Number(pr.amt)}); });
     (MANUAL.adjustments||[]).forEach(a=>{ r.L.push({sec:'Adjustments',label:a.label,calc:'',amt:Number(a.amt)}); });
     r.rq=(r.rq||[]).filter(l=>!pricedRqLabels().includes(l));
+    /* A slipholder discount only exists once staff approve it; replayed last,
+       exactly as the server's recomputeTotals_ does, so the totals agree. */
+    r.L=QuestPricing.withHhoDiscount(r.L, S, MANUAL.hho);
   }
   return r;
 }
@@ -1175,7 +1180,7 @@ function handleLoadResult(res, qn){
     hydrateFromState(res.state, qn);
     lockUI();
     let msg='Loaded '+qn+' — your selections are restored. Make changes, then save, sign & pay as usual.';
-    if(MANUAL&&((MANUAL.adjustments||[]).length||(MANUAL.edits||[]).length||(MANUAL.removed||[]).length||(MANUAL.priced||[]).length)) msg='Loaded '+qn+' — including updates applied by Quest. Totals shown are your official totals.';
+    if(MANUAL&&((MANUAL.adjustments||[]).length||(MANUAL.edits||[]).length||(MANUAL.removed||[]).length||(MANUAL.priced||[]).length||(MANUAL.hho&&MANUAL.hho.status==='approved'))) msg='Loaded '+qn+' — including updates applied by Quest. Totals shown are your official totals.';
     if(LOCKED) msg='Loaded '+qn+' — a deposit is on file, so selections are locked. You can review, print, sign, and pay your balance; call (815) 433-2200 for changes.';
     loadMsg(msg, true);
   }
@@ -1449,12 +1454,8 @@ function refresh(){
         'If the battery/batteries are dead and require a jump start, a $50 fee applies.',
         lateLine
       ].filter(Boolean).join('<br>') : '';
-  const hhoOk = t.total >= RULES.hhoMinTotal;
-  document.querySelectorAll('.hhoOpt').forEach(o=>{ o.style.display = hhoOk ? '' : 'none'; });
-  if(!hhoOk && S.hho){
-    uncheckHho_();
-    closeHhoModal();
-  }
+  /* Asked of every boat and jetski, whatever the total. It used to appear only
+     above $500 — which told the customer exactly where a discount started. */
   syncHhoUI();
   const noStorage = S.storage==='none';
   $('#tDepRow').style.display = t.dueToday ? 'none' : '';

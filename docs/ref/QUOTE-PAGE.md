@@ -237,6 +237,28 @@ field + live fee warning — **never a `prompt()`** (a raw prompt shipped once a
 looked unacceptable; all console inputs are inline UI now).
 
 
+## Heritage Harbor — asked, never priced
+The review step asks boats and jet skis one thing: *"I'm a Heritage Harbor
+slipholder"*, and checking it opens a modal for the slip number (Cancel,
+Escape, the backdrop or an empty Confirm all leave the box unchecked). That is
+the whole customer side. **The page shows no discount, no amount and no tier**,
+and the engine adds no line for it — only a `need` for the slip if it is blank.
+
+Chris's reason: a customer who can watch a discount climb can pile on detailing
+and a power wash to reach a higher tier, then ask for those services to come
+off and complain when the discount drops with them. So the figure is never on
+screen for them to play with. It used to be: a $0 "discount applied by Quest"
+line, and the option itself only appeared above $500, which told the customer
+exactly where a discount started. The question is now asked whatever the total.
+
+The discount exists only once staff approve it in the console
+(`docs/ref/STAFF-CONSOLE.md` § *Heritage Harbor slipholder discount*). After
+that, a reloaded quote shows it: `computeLines()` replays `MANUAL.hho` last
+through the engine's `withHhoDiscount`, exactly as the server does, so the two
+totals agree and no drift note fires. An approved line carries the wording
+*"Tiered on your final services total, so adding or removing services can
+change it"* — the customer is told up front that it follows the services.
+
 ## The provisional-pricing banner
 `#pricingNotice` sits in `<main>` **above the step nav**, outside every
 `.panel`, so it is on screen at every step and cannot scroll away with a

@@ -603,11 +603,31 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
             <div class="msg" id="penaltyMsg"></div>
           </div>
 
+          <!-- Heritage Harbor slipholder discount. The customer only told us
+               they are a slipholder and which slip; the quote page shows no
+               discount. The tier's figure waits here for a person to approve,
+               change or remove it. -->
+          <div class="card hide" id="hhoCard">
+            <h2>Heritage Harbor slipholder discount</h2>
+            <div class="msg" id="hhoNow" style="margin:0 0 8px"></div>
+            <div class="msg" id="hhoWarn" style="margin:0 0 8px"></div>
+            <div class="row2">
+              <div><label class="fld">Discount amount</label><input class="txt" id="hhoAmt" inputmode="decimal" placeholder="100"></div>
+              <div class="msg" id="hhoHint" style="margin:0;align-self:end"></div>
+            </div>
+            <div class="row2" style="margin-top:8px">
+              <button class="btn navy" id="hhoOkBtn" onclick="saveHho('approve')">Approve</button>
+              <button class="btn ghost" id="hhoNoBtn" onclick="saveHho('decline')">Remove</button>
+            </div>
+            <details style="margin-top:8px"><summary class="msg" style="cursor:pointer">Tier table</summary><div class="msg" id="hhoTiers"></div></details>
+            <div class="msg" id="hhoMsg"></div>
+          </div>
+
           <div class="card hide" id="adjCard">
             <h2>Adjustment</h2>
             <div class="row2">
               <div><label class="fld">Amount (negative = discount)</label><input class="txt" id="adjAmt" inputmode="decimal" placeholder="-50"></div>
-              <div><label class="fld">Wording on the invoice</label><input class="txt" id="adjDesc" placeholder="Heritage Harbor Slipholder discount — slip B-14"></div>
+              <div><label class="fld">Wording on the invoice</label><input class="txt" id="adjDesc" placeholder="Courtesy discount — late haul-out last spring"></div>
             </div>
             <label class="chk"><input type="checkbox" id="adjEmail"> Email the updated copy now</label>
             <button class="btn navy" id="adjBtn" onclick="doAdjust()">Apply adjustment</button>
@@ -1310,6 +1330,62 @@ async function togglePenalty(key,on){
   }catch(e){ setMsg('penaltyMsg',e.message,false); }
 }
 
+/* ---------- Heritage Harbor slipholder discount ----------
+   The server works out the tier and applies the discount; this card only
+   shows the suggestion and sends the decision. Leaving the amount at the tier
+   keeps it following the total (remove a service and it drops a tier); any
+   other figure is pinned. */
+let HHO=null;
+function renderHho(h){
+  HHO=h||null;
+  if(!h) return;
+  const $n=$('hhoNow'), money=v=>'$'+Number(v||0).toFixed(2);
+  const who=h.by?' — '+esc(h.by)+(h.at?' · '+esc(new Date(h.at).toLocaleDateString()):''):'';
+  const slip=h.slip?'slip <b>'+esc(h.slip)+'</b>':'<b style="color:var(--red)">no slip given</b>';
+  const head='Customer says they are a slipholder, '+slip+'. Services total <b>'+esc(h.base)+'</b> → tier suggests <b>'+money(h.tier)+'</b>.';
+  let state;
+  if(h.status==='approved') state=h.applied
+      ? '<b style="color:#1E6B3A">Approved: '+money(h.applied)+' off</b> '+(h.fixed?'(fixed by staff)':'(follows the tier)')+who
+      : '<b>Approved</b>, but the total is under the lowest tier, so it is $0 right now'+who;
+  else if(h.status==='declined') state='<b>Removed</b> — no discount on the quote'+who;
+  else state='<b style="color:var(--red)">Awaiting approval</b> — nothing is on the quote yet.';
+  if(!h.asked&&h.status!=='pending') state+='<br>The customer has since unchecked "slipholder" on their quote — this decision still stands.';
+  $n.innerHTML=head+'<br>'+state;
+  $('hhoWarn').innerHTML=(h.lookalike&&h.lookalike.length)
+    ? '<b style="color:var(--red)">Already on the quote as an adjustment:</b> '+h.lookalike.map(esc).join('; ')+
+      '. Approving here would discount twice — delete that line under Line items, or Remove here.'
+    : '';
+  $('hhoWarn').classList.toggle('hide',!(h.lookalike&&h.lookalike.length));
+  $('hhoAmt').value=h.fixed?Number(h.fixedAmt).toFixed(2):String(h.tier);
+  $('hhoHint').innerHTML=h.fixed&&Number(h.fixedAmt)!==Number(h.tier)
+    ? 'Tier for today\'s total is '+money(h.tier)+'. Put that back to make it follow the total again.'
+    : 'At the tier it follows the total if services are added or removed. Any other amount stays fixed.';
+  $('hhoOkBtn').textContent=h.status==='approved'?'Update':'Approve';
+  $('hhoNoBtn').classList.toggle('hide',h.status==='declined');
+  $('hhoTiers').innerHTML=(h.tiers||[]).map(t=>money(t[0])+' and up → '+money(t[1])+' off').join('<br>')+
+    '<br>Under '+money((h.tiers&&h.tiers.length)?h.tiers[h.tiers.length-1][0]:0)+' → no discount';
+  setMsg('hhoMsg','');
+}
+async function saveHho(action){
+  if(!QN) return;
+  const amt=$('hhoAmt').value.trim();
+  if(action==='approve'&&(!amt||!(Math.abs(Number(amt.replace(/[$,\s]/g,'')))>0))){
+    setMsg('hhoMsg','Enter the discount amount, or use Remove.',false); return;
+  }
+  const q=action==='decline'
+    ? 'Remove the slipholder discount on '+QN+'?'
+    : 'Approve a $'+Math.abs(Number(amt.replace(/[$,\s]/g,''))).toFixed(2)+' slipholder discount on '+QN+'?';
+  if(!confirm(q+'\n\nThe total changes immediately. The customer is not emailed.')) return;
+  setMsg('hhoMsg','Saving…',null);
+  try{
+    const r=await api('hho',[QN,action,action==='approve'?amt:''],{withQuote:QN});
+    if(!r||!r.ok){ setMsg('hhoMsg',(r&&r.error)||'Could not do that.',false); return; }
+    toast(action==='decline'?'Slipholder discount removed':'Slipholder discount saved');
+    await afterWrite_(r);
+    setMsg('hhoMsg',r.msg,true);
+  }catch(e){ setMsg('hhoMsg',e.message,false); }
+}
+
 /* ---------- Staff notes ----------
    Deliberately separate from the customer's own notes, which are typed on the
    quote page and printed on the PDF. This one is ours: it never leaves the
@@ -1554,6 +1630,11 @@ function renderQuote(r){
   /* Same permission as any other change that moves money. */
   $('penaltyCard').classList.toggle('hide',!P.adjust);
   if(P.adjust) renderPenalties(r.penalties);
+  /* Shown once the customer has said they are a slipholder, and kept after a
+     decision even if they later uncheck it, so the decision stays visible. */
+  const hhoShow=!!(P.adjust&&r.hho&&(r.hho.asked||r.hho.status!=='pending'));
+  $('hhoCard').classList.toggle('hide',!hhoShow);
+  if(hhoShow) renderHho(r.hho);
   /* Re-measuring moves money, so it sits behind the same permission as any
      other adjustment. */
   $('dimsCard').classList.toggle('hide',!P.measure);

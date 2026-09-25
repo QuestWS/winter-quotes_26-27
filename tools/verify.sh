@@ -443,6 +443,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: penalty handling broken"; sed 's/^/       /' "$TMP/pen.txt"; FAIL=1
   fi
+  # The Heritage Harbor slipholder discount: the customer is only asked, never
+  # shown an amount; staff approve the tier in the console, and a tiered
+  # approval follows the services total when services come off.
+  if node tools/check-hho-discount.js > "$TMP/hhodisc.txt" 2>&1; then
+    echo "  OK   gate: slipholder discount asked not shown, staff-approved, follows the total"
+  else
+    echo "  FAIL gate: slipholder discount broken"; sed 's/^/       /' "$TMP/hhodisc.txt"; FAIL=1
+  fi
   # A per-quote negotiated rate (QUOTE_RATE_OVERRIDES) must reach only the
   # named quote, never anyone else, and must survive a season-wide rate
   # change to everyone else's pricing.

@@ -25,7 +25,10 @@ reload, re-price, adjustment replay, and year-over-year rollover possible.
 
 
 ## The manual-ops journal — read this before touching pricing
-`d.manual = { removed[], edits[], priced[], adjustments[] }`
+`d.manual = { removed[], edits[], priced[], adjustments[] }` — plus `measured`,
+`penalties` and `hho` (the slipholder discount approval, re-applied by
+`recomputeTotals_`; `docs/ref/STAFF-CONSOLE.md` § *Heritage Harbor slipholder
+discount*)
 
 Staff changes (discounts, line edits, priced quote-requests, adjustments) are
 recorded as **operations**, not just baked into the line array. When a
@@ -60,6 +63,8 @@ next customer save. Mutations that already journal correctly: line edits,
 deletes, priced quote-requests, adjustments, late fees, and the season-done
 survey's late-retrieval surcharge (`applySeasonDone_` adds/removes it via
 `m.adjustments`). Any dimension-repricing work must follow the same pattern.
+The slipholder discount (`m.hho`) journals too, and is re-applied by
+`recomputeTotals_` rather than by the replay.
 
 
 ## Payment lock

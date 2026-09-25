@@ -252,6 +252,50 @@ having to guess at his own logic a year later.
 - Saving a note touches nothing else: no status, no re-price, no new PDF.
 
 
+## Heritage Harbor slipholder discount (console)
+
+Own card, shown once the customer has said they are a slipholder (and kept
+after a decision, even if they later uncheck it). Gated on `adjust`, like every
+other change that moves money. It shows the slip, the services total, the tier
+the rate card suggests, and the current state — **Awaiting approval**,
+**Approved** (tiered or fixed, by whom), or **Removed**. The amount box is
+pre-filled with the tier; **Approve** / **Update** and **Remove** send the
+decision (`adminHho`). Nobody is emailed.
+
+- **The tiers live in the engine**, `RULES.hhoTiers` in the Annual Update Zone:
+  $500+ → $25, $1,000+ → $50, $2,000+ → $100, $3,000+ → $150, $4,000+ → $200,
+  under $500 nothing. One edit moves page, server and console together.
+- **Tiered follows the total; a typed figure is pinned.** Approve at the
+  tier's own number and `manual.hho.amt` is null: the discount is re-worked out
+  every time the totals are, so taking the detailing off drops it a tier on
+  its own. Type any other number and it is stored and stays put whatever the
+  total does; the card then shows what the tier would say today. Putting the
+  tier's figure back makes it follow the total again.
+- **The base is the services total**: every line except staff `Adjustments`
+  and the discount itself. A late fee must not lift the tier, and another
+  discount must not lower it.
+- **It is re-applied in `recomputeTotals_`**, the one step every write already
+  ends in — customer save, line edit, re-measure, penalty, re-price, import.
+  `withHhoDiscount` strips any old discount line and puts the current one
+  back, so calling it again is harmless. It lives in its own `Discounts`
+  section, never `Adjustments`: `reconcileManual_` would migrate an
+  `Adjustments` line into `manual.adjustments` and apply it twice.
+- **Editing or deleting the line under Line items is the same decision.**
+  `adminEditLine` and the sheet-menu editor hand a line flagged `hho` to
+  `hhoLineEdit_`: delete = Remove, a new amount = approve at that (fixed)
+  figure. The journal-replay paths never see it.
+- **A slipholder discount typed in by hand** through the Adjustment card
+  before this card existed would stack with an approval here. The card spots
+  an `Adjustments` line that looks like one and says so; delete it under Line
+  items, or Remove here.
+- **Finding the pending ones:** the `service@` new-quote email carries a
+  `Slipholder:` line that says *AWAITING APPROVAL* with the suggested tier.
+  There is no console list of pending approvals yet.
+- `tools/check-hho-discount.js` executes all of it — the tier boundaries,
+  pending/approved/removed, the detailing-comes-off case through a re-save,
+  the line editor and a bare re-total, fixed amounts, and the base.
+
+
 ## Keys & slip (console) and the missing-info chase
 
 `Keys & slip` card, gated on its **own `keys` permission** — recording where the

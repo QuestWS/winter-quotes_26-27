@@ -81,7 +81,12 @@ const RULES = {
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
   insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
-  hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
+  /* Heritage Harbor slipholder discount, by services total: [at least, $ off].
+     Highest tier that fits wins; under the lowest tier there is no discount.
+     The customer never sees this table or any amount from it — the quote
+     page only asks whether they are a slipholder and which slip. Staff
+     approve the suggested figure in the console (hhoDiscountLine below). */
+  hhoTiers:[[4000,200],[3000,150],[2000,100],[1000,50],[500,25]],
   retrieveSmallMaxLOA:36,
 };
 
@@ -422,9 +427,10 @@ function computeFlags_(s){
 function computeQuote(s){
   const L=[], loa=s.loa||0, beam=s.beam||0, lwt=s.lwt||0, T=s.hasTrailer, u=s.unit;
   const need=[];
-  /* tbd: this line prices at 0 today but is not free — the customer's own
-     total decides it, and staff fill it in afterward. The ticket renderer
-     prints "TBD" instead of "incl." when it sees this flag. */
+  /* tbd: a line that prices at 0 today but is not free — staff fill it in
+     afterward, and the ticket renderer prints "TBD" instead of "incl.". No
+     line uses it right now (the slipholder discount did, until it moved to
+     hhoDiscountLine); it stays so the next one does not have to rebuild it. */
   const add=(sec,label,amt,calc,desc,tbd)=>L.push({sec,label,amt,calc,desc,tbd});
 
   /* ---- flat-rate units ---- */
@@ -452,10 +458,7 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho){
-      if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-      add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-    }
+    if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
     return {lines:L, need, rq:[], flags:computeFlags_(s)};
   }
 
@@ -537,13 +540,61 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho){
-    if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-    add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-  }
+  /* Slipholders get no line here. The discount is never priced from the
+     customer's own selections — see hhoDiscountLine. */
+  if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
   return {lines:L, need, rq, flags:computeFlags_(s)};
+}
+
+/* ---- Heritage Harbor slipholder discount ----
+   The customer only tells us they are a slipholder and which slip. Nothing on
+   the quote page prices the discount, so there is no figure to watch climb
+   while they pile on services they mean to cancel later. Staff approve it in
+   the console, and the approval lives in the manual journal as `manual.hho`:
+
+     { status:'approved'|'declined', amt:null|number, by, at }
+
+   amt null  = follow the tier table, re-worked out from the services total
+               every time the lines change — remove the detailing and the
+               discount drops to whatever tier the smaller total earns.
+   amt number = a staff-set figure that stays put whatever the total does.
+
+   No journal entry means "awaiting approval": nothing is applied.
+
+   The services total leaves out staff Adjustments (a late fee or another
+   discount must not move the tier) and the discount line itself. Both the
+   page and the server call withHhoDiscount() last, after everything else, so
+   the two cannot disagree about the base. */
+const HHO_DISCOUNT_SEC = 'Discounts';
+function hhoDiscountFor(servicesTotal){
+  const t=Number(servicesTotal)||0;
+  for(const tier of RULES.hhoTiers) if(t>=tier[0]) return tier[1];
+  return 0;
+}
+function hhoServicesTotal(lines){
+  return (lines||[]).reduce(function(a,l){
+    return (l.hho||l.sec==='Adjustments') ? a : a+Number(l.amt||0);
+  },0);
+}
+function hhoDiscountLine(lines, s, op){
+  if(!op || op.status!=='approved') return null;
+  const fixed = op.amt!=null && op.amt!=='' && isFinite(Number(op.amt));
+  const amt = fixed ? Math.abs(Number(op.amt)) : hhoDiscountFor(hhoServicesTotal(lines));
+  if(!(amt>0)) return null;
+  const slip=String((s&&s.slipNo)||'').trim();
+  return { sec:HHO_DISCOUNT_SEC, label:'Heritage Harbor slipholder discount'+(slip?' — slip '+slip:''),
+           calc:'', amt:-amt, hho:true,
+           desc: fixed ? '' : 'Tiered on your final services total, so adding or removing services can change it' };
+}
+/* Drop any discount line already there and put the current one back, so this
+   is safe to call as often as the lines change. */
+function withHhoDiscount(lines, s, op){
+  const out=(lines||[]).filter(function(l){ return !l.hho; });
+  const line=hhoDiscountLine(out, s, op);
+  if(line) out.push(line);
+  return out;
 }
 
 /* Which spreadsheet tab a quote belongs on. Shared because BOTH sides decide
@@ -734,7 +785,8 @@ function seasonStamp(){
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
                 depositBaseFor, lwtFromOverhang, rateOverride_, seasonStamp,
-                FIRM_QUOTE_NO, FIRM_QUOTE_THROUGH, priceIsFirm_ };
+                FIRM_QUOTE_NO, FIRM_QUOTE_THROUGH, priceIsFirm_,
+                HHO_DISCOUNT_SEC, hhoDiscountFor, hhoServicesTotal, hhoDiscountLine, withHhoDiscount };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

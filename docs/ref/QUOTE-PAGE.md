@@ -66,6 +66,17 @@ the same `?quote=…&ln=…` URL, all built by `quoteLink_` server-side
 entry point**, not a one-off — a change to it, or to the fields it fills, is a
 change to every one of those paths.
 
+**What the customer waits on is batched.** The reads on the customer's own
+critical path — minting a quote number at the contact gate
+(`takenQuoteNos_`), the resume loader, the scan-to-sign lookup and the save's
+prior-copy scan (`priorQuoteCopies_`) — go through `quoteTabGrids_`: two
+Sheets-API trips for every tab instead of three or four round trips per tab.
+Each keeps its per-tab reads as the fallback and must give exactly the same
+answer through either; `tools/check-fast-reads.js` runs both over one fixture
+and fails on any difference. Anything added to these paths has to clear the
+same bar — see *why the console got slow* in
+[STAFF-CONSOLE.md](STAFF-CONSOLE.md).
+
 
 ## Terms acceptance & lead capture
 Name, phone and email are **required** before a customer can leave the start
@@ -236,6 +247,28 @@ carries an optional customer/staff note. The console uses a real inline date
 field + live fee warning — **never a `prompt()`** (a raw prompt shipped once and
 looked unacceptable; all console inputs are inline UI now).
 
+
+## Heritage Harbor — asked, never priced
+The review step asks boats and jet skis one thing: *"I'm a Heritage Harbor
+slipholder"*, and checking it opens a modal for the slip number (Cancel,
+Escape, the backdrop or an empty Confirm all leave the box unchecked). That is
+the whole customer side. **The page shows no discount, no amount and no tier**,
+and the engine adds no line for it — only a `need` for the slip if it is blank.
+
+Chris's reason: a customer who can watch a discount climb can pile on detailing
+and a power wash to reach a higher tier, then ask for those services to come
+off and complain when the discount drops with them. So the figure is never on
+screen for them to play with. It used to be: a $0 "discount applied by Quest"
+line, and the option itself only appeared above $500, which told the customer
+exactly where a discount started. The question is now asked whatever the total.
+
+The discount exists only once staff approve it in the console
+(`docs/ref/STAFF-CONSOLE.md` § *Heritage Harbor slipholder discount*). After
+that, a reloaded quote shows it: `computeLines()` replays `MANUAL.hho` last
+through the engine's `withHhoDiscount`, exactly as the server does, so the two
+totals agree and no drift note fires. An approved line carries the wording
+*"Tiered on your final services total, so adding or removing services can
+change it"* — the customer is told up front that it follows the services.
 
 ## The provisional-pricing banner
 `#pricingNotice` sits in `<main>` **above the step nav**, outside every

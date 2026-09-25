@@ -87,6 +87,10 @@ function build(ss) {
     decl('COL'),
     decl('QNO_RESERVE_KEY_'), decl('QNO_RESERVE_TTL_MIN_'), decl('QNO_LOCK_MS_'),
     decl('DELETED_TAB'),
+    /* takenQuoteNos_ asks quoteTabGrids_ first; with no Sheets service in this
+       sandbox it answers null and the per-tab reads below are what run — which
+       is exactly the fallback these checks exist to hold correct. */
+    gas.match(/^let _tabGridsOff_.*$/m)[0], fn('quoteTabGrids_'),
     fn('takenQuoteNos_'), fn('readReservations_'), fn('uniqueQuoteNo_'),
     'return {uniqueQuoteNo_, takenQuoteNos_, readReservations_};'
   ].join('\n'))(SpreadsheetApp, PropertiesService, LockService, E.normalizeQuoteNo);

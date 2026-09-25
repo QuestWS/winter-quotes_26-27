@@ -339,7 +339,12 @@ const RULES = {
   wrapFlat24MaxLOA:24,
   acidBeamMax:8.5,
   insideBeamMaxNT:8.5,   // non-trailered boats over this beam: no regular inside storage
-  hhoMinTotal:500,       // Heritage Harbor Slipholder option only shows at/above this total
+  /* Heritage Harbor slipholder discount, by services total: [at least, $ off].
+     Highest tier that fits wins; under the lowest tier there is no discount.
+     The customer never sees this table or any amount from it — the quote
+     page only asks whether they are a slipholder and which slip. Staff
+     approve the suggested figure in the console (hhoDiscountLine below). */
+  hhoTiers:[[4000,200],[3000,150],[2000,100],[1000,50],[500,25]],
   retrieveSmallMaxLOA:36,
 };
 
@@ -680,9 +685,10 @@ function computeFlags_(s){
 function computeQuote(s){
   const L=[], loa=s.loa||0, beam=s.beam||0, lwt=s.lwt||0, T=s.hasTrailer, u=s.unit;
   const need=[];
-  /* tbd: this line prices at 0 today but is not free — the customer's own
-     total decides it, and staff fill it in afterward. The ticket renderer
-     prints "TBD" instead of "incl." when it sees this flag. */
+  /* tbd: a line that prices at 0 today but is not free — staff fill it in
+     afterward, and the ticket renderer prints "TBD" instead of "incl.". No
+     line uses it right now (the slipholder discount did, until it moved to
+     hhoDiscountLine); it stays so the next one does not have to rebuild it. */
   const add=(sec,label,amt,calc,desc,tbd)=>L.push({sec,label,amt,calc,desc,tbd});
 
   /* ---- flat-rate units ---- */
@@ -710,10 +716,7 @@ function computeQuote(s){
       add('Retrieval','Retrieve, set & relaunch — included with inside storage', 0);
     }
     if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-    if(s.hho){
-      if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-      add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-    }
+    if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
     return {lines:L, need, rq:[], flags:computeFlags_(s)};
   }
 
@@ -795,13 +798,61 @@ function computeQuote(s){
     } else need.push(loa?'beam for acid wash':'LOA & beam for acid wash');
   }
   if(s.lateRetrieval) add('Misc','Late retrieval surcharge (after '+SEASON.payByShort+')', PRICES.lateRetrieval);
-  if(s.hho){
-    if(!s.slipNo) need.push('your slip number for the Heritage Harbor Slipholder discount');
-    add('Misc','Heritage Harbor Slipholder'+(s.slipNo?` — slip ${s.slipNo}`:'')+' — discount applied by Quest', 0, '', '', true);
-  }
+  /* Slipholders get no line here. The discount is never priced from the
+     customer's own selections — see hhoDiscountLine. */
+  if(s.hho && !s.slipNo) need.push('your Heritage Harbor slip number');
 
   const rq=QUOTE_ITEMS.filter(function(p){return s[p[0]];}).map(function(p){return p[1];});
   return {lines:L, need, rq, flags:computeFlags_(s)};
+}
+
+/* ---- Heritage Harbor slipholder discount ----
+   The customer only tells us they are a slipholder and which slip. Nothing on
+   the quote page prices the discount, so there is no figure to watch climb
+   while they pile on services they mean to cancel later. Staff approve it in
+   the console, and the approval lives in the manual journal as `manual.hho`:
+
+     { status:'approved'|'declined', amt:null|number, by, at }
+
+   amt null  = follow the tier table, re-worked out from the services total
+               every time the lines change — remove the detailing and the
+               discount drops to whatever tier the smaller total earns.
+   amt number = a staff-set figure that stays put whatever the total does.
+
+   No journal entry means "awaiting approval": nothing is applied.
+
+   The services total leaves out staff Adjustments (a late fee or another
+   discount must not move the tier) and the discount line itself. Both the
+   page and the server call withHhoDiscount() last, after everything else, so
+   the two cannot disagree about the base. */
+const HHO_DISCOUNT_SEC = 'Discounts';
+function hhoDiscountFor(servicesTotal){
+  const t=Number(servicesTotal)||0;
+  for(const tier of RULES.hhoTiers) if(t>=tier[0]) return tier[1];
+  return 0;
+}
+function hhoServicesTotal(lines){
+  return (lines||[]).reduce(function(a,l){
+    return (l.hho||l.sec==='Adjustments') ? a : a+Number(l.amt||0);
+  },0);
+}
+function hhoDiscountLine(lines, s, op){
+  if(!op || op.status!=='approved') return null;
+  const fixed = op.amt!=null && op.amt!=='' && isFinite(Number(op.amt));
+  const amt = fixed ? Math.abs(Number(op.amt)) : hhoDiscountFor(hhoServicesTotal(lines));
+  if(!(amt>0)) return null;
+  const slip=String((s&&s.slipNo)||'').trim();
+  return { sec:HHO_DISCOUNT_SEC, label:'Heritage Harbor slipholder discount'+(slip?' — slip '+slip:''),
+           calc:'', amt:-amt, hho:true,
+           desc: fixed ? '' : 'Tiered on your final services total, so adding or removing services can change it' };
+}
+/* Drop any discount line already there and put the current one back, so this
+   is safe to call as often as the lines change. */
+function withHhoDiscount(lines, s, op){
+  const out=(lines||[]).filter(function(l){ return !l.hho; });
+  const line=hhoDiscountLine(out, s, op);
+  if(line) out.push(line);
+  return out;
 }
 
 /* Which spreadsheet tab a quote belongs on. Shared because BOTH sides decide
@@ -1017,35 +1068,12 @@ function doPost(e) {
        Deleting against the posted tab and then writing to the rebuilt one
        would leave the quote on two tabs at once. Deletion happens in step 3b,
        once the final tab is known. */
-    let carriedReminder = '';
-    let oldPayloadJson = '';
-    let oldPhotos = '';
     const postedTab = d.storageTab || 'No Storage';
-    const copies = [];   // {sheet, row} for every copy found, in scan order
-    ss.getSheets().forEach(function (other) {
-      /* A tab whose header row was overwritten by an import is still a quote
-         tab, and the quote stranded in row 1 is invisible to every scan below.
-         Repair it here rather than skipping past it — step 5 rewrites a stale
-         header row, which on such a tab would finish the job the import
-         started and destroy that customer's row outright. */
-      if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
-      let r = findQuoteRow_(other, d.quoteNo);
-      while (r > 0) {
-        const remCell = String(other.getRange(r, COL.REM).getValue() || '');
-        /* A lead's follow-up marker lives in the reminder column (the lead tab
-           is skipped by dailyReminderCheck, so the column is free there). It
-           must NOT ride along when the quote graduates to a real tab, or the
-           genuine 10-day reminder would see a reminder already sent and stay
-           silent forever. */
-        if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(postedTab))) {
-          carriedReminder = carriedReminder || remCell;
-        }
-        oldPayloadJson = oldPayloadJson || String(other.getRange(r, COL.PAYLOAD).getValue() || '');
-        oldPhotos = oldPhotos || String(other.getRange(r, COL.PHOTOS).getValue() || '');
-        copies.push({ sheet: other, row: r });
-        r = findQuoteRowFrom_(other, d.quoteNo, r + 1);
-      }
-    });
+    const prior = priorQuoteCopies_(ss, d.quoteNo, postedTab);
+    const carriedReminder = prior.carriedReminder;
+    const oldPayloadJson = prior.oldPayloadJson;
+    const oldPhotos = prior.oldPhotos;
+    const copies = prior.copies;   // {sheet, row} for every copy found, in scan order
 
     // 2) Merge / LOCK. Once a payment exists, the customer page may no longer
     //    change the quote — a locked save keeps the official version and only
@@ -1174,13 +1202,24 @@ function doPost(e) {
       paid0,
       oldPhotos || (d.photosUrl || '')
     ];
-    const existing = findQuoteRow_(sh, d.quoteNo);
+    /* Where the quote already sits on the destination tab, known from the
+       step-1 scan rather than re-scanned: pruneQuoteCopies_ kept the FIRST
+       copy on this tab, and within the tab it only deleted rows BELOW that
+       one, so its row number is still good — trusting it here is exactly as
+       safe as the prune that just used it. */
+    const kept = copies.filter(function (c) { return c.sheet.getName() === tabName; })[0];
+    const existing = kept ? kept.row : -1;
     /* let, not const: a save that emails the customer their copy releases a
        parked draft below, and the row physically moves to another tab. */
     let rowNum = existing > 0 ? existing : sh.getLastRow() + 1;
     if (existing > 0) {
-      row[COL.REM - 1] = sh.getRange(rowNum, COL.REM).getValue() || carriedReminder;
-      row[COL.PHOTOS - 1] = sh.getRange(rowNum, COL.PHOTOS).getValue() || row[COL.PHOTOS - 1];
+      /* Re-read the reminder and photos from the live row, in one span — the
+         9am trigger can have stamped a reminder between the step-1 scan and
+         now (the PDF render sits in between), and losing that mark would send
+         the customer a second reminder tomorrow. */
+      const live = sh.getRange(rowNum, COL.REM, 1, COL.PHOTOS - COL.REM + 1).getValues()[0];
+      row[COL.REM - 1] = live[0] || carriedReminder;
+      row[COL.PHOTOS - 1] = live[COL.PHOTOS - COL.REM] || row[COL.PHOTOS - 1];
     } else row[COL.REM - 1] = carriedReminder;
     if (sh.getRange(1, HEADERS.length).getValue() !== HEADERS[HEADERS.length-1]) {
       sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight('bold');
@@ -1297,6 +1336,7 @@ function consoleFns_(p) {
     dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
+    hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
@@ -1714,9 +1754,27 @@ function doGet(e) {
     if (!qn || !ln) return out({ ok: 0, error: 'Enter both your quote number and last name.' });
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheets = ss.getSheets();
+    /* The customer is sitting on the quote page waiting for this, so the scan
+       rides quoteTabGrids_: last name and quote number for every quote tab in
+       two Sheets-API trips, then one read for the matched row's payload. The
+       per-tab reads below stay as the fallback and must land on the same row
+       (tools/check-fast-reads.js compares the two answers). */
+    const grids = quoteTabGrids_(ss, sheets, [[COL.LAST, COL.QN]]);
     for (let i = 0; i < sheets.length; i++) {
       const sh = sheets[i];
-      if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+      let rowNum = -1;
+      let rowLn = '';
+      if (grids) {
+        if (!grids[i]) continue;
+        const g = grids[i][0];
+        for (let r = 1; r < g.length && rowNum <= 0; r++) {
+          if (String(g[r][COL.QN - COL.LAST]) === qn) {
+            rowNum = r + 1;
+            rowLn = String(g[r][0] || '').trim().toLowerCase();
+          }
+        }
+        if (rowNum <= 0) continue;
+      } else if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
       /* THE IMPORT TAB IS IN THIS SCAN, DELIBERATELY.
          -------------------------------------------------------------------
          An imported quote is still a draft -- the crew must not see it, the
@@ -1734,9 +1792,11 @@ function doGet(e) {
          What keeps a draft a draft is the row's hold marker and its tab, and
          both survive an edit (see step 3 of doPost). A human send is still
          the only thing that releases either. IMPORT_TAB. */
-      const rowNum = findQuoteRow_(sh, qn);
-      if (rowNum <= 0) continue;
-      const rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
+      if (rowNum <= 0) {
+        rowNum = findQuoteRow_(sh, qn);
+        if (rowNum <= 0) continue;
+        rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
+      }
       if (rowLn !== ln) return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
       const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
       if (!payloadJson) return out({ ok: 0, error: 'This quote was saved before loading existed — call (815) 433-2200 and we\'ll pull it up.' });
@@ -1761,8 +1821,10 @@ function doGet(e) {
 
 // NOTE: Quote # deliberately stays in column 3 across layouts
 function findQuoteRowFrom_(sh, quoteNo, startRow) {
-  if (!quoteNo || sh.getLastRow() < startRow) return -1;
-  const col = sh.getRange(startRow, 3, sh.getLastRow() - startRow + 1, 1).getValues();
+  if (!quoteNo) return -1;
+  const last = sh.getLastRow();   // one trip, asked once — it used to be asked twice
+  if (last < startRow) return -1;
+  const col = sh.getRange(startRow, 3, last - startRow + 1, 1).getValues();
   for (let i = 0; i < col.length; i++) {
     if (String(col[i][0]) === String(quoteNo)) return i + startRow;
   }
@@ -1808,22 +1870,40 @@ const QNO_LOCK_MS_ = 8000;
    recognised as a quote tab at all. */
 function takenQuoteNos_() {
   const taken = {};
+  const add = function (v) {
+    const qn = String(v || '').trim();
+    if (qn) taken[qn.toUpperCase()] = 1;
+  };
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.getSheets().forEach(function (sh) {
+  const sheets = ss.getSheets();
+  /* This runs while a customer stands at the contact gate waiting for their
+     quote number, so the scan rides quoteTabGrids_ — two Sheets-API trips for
+     every tab — and falls back to the per-tab reads when the service does not
+     answer. Same numbers either way (tools/check-fast-reads.js holds it to
+     that). */
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  sheets.forEach(function (sh, i) {
+    if (grids && grids[i]) {
+      const col = grids[i][0];
+      for (let r = 1; r < col.length; r++) add(col[r][0]);
+      return;
+    }
     /* Quote tabs, plus the deleted-quote archive. A number that has been used
        once is never handed out again: reissuing one would have the Activity
        Log, the archive and a live row all describing a different customer
        under the same number, and savePdf_ would replace one customer's PDF
        with another's. The archive's header row says 'Quote # (deleted)' in
        column 3 precisely so every OTHER sweep skips it, which is why it is
-       matched here by name rather than by that header. */
-    if (sh.getRange(1, 3).getValue() !== 'Quote #' && sh.getName() !== DELETED_TAB) return;
+       matched here by name rather than by that header — and why the batch
+       read above never covers it: the archive is read the slow way even when
+       the service answers. */
+    if (sh.getName() !== DELETED_TAB) {
+      if (grids) return;   // the batch read already said this is not a quote tab
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    }
     const last = sh.getLastRow();
     if (last < 2) return;
-    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) {
-      const qn = String(r[0] || '').trim();
-      if (qn) taken[qn.toUpperCase()] = 1;
-    });
+    sh.getRange(2, COL.QN, last - 1, 1).getValues().forEach(function (r) { add(r[0]); });
   });
   return taken;
 }
@@ -1901,12 +1981,71 @@ function uniqueQuoteNo_(proposed) {
 }
 
 function findQuoteRow_(sh, quoteNo) {
-  if (!quoteNo || sh.getLastRow() < 2) return -1;
-  const col = sh.getRange(2, 3, sh.getLastRow() - 1, 1).getValues(); // Quote #
-  for (let i = 0; i < col.length; i++) {
-    if (String(col[i][0]) === String(quoteNo)) return i + 2;
-  }
-  return -1;
+  return findQuoteRowFrom_(sh, quoteNo, 2);
+}
+
+/* Step 1 of a customer save, as one testable read: every prior copy of the
+   quote, in tab order, plus the cells a save carries over — the reminder, the
+   stored payload and the photos, taken from the FIRST copy that has each.
+
+   This scan is what a customer sat waiting on: it used to pay a header read
+   plus a column scan for every tab in the spreadsheet, one trip each, before
+   the PDF was even started. It now rides quoteTabGrids_ — every tab's Quote #
+   column in two Sheets-API trips — and falls back to the per-tab reads
+   whenever the service does not answer, giving EXACTLY the same result either
+   way (tools/check-fast-reads.js holds it to that). The carried cells are one
+   span read per copy (REM..PHOTOS) instead of three single cells.
+
+   A tab whose header check fails is still offered to rescueClobberedHeader_,
+   exactly as before: a tab whose header row was overwritten by an import is
+   still a quote tab, and the quote stranded in row 1 is invisible to every
+   scan below. Repairing it here rather than skipping past it matters because
+   step 5 of the save rewrites a stale header row, which on such a tab would
+   finish the job the import started and destroy that customer's row outright.
+   A repaired tab is re-scanned with the per-tab reads, because the batch read
+   predates the repair. */
+function priorQuoteCopies_(ss, quoteNo, postedTab) {
+  const found = { copies: [], carriedReminder: '', oldPayloadJson: '', oldPhotos: '' };
+  const collect = function (sheet, r) {
+    const span = sheet.getRange(r, COL.REM, 1, COL.PHOTOS - COL.REM + 1).getValues()[0];
+    const remCell = String(span[0] || '');
+    /* A lead's follow-up marker lives in the reminder column (the lead tab
+       is skipped by dailyReminderCheck, so the column is free there). It
+       must NOT ride along when the quote graduates to a real tab, or the
+       genuine 10-day reminder would see a reminder already sent and stay
+       silent forever. */
+    if (!(isLeadFollowUpMark_(remCell) && !isStartedTab_(postedTab))) {
+      found.carriedReminder = found.carriedReminder || remCell;
+    }
+    found.oldPayloadJson = found.oldPayloadJson || String(span[COL.PAYLOAD - COL.REM] || '');
+    found.oldPhotos = found.oldPhotos || String(span[COL.PHOTOS - COL.REM] || '');
+    found.copies.push({ sheet: sheet, row: r });
+  };
+  const scanTab = function (sh) {
+    let r = findQuoteRow_(sh, quoteNo);
+    while (r > 0) {
+      collect(sh, r);
+      r = findQuoteRowFrom_(sh, quoteNo, r + 1);
+    }
+  };
+  const sheets = ss.getSheets();
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN]]);
+  sheets.forEach(function (other, i) {
+    if (grids) {
+      if (!grids[i]) {
+        if (rescueClobberedHeader_(other)) scanTab(other);
+        return;
+      }
+      const col = grids[i][0];
+      for (let r = 1; r < col.length; r++) {
+        if (String(col[r][0]) === String(quoteNo)) collect(other, r + 1);
+      }
+      return;
+    }
+    if (other.getRange(1, 3).getValue() !== 'Quote #' && !rescueClobberedHeader_(other)) return;
+    scanTab(other);
+  });
+  return found;
 }
 
 /* ======================= EVERY TAB IN ONE TRIP ==========================
@@ -2114,7 +2253,7 @@ function usd_(n) {
 /* ================= MANUAL QUOTE ADJUSTMENTS =================
  * In the spreadsheet: click any cell in a quote's row, then use the
  * "Quest Quotes" menu -> "Adjust selected quote...". Enter an amount
- * (negative for discounts, e.g. -50 for the Slipholder discount) and a
+ * (negative for discounts, e.g. -50 for a courtesy discount) and a
  * description. The quote's totals, PDF, and spreadsheet row update, and
  * the customer is emailed the revised quote automatically if we have
  * their email address. Run repeatedly for multiple adjustments. */
@@ -2143,6 +2282,13 @@ function onOpen() {
 }
 
 function recomputeTotals_(d) {
+  /* The Heritage Harbor slipholder discount is tiered on the services total,
+     so it is worked out again here — the one place every mutation already
+     passes through — rather than in each of them. Remove a service anywhere
+     (line editor, customer re-save, re-measure, re-price) and an approved
+     tiered discount follows the new total; a staff-fixed one stays put. With
+     no approval in the journal this only strips a stale line. */
+  d.lines = withHhoDiscount(d.lines || [], effectiveState_(d) || d.state || {}, d.manual && d.manual.hho);
   const newTotal = (d.lines || []).reduce(function (a, l) { return a + Number(l.amt || 0); }, 0);
   const depBase = Number(d.depositBase || d.deposit || 0);
   d.total = newTotal.toFixed(2);
@@ -2158,7 +2304,9 @@ function recomputeTotals_(d) {
  *   manual.removed:     [label, ...]                    lines deleted
  *   manual.edits:       [{label, newAmt, newLabel}]     lines changed (label = original wizard label)
  *   manual.priced:      [{rqLabel, label, amt, sec}]    quote-requests given a price
- *   manual.adjustments: [{label, amt}]                  added charge/discount lines */
+ *   manual.adjustments: [{label, amt}]                  added charge/discount lines
+ *   manual.hho:         {status, amt, by, at}           slipholder discount approval —
+ *                       replayed by recomputeTotals_, see hhoDiscountLine in the engine */
 function applyManualOps_(d) {
   const m = d.manual;
   const res = { applied: 0, skipped: 0, notes: [] };
@@ -2310,6 +2458,87 @@ function adminPenalty(token, qn, which, on) {
     total: usd_(after), on: want };
 }
 
+/* ---- Heritage Harbor slipholder discount (console) ----
+   The customer only says they are a slipholder and which slip; the quote page
+   shows no discount and no amount. Staff see the tier's suggestion here and
+   approve it, change it, or remove it. The decision is journalled as
+   manual.hho and applied by recomputeTotals_ — see hhoDiscountLine in the
+   engine for what `amt` null vs a number means. Nobody is emailed. */
+function hhoInfo_(d) {
+  const st = effectiveState_(d) || d.state || {};
+  const op = (d.manual && d.manual.hho) || null;
+  const lines = d.lines || [];
+  const base = hhoServicesTotal(lines);
+  const tier = hhoDiscountFor(base);
+  const cur = lines.find(function (l) { return l.hho; });
+  const fixed = !!(op && op.amt != null);
+  return {
+    asked: !!st.hho,
+    slip: String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim(),
+    status: op ? op.status : 'pending',
+    fixed: fixed, fixedAmt: fixed ? Number(op.amt) : null,
+    base: usd_(base), tier: tier,
+    applied: cur ? Math.abs(Number(cur.amt || 0)) : 0,
+    by: (op && op.by) || '', at: (op && op.at) || '',
+    /* A slipholder discount typed in by hand through the Adjustment card
+       before this card existed would stack with an approval here. */
+    lookalike: lines.filter(function (l) {
+      return l.sec === 'Adjustments' && /heritage|slip\s*-?holder/i.test(l.label);
+    }).map(function (l) { return l.label + ' (' + usd_(l.amt) + ')'; }),
+    tiers: RULES.hhoTiers
+  };
+}
+
+/* One decision, three ways in: the console card, the console line editor and
+   the sheet-menu line editor. Mutates d and re-totals; the caller saves. */
+function hhoSetDecision_(d, action, amt, byName) {
+  const m = ensureManual_(d);
+  const before = Number(d.total || 0);
+  if (action === 'decline') {
+    m.hho = { status: 'declined', amt: null, by: byName, at: new Date().toISOString() };
+  } else if (action === 'approve') {
+    let fixed = null;
+    const raw = String(amt == null ? '' : amt).replace(/[$,\s]/g, '');
+    if (raw !== '') {
+      const a = Math.abs(Number(raw));
+      if (!isFinite(a)) return { ok: 0, error: 'Enter a valid amount.' };
+      if (a < 0.005) return { ok: 0, error: 'Enter an amount above $0 — or use Remove if there is no discount.' };
+      /* Typing the tier's own figure means "the tier", which keeps following
+         the total. Only a different figure is pinned. */
+      const tier = hhoDiscountFor(hhoServicesTotal(d.lines));
+      if (Math.abs(a - tier) > 0.005) fixed = Math.round(a * 100) / 100;
+    }
+    m.hho = { status: 'approved', amt: fixed, by: byName, at: new Date().toISOString() };
+  } else {
+    return { ok: 0, error: 'Unknown action.' };
+  }
+  recomputeTotals_(d);
+  const after = Number(d.total || 0);
+  const cur = (d.lines || []).find(function (l) { return l.hho; });
+  const what = action === 'decline' ? 'Slipholder discount removed.'
+    : cur ? 'Slipholder discount approved at ' + usd_(Math.abs(cur.amt)) +
+            (m.hho.amt == null ? ' (follows the tier).' : ' (fixed).')
+    : 'Slipholder discount approved, but the services total is under the lowest tier, so it is $0 for now.';
+  return { ok: 1, msg: what + ' Total ' + usd_(before) + ' \u2192 ' + usd_(after) + '.', before: before, after: after };
+}
+
+function hhoLineEdit_(d, action, newAmt, byName) {
+  return action === 'delete' ? hhoSetDecision_(d, 'decline', null, byName)
+                             : hhoSetDecision_(d, 'approve', newAmt, byName);
+}
+
+function adminHho(token, qn, action, amt) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const r = hhoSetDecision_(d, String(action || ''), amt, who.name);
+  if (!r.ok) return r;
+  saveQuoteRow_(ctx);
+  auditLog_(who.name, 'Slipholder discount on ' + (d.quoteNo || qn) + ': ' + r.msg);
+  return { ok: 1, msg: r.msg + ' The customer has not been emailed.', total: usd_(d.total), hho: hhoInfo_(d) };
+}
+
 function serverPrice_(d) {
   const st = effectiveState_(d);
   if (!st) return { ok: false, reason: 'no wizard state in payload' };
@@ -2327,11 +2556,11 @@ function serverPrice_(d) {
       sec: l.sec, label: l.label, calc: l.calc || '',
       amt: Number(l.amt || 0), desc: l.desc || ''
     };
-    /* tbd marks a line that prices at 0 today but is not actually free — the
-       Heritage Harbor Slipholder discount, worked out from the customer's own
-       total and priced later by staff. Drop it here and the console and PDF
-       print "incl." for a discount nobody has priced yet, which reads as
-       "this is free" rather than "ask Quest." */
+    /* tbd marks a line that prices at 0 today but is not actually free, to be
+       priced later by staff. Drop it here and the console and PDF print
+       "incl." for something nobody has priced yet, which reads as "this is
+       free" rather than "ask Quest." (The slipholder discount used to be one;
+       it is now applied from the journal — hhoDiscountLine in the engine.) */
     if (l.tbd) out.tbd = true;
     return out;
   });
@@ -2452,7 +2681,8 @@ function applyAdjustment_(ctx) {
   const amt = Number(String(amtResp.getResponseText()).replace(/[$,\s]/g, ''));
   if (!isFinite(amt) || amt === 0) { ui.alert('Enter a non-zero number, e.g. -50 or 125.50'); return false; }
   const descResp = ui.prompt('Adjust quote ' + ctx.quoteNo,
-    'Description shown on the quote (e.g. "Heritage Harbor Slipholder discount — slip B-14").', ui.ButtonSet.OK_CANCEL);
+    'Description shown on the quote (e.g. "Courtesy discount — late haul-out last spring").\n' +
+    'Slipholder discounts: approve them on the console\'s Heritage Harbor card instead.', ui.ButtonSet.OK_CANCEL);
   if (descResp.getSelectedButton() !== ui.Button.OK) return false;
   const desc = String(descResp.getResponseText()).trim();
   if (!desc) { ui.alert('A description is required — it appears on the customer quote.'); return false; }
@@ -2565,6 +2795,15 @@ function editLineItems() {
   if (act.getSelectedButton() !== ui.Button.OK) return;
   const raw = String(act.getResponseText()).trim();
   const m = ensureManual_(d);
+
+  if (line.hho) {
+    const r = hhoLineEdit_(d, raw.toUpperCase() === 'DELETE' ? 'delete' : 'edit',
+                           String(raw.split('|')[0]).replace(/[$,\s]/g, ''), 'sheet menu');
+    if (!r.ok) { ui.alert(r.error); return; }
+    saveQuoteRow_(ctx);
+    ui.alert(r.msg + '\n\nNo email sent — use "Email updated quote to customer" when ready.');
+    return;
+  }
 
   if (raw.toUpperCase() === 'DELETE') {
     if (line.sec === 'Adjustments') {
@@ -4275,7 +4514,7 @@ function bulkImportStep() {
    otherwise wipe the season's progress on their next save.
 
    Named `placement`, not `hho`: `hho` already means Heritage Harbor Ottawa
-   elsewhere in this file (hhoAddr / s.hho / hhoMinTotal in
+   elsewhere in this file (hhoAddr / s.hho / hhoTiers in
    pricing-engine.js), and reusing it here for Harbor Haul Out would recreate
    the exact kind of naming collision this rename exists to remove. Reads fall
    back to the pre-rename `d.yard` field so a quote saved before the rename
@@ -4537,6 +4776,7 @@ function adminLookup(token, qn) {
                  amt: usd_(PRICES[k === 'lateRetrieval' ? 'lateRetrieval' : 'pumpout']) };
       });
     })(),
+    hho: hhoInfo_(d),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
     /* Whether there is a signing link to send at all, not the link itself —
@@ -6653,6 +6893,16 @@ function adminEditLine(token, qn, idx, action, newAmt, newLabel) {
   if (!(idx >= 0 && idx < d.lines.length)) return { ok: 0, error: 'Bad line number.' };
   const line = d.lines[idx];
   const m = ensureManual_(d);
+  /* The slipholder discount is not a journal line like the rest: it is
+     rebuilt from manual.hho every time totals are. Deleting or editing it
+     here is the same decision as the Heritage Harbor card's Remove / Approve. */
+  if (line.hho) {
+    const r = hhoLineEdit_(d, action === 'delete' ? 'delete' : 'edit', newAmt, who.name);
+    if (!r.ok) return r;
+    saveQuoteRow_(ctx);
+    auditLog_(who.name, 'Slipholder discount on ' + d.quoteNo + ': ' + r.msg);
+    return { ok: 1, msg: r.msg + ' No email sent yet.' };
+  }
   if (action === 'delete') {
     if (line.sec === 'Adjustments') {
       const ai = m.adjustments.findIndex(function (a) { return a.label === line.label; });
@@ -8303,17 +8553,39 @@ function maskLastName_(name) {
    slip at save time and the one staff typed into the console weeks later is
    the one that must reach Adobe. */
 function signLookup_(quoteNo) {
-  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  /* A customer is standing at the counter waiting on this, so it rides
+     quoteTabGrids_ — the first eleven columns of every quote tab in two
+     Sheets-API trips, then one read for the matched row's payload — with the
+     per-tab reads kept as the fallback. Same answer either way
+     (tools/check-fast-reads.js compares them). */
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS]]);
   for (let i = 0; i < sheets.length; i++) {
     const sh = sheets[i];
-    if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
     if (isOffstageTab_(sh.getName())) continue;  // a lead is not a signer, and nor is an unsent import
-    const rowNum = findQuoteRow_(sh, quoteNo);
-    if (rowNum <= 0) continue;
-    const row = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
+    let rowNum = -1;
+    let row = null;         // columns 1..DIMS at least; the fallback reads the whole row
+    let payloadJson = '';
+    if (grids) {
+      if (!grids[i]) continue;
+      const g = grids[i][0];
+      for (let r = 1; r < g.length && rowNum <= 0; r++) {
+        if (String(g[r][COL.QN - 1]) === String(quoteNo)) { rowNum = r + 1; row = g[r]; }
+      }
+      if (rowNum <= 0) continue;
+      payloadJson = String(sh.getRange(rowNum, COL.PAYLOAD).getValue() || '');
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
+      rowNum = findQuoteRow_(sh, quoteNo);
+      if (rowNum <= 0) continue;
+      const full = sh.getRange(rowNum, 1, 1, HEADERS.length).getValues()[0];
+      row = full;
+      payloadJson = String(full[COL.PAYLOAD - 1] || '');
+    }
     let slip = '';
     try {
-      const d = JSON.parse(row[COL.PAYLOAD - 1] || '{}');
+      const d = JSON.parse(payloadJson || '{}');
       const st = effectiveState_(d) || d.state || {};
       slip = String(st.slipNo || '').trim();
     } catch (e) {}
@@ -8889,6 +9161,14 @@ function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
     (d._flags && d._flags.length
       ? 'Flags:       ' + d._flags.map(function (f) { return f.msg; }).join(' | ')
       : null),
+    (function () {
+      const h = hhoInfo_(d);
+      if (!h.asked && h.status === 'pending') return null;
+      return 'Slipholder:  ' + (h.slip ? 'slip ' + h.slip : 'no slip given') + ' — discount ' +
+        (h.status === 'approved' ? 'approved' + (h.applied ? ' at $' + h.applied.toFixed(2) : '')
+         : h.status === 'declined' ? 'removed by staff'
+         : 'AWAITING APPROVAL in the console (tier suggests $' + h.tier.toFixed(2) + ' on ' + h.base + ' of services)');
+    })(),
     'Quote #:     ' + d.quoteNo,
     'Storage tab: ' + tabName,
     'Quote PDF:   ' + (pdfUrl || '(PDF generation failed — see Apps Script executions log)'),

@@ -104,24 +104,23 @@ console.log('=== the source of truth is the journal, so nothing is offered to th
   console.log('  no customer checkbox for either; staff have adminPenalty()');
 }
 
-console.log('=== the slipholder discount is a normal line, priced through the existing Adjustment card ===');
+console.log('=== the slipholder answer prices nothing on its own ===');
 {
-  /* HHO is not a quote-request any more — it is a $0 line like it always was,
-     just flagged tbd so the ticket prints "TBD" instead of "incl.". Staff
-     price it the same way they price any other discount: the Adjustment
-     card, which has always taken a negative amount. Nothing special to
-     enforce here beyond the line actually existing and reading tbd. */
+  /* HHO used to be a $0 "TBD" line on the customer's quote. It is now only a
+     question — slipholder, and which slip — and the discount exists only once
+     staff approve it (tools/check-hho-discount.js covers that side). What has
+     to hold here is that the customer's own answer adds no line and no
+     quote-request: nothing they can watch while playing with services. */
   const base = { unit: 'boat', hasTrailer: false, isPontoon: false,
     engines: { inboard: { qty: 1, level: 'basic' }, io: { qty: 0, level: 'basic' }, outboard: { qty: 0, level: 'basic' }, jet: { qty: 0, level: 'basic' } },
     loa: 24, beam: 8, lwt: 0, storage: 'outside', retrieval: 'quest',
     dtTrans: 0, dtTransom: 0, ballast: 0, addlHeads: 0, hho: true, slipNo: 'B-14' };
   const r = E.computeQuote(base);
-  const line = r.lines.find(l => /Heritage Harbor Slipholder/.test(l.label));
-  if (!line) fail('checking the HHO box no longer adds a line to the quote');
-  else if (!line.tbd) fail('the HHO line is not flagged tbd, so the ticket would print "incl." instead of "TBD"');
-  else if (line.amt !== 0) fail('the HHO line prices at ' + line.amt + ', not 0 — staff price it via the Adjustment card');
-  else console.log('  HHO is a $0 tbd line: "' + line.label + '"');
-  if (r.rq.length) fail('HHO is back on the quote-requests list — it should not be, it is a line now');
+  if (r.lines.some(l => /Heritage Harbor|slip ?holder/i.test(l.label))) fail('checking the HHO box put a line on the customer quote again');
+  else console.log('  HHO adds no line to the customer quote');
+  if (r.rq.length) fail('HHO is back on the quote-requests list');
+  const noSlip = E.computeQuote(Object.assign({}, base, { slipNo: '' }));
+  if (!noSlip.need.some(n => /slip number/i.test(n))) fail('a slipholder with no slip is no longer asked for one');
 }
 
 if (bad) { console.error('FAIL: ' + bad + ' penalty/discount problem(s)'); process.exit(1); }

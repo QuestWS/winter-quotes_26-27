@@ -148,22 +148,24 @@ for(const [label,base,st,want] of cases){
   check(label, JSON.stringify(got)===JSON.stringify(want), 'got ['+got+'] want ['+want+']');
 }
 
-console.log('\n=== 5. the slip number reaches the Heritage Harbor line ===');
+console.log('\n=== 5. the slip number reaches the Heritage Harbor discount line ===');
 {
-  /* The slipholder discount is a normal $0 line (flagged tbd so the ticket
-     shows "TBD"), priced later through the console's Adjustment card — not a
-     quote-request. What has to hold is that whatever slip we hold reaches the
-     line, so whoever reads it later knows which slipholder it is. */
+  /* The customer's selections never price a slipholder line any more — the
+     discount exists only once staff approve it (manual.hho), and is rebuilt
+     by recomputeTotals_. What has to hold is that whatever slip we hold
+     reaches that line, so whoever reads it later knows which slipholder it
+     is, and that a staff correction to the slip is the one it shows. */
   const d=quoteFrom('boat-twin-inboard-full');
   d.state.hho=true; d.state.slipNo='';
-  B.rebuildLinesFromState_(d);
-  const before=(d.lines.find(l=>/Heritage Harbor/i.test(l.label))||{}).label||'(no hho line)';
+  B.rebuildLinesFromState_(d); B.applyManualOps_(d);
+  check('nothing is priced before approval', !d.lines.some(l=>/Heritage Harbor/i.test(l.label)));
+  B.ensureManual_(d).hho={status:'approved',amt:null};
   B.ensureManual_(d).measured={slipNo:'B-14'};
-  B.rebuildLinesFromState_(d);
+  B.rebuildLinesFromState_(d); B.applyManualOps_(d);
   const line=d.lines.find(l=>/Heritage Harbor/i.test(l.label))||{};
-  console.log('    '+before+'\n    '+(line.label||'(no hho line)'));
+  console.log('    '+(line.label||'(no hho line)'));
   check('label picks up the slip', /B-14/.test(line.label||''));
-  check('the line stays tbd, not a real charge', line.tbd===true && line.amt===0);
+  check('the line is a discount once approved', line.hho===true && line.amt<0);
 }
 
 console.log('\n=== 6. pricing is untouched by a keys edit ===');

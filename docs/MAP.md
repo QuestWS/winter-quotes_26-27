@@ -93,6 +93,7 @@ symptom.
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
+| Heritage Harbor slipholder discount | `adminHho`, `hhoSetDecision_`, `hhoInfo_`, `hhoLineEdit_`; tiers `RULES.hhoTiers`, `withHhoDiscount` (engine) | `renderHho`, `saveHho` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |
@@ -157,6 +158,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `price-fixtures.js --check-baseline` | Nine quotes still price to the committed cent |
 | `check-bulk-targets.js` | A lead is never a send-to-all recipient; the picker can only narrow |
 | `check-haul-info.js` | Who gets asked for keys and slip, over every combination |
+| `check-hho-discount.js` | The slipholder discount is asked, never shown; nothing applies until staff approve; a tiered approval follows the services total down when a service comes off; a typed amount stays fixed |
 | `check-engine-rules.js` | One motor type per boat, whole counts only |
 | `check-perms-pause.js` | The `keys` fallback, and that a corrupt pause reads as PAUSED |
 | `check-reprice.js` | A discount survives a season re-price |

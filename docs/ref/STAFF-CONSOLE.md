@@ -427,6 +427,10 @@ tab, asked once by the places that must exclude both:
 
 Staff paths deliberately **do** see it — `repriceScan_` so the season re-price
 can move a draft onto new rates (see *Re-pricing a season*), `adminSearch` so Chris can find one,
+`adminDraftList` so he can scroll them (the storage overview's **Imported** tab — its own call
+into its own list, `window._drafts`, never `window._sg`, so the storage and haul-out sheets and
+Harbor Haul Out still cannot see one), the firm-quote send-to-all (`BULK_KINDS_.firmquote`,
+`includeImports`) because that email is what releases them,
 `findQuoteCtx_` so he can open, re-price and send it, `readQuoteRows_` so the
 nightly backup carries it. `d.storageTab` is left as the engine computed it, so
 each quote already knows where it belongs; only the *row* is parked.
@@ -711,6 +715,11 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   the console, so `snapshotBeforeRestore_()` runs before the first write and the
   link is shown with the result. `verify.sh` fails if that call is removed.
 - **Nobody is emailed.** Who gets told, and when, is a separate human decision.
+- **"Re-date only."** Once `PRICING.provisional` is off, a quote whose total
+  would not move but whose season stamp is from the estimate days
+  (`priceStampStale_`) is offered too, marked *re-date only*: re-pricing it
+  re-stamps the dates and rebuilds its PDF without the estimate banner, and the
+  firm-quote email refuses it until that happens (`docs/ref/EMAILS.md`).
 - **Imported drafts are included** and re-priced in place on the Import tab —
   never reported as a storage move, since a parked row always differs from its
   `d.storageTab`. See *Bulk import* above.
@@ -942,9 +951,23 @@ never hold the tape.
 
 ## The deposit tabs on the storage overview
 
-Three views over the storage overview, as a tab strip above the list:
-**Everyone**, **No deposit**, **Deposit paid**. It is the answer to "who still
-owes us money" and "who has paid but never signed", asked from a phone.
+Five views over the storage overview, as a tab strip above the list:
+**Everyone**, **No deposit**, **Deposit paid**, **Customer notes**, **Imported**.
+The first three are the answer to "who still owes us money" and "who has paid
+but never signed", asked from a phone.
+
+- **Customer notes.** What the customer typed in *Notes / special requests*
+  used to reach staff only on the PDF. Every storage row now carries it
+  (`cnote`, via `customerNoteOf_`, capped at `CNOTE_LIST_MAX_`) off the payload
+  the loop already parses — no column read, so it clears the bar below. A row
+  with one gets a frost **💬 NOTE** tag and the words under it; the tab lists
+  only those rows (leads included — a question is a question); the quote card
+  shows the whole note above the print button (`customerNote` on
+  `adminLookup`). Frost, never red or gold: a note is not a hold and not money.
+- **Imported.** The Import tab's drafts, from `adminDraftList` — see *The
+  Import tab is a holding pen*. Fetched alongside the storage view (not
+  awaited), uncached so a draft that was just sent drops off at once. Printing
+  from this tab prints nothing and says why.
 
 - **One fetch, three views.** `storageView` is the heaviest read in the
   console, so the tabs re-render `window._sg` rather than going back to the

@@ -45,6 +45,9 @@ const TABS = [
   { name: 'Golf Cart',     rows: [['Frost', 'Q-GC-1', 'f@x.com']] },
   { name: 'E-Bike',        rows: [['Grant', 'Q-EB-1', '']] },          // no email
   { name: 'Quote Started', rows: [['Hyde',  'Q-LD-1', 'lead@x.com']] },// THE lead
+  /* Imported drafts. Out of every announcement; IN the firm quote, which is the
+     email that releases them. Q-IM-2 is the one the fake blocker holds back. */
+  { name: 'Import',        rows: [['Irwin', 'Q-IM-1', 'i@x.com'], ['Jones', 'Q-IM-2', 'j@x.com']] },
   /* Not a quote tab. Its rows are given quote-number- and email-shaped values in
      those column positions on purpose: the header probe is the ONLY thing that
      tells a customer list from a log, so the test has to make the probe matter. */
@@ -91,6 +94,10 @@ try {
     decl('HEADERS'),
     decl('COL'),
     decl('BULK_KINDS_'),
+    /* The firm quote's own bar is executed for real in check-firm-quote.js;
+       here it is a stub that holds back exactly one quote, so this guard can
+       prove a held-back quote is reported and never targeted. */
+    "function firmQuoteBlocker_(d) { return d && d.quoteNo === 'Q-IM-2' ? 'not re-priced' : ''; }",
     fn('bulkTargets_'),
     fn('bulkFilterTargets_'),
     'return { bulkTargets_, BULK_KINDS_, bulkFilterTargets_ };'
@@ -138,10 +145,29 @@ for (const kind of kinds) {
     fail('the end-of-season note must reach every tab — a No Storage customer still has to get the unit to us');
   }
 
+  /* 4b. Imported drafts: only a kind that says so, and never one its own bar
+         holds back — that one is reported with a reason instead. */
+  if (!cfg.includeImports && tabs.indexOf('Import') > -1) {
+    fail(kind + ' would email an IMPORTED DRAFT — only the firm quote may release one');
+  }
+  if (kind === 'firmquote') {
+    if (!cfg.includeImports) fail('the firm quote must reach imported drafts — it is the email that sends them');
+    if (qns.indexOf('Q-IM-1') < 0) fail('firmquote missed the ready imported draft Q-IM-1');
+    if (qns.indexOf('Q-IM-2') > -1) fail('firmquote targeted Q-IM-2, which its blocker holds back');
+    const nr = (t.notReady || []).map(x => x.qn);
+    if (nr.indexOf('Q-IM-2') < 0) fail('firmquote dropped Q-IM-2 silently — a held-back quote must be reported');
+    if ((t.notReady || []).some(x => !x.why)) fail('a held-back quote was reported with no reason');
+    if (cfg.startTicked !== false) fail('the firm quote must start with nobody ticked');
+  } else if (cfg.blocker || cfg.startTicked === false) {
+    fail(kind + ' picked up the firm quote\'s hand-picked/blocker behaviour');
+  }
+
   /* 5. Everyone else really is in. */
   const expect = TABS
-    .filter(x => !x.notAQuoteTab && x.name !== 'Quote Started' && cfg.skipTabs.indexOf(x.name) < 0)
-    .reduce((a, x) => a.concat(x.rows.filter(r => r[2]).map(r => r[1])), []);
+    .filter(x => !x.notAQuoteTab && x.name !== 'Quote Started' && cfg.skipTabs.indexOf(x.name) < 0 &&
+                 (x.name !== 'Import' || cfg.includeImports))
+    .reduce((a, x) => a.concat(x.rows.filter(r => r[2]).map(r => r[1])), [])
+    .filter(q => !(cfg.blocker && q === 'Q-IM-2'));
   const missing = expect.filter(q => qns.indexOf(q) < 0);
   if (missing.length) fail(kind + ' missed ' + missing.join(', '));
 

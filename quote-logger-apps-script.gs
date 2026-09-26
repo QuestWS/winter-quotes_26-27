@@ -1306,7 +1306,7 @@ const CONSOLE_GET_FNS_ = {
   auth: 1,
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
-  listStaff: 1, autoPause: 1,
+  listStaff: 1, autoPause: 1, draftList: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
      arrives, and it is the cleanest reading of what an empty call costs. */
@@ -1347,6 +1347,7 @@ function consoleFns_(p) {
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
     storageView: function (a) { return adminStorageView(p.token); },
+    draftList:   function (a) { return adminDraftList(p.token); },
     jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
     uploadPhoto: function (a) { return adminUploadPhoto(p.token, a[0], a[1], a[2], a[3], a[4]); },
@@ -1372,6 +1373,10 @@ function consoleFns_(p) {
     backupRestore: function (a) { return adminBackupRestore(p.token, a[0], a[1], a[2]); },
     bulkPreview: function (a) { return adminBulkPreview(p.token, a[0]); },
     bulkSend:    function (a) { return adminBulkSend(p.token, a[0], a[1]); },
+    /* Both writes — one creates Gmail drafts, the other rewrites payloads and
+       can move a row off the Import tab — so neither is on CONSOLE_GET_FNS_. */
+    bulkDraft:   function (a) { return adminBulkDraft(p.token, a[0], a[1]); },
+    draftSweep:  function (a) { return adminDraftSweep(p.token); },
     repricePreview: function (a) { return adminRepricePreview(p.token); },
     repriceApply:   function (a) { return adminRepriceApply(p.token, a[0], a[1]); },
     importList:     function (a) { return adminImportList(p.token); },
@@ -3036,7 +3041,7 @@ const STORAGE_VIEW_TTL_ = 120;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 5;
+const STORAGE_VIEW_V_ = 6;
 const QROW_TTL_ = 1800;                  // seconds
 
 function cachePutBig_(key, str, ttl) {
@@ -4824,6 +4829,17 @@ function adminLookup(token, qn) {
       ? { text: String(placementAlertOf_(d).text || ''), at: String(placementAlertOf_(d).at || ''),
           by: String(placementAlertOf_(d).by || '') }
       : null,
+    /* The customer's own words from the quote page — the opposite of the
+       staff note below, and shown beside it so nobody has to open the PDF to
+       find out what they asked for. */
+    customerNote: customerNoteOf_(d),
+    /* '' when the firm-quote email can go out for this quote, otherwise the
+       reason it cannot — the console shows that under the button rather than
+       letting staff find out from a refusal. See firmQuoteBlocker_. */
+    firmBlock: (function () {
+      /* Never the reason a quote fails to open. */
+      try { return firmQuoteBlocker_(d); } catch (e) { return 'Could not check (' + (e.message || e) + ').'; }
+    })(),
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
@@ -4980,6 +4996,7 @@ function adminAdjust(token, qn, amt, desc, emailNow) {
    the preview's message and then wonder why the send said something else. */
 function unbuildableMsg_(kind, d) {
   if (kind === 'latewarn') return 'No unpaid balance — nothing to warn about.';
+  if (kind === 'firmquote') return firmQuoteBlocker_(d) || 'Could not build the firm-quote email.';
   if (kind === 'signreminder') {
     if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to sign yet.';
     return 'No signing link for this quote — the Acrobat Sign web form is not configured.';
@@ -5326,17 +5343,41 @@ const BULK_KINDS_ = {
        the last call for extra work both still apply. */
     skipTabs: [],
     status: 'End-of-season note sent'
+  },
+  /* "Our rates are final — here is your firm quote." Not an announcement like
+     the other two: it carries each customer's own figures and PDF. It is here
+     for the picker, which is how Chris asked to send it — scroll the list,
+     tick the ones to go. So it differs from the other two in four ways:
+       - nobody starts ticked (startTicked:false); every send is chosen,
+       - IMPORTED DRAFTS ARE IN (includeImports). They are exactly the quotes
+         waiting for this email, and sending it is what releases a draft onto
+         its storage tab — recordEmail_ does that, as it does for any send.
+         Leads stay out, always.
+       - a quote that cannot honestly be called firm is held back and listed
+         with the reason (blocker) — see firmQuoteBlocker_,
+       - it attaches a PDF each, so the console sends it in batches (batch). */
+  firmquote: {
+    label: 'Firm quote — rates are final',
+    skipTabs: [],
+    status: 'Firm quote sent',
+    includeImports: true,
+    startTicked: false,
+    batch: 10,
+    blocker: function (d) { return firmQuoteBlocker_(d); }
   }
 };
 
 function bulkTargets_(kind) {
   const cfg = BULK_KINDS_[kind];
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targets = [], byTab = {}, noEmail = [];
+  const targets = [], byTab = {}, noEmail = [], notReady = [];
   ss.getSheets().forEach(function (sh) {
     const tab = sh.getName();
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
-    if (isOffstageTab_(tab)) return;                     // leads and imports are never emailed
+    /* Leads are never emailed, by any kind. Imported drafts only by a kind
+       that says so (the firm quote), because sending one releases it. */
+    if (isStartedTab_(tab)) return;
+    if (isOffstageTab_(tab) && !(cfg.includeImports && isImportTab_(tab))) return;
     if (cfg.skipTabs.indexOf(tab) > -1) return;
     const last = sh.getLastRow();
     if (last < 2) return;
@@ -5349,11 +5390,20 @@ function bulkTargets_(kind) {
       try { d2 = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
       if (!d2) { noEmail.push(qn); return; }
       d2.email = d2.email || email;
+      /* A kind with its own bar (the firm quote) reports who fails it and why,
+         rather than dropping them silently: "why isn't Smith on the list" has
+         to be answerable from the screen. */
+      const why = cfg.blocker ? String(cfg.blocker(d2) || '') : '';
+      if (why) {
+        notReady.push({ qn: qn, tab: tab, why: why,
+          name: [d2.lastName, d2.firstName].filter(Boolean).join(', ') || String(d2.owner || '') });
+        return;
+      }
       targets.push({ d: d2, sh: sh, row: i + 2, tab: tab });
       byTab[tab] = (byTab[tab] || 0) + 1;
     });
   });
-  return { targets: targets, byTab: byTab, noEmail: noEmail };
+  return { targets: targets, byTab: byTab, noEmail: noEmail, notReady: notReady };
 }
 
 /* Narrow a computed recipient list to the ones staff ticked.
@@ -5384,7 +5434,12 @@ function adminBulkPreview(token, kind) {
   const cfg = BULK_KINDS_[kind];
   if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
   const t = bulkTargets_(kind);
-  if (!t.targets.length) return { ok: 0, error: 'Nobody to send to — no quotes with an email address.' };
+  if (!t.targets.length) {
+    return { ok: 0, error: t.notReady.length
+      ? 'Nobody is ready for this email yet. ' + t.notReady.length + ' quote(s) held back — first reason: ' +
+        t.notReady[0].qn + ': ' + t.notReady[0].why
+      : 'Nobody to send to — no quotes with an email address.' };
+  }
   /* Render the real thing for the first recipient, so what staff approve is a
      real email rather than a description of one. */
   let sample = null;
@@ -5398,10 +5453,26 @@ function adminBulkPreview(token, kind) {
     /* The actual roster, so staff can untick the handful who should not get it
        rather than sending to everyone else one at a time. */
     recipients: t.targets.map(function (x) {
+      /* When this kind last went to this quote, so a customer is not sent the
+         same email twice by somebody working down the list on a second day. */
+      const prior = (x.d.emailLog || []).filter(function (e) {
+        /* A draft still waiting in Gmail is not a send. One the sweep confirmed
+           went out is, and so is any ordinary send. */
+        return e && e.kind === kind && (!e.draft || e.draft.state === 'sent');
+      });
+      const od = openDraftFor_(x.d, kind);
       return { qn: String(x.d.quoteNo || ''), tab: x.tab,
         name: [x.d.lastName, x.d.firstName].filter(Boolean).join(', ') || String(x.d.owner || ''),
-        email: String(x.d.email || '') };
+        email: String(x.d.email || ''),
+        lastSent: prior.length ? String(prior[prior.length - 1].ts || '') : '',
+        draft: od ? { made: String(od.ts || ''), stale: !!od.draft.stale } : null,
+        total: usd_(Number(x.d.total || 0)),
+        cnote: customerNoteOf_(x.d) ? 1 : 0 };
     }),
+    /* Absent means ticked, which is what the two announcements always did. */
+    startTicked: cfg.startTicked !== false,
+    batch: cfg.batch || 0,
+    notReady: t.notReady,
     byTab: Object.keys(t.byTab).sort().map(function (k) { return { tab: k, n: t.byTab[k] }; }),
     noEmail: t.noEmail.length,
     skipped: cfg.skipTabs,
@@ -5424,9 +5495,25 @@ function bulkSendKind_(kind, by, only) {
   const chosen = bulkFilterTargets_(t.targets, only);
   const skipped = t.targets.length - chosen.length;
   let sent = 0;
-  const failed = [];
+  const failed = [], held = [];
   chosen.forEach(function (x) {
+    /* A draft of this same email is waiting in Gmail. Sending now would
+       reach them twice the moment somebody opens Drafts; delete the draft
+       first if the send is really wanted. */
+    if (openDraftFor_(x.d, kind)) { held.push(x.d.quoteNo || '(unknown)'); return; }
     try {
+      /* Sending an imported draft MOVES its row off the Import tab
+         (recordEmail_ -> leaveImportTab_ -> deleteRow), which shifts every
+         draft below it up by one. The rows in `x` were read before the first
+         send, so for a kind that reaches drafts, confirm the quote is still
+         where we think before writing anything to it — otherwise the second
+         draft's status and payload land on the third draft's row. */
+      if (cfg.includeImports &&
+          String(x.sh.getRange(x.row, COL.QN).getValue() || '').trim() !== String(x.d.quoteNo || '').trim()) {
+        const c = findQuoteCtx_(x.d.quoteNo);
+        if (!c) throw new Error('row not found');
+        x.sh = c.sh; x.row = c.rowNum;
+      }
       const built = buildEmailFor_(x.d, kind, '', '');
       if (!built) throw new Error('could not build the email');
       const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
@@ -5445,8 +5532,9 @@ function bulkSendKind_(kind, by, only) {
   });
   auditLog_(by, 'SEND TO ALL "' + cfg.label + '" — ' + sent + ' of ' + chosen.length +
     ' sent' + (skipped ? ' (' + skipped + ' deselected of ' + t.targets.length + ' eligible)' : '') +
+    (held.length ? '; held, a draft is waiting in Gmail: ' + held.join(', ') : '') +
     (failed.length ? '; failed: ' + failed.join(', ') : ''));
-  return { sent: sent, total: chosen.length, eligible: t.targets.length, skipped: skipped, failed: failed };
+  return { sent: sent, total: chosen.length, eligible: t.targets.length, skipped: skipped, failed: failed, held: held };
 }
 
 function adminBulkSend(token, kind, only) {
@@ -5462,11 +5550,241 @@ function adminBulkSend(token, kind, only) {
   const r = bulkSendKind_(kind, who.name, only);
   if (!r.total) return { ok: 0, error: 'None of the selected quotes are eligible for this email.' };
   return {
-    ok: 1, sent: r.sent, total: r.total, skipped: r.skipped, failed: r.failed.length,
+    ok: 1, sent: r.sent, total: r.total, skipped: r.skipped, failed: r.failed.length, held: r.held.length,
     msg: 'Sent to ' + r.sent + ' of ' + r.total + ' customer(s).' +
       (r.skipped ? ' ' + r.skipped + ' deselected.' : '') +
+      (r.held.length ? ' ' + r.held.length + ' not sent — a draft of this email is already waiting in Gmail.' : '') +
       (r.failed.length ? ' ' + r.failed.length + ' failed — see the Activity Log.' : '')
   };
+}
+
+/* ================= DRAFTS INSTEAD OF SENDS =================
+ * The Apps Script send quota on a free Gmail account is ~100 recipients a day,
+ * and every customer save, receipt and service@ notification draws on the same
+ * pot — so a season's worth of firm quotes cannot leave through
+ * GmailApp.sendEmail in a week. Creating a DRAFT costs nothing against that
+ * quota, and sending a draft by hand from Gmail runs under Gmail's own, far
+ * larger daily limit. Chris used to write every one of these emails himself;
+ * "open and press send" is a step up, not a step back.
+ *
+ * So the send-to-all picker has a second button: the same recipients, the same
+ * builder, the same PDF — but each one lands in this account's Drafts instead
+ * of leaving. Two things follow from the script no longer being the sender:
+ *
+ *   1. It cannot see the send. Creating the draft records a `draft` entry in
+ *      the quote's Email History, state 'open', and changes NOTHING else — no
+ *      status, no reminder-hold release, no Import-tab move. Those all happen
+ *      when the sweep (draftSweepCheck, 6:30pm Central, or the console's
+ *      "Check drafts now") finds the draft gone from Drafts and the same
+ *      subject in Sent: only then does it run recordEmail_, exactly as a
+ *      scripted send would have.
+ *   2. A draft is frozen at creation. If the quote changes afterwards — a
+ *      re-price, a customer edit — the numbers in the draft are wrong, so the
+ *      sweep marks it `stale` and the picker says so. Delete it in Gmail and
+ *      create it again.
+ *
+ * A draft gone from Drafts but not (yet) in Sent is NOT written off at once:
+ * Gmail's search index can lag a fresh send. It is stamped `missing`, and only
+ * a sweep a day or more later that still cannot find it marks it 'discarded'.
+ * An unreachable Gmail leaves every entry exactly as it was — a search that
+ * fails must never become the reason a sent email is recorded as thrown away.
+ *
+ * service@ is CC'd on every draft (Chris's ask) and stays the reply-to: that
+ * CC is the copy the office keeps, since no notification is sent for a draft.
+ *
+ * The rule in CLAUDE.md that says "never create a Gmail draft addressed to a
+ * customer" is about Claude doing so while testing. This is staff choosing
+ * each recipient and pressing a button, and it is the exception that rule
+ * points at.
+ */
+/* How far back the sweep looks in Sent, and how long a draft may be gone
+   from Drafts without turning up there before it is written off. */
+const DRAFT_SEARCH_DAYS_ = 90;
+const DRAFT_MISSING_GRACE_MS_ = 20 * 3600 * 1000;
+
+/* The Gmail draft of `kind` still waiting on this quote, or null. */
+function openDraftFor_(d, kind) {
+  const log = (d && d.emailLog) || [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const e = log[i];
+    if (e && e.kind === kind && e.draft && e.draft.state === 'open') return e;
+  }
+  return null;
+}
+
+/* Exactly what bulkSendKind_ hands GmailApp.sendEmail, plus the CC. */
+function draftOpts_(built, d) {
+  const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO, cc: NOTIFY_EMAIL };
+  const logo = getLogoBlob_();
+  if (logo) opts.inlineImages = { questlogo: logo };
+  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo, d); if (pdf) opts.attachments = [pdf]; }
+  if (FROM_ALIAS) opts.from = FROM_ALIAS;
+  return opts;
+}
+
+function adminBulkDraft(token, kind, only) {
+  const who = requireAuth_(token, 'email');
+  const cfg = BULK_KINDS_[kind];
+  if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
+  /* Unlike a send, there is no "everyone" here: every draft is a ticked name. */
+  if (!Array.isArray(only) || !only.length) return { ok: 0, error: 'Nobody is ticked — select at least one customer.' };
+  const t = bulkTargets_(kind);
+  const chosen = bulkFilterTargets_(t.targets, only);
+  if (!chosen.length) return { ok: 0, error: 'None of the selected quotes are eligible for this email.' };
+  let made = 0;
+  const waiting = [], failed = [];
+  chosen.forEach(function (x) {
+    /* One draft per email per quote. A second would be sent as a second copy. */
+    if (openDraftFor_(x.d, kind)) { waiting.push(x.d.quoteNo || '(unknown)'); return; }
+    try {
+      const built = buildEmailFor_(x.d, kind, '', '');
+      if (!built) throw new Error('could not build the email');
+      const dr = GmailApp.createDraft(x.d.email, built.subject, built.subject, draftOpts_(built, x.d));
+      x.d.emailLog = x.d.emailLog || [];
+      x.d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: x.d.email || '', by: who.name,
+        draft: { id: String(dr.getId()), state: 'open', subject: built.subject,
+                 status: built.status || cfg.status || '',
+                 total: Number(x.d.total || 0), made: new Date().toISOString() } });
+      /* No recordEmail_ here, on purpose: nothing has been sent. The row does
+         not move and the reminder hold stays — see the section comment. */
+      x.sh.getRange(x.row, COL.PAYLOAD).setValue(JSON.stringify(x.d));
+      made++;
+    } catch (e) {
+      failed.push(x.d.quoteNo || '(unknown)');
+      console.error('Draft ' + kind + ' failed for ' + x.d.quoteNo + ': ' + e);
+    }
+  });
+  auditLog_(who.name, 'DRAFTS "' + cfg.label + '" — ' + made + ' of ' + chosen.length + ' created in Gmail' +
+    (waiting.length ? '; already waiting: ' + waiting.join(', ') : '') +
+    (failed.length ? '; failed: ' + failed.join(', ') : ''));
+  return {
+    ok: 1, made: made, total: chosen.length, waiting: waiting.length, failed: failed.length,
+    msg: 'Created ' + made + ' draft(s) in Gmail.' +
+      (waiting.length ? ' ' + waiting.length + ' already had one waiting.' : '') +
+      (failed.length ? ' ' + failed.length + ' failed — see the Activity Log.' : '')
+  };
+}
+
+/* Did the draft behind `entry` leave? The quote number is in every subject, so
+   Sent is searched for it and the exact subject is then compared — search
+   alone tokenises hyphens and could match a neighbouring number. */
+function draftWasSent_(entry, qn) {
+  const made = Date.parse((entry.draft && entry.draft.made) || '') || 0;
+  const want = String((entry.draft && entry.draft.subject) || '');
+  const threads = GmailApp.search('in:sent newer_than:' + DRAFT_SEARCH_DAYS_ + 'd "' + String(qn) + '"', 0, 20);
+  for (let i = 0; i < threads.length; i++) {
+    const msgs = threads[i].getMessages();
+    for (let j = 0; j < msgs.length; j++) {
+      const m = msgs[j];
+      if (String(m.getSubject()) !== want) continue;
+      if (made && m.getDate() && m.getDate().getTime() < made - 60000) continue;
+      return { sentAt: m.getDate() ? m.getDate().toLocaleString() : new Date().toLocaleString() };
+    }
+  }
+  return null;
+}
+
+function draftSweep_(by) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  /* Which quotes have a draft open: quote number and payload columns only,
+     and a substring check before any JSON.parse — most rows have no draft. */
+  const qns = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    const q = sh.getRange(2, COL.QN, last - 1, 1).getValues();
+    const p = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    p.forEach(function (r, i) {
+      const raw = String(r[0] || '');
+      if (raw.indexOf('"draft"') < 0 || raw.indexOf('"open"') < 0) return;
+      const qn = String(q[i][0] || '').trim();
+      if (qn && qns.indexOf(qn) < 0) qns.push(qn);
+    });
+  });
+  const out = { checked: 0, sent: 0, open: 0, stale: 0, missing: 0, discarded: 0, unreachable: 0, sentQns: [] };
+  if (!qns.length) return out;
+  /* What is still in Drafts. Read once; one bad Gmail call must not turn into
+     a hundred "discarded" marks. */
+  let inDrafts = null;
+  try { inDrafts = {}; GmailApp.getDrafts().forEach(function (dr) { inDrafts[String(dr.getId())] = 1; }); }
+  catch (e) { out.unreachable = qns.length; console.error('draftSweep_: Drafts unreadable — ' + e); return out; }
+  qns.forEach(function (qn) {
+    let ctx = findQuoteCtx_(qn);
+    if (!ctx) return;
+    const d = ctx.d;
+    let changed = false;
+    const sentNow = [];
+    (d.emailLog || []).forEach(function (e) {
+      if (!e || !e.draft || e.draft.state !== 'open') return;
+      out.checked++;
+      if (inDrafts[String(e.draft.id)]) {
+        /* Still waiting. Say whether the quote has moved on since. */
+        const stale = Math.abs(Number(d.total || 0) - Number(e.draft.total || 0)) > 0.005;
+        if (!!e.draft.stale !== stale) { e.draft.stale = stale; changed = true; }
+        if (e.draft.missing) { delete e.draft.missing; changed = true; }
+        out.open++; if (stale) out.stale++;
+        return;
+      }
+      let hit;
+      try { hit = draftWasSent_(e, qn); }
+      catch (err) { out.unreachable++; console.error('draftSweep_: Sent unreadable for ' + qn + ' — ' + err); return; }
+      if (hit) {
+        e.draft.state = 'sent'; e.draft.sentAt = hit.sentAt; delete e.draft.missing;
+        sentNow.push(e); changed = true;
+        return;
+      }
+      /* Gone, and not found in Sent. Give the index a day before deciding. */
+      const first = Date.parse(e.draft.missing || '') || 0;
+      if (first && Date.now() - first > DRAFT_MISSING_GRACE_MS_) {
+        e.draft.state = 'discarded'; changed = true; out.discarded++;
+      } else {
+        if (!first) { e.draft.missing = new Date().toISOString(); changed = true; }
+        out.missing++;
+      }
+    });
+    if (sentNow.length) {
+      sentNow.forEach(function (e) {
+        /* The full treatment a scripted send would have given it — status,
+           Email History, reminder-hold release, the Import-tab move. */
+        if (e.draft.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(e.draft.status);
+        const after = recordEmail_(ctx.sh, ctx.rowNum, d, e.kind, String(e.by || '') + ' (sent from Gmail)');
+        if (after && after.sh) { ctx.sh = after.sh; ctx.rowNum = after.rowNum; }
+        out.sent++; out.sentQns.push(qn);
+      });
+    } else if (changed) {
+      ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+    }
+  });
+  invalidateStorageView_();
+  auditLog_(by, 'DRAFT SWEEP — ' + out.checked + ' draft(s) checked: ' + out.sent + ' sent' +
+    (out.sentQns.length ? ' (' + out.sentQns.join(', ') + ')' : '') + ', ' + out.open + ' still waiting' +
+    (out.stale ? ' (' + out.stale + ' stale)' : '') +
+    (out.missing ? ', ' + out.missing + ' gone but not yet seen in Sent' : '') +
+    (out.discarded ? ', ' + out.discarded + ' discarded' : '') +
+    (out.unreachable ? ', ' + out.unreachable + ' could not be checked' : ''));
+  return out;
+}
+
+/* The 6:30pm trigger. Reads Gmail and the sheet; sends nothing, so the
+   automatic-email pause does not apply to it. */
+function draftSweepCheck() {
+  try { draftSweep_('System (draft sweep)'); }
+  catch (e) { console.error('draftSweepCheck failed: ' + e); }
+}
+
+function adminDraftSweep(token) {
+  const who = requireAuth_(token, 'email');
+  const r = draftSweep_(who.name);
+  r.ok = 1;
+  r.msg = r.checked
+    ? r.sent + ' sent since last check, ' + r.open + ' still waiting in Gmail' +
+      (r.stale ? ' (' + r.stale + ' stale — delete and re-create)' : '') +
+      (r.missing ? ', ' + r.missing + ' gone but not yet found in Sent' : '') +
+      (r.discarded ? ', ' + r.discarded + ' discarded' : '') +
+      (r.unreachable ? ', ' + r.unreachable + ' could not be checked' : '') + '.'
+    : 'No drafts are waiting.';
+  return r;
 }
 
 /* ================= IMPORT A LEGACY WINTER-SERVICES SHEET =================
@@ -6533,6 +6851,12 @@ function repriceScan_() {
       const afterNum = Number(copy.total || 0);
       row.afterNum = afterNum;
       row.deltaNum = afterNum - beforeNum;
+      /* Same total, but priced and dated while rates were estimates. Once the
+         rates are final such a quote still carries last season's pay-by date
+         and a PDF with the estimate banner on it, and the firm-quote email
+         refuses it (firmQuoteBlocker_). Re-pricing it costs nothing and fixes
+         all three, so it is offered like a quote whose price moved. */
+      row.restamp = !PRICING.provisional && priceStampStale_(d);
       row.newBalanceNum = afterNum - paid;
       /* A draft's row is parked on the Import tab while d.storageTab already
          names where it belongs, so the two always differ and that is not a
@@ -6558,7 +6882,8 @@ function repriceRowOut_(x) {
   o.delta = (x.deltaNum >= 0 ? '+' : '−') + usd_(Math.abs(x.deltaNum || 0));
   o.newBalance = (x.newBalanceNum < -0.005)
     ? 'CREDIT ' + usd_(-x.newBalanceNum) : usd_(Math.max(0, x.newBalanceNum || 0));
-  o.changed = Math.abs(x.deltaNum || 0) > 0.005;
+  o.restamp = !!x.restamp;
+  o.changed = Math.abs(x.deltaNum || 0) > 0.005 || o.restamp;
   return o;
 }
 
@@ -6567,7 +6892,7 @@ function adminRepricePreview(token) {
   const scan = repriceScan_();
   const rows = scan.map(repriceRowOut_);
   const eligible = scan.filter(function (x) { return !x.skip && !x.wouldMove; });
-  const changed = eligible.filter(function (x) { return Math.abs(x.deltaNum || 0) > 0.005; });
+  const changed = eligible.filter(function (x) { return Math.abs(x.deltaNum || 0) > 0.005 || x.restamp; });
   const net = changed.reduce(function (a, x) { return a + x.deltaNum; }, 0);
   return {
     ok: 1,
@@ -6748,7 +7073,7 @@ function adminStorageView(token) {
         if (!r[COL.QN - 1]) return;
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
-            trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '';
+            trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -6777,6 +7102,12 @@ function adminStorageView(token) {
              call straight back over the edge the payload column already pushed
              it over once. */
           notes = (pd.placementNotes || pd.yardNotes || []).length;
+          /* What the CUSTOMER typed in "Notes / special requests". Until this
+             it reached staff only on the PDF, which nobody reads twice. Off
+             the payload already parsed — no column read — and capped, so a
+             customer who wrote an essay cannot put this call back over the
+             edge; the quote card shows the whole thing. */
+          cnote = customerNoteOf_(pd).slice(0, CNOTE_LIST_MAX_);
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
         } catch (e) {}
@@ -6800,6 +7131,8 @@ function adminStorageView(token) {
           placementState: placementState, placementAt: placementAt,
           /* The one thing somebody must know before touching this boat. */
           alert: alert,
+          /* The customer's own note, trimmed for the list. See customerNoteOf_. */
+          cnote: cnote,
           /* Signed agreement on file. Deposit taken and this still false is the
              chase list -- the console tags those rows in red. */
           contract: contract,
@@ -6820,6 +7153,65 @@ function adminStorageView(token) {
   const out = { ok: 1, v: STORAGE_VIEW_V_, groups: groups };
   cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
   return out;
+}
+
+/* THE CUSTOMER'S NOTE — "Notes / special requests" on the quote page.
+   ---------------------------------------------------------------------------
+   d.notes, typed by the customer (or carried over from an old sheet by the
+   importer, which reads it into state.notes). Not the staff note, which is
+   staff-only and never leaves the console; this one the customer wrote and has
+   already seen on their own PDF, so showing it to any staff member is safe. */
+const CNOTE_LIST_MAX_ = 160;
+function customerNoteOf_(d) {
+  if (!d) return '';
+  const v = (d.notes !== undefined && d.notes !== null && String(d.notes).trim() !== '')
+    ? d.notes : (d.state && d.state.notes);
+  return String(v || '').trim();
+}
+
+/* THE IMPORTED DRAFTS, as a list you can scroll.
+   ---------------------------------------------------------------------------
+   adminStorageView leaves the Import tab out on purpose — it also feeds Harbor
+   Haul Out and the printed haul-out sheets, and the crew must not see a boat
+   nobody agreed to store. That left staff able to find a draft only by
+   searching for a name they already knew. This is the same rows, from the
+   Import tab only, for the console's "Imported" view — a separate call so the
+   storage view's answer (and everything reading it) stays exactly as it was.
+
+   Staff-only and read-only, like adminSearch, which already reaches this tab.
+   Not cached: the Import tab is one sheet, and a draft that has just been sent
+   has to disappear from this list at once, not two minutes later. */
+function adminDraftList(token) {
+  requireAuth_(token, 'view');
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(IMPORT_TAB);
+  if (!sh) return { ok: 1, rows: [] };
+  const last = sh.getLastRow();
+  if (last < 2) return { ok: 1, rows: [] };
+  const head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+  const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+  const rows = [];
+  head.forEach(function (r, i) {
+    const qn = String(r[COL.QN - 1] || '').trim();
+    if (!qn) return;
+    let pd = {};
+    try { pd = JSON.parse(pays[i][0] || '{}') || {}; } catch (e) { pd = {}; }
+    const paid = paymentsTotal_(pd);
+    const bal = Number(r[COL.BAL - 1] || 0);
+    rows.push({ qn: qn,
+      name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
+      unit: r[COL.UNIT - 1] || '', ymm: r[COL.YMM - 1] || '', dims: r[COL.DIMS - 1] || '',
+      status: r[COL.STATUS - 1] || '',
+      phone: fmtPhone(String(r[COL.PHONE - 1] || '')),
+      hasEmail: !!String(r[COL.EMAIL - 1] || '').trim(),
+      /* Where it goes once it is sent — the engine decided this at import. */
+      dest: String(pd.storageTab || ''),
+      total: usd_(Number(pd.total || 0)),
+      deposit: paid > 0.005,
+      cnote: customerNoteOf_(pd).slice(0, CNOTE_LIST_MAX_),
+      balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
+  });
+  rows.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  return { ok: 1, rows: rows };
 }
 
 function adminPriceRequest(token, qn, rqLabel, amt, note) {
@@ -7547,6 +7939,70 @@ function sendCustomerNotice_(d, subject, introHtml, extraButtonsHtml, includeMon
   GmailApp.sendEmail(d.email, subject, subject, opts);
 }
 
+/* MAY THIS QUOTE BE CALLED FIRM?
+   ---------------------------------------------------------------------------
+   '' when yes, otherwise the reason in words staff can act on. The firm-quote
+   email promises a customer their price will not move, so every condition
+   here is one under which that promise would be false:
+
+   - the rates themselves are still estimates (PRICING.provisional);
+   - the quote was priced, or last dated, before the rates became final — its
+     season stamp says so. The re-price is what re-stamps a quote and rebuilds
+     its PDF, so the answer is always "re-price it first";
+   - pricing it fresh at today's rates would give a different total — a rate
+     edited after the re-price ran, or a quote the re-price had to skip. The
+     attached PDF would then disagree with the promise in the email;
+   - there is nothing to be firm about (a lead, no total) or no link to offer
+     the customer as "Option 1" (no last name on the row).
+
+   Pure apart from reading the payload: it prices a COPY, like repriceScan_,
+   and never touches the sheet. Shared by the builder, the bulk picker and the
+   console's button, so all of them agree about every quote. */
+function firmQuoteBlocker_(d) {
+  if (!d) return 'No quote data.';
+  if (PRICING.provisional) {
+    return 'Rates are still marked as estimates. This email unlocks once the new rates are in ' +
+      'pricing-engine.js and PRICING.provisional is switched off.';
+  }
+  if (isStartedQuote_(d)) return 'This is an unfinished quote — there is no price to call firm.';
+  if (!(Number(d.total || 0) > 0.005)) return 'This quote has no priced total.';
+  if (!quoteLinkFor_(d)) return 'No last name on this quote, so there is no link to send them to.';
+  if (priceIsFirm_(d.quoteNo, PRICING.ratesLabel)) {
+    return 'This quote already has an agreed firm price (' + FIRM_QUOTE_NO + ') — nothing to send.';
+  }
+  if (priceStampStale_(d)) {
+    return 'Priced before the ' + PRICING.ratesLabel + ' rates were final — run "Re-price at current ' +
+      'rates" on it first (that also rebuilds the PDF this email attaches).';
+  }
+  if (!d.state) return 'Saved before selections were stored — re-price this one by hand first.';
+  let copy;
+  try {
+    copy = JSON.parse(JSON.stringify(d));
+    const cross = rebuildLinesFromState_(copy);
+    if (!cross.rebuilt) return 'Could not price it at today\'s rates (' + (cross.reason || 'unknown') + ').';
+    applyManualOps_(copy);
+  } catch (e) {
+    return 'Could not price it at today\'s rates (' + (e.message || e) + ').';
+  }
+  if (Math.abs(Number(copy.total || 0) - Number(d.total || 0)) > 0.005) {
+    return 'At today\'s rates this quote comes to ' + usd_(copy.total) + ', not the ' + usd_(d.total) +
+      ' on file — re-price it first so the attached PDF matches.';
+  }
+  return '';
+}
+
+/* Was this quote priced (and dated) under the rates live right now? Read off
+   the season stamp every save, import and re-price writes. A stamp from before
+   the stamp carried `pricingProvisional` reads as stale, which is the safe
+   answer: the fix — a re-price — is always available and harmless. */
+function priceStampStale_(d) {
+  const s = (d && d.season) || {};
+  const norm = function (v) { return String(v || '').replace(/[\u2012-\u2015\u2212]/g, '-').trim(); };
+  if (s.pricingProvisional !== false) return true;
+  if (norm(s.ratesLabel) !== norm(PRICING.ratesLabel)) return true;
+  return norm(s.label) !== norm(SEASON.seasonLabel);
+}
+
 /* One builder used by BOTH preview and send, so what you preview is what goes out */
 function buildEmailFor_(d, kind, extra, photos) {
   /* Lead follow-up: someone started a quote and walked away. Deliberately
@@ -7653,6 +8109,90 @@ function buildEmailFor_(d, kind, extra, photos) {
         ' \u00b7 ' + (d.quoteNo || ''),
       html: noticeHtml_(d, intro, box, true),
       status: 'Dimensions updated — customer notified',
+      attachPdf: true
+    };
+  }
+  /* "Our rates are final — here is your firm quote."
+     ---------------------------------------------------------------------------
+     The email for the day the rate card lands. It tells the customer the
+     attached quote is now firm — outside a re-measure or a change of
+     selections — and gives them exactly two ways forward: change something on
+     the quote page (their own link, already filled in), or accept it as it is
+     by signing and paying the deposit.
+
+     It refuses to build rather than call a price firm that is not:
+     firmQuoteBlocker_ is the whole bar, shared by preview, send, the bulk
+     picker and the console button, so all four agree about every quote. */
+  if (kind === 'firmquote') {
+    if (firmQuoteBlocker_(d)) return null;
+    const term = docTerm_(d).toLowerCase();
+    const land = isLandUnit_(d);
+    const unitTxt = esc_(String(d.unit || 'unit').toLowerCase());
+    const rates = esc_(PRICING.ratesLabel);
+    const paid = paymentsTotal_(d);
+    const total = Number(d.total || 0);
+    const bal = total - paid;
+    const noStorage = !!(d.state && d.state.storage === 'none');
+    const signed = !!d.contractUrl;
+    const signLink = signed ? '' : (signUrlFor_(d) || '');
+    const quoteUrl = quoteLinkFor_(d);
+    const payBy = esc_((d.season && d.season.payBy) || SEASON.payByDate);
+    const paidInFull = paid > 0.005 && bal <= 0.005;
+
+    let intro = 'Our <b>' + rates + '</b> winter rates are now final, and your ' + term +
+      ' has been updated to them. <b>The attached ' + term + ' is your firm price for the season.</b>' +
+      '<br><br>The only things that would change it are the details themselves: if we measure your ' +
+      unitTxt + ' when it ' + (land ? 'comes in' : 'arrives') + ' and the size differs from what is on the ' +
+      term + ', or if you add, remove or change services. Either way you\'ll see the new total ' +
+      'before you are asked to pay it.';
+    if (paid > 0.005) {
+      intro += '<br><br>We already have your payment of <b>' + usd_(paid) + '</b> on this ' + term +
+        ' — thank you.' + (paidInFull ? ' That covers it in full.' : ' Your balance at the final rates is below.');
+    }
+
+    const rowsHtml =
+      moneyRow_('Firm ' + term + ' total', usd_(total), true) +
+      (paid > 0.005
+        ? moneyRow_('Payments received', '\u2212' + usd_(paid), false) +
+          (bal < -0.005 ? moneyRow_('Credit due to you', usd_(-bal), true)
+            : moneyRow_('Balance due' + (noStorage ? ' when the work is completed' : ' by ' + payBy), usd_(Math.max(0, bal)), true))
+        : (noStorage ? '' : moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false)));
+    const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
+      '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table></div>';
+
+    const choice = function (n, title, body, btns) {
+      return '<div style="border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:0 0 12px">' +
+        '<div style="font-size:15px;font-weight:bold;color:#14293E;margin-bottom:4px">' + n + ' ' + title + '</div>' +
+        '<div style="font-size:13.5px;color:#1D2B38;line-height:1.5;margin-bottom:10px">' + body + '</div>' +
+        btns + '</div>';
+    };
+    const opt1 = choice('Option 1 —', 'Want to change something?',
+      'Open your ' + term + ' online — everything you chose is already filled in. Change whatever you like and ' +
+      'save it: your new total shows straight away, and we\'re notified of the change.',
+      buttonHtml_(quoteUrl, 'Review or change my ' + term, '#4A81A6'));
+    let opt2;
+    if (paidInFull && signed) {
+      opt2 = choice('Option 2 —', 'Happy with it as it is?',
+        'Then you\'re all set — we have your signed agreement and your payment. Nothing more to do.', '');
+    } else {
+      const steps = [];
+      if (signLink) steps.push('sign your winter services agreement');
+      if (!paidInFull) steps.push(paid > 0.005 || noStorage ? 'pay online' : 'pay your deposit');
+      const body = (signed ? 'We already have your signed agreement on file. ' : '') +
+        (steps.length
+          ? 'Accept the attached ' + term + ' exactly as it is: ' + steps.join(', then ') +
+            '. Please put quote # <b>' + esc_(d.quoteNo || '') + '</b> in the payment memo.'
+          : 'Give us a call on (815) 433-2200 and we\'ll get your agreement to you.');
+      const btns = (signLink ? buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') : '') +
+        (paidInFull ? '' : buttonHtml_(PAYMENT_URL,
+          (paid > 0.005 || noStorage) ? 'Pay online' : 'Pay my deposit online', '#C08A22'));
+      opt2 = choice('Option 2 —', 'Happy with it as it is?', body, btns);
+    }
+
+    return {
+      subject: 'Your firm ' + PRICING.ratesLabel + ' winter ' + term + ' \u00b7 ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, box + opt1 + opt2, false),
+      status: 'Firm quote sent',
       attachPdf: true
     };
   }
@@ -8747,7 +9287,10 @@ function setupAllTriggers() {
        "transcribing" for ever. */
     sweepTranscripts:   { hour: 5 },
     // Lunch break: people have a moment to actually deal with it.
-    leadFollowUpCheck:  { hour: 12, minute: 15 }
+    leadFollowUpCheck:  { hour: 12, minute: 15 },
+    /* Which Gmail drafts staff sent today. End of the working day, Chris's
+       call — see DRAFTS INSTEAD OF SENDS. Sends nothing itself. */
+    draftSweepCheck:    { hour: 18, minute: 30 }
   };
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (wanted[t.getHandlerFunction()] !== undefined) ScriptApp.deleteTrigger(t);

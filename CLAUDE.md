@@ -134,7 +134,7 @@ serves the cached old version and you'll debug a ghost.
 | Function | When | Notes |
 |---|---|---|
 | `initStaff()` | once, ever | Prints 6 PINs to the log. Refuses to run twice (won't clobber the roster). |
-| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
+| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, draft sweep 6:30pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
 | `bulkImport1_Scan()` | once, to carry a season folder over | Reads every file, writes a **report to Drive**, touches no quote. Resumable; emails Chris when done. |
@@ -213,9 +213,8 @@ quietly dropping it is not.
 **The spreadsheet holds live customers, not test rows.** As of Aug 2026 the
 only test quote is **`QW-26-1255` (John White, "Demo Test Boat",
 john@questwatersports.com)**. Every other row is a paying customer with a real
-name, email and phone. (`QW-26-3477`, the golf cart this file used to name as
-the test quote, **no longer exists** — it survives only in Activity Log
-history, and the Golf Cart tab is empty. Don't go looking for it.)
+name, email and phone. (`QW-26-3477`, the old golf-cart test quote, **no
+longer exists** — don't go looking for it.)
 
 Rules, non-negotiable:
 
@@ -224,7 +223,8 @@ Rules, non-negotiable:
   Quest staff. If you need to see an email, use `adminEmailPreview` /
   `buildEmailFor_`, which render without sending.
 - **Never create a Gmail draft addressed to a customer.** A draft one click
-  away from sending is the same hazard.
+  away from sending is the same hazard. (Staff's own **Create drafts** button
+  is the one exception — `docs/ref/EMAILS.md`.)
 - **Test only against `QW-26-1255`.** Any save, payment, adjustment, line edit
   or season-done change goes on that quote and no other.
 - **Treat the sheet as read-only** unless the task is explicitly to change a
@@ -359,7 +359,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 | Excel import of last year's selections | **Built — one at a time, or the whole folder** | `Load from an old sheet` for one file; `bulkImport1_Scan()` / `bulkImport2_Apply()` for a whole season folder onto the **Import** tab (§2). Both recover the `#REF!` files from the master grid and price at today's rates. Only the bulk run skips customers who already have a quote. Detail: `docs/ref/STAFF-CONSOLE.md`. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
-| 2026–2027 rates | **Waiting on Chris** | `PRICES` still holds 2025–2026 numbers, so quotes go out as estimates behind `PRICING.provisional` (§5). When the rate card lands: update `PRICES`, flip `provisional:false`, re-baseline the fixtures, and re-price the season from the console. |
+| 2026–2027 rates | **Waiting on Chris** | `PRICES` still holds 2025–2026 numbers, so quotes go out as estimates behind `PRICING.provisional` (§5). When the rate card lands: update `PRICES`, flip `provisional:false`, re-baseline the fixtures, re-price the season, send the Firm quote. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
 

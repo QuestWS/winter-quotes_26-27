@@ -76,16 +76,21 @@ what it returns), `?action=launchpref&...` (spring email buttons),
 
 ## 2. Deploy rituals — non-negotiable
 
+### Claude ships it
+**Everything that makes work live is Claude's to do, unasked:** verify → commit → push → deploy the Apps Script → open a PR and
+merge it to `main` → report the real result. Never end a task with "merge
+this" or "click Run workflow". The one acceptable reason to stop short is
+something Claude genuinely cannot do from here (a new Google scope needing an
+OAuth approval in the editor, a host this container's network refuses), and it
+is stated plainly in the final message with exactly what is left for Chris.
+
 ### Apps Script
 **Preferred: GitHub Actions → "Deploy Apps Script" → Run workflow.** Manual
 trigger only, runs `verify.sh` first, and calls `clasp update-deployment`,
 which points the *existing* deployment at a new version — so the rule below is
 enforced by the tool rather than by memory. Setup and troubleshooting:
-`docs/APPS-SCRIPT-DEPLOY.md`.
-
-**Claude can run that deploy itself — this is already built and in use.** Do
-not tell Chris to go and click it; offer to deploy, and on a yes, dispatch the
-workflow with the GitHub tools:
+`docs/APPS-SCRIPT-DEPLOY.md`. Claude dispatches it, from the working branch
+(every deploy since run 30 has been from a `claude/…` branch):
 
 ```
 mcp__github__actions_run_trigger
@@ -97,20 +102,15 @@ mcp__github__actions_run_trigger
 
 Then poll `mcp__github__actions_list` (`list_workflow_runs`) until it completes
 and **report the real conclusion**, pulling `mcp__github__get_job_logs` with
-`failed_only` on a failure. `mode: "push-only"` uploads without going live —
-that is the one to use for step 3 below, when a new Google scope needs
-approving from the editor first.
+`failed_only` on a failure. `mode: "push-only"` uploads without going live
+(step 3 below).
 
-- **Deploy from the working branch.** Every deploy since run 30 has been
-  dispatched against a `claude/…` branch, and the workflow checks out whatever
-  ref it is given. Merging first is not required and is not the habit here.
-- **The staff console and the customer page are NOT in this deploy.** They are
-  GitHub Pages, served from `main`, so those only go live on merge. A deploy
-  from a branch therefore ships the backend ahead of the UI — fine when the new
-  fields are additive, worth saying out loud either way.
-- **It is reversible without a deploy:** Apps Script → Deploy → Manage
-  deployments → pencil → pick the previous version from the dropdown. Each run
-  cuts an immutable numbered version, which is what makes that possible.
+- **The console, Harbor Haul Out and the customer page are GitHub Pages served
+  from `main`**: they go live on the merge, not the deploy, so a branch deploy
+  ships the backend ahead of the UI — fine when the new fields are additive,
+  say so either way.
+- **Reversible without a deploy:** Manage deployments → pencil → pick the
+  previous version. Each run cuts a numbered version.
 
 Fallback (and what the workflow automates):
 1. Paste the full file over the editor contents, **Save**.

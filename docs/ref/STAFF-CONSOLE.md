@@ -964,6 +964,16 @@ but never signed", asked from a phone.
   only those rows (leads included — a question is a question); the quote card
   shows the whole note above the print button (`customerNote` on
   `adminLookup`). Frost, never red or gold: a note is not a hold and not money.
+  **Staff with `keys` can edit it** (`adminSetCustomerNote`): an imported
+  quote's note is last year's sheet — "deposit received", a pull-out date —
+  and it prints on the PDF the firm quote attaches. *Move to staff notes &
+  clear* keeps the words where staff read them and takes them off the
+  customer's document. The edit writes all three copies (`d.notes`, the
+  Customer notes column, and `state.notes`, which the quote page hydrates
+  from — leave that one and a reload resurrects the old text), stamps
+  `d.notesAt`, and **rebuilds the PDF**, because `getPdfBlob_` attaches what
+  is on Drive. A Gmail draft built before the edit is then marked stale by
+  the sweep (`docs/ref/EMAILS.md`).
 - **Imported.** The Import tab's drafts, from `adminDraftList` — see *The
   Import tab is a holding pen*. Fetched alongside the storage view (not
   awaited), uncached so a draft that was just sent drops off at once. Printing

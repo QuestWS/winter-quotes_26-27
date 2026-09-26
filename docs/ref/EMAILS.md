@@ -363,8 +363,10 @@ office's copy.
   still cannot find it marks it `discarded`. An unreachable Gmail leaves every
   entry untouched and is reported, never treated as "not sent".
 - **Stale drafts are flagged, not fixed.** A draft is frozen when created; if
-  the quote's total has changed since, the sweep marks it `stale` and both the
-  picker and Email History say *delete it in Gmail and re-create it*.
+  the quote's total has changed since, or the customer note was edited after
+  it was built (`d.notesAt` newer than `draft.made` — the attached PDF carries
+  the old note), the sweep marks it `stale` and both the picker and Email
+  History say *delete it in Gmail and re-create it*.
 - **One draft per email per quote.** Creating another is skipped ("already
   waiting"), and the scripted send holds back any quote with an open draft
   (`bulkSendKind_` → `held`) — otherwise the customer gets it twice the moment

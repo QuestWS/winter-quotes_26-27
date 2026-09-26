@@ -67,7 +67,11 @@ const Q = {
   /* An older draft that DID go and a fresh send: neither is "open", so the
      sweep must not touch this row at all. */
   H: { quoteNo: 'Q-H', lastName: 'Hyde', email: 'h@x', total: '100.00', storageTab: 'Inside',
-       emailLog: [draftEntry('dH', 'Your firm quote · Q-H', 100, {}), { ts: 'x', kind: 'firmquote', to: 'h@x', by: 'Chris' }] }
+       emailLog: [draftEntry('dH', 'Your firm quote · Q-H', 100, {}), { ts: 'x', kind: 'firmquote', to: 'h@x', by: 'Chris' }] },
+  /* Same total, but the customer note was edited AFTER the draft was built:
+     the PDF sitting in Drafts carries the old note. */
+  I: { quoteNo: 'Q-I', lastName: 'Innes', email: 'i@x', total: '100.00', storageTab: 'Inside', notesAt: iso(0),
+       emailLog: [draftEntry('dI', 'Your firm quote · Q-I', 100)] }
 };
 Q.H.emailLog[0].draft.state = 'sent';
 
@@ -96,11 +100,11 @@ function makeSheet(name, quotes) {
   };
   return sh;
 }
-const SHEETS = [makeSheet('Inside', [Q.A, Q.B, Q.C, Q.D, Q.E, Q.F, Q.G, Q.H])];
+const SHEETS = [makeSheet('Inside', [Q.A, Q.B, Q.C, Q.D, Q.E, Q.F, Q.G, Q.H, Q.I])];
 const SpreadsheetApp = { getActiveSpreadsheet: () => ({ getSheets: () => SHEETS }) };
 
 /* ---- Gmail -------------------------------------------------------------- */
-const gmail = { drafts: ['dA', 'dB'], sentSubjects: { 'Q-C': 'Your firm quote · Q-C' }, throwFor: { 'Q-G': 1 }, created: [] };
+const gmail = { drafts: ['dA', 'dB', 'dI'], sentSubjects: { 'Q-C': 'Your firm quote · Q-C' }, throwFor: { 'Q-G': 1 }, created: [] };
 const GmailApp = {
   getDrafts: () => gmail.drafts.map((id) => ({ getId: () => id })),
   search: (q) => {
@@ -173,11 +177,14 @@ if (r.unreachable === 1) ok('...and is reported as unreachable'); else fail('unr
 if (!writes.payload['Q-H'] && !recorded.find((x) => x.qn === 'Q-H')) ok('a draft already marked sent is not re-processed');
 else fail('the sweep re-processed a draft that was already sent');
 
-if (r.checked === 6 && r.sent === 1 && r.open === 2 && r.stale === 1 && r.missing === 1 && r.discarded === 1) ok('counts add up: ' + JSON.stringify(r));
+if (stateOf('Q-I').state === 'open' && stateOf('Q-I').stale === true) ok('a draft built before the customer note was edited is marked stale');
+else fail('Q-I (note edited after drafting) is ' + JSON.stringify(stateOf('Q-I')));
+
+if (r.checked === 7 && r.sent === 1 && r.open === 3 && r.stale === 2 && r.missing === 1 && r.discarded === 1) ok('counts add up: ' + JSON.stringify(r));
 else fail('counts are off: ' + JSON.stringify(r));
 
 console.log('=== the second evening ===');
-gmail.drafts = ['dA'];                                   // Q-B's draft was deleted (it was stale)
+gmail.drafts = ['dA', 'dI'];                             // Q-B's draft was deleted (it was stale)
 gmail.sentSubjects['Q-D'] = 'Your firm quote · Q-D';     // and Q-D has surfaced in Sent
 const r2 = B.draftSweep_('Guard');
 if (stateOf('Q-D').state === 'sent') ok('a draft that surfaced in Sent the next day is marked sent, not discarded');

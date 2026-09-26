@@ -1338,6 +1338,7 @@ function consoleFns_(p) {
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
+    customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
@@ -4660,6 +4661,57 @@ function adminSetStaffNote(token, qn, note) {
            staffNote: txt, by: d.staffNoteBy || '', at: d.staffNoteAt || '' };
 }
 
+/* THE CUSTOMER'S NOTE, edited by staff.
+   ---------------------------------------------------------------------------
+   "Notes / special requests" is the customer's box, but an imported quote's
+   note is whatever was written on last year's sheet — "deposit received",
+   "pull out Oct 20" — and it prints on the PDF the firm quote attaches. So it
+   has to be editable and clearable before that goes out. `mode` 'move' copies
+   it onto the staff note first, so last year's facts are kept where staff can
+   read them and the customer-facing document loses them.
+
+   Three copies have to agree: d.notes (the PDF and the storage list), the
+   sheet's Customer notes column, and state.notes — which is what the quote
+   page hydrates the textarea from on reload, so leaving it alone would
+   resurrect the old text the moment the customer opened their quote. The PDF
+   is rebuilt here because getPdfBlob_ attaches whatever is on Drive, and an
+   email saying "here is your firm quote" must not carry last year's note.
+
+   Same permission as the staff note: not money, not a price change. */
+function adminSetCustomerNote(token, qn, note, mode) {
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const had = customerNoteOf_(d);
+  let txt = String(note === null || note === undefined ? '' : note).slice(0, 4000).trim();
+  if (mode === 'move') {
+    if (!had) return { ok: 0, error: 'There is no customer note to move.' };
+    const stamp = 'Customer note' + (d.ts ? ' from ' + String(d.ts).slice(0, 10) : '') + ', moved by ' + who.name + ': ';
+    d.staffNote = (String(d.staffNote || '').trim() + '\n\n' + stamp + had).trim();
+    d.staffNoteBy = who.name;
+    d.staffNoteAt = new Date().toLocaleString();
+    txt = '';
+  } else if (txt === had) {
+    return { ok: 0, error: 'Nothing changed.' };
+  }
+  d.notes = txt;
+  if (d.state && typeof d.state === 'object') d.state.notes = txt;
+  /* When the customer-facing content last changed, so the draft sweep can
+     tell a draft built before this edit is stale even though the total is
+     the same. */
+  d.notesAt = new Date().toISOString();
+  const pdfUrl = savePdf_(d);
+  if (pdfUrl) ctx.sh.getRange(ctx.rowNum, COL.PDF).setValue(pdfUrl);
+  ctx.sh.getRange(ctx.rowNum, COL.NOTES).setValue(txt);
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Customer note ' + (mode === 'move' ? 'moved to staff notes and cleared' : txt ? (had ? 'edited' : 'added') : 'cleared') +
+    ' on ' + d.quoteNo + ' — PDF rebuilt');
+  return { ok: 1, msg: mode === 'move' ? 'Moved to staff notes and cleared. PDF rebuilt.' : txt ? 'Customer note saved. PDF rebuilt.' : 'Customer note cleared. PDF rebuilt.',
+           customerNote: txt,
+           staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''), at: String(d.staffNoteAt || '') } };
+}
+
 function adminDimsApply(token, qn, changes, note) {
   const who = requireAuth_(token, 'measure');
   const ctx = findQuoteCtx_(qn);
@@ -5719,8 +5771,11 @@ function draftSweep_(by) {
       if (!e || !e.draft || e.draft.state !== 'open') return;
       out.checked++;
       if (inDrafts[String(e.draft.id)]) {
-        /* Still waiting. Say whether the quote has moved on since. */
-        const stale = Math.abs(Number(d.total || 0) - Number(e.draft.total || 0)) > 0.005;
+        /* Still waiting. Say whether the quote has moved on since — a
+           different total, or the customer note edited after the draft was
+           built (the PDF in the draft carries the old one). */
+        const edited = (Date.parse(d.notesAt || '') || 0) > (Date.parse(e.draft.made || '') || 0);
+        const stale = edited || Math.abs(Number(d.total || 0) - Number(e.draft.total || 0)) > 0.005;
         if (!!e.draft.stale !== stale) { e.draft.stale = stale; changed = true; }
         if (e.draft.missing) { delete e.draft.missing; changed = true; }
         out.open++; if (stale) out.stale++;

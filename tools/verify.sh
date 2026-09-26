@@ -324,6 +324,32 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -qE '\bd\.state\.[A-Za-z]+ *='; then
     echo "  FAIL trap: adminDimsApply writes into d.state — a customer re-save will erase the re-measure"; FAIL=1
   else echo "  OK   trap: re-measure is journalled (manual.measured), not written into d.state"; fi
+  # The same rule for services added from the console: journalled as
+  # manual.services, never written into the customer's own answers.
+  if awk '/^function adminServicesApply/,/^}/' quote-logger-apps-script.gs | grep -qE '\bd\.state\.[A-Za-z]+ *='; then
+    echo "  FAIL trap: adminServicesApply writes into d.state — a customer re-save will erase the service"; FAIL=1
+  else echo "  OK   trap: console-added services are journalled (manual.services), not written into d.state"; fi
+  # Adding a service moves money: it needs `adjust`, like the Adjustment card.
+  for f in adminServicesApply adminServicesPreview; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -q "requireAuth_(token, 'adjust')"; then
+      echo "  OK   trap: $f is gated on the adjust permission"
+    else
+      echo "  FAIL trap: $f is not gated on 'adjust'"; FAIL=1
+    fi
+  done
+  # The preview prices a copy and writes nothing — it is on the GET allow-list.
+  for f in adminServicesPreview servicesProposal_; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -qE 'saveQuoteRow_|setValue|savePdf_|auditLog_|sendCustomerEmail_'; then
+      echo "  FAIL trap: $f writes or sends — a preview must do neither"; FAIL=1
+    else echo "  OK   trap: $f writes nothing"; fi
+  done
+  # Customers phone in a powerwash after the deposit is down; the console must
+  # still be able to add it. The payment lock is the customer save path's only.
+  for f in adminServicesApply adminServicesPreview; do
+    if awk "/^function $f/,/^}/" quote-logger-apps-script.gs | grep -qE 'lockedByPayment|payments.*length.*return|return.*already paid'; then
+      echo "  FAIL trap: $f refuses paid quotes — staff must be able to add a service after a deposit"; FAIL=1
+    else echo "  OK   trap: $f still works after a deposit"; fi
+  done
   # Chris's rule: a beam over the limit is flagged for a conversation, never
   # acted on. The console must not relocate storage off the back of a flag.
   if awk '/^function adminDimsApply/,/^}/' quote-logger-apps-script.gs | grep -q '_flags.*storage *='; then
@@ -459,6 +485,14 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: penalties journalled, priced and reversible"
   else
     echo "  FAIL gate: penalty handling broken"; sed 's/^/       /' "$TMP/pen.txt"; FAIL=1
+  fi
+  # Services added from the console: the same overlay as a penalty, keyed by
+  # the customer page's own state keys so they price, re-measure and re-price
+  # like anything the customer chose — never a frozen adjustment line.
+  if node tools/check-service-menu.js > "$TMP/svc.txt" 2>&1; then
+    echo "  OK   gate: console-added services journalled, engine-priced, follow the boat"
+  else
+    echo "  FAIL gate: service menu broken"; sed 's/^/       /' "$TMP/svc.txt"; FAIL=1
   fi
   # The Heritage Harbor slipholder discount: the customer is only asked, never
   # shown an amount; staff approve the tier in the console, and a tiered

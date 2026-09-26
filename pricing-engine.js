@@ -299,6 +299,62 @@ const QUOTE_ITEMS = [
   ['impeller','Impeller change']
 ];
 
+/* ----------------------------------------------------------------------------
+   THE SERVICE MENU — what staff can add to, or take off, a quote from the
+   console without re-opening the customer's builder.
+   ----------------------------------------------------------------------------
+   Every entry is keyed by the SAME state key the customer page's own control
+   writes, so a service staff add here is indistinguishable to the engine from
+   one the customer ticked: it prices from PRICES, follows a re-measure, and
+   re-prices at next season's rates like everything else. That is the whole
+   point — a service typed into the Adjustment card is a frozen dollar figure
+   that never follows the rate card, and it is why this list exists.
+
+   The console never writes these into d.state (the customer's own answers).
+   They ride the manual journal as `manual.services`, the same overlay a
+   re-measure and a penalty use — effectiveState_ in the .gs applies it.
+
+     key     : the engine state key
+     kind    : 'flag'  — on or off
+               'count' — a whole number (0 turns it off)
+               'choice'— one of `options` ([value, label])
+     units   : the unit types that can carry it (golf carts and e-bikes are
+               one flat line each, so nothing here applies to them)
+     needs   : another key that has to be on for this one to price at all
+     price   : a flat PRICES key, shown as a hint beside the control
+     perFt   : a per-foot PRICES key, shown as "$x / ft"
+     request : a QUOTE_ITEMS entry — adding it opens a quote request for staff
+               to price, exactly as the customer ticking it would
+
+   Motors, service level, dimensions, trailer and storage are deliberately NOT
+   here: they are one bound control group on the console's unit-details card
+   (sanitizeEngines_), and the penalties (pumpout, late retrieval) have their
+   own card because they are charges the customer is never offered. */
+const SERVICE_MENU = [
+  { key:'dtTrans',   label:'Transmission or V-drive',          kind:'count',  units:['boat'], group:'Drive train',   price:'dtTrans' },
+  { key:'dtTransom', label:'I/O transom service',              kind:'count',  units:['boat'], group:'Drive train',   price:'dtTransom' },
+  { key:'ballast',   label:'Ballast drain (tanks)',            kind:'count',  units:['boat'], group:'Water systems', price:'ballast' },
+  { key:'waterCold', label:'Water system — cold only',    kind:'flag',   units:['boat'], group:'Water systems', price:'waterCold' },
+  { key:'waterHead', label:'Water system incl. 1 head',        kind:'flag',   units:['boat'], group:'Water systems', price:'waterHead' },
+  { key:'addlHeads', label:'Additional heads',                 kind:'count',  units:['boat'], group:'Water systems', price:'addlHeads', needs:'waterHead' },
+  { key:'ac',        label:'Air conditioning (up to 2 units)', kind:'flag',   units:['boat'], group:'Water systems', price:'ac' },
+  { key:'genBasic',  label:'Generator — basic',           kind:'flag',   units:['boat'], group:'Water systems', price:'genBasic' },
+  { key:'genFull',   label:'Generator — oil & filter',    kind:'flag',   units:['boat'], group:'Water systems', price:'genFull' },
+  { key:'retrieval', label:'Retrieval',                        kind:'choice', units:['boat'], group:'Retrieval',
+    options:[['none','None — customer drops off & picks up'],
+             ['quest','Quest retrieves, sets & relaunches (no trailer)'],
+             ['custTrailer','Retrieve & relaunch on the customer\'s trailer']],
+    note:'Priced only for outside or no storage — inside storage already includes it.' },
+  { key:'wrap',      label:'Shrinkwrap',                       kind:'flag',   units:['boat'], group:'Shrinkwrap' },
+  { key:'inWater',   label:'Wrapped while in-water',           kind:'flag',   units:['boat'], group:'Shrinkwrap',    perFt:'wrapInWaterFt', needs:'wrap' },
+  { key:'powerwash', label:'Powerwash hull',                   kind:'flag',   units:['boat'], group:'Washing',       perFt:'powerwashFt',
+    note:'Not charged while acid wash is on — acid wash replaces it.' },
+  { key:'acidWash',  label:'Acid wash hull',                   kind:'flag',   units:['boat'], group:'Washing',       perFt:'acidNarrowFt' },
+  { key:'skiDetail', label:'Jetski detail (per ski)',          kind:'count',  units:['jetski'], group:'Detailing',   price:'skiDetail' }
+].concat(QUOTE_ITEMS.map(function(p){
+  return { key:p[0], label:p[1], kind:'flag', units:['boat'], group:'Quoted on request', request:true };
+}));
+
 /* Money formatter for the `calc` recipe strings. Deliberately NOT
    toLocaleString: Apps Script's Intl support is less predictable than the
    browser's, and calc strings are compared byte-for-byte by the drift alarm.
@@ -780,7 +836,7 @@ function seasonStamp(){
 }
 // ENGINE-END
 
-  const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, DIM_FIELDS,
+  const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, SERVICE_MENU, DIM_FIELDS,
                 pricingNotice, lockinCopy, pricesValidSentence, signUrlFor, normalizeQuoteNo,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,

@@ -557,6 +557,62 @@ const QUOTE_ITEMS = [
   ['impeller','Impeller change']
 ];
 
+/* ----------------------------------------------------------------------------
+   THE SERVICE MENU — what staff can add to, or take off, a quote from the
+   console without re-opening the customer's builder.
+   ----------------------------------------------------------------------------
+   Every entry is keyed by the SAME state key the customer page's own control
+   writes, so a service staff add here is indistinguishable to the engine from
+   one the customer ticked: it prices from PRICES, follows a re-measure, and
+   re-prices at next season's rates like everything else. That is the whole
+   point — a service typed into the Adjustment card is a frozen dollar figure
+   that never follows the rate card, and it is why this list exists.
+
+   The console never writes these into d.state (the customer's own answers).
+   They ride the manual journal as `manual.services`, the same overlay a
+   re-measure and a penalty use — effectiveState_ in the .gs applies it.
+
+     key     : the engine state key
+     kind    : 'flag'  — on or off
+               'count' — a whole number (0 turns it off)
+               'choice'— one of `options` ([value, label])
+     units   : the unit types that can carry it (golf carts and e-bikes are
+               one flat line each, so nothing here applies to them)
+     needs   : another key that has to be on for this one to price at all
+     price   : a flat PRICES key, shown as a hint beside the control
+     perFt   : a per-foot PRICES key, shown as "$x / ft"
+     request : a QUOTE_ITEMS entry — adding it opens a quote request for staff
+               to price, exactly as the customer ticking it would
+
+   Motors, service level, dimensions, trailer and storage are deliberately NOT
+   here: they are one bound control group on the console's unit-details card
+   (sanitizeEngines_), and the penalties (pumpout, late retrieval) have their
+   own card because they are charges the customer is never offered. */
+const SERVICE_MENU = [
+  { key:'dtTrans',   label:'Transmission or V-drive',          kind:'count',  units:['boat'], group:'Drive train',   price:'dtTrans' },
+  { key:'dtTransom', label:'I/O transom service',              kind:'count',  units:['boat'], group:'Drive train',   price:'dtTransom' },
+  { key:'ballast',   label:'Ballast drain (tanks)',            kind:'count',  units:['boat'], group:'Water systems', price:'ballast' },
+  { key:'waterCold', label:'Water system — cold only',    kind:'flag',   units:['boat'], group:'Water systems', price:'waterCold' },
+  { key:'waterHead', label:'Water system incl. 1 head',        kind:'flag',   units:['boat'], group:'Water systems', price:'waterHead' },
+  { key:'addlHeads', label:'Additional heads',                 kind:'count',  units:['boat'], group:'Water systems', price:'addlHeads', needs:'waterHead' },
+  { key:'ac',        label:'Air conditioning (up to 2 units)', kind:'flag',   units:['boat'], group:'Water systems', price:'ac' },
+  { key:'genBasic',  label:'Generator — basic',           kind:'flag',   units:['boat'], group:'Water systems', price:'genBasic' },
+  { key:'genFull',   label:'Generator — oil & filter',    kind:'flag',   units:['boat'], group:'Water systems', price:'genFull' },
+  { key:'retrieval', label:'Retrieval',                        kind:'choice', units:['boat'], group:'Retrieval',
+    options:[['none','None — customer drops off & picks up'],
+             ['quest','Quest retrieves, sets & relaunches (no trailer)'],
+             ['custTrailer','Retrieve & relaunch on the customer\'s trailer']],
+    note:'Priced only for outside or no storage — inside storage already includes it.' },
+  { key:'wrap',      label:'Shrinkwrap',                       kind:'flag',   units:['boat'], group:'Shrinkwrap' },
+  { key:'inWater',   label:'Wrapped while in-water',           kind:'flag',   units:['boat'], group:'Shrinkwrap',    perFt:'wrapInWaterFt', needs:'wrap' },
+  { key:'powerwash', label:'Powerwash hull',                   kind:'flag',   units:['boat'], group:'Washing',       perFt:'powerwashFt',
+    note:'Not charged while acid wash is on — acid wash replaces it.' },
+  { key:'acidWash',  label:'Acid wash hull',                   kind:'flag',   units:['boat'], group:'Washing',       perFt:'acidNarrowFt' },
+  { key:'skiDetail', label:'Jetski detail (per ski)',          kind:'count',  units:['jetski'], group:'Detailing',   price:'skiDetail' }
+].concat(QUOTE_ITEMS.map(function(p){
+  return { key:p[0], label:p[1], kind:'flag', units:['boat'], group:'Quoted on request', request:true };
+}));
+
 /* Money formatter for the `calc` recipe strings. Deliberately NOT
    toLocaleString: Apps Script's Intl support is less predictable than the
    browser's, and calc strings are compared byte-for-byte by the drift alarm.
@@ -1319,7 +1375,7 @@ const CONSOLE_GET_FNS_ = {
   /* Previews. Every one of these renders or proposes and writes nothing —
      that is the invariant they already had to hold (docs/ref/EMAILS.md,
      docs/ref/STAFF-CONSOLE.md), and check-console-transport.js pins it. */
-  emailPreview: 1, dimsPreview: 1, bulkPreview: 1, repricePreview: 1,
+  emailPreview: 1, dimsPreview: 1, servicesPreview: 1, bulkPreview: 1, repricePreview: 1,
   importList: 1, importPreview: 1, backupPreview: 1,
   /* A read: it reports where the run has got to and writes nothing. The other
      four are writes and stay POST-only. */
@@ -1336,6 +1392,8 @@ function consoleFns_(p) {
     dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
+    servicesPreview: function (a) { return adminServicesPreview(p.token, a[0], a[1]); },
+    servicesApply:   function (a) { return adminServicesApply(p.token, a[0], a[1]); },
     hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
@@ -2311,6 +2369,8 @@ function recomputeTotals_(d) {
  *   manual.edits:       [{label, newAmt, newLabel}]     lines changed (label = original wizard label)
  *   manual.priced:      [{rqLabel, label, amt, sec}]    quote-requests given a price
  *   manual.adjustments: [{label, amt}]                  added charge/discount lines
+ *   manual.services:    {stateKey: value}               services staff added or took off from
+ *                       the console (SERVICE_MENU) — applied by effectiveState_, priced by the engine
  *   manual.hho:         {status, amt, by, at}           slipholder discount approval —
  *                       replayed by recomputeTotals_, see hhoDiscountLine in the engine */
 function applyManualOps_(d) {
@@ -2418,10 +2478,17 @@ function effectiveState_(d) {
   const base = (d && d.state) || null;
   if (!base) return null;
   const meas = d.manual && d.manual.measured;
+  const svc  = d.manual && d.manual.services;
   const pen  = d.manual && d.manual.penalties;
-  if (!meas && !pen) return base;
+  if (!meas && !svc && !pen) return base;
   const s = JSON.parse(JSON.stringify(base));
   if (meas) Object.keys(meas).forEach(function (k) { s[k] = meas[k]; });
+  /* Services staff added or took off from the console (SERVICE_MENU in the
+     engine). Same overlay, same reason: the customer's page posts its own
+     state on their next save, and a service written into d.state would be
+     undone by whatever is still ticked in their browser. Whatever is in here
+     is Quest's decision and wins over the customer's answer — on or off. */
+  if (svc) Object.keys(svc).forEach(function (k) { s[k] = svc[k]; });
   /* Penalties last, so a later re-measure cannot quietly drop one. They ride
      the same overlay as measurements rather than getting their own line-
      building code: the engine already knows how to price a pumpout and a late
@@ -2462,6 +2529,220 @@ function adminPenalty(token, qn, which, on) {
   return { ok: 1, msg: PENALTY_KEYS_[key] + (want ? ' applied. ' : ' removed. ') +
     'Total ' + usd_(before) + ' \u2192 ' + usd_(after) + '. The customer has not been emailed.',
     total: usd_(after), on: want };
+}
+
+/* ---- Adding or removing services from the console ----
+   The catalogue is SERVICE_MENU in the engine: every entry is the state key the
+   customer's own control writes, so a service added here is priced by the same
+   rules, follows a re-measure, and re-prices at next season's rates. It rides
+   the manual journal as `manual.services` — never d.state — for the reason
+   every other staff change does (effectiveState_).
+
+   A value in the journal is Quest's decision and wins over the customer's
+   answer either way: staff can add a powerwash the customer phoned in, or
+   take off the detailing they decided against. */
+function serviceMenuFor_(kind) {
+  return SERVICE_MENU.filter(function (m) { return m.units.indexOf(String(kind || '')) > -1; });
+}
+function serviceItem_(key, kind) {
+  return serviceMenuFor_(kind).filter(function (m) { return m.key === key; })[0] || null;
+}
+/* One value, cleaned to the shape the engine reads for that kind of item.
+   A count of '' is refused rather than read as 0 — Number('') is 0, and an
+   emptied box would silently delete a charge. Zero has to be typed. */
+function cleanServiceValue_(item, v) {
+  if (item.kind === 'flag') {
+    if (typeof v === 'string') return ['1', 'true', 'on', 'yes'].indexOf(v.trim().toLowerCase()) > -1;
+    return !!v;
+  }
+  if (item.kind === 'count') {
+    const txt = (v === null || v === undefined) ? '' : String(v).trim();
+    if (txt === '') throw new Error('Enter a number for ' + item.label + ' (type 0 to take it off).');
+    const n = Number(txt);
+    if (!isFinite(n) || n < 0 || n !== Math.floor(n)) throw new Error('Enter a whole number for ' + item.label + '.');
+    if (n > 20) throw new Error(n + ' for ' + item.label + ' looks wrong. Check before saving.');
+    return n;
+  }
+  if (item.kind === 'choice') {
+    const val = String(v || '');
+    if (!(item.options || []).some(function (o) { return o[0] === val; })) throw new Error('Pick an option for ' + item.label + '.');
+    return val;
+  }
+  throw new Error('Unknown service kind.');
+}
+/* `changes` is { key: value } from the console. Only keys on this unit's menu
+   are accepted, and a change to the exact value already in force is dropped
+   so the journal only ever holds what somebody actually decided. Throws on a
+   bad value; the caller turns that into the console's error message. */
+function sanitizeServices_(changes, st) {
+  const out = {};
+  const kind = String((st && st.unit) || '');
+  Object.keys(changes || {}).forEach(function (k) {
+    const item = serviceItem_(k, kind);
+    if (!item) throw new Error('"' + k + '" is not a service that can be added to this unit.');
+    const v = cleanServiceValue_(item, changes[k]);
+    const cur = item.kind === 'flag' ? !!st[k] : item.kind === 'count' ? Number(st[k] || 0) : String(st[k] || 'none');
+    if (v !== cur) out[k] = v;
+  });
+  /* A dependent service with nothing to depend on would price at nothing and
+     confuse everyone: say so instead. Checked against the state as it will be
+     AFTER this change, so turning both on in one go is fine. */
+  Object.keys(out).forEach(function (k) {
+    const item = serviceItem_(k, kind);
+    if (!item.needs) return;
+    const on = item.kind === 'count' ? out[k] > 0 : !!out[k];
+    const parentOn = out[item.needs] !== undefined ? !!out[item.needs] : !!st[item.needs];
+    if (on && !parentOn) {
+      const parent = serviceItem_(item.needs, kind);
+      throw new Error(item.label + ' needs "' + (parent ? parent.label : item.needs) + '" on as well.');
+    }
+  });
+  return out;
+}
+/* The hint beside each control: the flat rate, the per-foot rate, or what a
+   quote request is. Display only; the engine prices from PRICES itself. */
+function serviceHint_(item, st) {
+  if (item.request) return item.key === 'impeller' && PRICES.impellerStartingAt
+    ? 'quoted \u2014 from ' + usd_(PRICES.impellerStartingAt) : 'quoted after';
+  if (item.price) return usd_(PRICES[item.price]) + (item.kind === 'count' ? ' each' : '');
+  if (item.perFt) {
+    if (item.key === 'acidWash') return usd_(PRICES.acidNarrowFt) + '/ft, ' + usd_(PRICES.acidWideFt) + '/ft over ' + RULES.acidBeamMax + "' beam";
+    return usd_(PRICES[item.perFt]) + '/ft';
+  }
+  if (item.key === 'wrap') {
+    const w = wrapAuto(st || {});
+    return w.amt == null ? 'needs LOA' + (st && st.loa ? ' & beam' : '') : usd_(w.amt);
+  }
+  return '';
+}
+/* Everything the console's services card needs to draw itself pre-filled
+   with what is in force now, and to say which of it is Quest's doing. */
+function servicesInfo_(d) {
+  const st = effectiveState_(d);
+  if (!st) return { editable: false, why: 'This quote was saved before selections were stored, so services can\'t be added automatically. Use the Adjustment card.' };
+  const kind = String(st.unit || '');
+  const menu = serviceMenuFor_(kind);
+  if (!menu.length) return { editable: false, why: 'A ' + (kind === 'golf' ? 'golf cart' : kind === 'ebike' ? 'e-bike' : kind) + ' is one flat storage line — there are no services to add. Use the Adjustment card for anything extra.' };
+  const svc = (d.manual && d.manual.services) || {};
+  const cust = (d.manual && d.manual.customerState) || d.state || {};
+  const valOf = function (item, src) {
+    return item.kind === 'flag' ? !!src[item.key] : item.kind === 'count' ? Number(src[item.key] || 0) : String(src[item.key] || 'none');
+  };
+  return {
+    editable: true, unitKind: kind,
+    items: menu.map(function (item) {
+      return {
+        key: item.key, label: item.label, kind: item.kind, group: item.group,
+        options: item.options || null, needs: item.needs || '', note: item.note || '',
+        request: !!item.request,
+        value: valOf(item, st),
+        customerValue: valOf(item, cust),
+        byStaff: svc.hasOwnProperty(item.key),
+        hint: serviceHint_(item, st)
+      };
+    })
+  };
+}
+/* Price the change on a copy and report the line diff. Writes nothing:
+   verify.sh holds it to that. */
+function servicesProposal_(d, changes) {
+  const before = effectiveState_(d);
+  if (!before) return { ok: 0, error: 'This quote has no stored selections, so services can\'t be added automatically. Use the Adjustment card instead.' };
+  const clean = sanitizeServices_(changes, before);
+  if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
+
+  const beforeLines = (d.lines || []).map(function (l) { return { label: l.label, amt: Number(l.amt || 0) }; });
+  const beforeTotal = Number(d.total || 0);
+  const beforeRq = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
+
+  const clone = JSON.parse(JSON.stringify(d));
+  const m = ensureManual_(clone);
+  m.services = Object.assign({}, m.services || {}, clean);
+  const cross = rebuildLinesFromState_(clone);
+  if (!cross.rebuilt) return { ok: 0, error: 'Could not re-price: ' + cross.reason };
+  applyManualOps_(clone);
+
+  const afterLines = (clone.lines || []).map(function (l) { return { label: l.label, amt: Number(l.amt || 0) }; });
+  const afterTotal = Number(clone.total || 0);
+  const afterRq = String(clone.quotesRequested || '').split('; ').filter(function (x) { return x; });
+  const paid = paymentsTotal_(d);
+  const b = afterTotal - paid;
+  return {
+    ok: 1,
+    changes: clean,
+    diff: lineDiff_(beforeLines, afterLines),
+    requestsOpened: afterRq.filter(function (x) { return beforeRq.indexOf(x) < 0; }),
+    requestsClosed: beforeRq.filter(function (x) { return afterRq.indexOf(x) < 0; }),
+    /* The engine asks for a missing measurement rather than pricing a guess —
+       "LOA for powerwash" — and the console has to be able to say that. */
+    need: cross.need || [],
+    beforeTotal: usd_(beforeTotal), afterTotal: usd_(afterTotal),
+    delta: (afterTotal - beforeTotal >= 0 ? '+' : '\u2212') + usd_(Math.abs(afterTotal - beforeTotal)),
+    deltaNum: Math.round((afterTotal - beforeTotal) * 100) / 100,
+    paid: usd_(paid),
+    newBalance: b < -0.005 ? 'CREDIT ' + usd_(-b) : usd_(Math.max(0, b))
+  };
+}
+function adminServicesPreview(token, qn, changes) {
+  requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  try { return servicesProposal_(ctx.d, changes); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+}
+function adminServicesApply(token, qn, changes) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const st = effectiveState_(d);
+  if (!st) return { ok: 0, error: 'This quote has no stored selections, so services can\'t be added automatically. Use the Adjustment card instead.' };
+  let clean;
+  try { clean = sanitizeServices_(changes, st); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+  if (!Object.keys(clean).length) return { ok: 0, error: 'Nothing changed.' };
+
+  const beforeTotal = Number(d.total || 0);
+  const beforeRq = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
+  const m = ensureManual_(d);
+  /* Keep what the customer originally asked for, once, the same way a
+     re-measure does: the page round-trips the effective state, so after their
+     next save d.state carries our additions too. */
+  if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
+  m.services = Object.assign({}, m.services || {}, clean);
+
+  const cross = rebuildLinesFromState_(d);
+  if (!cross.rebuilt) return { ok: 0, error: 'Could not re-price: ' + cross.reason + '. Nothing was changed.' };
+  applyManualOps_(d);
+  saveQuoteRow_(ctx);
+
+  const afterTotal = Number(d.total || 0);
+  const afterRq = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
+  const opened = afterRq.filter(function (x) { return beforeRq.indexOf(x) < 0; });
+  const said = Object.keys(clean).map(function (k) {
+    const item = serviceItem_(k, st.unit);
+    const v = clean[k];
+    const label = item ? item.label : k;
+    if (item && item.kind === 'flag') return (v ? '+ ' : '\u2212 ') + label;
+    if (item && item.kind === 'choice') return label + ': ' + (((item.options || []).filter(function (o) { return o[0] === v; })[0] || [v, v])[1]);
+    return label + ' \u00d7 ' + v;
+  }).join(', ');
+  const delta = afterTotal - beforeTotal;
+  auditLog_(who.name, 'Services changed on ' + d.quoteNo + ': ' + said +
+    ' \u00b7 ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal) +
+    (opened.length ? ' \u00b7 request opened: ' + opened.join('; ') : ''));
+  const paid = paymentsTotal_(d);
+  const bal = afterTotal - paid;
+  return {
+    ok: 1,
+    msg: said + '. ' + usd_(beforeTotal) + ' \u2192 ' + usd_(afterTotal) +
+      ' (' + (delta >= 0 ? '+' : '\u2212') + usd_(Math.abs(delta)) + ').' +
+      (opened.length ? ' Quote request opened for ' + opened.join(', ') + ' \u2014 price it under Line items.' : '') +
+      ' No email sent yet.',
+    total: usd_(afterTotal),
+    balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)),
+    requestsOpened: opened
+  };
 }
 
 /* ---- Heritage Harbor slipholder discount (console) ----
@@ -2628,7 +2909,7 @@ function rebuildLinesFromState_(d) {
   if (sp.flags.length) d._flags = sp.flags; else delete d._flags;
   /* Hand back the state that priced it: callers need it to describe what
      changed (the audit log and the console diff both do). */
-  return { rebuilt: true, postedTotal: posted, serverRawTotal: linesTotal_(sp.lines), state: sp.state };
+  return { rebuilt: true, postedTotal: posted, serverRawTotal: linesTotal_(sp.lines), state: sp.state, need: sp.need || [] };
 }
 
 /* Compare AFTER the journal has been replayed: by then d.total is the server's
@@ -4834,6 +5115,9 @@ function adminLookup(token, qn) {
       });
     })(),
     hho: hhoInfo_(d),
+    /* The services card: SERVICE_MENU for this unit, pre-filled with what is
+       in force and marked where it is Quest's doing rather than the customer's. */
+    services: servicesInfo_(d),
     photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
     contractUrl: d.contractUrl || '',
     /* Whether there is a signing link to send at all, not the link itself —

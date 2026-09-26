@@ -564,6 +564,14 @@ aside.ticket{position:sticky;top:18px}
     <div class="golfOnly" style="display:none;margin-bottom:12px"><label class="f" for="hhoAddr">Heritage Harbor address for pickup &amp; delivery (street &amp; number only)</label><input type="text" id="hhoAddr" data-k="hhoAddr" placeholder="e.g. 123 Anchor Ln" style="max-width:320px"></div>
     <div class="keysOnly" style="display:none;margin-bottom:12px"><label class="f" for="keyLoc">Where will the keys be?</label><input type="text" id="keyLoc" data-k="keyLoc" placeholder="e.g. in the glove box / at the front desk / on the seat" style="max-width:380px">
       <p class="note" id="keysNote" style="margin-top:6px"></p></div>
+    <!-- WHERE the trailer is, which is a different question from whether there
+         is one (the Trailer choice on the first step). Only shown when that
+         answer was "I have a trailer" — a boat blocked on stands is never asked
+         (Chris: don't ask where the trailer is on boats listed as not on a
+         trailer). The value rides in `state` and reaches the console's Keys &
+         slip card and Harbor Haul Out's "Trailer is" row through the same
+         `trailerLoc` field staff already correct there. -->
+    <div class="trailerLocOnly" style="display:none;margin-bottom:12px"><label class="f" for="trailerLoc">Where is the trailer? <small>so the crew can find it come spring</small></label><input type="text" id="trailerLoc" data-k="trailerLoc" placeholder="e.g. at my house / in Quest's lot / at the harbor" style="max-width:380px"></div>
     <div><label class="f" for="notes">Notes / special requests</label><textarea id="notes" data-k="notes" rows="3" placeholder="Retrieval date requests, slip number, anything we should know…"></textarea></div>
     <div class="review-actions">
       <button class="btn gold" onclick="goNext()">Sign &amp; pay online →</button>
@@ -736,7 +744,7 @@ const S = {
   waterCold:false, waterHead:false, pumpout:false, ac:false, genBasic:false, genFull:false,
   storage:'none', retrieval:'none',
   wrap:false, inWater:false,
-  powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'', hhoAddr:'', keyLoc:'',
+  powerwash:false, acidWash:false, lateRetrieval:false, hho:false, slipNo:'', hhoAddr:'', keyLoc:'', trailerLoc:'',
   bottomTouch:false, bottomStrip:false, propRefurb:false,
   extDetail:false, washWax:false, intDetail:false, intWipe:false,
   quoteNo:'', payMode:'deposit',
@@ -855,6 +863,13 @@ function syncPontoonUI(){
   $$('#pontoonFs [data-pontoon]').forEach(b=>b.classList.toggle('on',(b.dataset.pontoon==='yes')===!!S.isPontoon));
 }
 
+/* Is there a trailer whose location we should ask for? The trailer question is
+   only put to boats and jet skis (#trailerFs), so for them hasTrailer is the
+   customer's own answer; a land unit is never asked. Same rule as the server's
+   needsTrailerLoc_, minus its "a recorded value always wins" clause — here the
+   value is cleared the moment it stops applying (syncStartUI). */
+function trailerLocApplies(){ return (S.unit==='boat'||S.unit==='jetski') && !!S.hasTrailer; }
+
 function syncStartUI(){
   const u=S.unit;
   $('#trailerFs').style.display=(u==='boat'||u==='jetski')?'block':'none';
@@ -870,6 +885,11 @@ function syncStartUI(){
   $$('input[name=hasTrailer]').forEach(r=>r.checked=(r.value==='yes')===S.hasTrailer);
   $('#trailerOverhangField').style.display=(u==='boat'&&S.hasTrailer)?'block':'none';
   if(u!=='boat'||!S.hasTrailer){ if(u==='boat'&&!S.hasTrailer){S.trailerOverhang=0;S.lwt=0;setFtIn('trailerOverhang',0);} }
+  /* A trailer location typed before the answer changed to "No trailer" (or
+     the unit changed to a golf cart) must not be sent: the server treats any
+     recorded location as proof there is a trailer to find, and the crew would
+     be sent looking for one that was never there. */
+  if(!trailerLocApplies() && S.trailerLoc){ S.trailerLoc=''; const tl=$('#trailerLoc'); if(tl) tl.value=''; }
   // flat info card
   const fc=$('#flatInfo');
   if(u==='golf'){
@@ -1100,7 +1120,7 @@ function logQuote(status, extra){
     total:t.total.toFixed(2), deposit:t.deposit.toFixed(2),
     totalCC:t.cc.toFixed(2), totalLate:t.late.toFixed(2), totalLateCC:t.lateCC.toFixed(2),
     payMode:S.payMode,
-    slipNo:S.slipNo, hhoAddr:S.hhoAddr, keyLoc:S.keyLoc, hasTrailer:S.hasTrailer?1:0,
+    slipNo:S.slipNo, hhoAddr:S.hhoAddr, keyLoc:S.keyLoc, trailerLoc:S.trailerLoc, hasTrailer:S.hasTrailer?1:0,
     depositBase:depositBaseFor(S),
     items:L.map(li=>`${li.label}: ${li.amt?fmt(li.amt):'incl.'}`).join('\n'),
     lines:L.map(li=>({sec:li.sec,label:li.label,calc:li.calc||'',amt:li.amt,desc:li.desc||''})),
@@ -1443,6 +1463,9 @@ function refresh(){
   document.querySelectorAll('.timingOnly').forEach(el=>{ el.style.display = ['boat','jetski'].includes(S.unit) ? '' : 'none'; });
   const keysApply=['boat','jetski','golf'].includes(S.unit);
   document.querySelectorAll('.keysOnly').forEach(el=>{ el.style.display = keysApply ? '' : 'none'; });
+  /* Only when the customer said there IS a trailer. Jet skis are always on
+     one (the page refuses a jet ski without), so they are always asked. */
+  document.querySelectorAll('.trailerLocOnly').forEach(el=>{ el.style.display = trailerLocApplies() ? '' : 'none'; });
   const kn=$('#keysNote');
   const lateLine=['boat','jetski'].includes(S.unit)
     ? `Haul-outs requested after ${SEASON.payByShort} carry a $${PRICES.lateRetrieval} late retrieval surcharge.`

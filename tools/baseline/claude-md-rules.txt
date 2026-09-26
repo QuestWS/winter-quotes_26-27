@@ -472,8 +472,8 @@ migration. An explicit setting always wins, including turning it OFF.
 localStorage and a session opened before the deploy would otherwise lose the
 card on an action the server still accepts.
 `tools/check-perms-pause.js` runs the real roster through it.
-- **Journalled like a re-measure, never written into `d.state`.** Both fields
-exist in the customer's browser too and are re-posted on every save, so a
+- **Journalled like a re-measure, never written into `d.state`.** All three
+fields exist in the customer's browser too and are re-posted on every save, so a
 staff correction written into `d.state` would survive right up until their
 next save. They go into `manual.measured`; `effectiveState_` overlays them.
 `verify.sh` fails if `adminKeysApply` assigns into `d.state`.

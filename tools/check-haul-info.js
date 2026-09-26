@@ -89,6 +89,25 @@ console.log('\n=== 2. a staff entry survives the customer re-saving their quote 
     'keys='+d.keyLoc+' slip='+d.slipNo);
 }
 
+console.log('\n=== 2b. the customer\'s own trailer location reaches the crew ===');
+{
+  /* The quote page asks "Where is the trailer?" of a customer who said they
+     have one, and posts it in `state` beside the keys. It has to ride the same
+     rails: upgraded to the top level on a save (the PDF and the emails read it
+     there), overridable by staff, and enough on its own to put the field on
+     the console and the row on Harbor Haul Out. */
+  const d=quoteFrom('boat-twin-inboard-full');
+  d.state.hasTrailer=true; d.state.trailerLoc='at my house';
+  B.rebuildLinesFromState_(d); B.applyManualOps_(d);
+  check('top-level trailerLoc synced from the customer state', d.trailerLoc==='at my house', 'd.trailerLoc='+d.trailerLoc);
+  const st=B.effectiveState_(d);
+  check('the console and Harbor Haul Out are told to show it', B.needsTrailerLoc_(d,st,st.trailerLoc)===true);
+  check('it is never chased as missing', B.missingHaulInfo_(d).indexOf('trailer')<0, JSON.stringify(B.missingHaulInfo_(d)));
+  B.ensureManual_(d).measured={trailerLoc:'back lot, row 3'};
+  B.rebuildLinesFromState_(d); B.applyManualOps_(d);
+  check('a staff correction still wins over it', d.trailerLoc==='back lot, row 3', 'd.trailerLoc='+d.trailerLoc);
+}
+
 console.log('\n=== 3. clearing falls back to what the customer told us ===');
 {
   const d=quoteFrom('boat-twin-inboard-full');

@@ -1373,6 +1373,10 @@ function consoleFns_(p) {
     backupRestore: function (a) { return adminBackupRestore(p.token, a[0], a[1], a[2]); },
     bulkPreview: function (a) { return adminBulkPreview(p.token, a[0]); },
     bulkSend:    function (a) { return adminBulkSend(p.token, a[0], a[1]); },
+    /* Both writes — one creates Gmail drafts, the other rewrites payloads and
+       can move a row off the Import tab — so neither is on CONSOLE_GET_FNS_. */
+    bulkDraft:   function (a) { return adminBulkDraft(p.token, a[0], a[1]); },
+    draftSweep:  function (a) { return adminDraftSweep(p.token); },
     repricePreview: function (a) { return adminRepricePreview(p.token); },
     repriceApply:   function (a) { return adminRepriceApply(p.token, a[0], a[1]); },
     importList:     function (a) { return adminImportList(p.token); },
@@ -5451,11 +5455,17 @@ function adminBulkPreview(token, kind) {
     recipients: t.targets.map(function (x) {
       /* When this kind last went to this quote, so a customer is not sent the
          same email twice by somebody working down the list on a second day. */
-      const prior = (x.d.emailLog || []).filter(function (e) { return e && e.kind === kind; });
+      const prior = (x.d.emailLog || []).filter(function (e) {
+        /* A draft still waiting in Gmail is not a send. One the sweep confirmed
+           went out is, and so is any ordinary send. */
+        return e && e.kind === kind && (!e.draft || e.draft.state === 'sent');
+      });
+      const od = openDraftFor_(x.d, kind);
       return { qn: String(x.d.quoteNo || ''), tab: x.tab,
         name: [x.d.lastName, x.d.firstName].filter(Boolean).join(', ') || String(x.d.owner || ''),
         email: String(x.d.email || ''),
         lastSent: prior.length ? String(prior[prior.length - 1].ts || '') : '',
+        draft: od ? { made: String(od.ts || ''), stale: !!od.draft.stale } : null,
         total: usd_(Number(x.d.total || 0)),
         cnote: customerNoteOf_(x.d) ? 1 : 0 };
     }),
@@ -5485,8 +5495,12 @@ function bulkSendKind_(kind, by, only) {
   const chosen = bulkFilterTargets_(t.targets, only);
   const skipped = t.targets.length - chosen.length;
   let sent = 0;
-  const failed = [];
+  const failed = [], held = [];
   chosen.forEach(function (x) {
+    /* A draft of this same email is waiting in Gmail. Sending now would
+       reach them twice the moment somebody opens Drafts; delete the draft
+       first if the send is really wanted. */
+    if (openDraftFor_(x.d, kind)) { held.push(x.d.quoteNo || '(unknown)'); return; }
     try {
       /* Sending an imported draft MOVES its row off the Import tab
          (recordEmail_ -> leaveImportTab_ -> deleteRow), which shifts every
@@ -5518,8 +5532,9 @@ function bulkSendKind_(kind, by, only) {
   });
   auditLog_(by, 'SEND TO ALL "' + cfg.label + '" — ' + sent + ' of ' + chosen.length +
     ' sent' + (skipped ? ' (' + skipped + ' deselected of ' + t.targets.length + ' eligible)' : '') +
+    (held.length ? '; held, a draft is waiting in Gmail: ' + held.join(', ') : '') +
     (failed.length ? '; failed: ' + failed.join(', ') : ''));
-  return { sent: sent, total: chosen.length, eligible: t.targets.length, skipped: skipped, failed: failed };
+  return { sent: sent, total: chosen.length, eligible: t.targets.length, skipped: skipped, failed: failed, held: held };
 }
 
 function adminBulkSend(token, kind, only) {
@@ -5535,11 +5550,241 @@ function adminBulkSend(token, kind, only) {
   const r = bulkSendKind_(kind, who.name, only);
   if (!r.total) return { ok: 0, error: 'None of the selected quotes are eligible for this email.' };
   return {
-    ok: 1, sent: r.sent, total: r.total, skipped: r.skipped, failed: r.failed.length,
+    ok: 1, sent: r.sent, total: r.total, skipped: r.skipped, failed: r.failed.length, held: r.held.length,
     msg: 'Sent to ' + r.sent + ' of ' + r.total + ' customer(s).' +
       (r.skipped ? ' ' + r.skipped + ' deselected.' : '') +
+      (r.held.length ? ' ' + r.held.length + ' not sent — a draft of this email is already waiting in Gmail.' : '') +
       (r.failed.length ? ' ' + r.failed.length + ' failed — see the Activity Log.' : '')
   };
+}
+
+/* ================= DRAFTS INSTEAD OF SENDS =================
+ * The Apps Script send quota on a free Gmail account is ~100 recipients a day,
+ * and every customer save, receipt and service@ notification draws on the same
+ * pot — so a season's worth of firm quotes cannot leave through
+ * GmailApp.sendEmail in a week. Creating a DRAFT costs nothing against that
+ * quota, and sending a draft by hand from Gmail runs under Gmail's own, far
+ * larger daily limit. Chris used to write every one of these emails himself;
+ * "open and press send" is a step up, not a step back.
+ *
+ * So the send-to-all picker has a second button: the same recipients, the same
+ * builder, the same PDF — but each one lands in this account's Drafts instead
+ * of leaving. Two things follow from the script no longer being the sender:
+ *
+ *   1. It cannot see the send. Creating the draft records a `draft` entry in
+ *      the quote's Email History, state 'open', and changes NOTHING else — no
+ *      status, no reminder-hold release, no Import-tab move. Those all happen
+ *      when the sweep (draftSweepCheck, 6:30pm Central, or the console's
+ *      "Check drafts now") finds the draft gone from Drafts and the same
+ *      subject in Sent: only then does it run recordEmail_, exactly as a
+ *      scripted send would have.
+ *   2. A draft is frozen at creation. If the quote changes afterwards — a
+ *      re-price, a customer edit — the numbers in the draft are wrong, so the
+ *      sweep marks it `stale` and the picker says so. Delete it in Gmail and
+ *      create it again.
+ *
+ * A draft gone from Drafts but not (yet) in Sent is NOT written off at once:
+ * Gmail's search index can lag a fresh send. It is stamped `missing`, and only
+ * a sweep a day or more later that still cannot find it marks it 'discarded'.
+ * An unreachable Gmail leaves every entry exactly as it was — a search that
+ * fails must never become the reason a sent email is recorded as thrown away.
+ *
+ * service@ is CC'd on every draft (Chris's ask) and stays the reply-to: that
+ * CC is the copy the office keeps, since no notification is sent for a draft.
+ *
+ * The rule in CLAUDE.md that says "never create a Gmail draft addressed to a
+ * customer" is about Claude doing so while testing. This is staff choosing
+ * each recipient and pressing a button, and it is the exception that rule
+ * points at.
+ */
+/* How far back the sweep looks in Sent, and how long a draft may be gone
+   from Drafts without turning up there before it is written off. */
+const DRAFT_SEARCH_DAYS_ = 90;
+const DRAFT_MISSING_GRACE_MS_ = 20 * 3600 * 1000;
+
+/* The Gmail draft of `kind` still waiting on this quote, or null. */
+function openDraftFor_(d, kind) {
+  const log = (d && d.emailLog) || [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const e = log[i];
+    if (e && e.kind === kind && e.draft && e.draft.state === 'open') return e;
+  }
+  return null;
+}
+
+/* Exactly what bulkSendKind_ hands GmailApp.sendEmail, plus the CC. */
+function draftOpts_(built, d) {
+  const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO, cc: NOTIFY_EMAIL };
+  const logo = getLogoBlob_();
+  if (logo) opts.inlineImages = { questlogo: logo };
+  if (built.attachPdf) { const pdf = getPdfBlob_(d.quoteNo, d); if (pdf) opts.attachments = [pdf]; }
+  if (FROM_ALIAS) opts.from = FROM_ALIAS;
+  return opts;
+}
+
+function adminBulkDraft(token, kind, only) {
+  const who = requireAuth_(token, 'email');
+  const cfg = BULK_KINDS_[kind];
+  if (!cfg) return { ok: 0, error: 'That email has no send-to-all version.' };
+  /* Unlike a send, there is no "everyone" here: every draft is a ticked name. */
+  if (!Array.isArray(only) || !only.length) return { ok: 0, error: 'Nobody is ticked — select at least one customer.' };
+  const t = bulkTargets_(kind);
+  const chosen = bulkFilterTargets_(t.targets, only);
+  if (!chosen.length) return { ok: 0, error: 'None of the selected quotes are eligible for this email.' };
+  let made = 0;
+  const waiting = [], failed = [];
+  chosen.forEach(function (x) {
+    /* One draft per email per quote. A second would be sent as a second copy. */
+    if (openDraftFor_(x.d, kind)) { waiting.push(x.d.quoteNo || '(unknown)'); return; }
+    try {
+      const built = buildEmailFor_(x.d, kind, '', '');
+      if (!built) throw new Error('could not build the email');
+      const dr = GmailApp.createDraft(x.d.email, built.subject, built.subject, draftOpts_(built, x.d));
+      x.d.emailLog = x.d.emailLog || [];
+      x.d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: x.d.email || '', by: who.name,
+        draft: { id: String(dr.getId()), state: 'open', subject: built.subject,
+                 status: built.status || cfg.status || '',
+                 total: Number(x.d.total || 0), made: new Date().toISOString() } });
+      /* No recordEmail_ here, on purpose: nothing has been sent. The row does
+         not move and the reminder hold stays — see the section comment. */
+      x.sh.getRange(x.row, COL.PAYLOAD).setValue(JSON.stringify(x.d));
+      made++;
+    } catch (e) {
+      failed.push(x.d.quoteNo || '(unknown)');
+      console.error('Draft ' + kind + ' failed for ' + x.d.quoteNo + ': ' + e);
+    }
+  });
+  auditLog_(who.name, 'DRAFTS "' + cfg.label + '" — ' + made + ' of ' + chosen.length + ' created in Gmail' +
+    (waiting.length ? '; already waiting: ' + waiting.join(', ') : '') +
+    (failed.length ? '; failed: ' + failed.join(', ') : ''));
+  return {
+    ok: 1, made: made, total: chosen.length, waiting: waiting.length, failed: failed.length,
+    msg: 'Created ' + made + ' draft(s) in Gmail.' +
+      (waiting.length ? ' ' + waiting.length + ' already had one waiting.' : '') +
+      (failed.length ? ' ' + failed.length + ' failed — see the Activity Log.' : '')
+  };
+}
+
+/* Did the draft behind `entry` leave? The quote number is in every subject, so
+   Sent is searched for it and the exact subject is then compared — search
+   alone tokenises hyphens and could match a neighbouring number. */
+function draftWasSent_(entry, qn) {
+  const made = Date.parse((entry.draft && entry.draft.made) || '') || 0;
+  const want = String((entry.draft && entry.draft.subject) || '');
+  const threads = GmailApp.search('in:sent newer_than:' + DRAFT_SEARCH_DAYS_ + 'd "' + String(qn) + '"', 0, 20);
+  for (let i = 0; i < threads.length; i++) {
+    const msgs = threads[i].getMessages();
+    for (let j = 0; j < msgs.length; j++) {
+      const m = msgs[j];
+      if (String(m.getSubject()) !== want) continue;
+      if (made && m.getDate() && m.getDate().getTime() < made - 60000) continue;
+      return { sentAt: m.getDate() ? m.getDate().toLocaleString() : new Date().toLocaleString() };
+    }
+  }
+  return null;
+}
+
+function draftSweep_(by) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  /* Which quotes have a draft open: quote number and payload columns only,
+     and a substring check before any JSON.parse — most rows have no draft. */
+  const qns = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    const q = sh.getRange(2, COL.QN, last - 1, 1).getValues();
+    const p = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    p.forEach(function (r, i) {
+      const raw = String(r[0] || '');
+      if (raw.indexOf('"draft"') < 0 || raw.indexOf('"open"') < 0) return;
+      const qn = String(q[i][0] || '').trim();
+      if (qn && qns.indexOf(qn) < 0) qns.push(qn);
+    });
+  });
+  const out = { checked: 0, sent: 0, open: 0, stale: 0, missing: 0, discarded: 0, unreachable: 0, sentQns: [] };
+  if (!qns.length) return out;
+  /* What is still in Drafts. Read once; one bad Gmail call must not turn into
+     a hundred "discarded" marks. */
+  let inDrafts = null;
+  try { inDrafts = {}; GmailApp.getDrafts().forEach(function (dr) { inDrafts[String(dr.getId())] = 1; }); }
+  catch (e) { out.unreachable = qns.length; console.error('draftSweep_: Drafts unreadable — ' + e); return out; }
+  qns.forEach(function (qn) {
+    let ctx = findQuoteCtx_(qn);
+    if (!ctx) return;
+    const d = ctx.d;
+    let changed = false;
+    const sentNow = [];
+    (d.emailLog || []).forEach(function (e) {
+      if (!e || !e.draft || e.draft.state !== 'open') return;
+      out.checked++;
+      if (inDrafts[String(e.draft.id)]) {
+        /* Still waiting. Say whether the quote has moved on since. */
+        const stale = Math.abs(Number(d.total || 0) - Number(e.draft.total || 0)) > 0.005;
+        if (!!e.draft.stale !== stale) { e.draft.stale = stale; changed = true; }
+        if (e.draft.missing) { delete e.draft.missing; changed = true; }
+        out.open++; if (stale) out.stale++;
+        return;
+      }
+      let hit;
+      try { hit = draftWasSent_(e, qn); }
+      catch (err) { out.unreachable++; console.error('draftSweep_: Sent unreadable for ' + qn + ' — ' + err); return; }
+      if (hit) {
+        e.draft.state = 'sent'; e.draft.sentAt = hit.sentAt; delete e.draft.missing;
+        sentNow.push(e); changed = true;
+        return;
+      }
+      /* Gone, and not found in Sent. Give the index a day before deciding. */
+      const first = Date.parse(e.draft.missing || '') || 0;
+      if (first && Date.now() - first > DRAFT_MISSING_GRACE_MS_) {
+        e.draft.state = 'discarded'; changed = true; out.discarded++;
+      } else {
+        if (!first) { e.draft.missing = new Date().toISOString(); changed = true; }
+        out.missing++;
+      }
+    });
+    if (sentNow.length) {
+      sentNow.forEach(function (e) {
+        /* The full treatment a scripted send would have given it — status,
+           Email History, reminder-hold release, the Import-tab move. */
+        if (e.draft.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(e.draft.status);
+        const after = recordEmail_(ctx.sh, ctx.rowNum, d, e.kind, String(e.by || '') + ' (sent from Gmail)');
+        if (after && after.sh) { ctx.sh = after.sh; ctx.rowNum = after.rowNum; }
+        out.sent++; out.sentQns.push(qn);
+      });
+    } else if (changed) {
+      ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+    }
+  });
+  invalidateStorageView_();
+  auditLog_(by, 'DRAFT SWEEP — ' + out.checked + ' draft(s) checked: ' + out.sent + ' sent' +
+    (out.sentQns.length ? ' (' + out.sentQns.join(', ') + ')' : '') + ', ' + out.open + ' still waiting' +
+    (out.stale ? ' (' + out.stale + ' stale)' : '') +
+    (out.missing ? ', ' + out.missing + ' gone but not yet seen in Sent' : '') +
+    (out.discarded ? ', ' + out.discarded + ' discarded' : '') +
+    (out.unreachable ? ', ' + out.unreachable + ' could not be checked' : ''));
+  return out;
+}
+
+/* The 6:30pm trigger. Reads Gmail and the sheet; sends nothing, so the
+   automatic-email pause does not apply to it. */
+function draftSweepCheck() {
+  try { draftSweep_('System (draft sweep)'); }
+  catch (e) { console.error('draftSweepCheck failed: ' + e); }
+}
+
+function adminDraftSweep(token) {
+  const who = requireAuth_(token, 'email');
+  const r = draftSweep_(who.name);
+  r.ok = 1;
+  r.msg = r.checked
+    ? r.sent + ' sent since last check, ' + r.open + ' still waiting in Gmail' +
+      (r.stale ? ' (' + r.stale + ' stale — delete and re-create)' : '') +
+      (r.missing ? ', ' + r.missing + ' gone but not yet found in Sent' : '') +
+      (r.discarded ? ', ' + r.discarded + ' discarded' : '') +
+      (r.unreachable ? ', ' + r.unreachable + ' could not be checked' : '') + '.'
+    : 'No drafts are waiting.';
+  return r;
 }
 
 /* ================= IMPORT A LEGACY WINTER-SERVICES SHEET =================
@@ -9042,7 +9287,10 @@ function setupAllTriggers() {
        "transcribing" for ever. */
     sweepTranscripts:   { hour: 5 },
     // Lunch break: people have a moment to actually deal with it.
-    leadFollowUpCheck:  { hour: 12, minute: 15 }
+    leadFollowUpCheck:  { hour: 12, minute: 15 },
+    /* Which Gmail drafts staff sent today. End of the working day, Chris's
+       call — see DRAFTS INSTEAD OF SENDS. Sends nothing itself. */
+    draftSweepCheck:    { hour: 18, minute: 30 }
   };
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (wanted[t.getHandlerFunction()] !== undefined) ScriptApp.deleteTrigger(t);

@@ -832,6 +832,11 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <option value="firmquote">Firm quote — rates are final; change it online, or sign &amp; pay as-is (PDF attached, pick who)</option>
       </select>
       <button class="btn navy" id="bulkPrevBtn" onclick="previewBulk()">See who this goes to</button>
+      <!-- Drafts: the same email into this account's Gmail Drafts instead of
+           out of the door, sent by hand from there. The sweep is how the
+           console learns which ones went — 6:30pm daily, or now. -->
+      <button class="btn ghost" id="draftSweepBtn" onclick="runDraftSweep()">Check drafts now</button>
+      <div class="msg" id="draftSweepMsg"></div>
       <div class="msg" id="bulkMsg"></div>
       <div id="bulkReport" class="hide" style="margin-top:10px"></div>
     </div>
@@ -1640,8 +1645,12 @@ function renderQuote(r){
   const canAdj2=ME.admin||((ME.perms||{}).adjust);
   renderRequests(canAdj2);
   renderSeasonDone(canAdj2);
+  /* A draft entry is not a send until the sweep says so. */
+  const dstate=e=>!e.draft?'':e.draft.state==='sent'?' · <b>draft sent</b> '+esc(e.draft.sentAt||'')
+    :e.draft.state==='discarded'?' · draft deleted, never sent'
+    :' · <b style="color:var(--gold)">draft waiting in Gmail'+(e.draft.stale?' — STALE, delete and re-create':'')+'</b>';
   $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
-    `<div class="histrow"><b>${e.kind}</b> → ${e.to} <span class="hm">· ${e.ts} · by ${e.by}</span></div>`).join('')
+    `<div class="histrow"><b>${esc(e.kind)}</b> → ${esc(e.to)} <span class="hm">· ${esc(e.ts)} · by ${esc(e.by)}${dstate(e)}</span></div>`).join('')
     :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
   const P=myPerms_();
   window._contract=r.contractUrl||'';
@@ -2950,7 +2959,12 @@ function renderBulk(r){
     tabs+skipped+noEmail+notReady+quota+
     (r.sample?'<div style="margin-top:10px"><button class="btn ghost sm" onclick="showBulkSample()">Preview the email</button></div>':'')+
     renderRecipients(r)+
-    '<button class="btn gold" id="bulkSendBtn" style="margin-top:10px" onclick="doBulkSend()"></button>';
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'+
+    '<button class="btn gold" id="bulkSendBtn" onclick="doBulkSend()"></button>'+
+    '<button class="btn navy" id="bulkDraftBtn" onclick="doBulkSend(\'draft\')"></button></div>'+
+    '<div class="msg" style="margin-top:4px">Drafts land in this Google account\'s Gmail Drafts, with the PDF attached and '+
+      'service@ CC\'d, for you to open and send one by one — they do not count against the daily send limit. '+
+      'The console learns which ones you sent at the 6:30pm check, or when you press "Check drafts now".</div>';
   $('bulkReport').classList.remove('hide');
   syncBulkCount();
 }
@@ -2987,7 +3001,10 @@ function renderRecipients(r){
           '<span>'+esc(x.email||'')+(x.total&&r.startTicked===false?' · '+esc(x.total):'')+'</span>'+
           /* Already sent this kind: say when, so a second day down the list
              does not send it twice. */
-          (x.lastSent?'<span style="color:var(--gold);font-weight:700">Already sent '+esc(x.lastSent)+'</span>':'')+'</span>'+
+          (x.lastSent?'<span style="color:var(--gold);font-weight:700">Already sent '+esc(x.lastSent)+'</span>':'')+
+          (x.draft?'<span style="color:'+(x.draft.stale?'var(--red)':'var(--frost)')+';font-weight:700">'+
+            (x.draft.stale?'Draft in Gmail is STALE — delete it there and re-create':'Draft waiting in Gmail since '+esc(x.draft.made))+
+            '</span>':'')+'</span>'+
         '<span class="qn">'+esc(x.qn)+'</span></label>').join('');
   }).join('');
   return '<div class="rcpBar"><span id="rcpCount"></span>'+
@@ -3015,6 +3032,12 @@ function syncBulkCount(){
     b.textContent='Send to '+count;
     b.disabled=!count;
   }
+  const db=$('bulkDraftBtn');
+  if(db){
+    /* Drafts are always a hand-picked list — no picker, no drafts. */
+    db.textContent='Create '+n+' draft'+(n===1?'':'s')+' in Gmail';
+    db.disabled=!n||!all.length;
+  }
 }
 function showBulkSample(){
   if(!BULK||!BULK.sample) return;
@@ -3027,20 +3050,26 @@ function showBulkSample(){
   /* This preview is illustrative only; sending happens from the card. */
   $('pvSend').classList.add('hide');
 }
-async function doBulkSend(){
+async function doBulkSend(mode){
   if(!BULK) return;
+  const draft=mode==='draft';
   const hasPicker=rcpInputs().length>0;
+  if(draft&&!hasPicker){ setMsg('bulkMsg','Tick who should get a draft.',false); return; }
   /* No picker rendered means the server did not send a roster; passing null
      keeps the old behaviour (everyone) rather than silently sending to nobody. */
   const only=hasPicker?bulkSelected():null;
   const n=hasPicker?only.length:BULK.count;
   if(!n){ setMsg('bulkMsg','Nobody is ticked.',false); return; }
   const dropped=hasPicker?(BULK.count-n):0;
-  if(!confirm('Send "'+BULK.label+'" to '+n+' customer(s)?'+
-      (dropped?'\n\n'+dropped+' unticked and will NOT receive it.':'')+
-      '\n\nThis cannot be un-sent.'))return;
-  const b=$('bulkSendBtn'); if(b){ b.disabled=true; b.textContent='Sending…'; }
-  setMsg('bulkMsg','Sending — this can take a minute.',null);
+  if(!confirm(draft
+      ? 'Create '+n+' draft(s) of "'+BULK.label+'" in Gmail?\n\nNothing is sent until you open each one in Gmail and press Send.'
+      : 'Send "'+BULK.label+'" to '+n+' customer(s)?'+
+        (dropped?'\n\n'+dropped+' unticked and will NOT receive it.':'')+
+        '\n\nThis cannot be un-sent.'))return;
+  const b=$(draft?'bulkDraftBtn':'bulkSendBtn'); if(b){ b.disabled=true; b.textContent=draft?'Creating…':'Sending…'; }
+  const ob=$(draft?'bulkSendBtn':'bulkDraftBtn'); if(ob) ob.disabled=true;
+  const verb=draft?'Creating drafts':'Sending';
+  setMsg('bulkMsg',verb+' — this can take a minute.',null);
   /* A kind that attaches a PDF to every email goes in batches (BULK.batch):
      each send fetches a PDF from Drive, and Apps Script stops a call at six
      minutes. Each batch is its own call with its own rid, so a lost reply
@@ -3050,26 +3079,44 @@ async function doBulkSend(){
   const size=(hasPicker&&BULK.batch)?BULK.batch:0;
   const chunks=size?[]:[only];
   if(size) for(let i=0;i<only.length;i+=size) chunks.push(only.slice(i,i+size));
-  let sent=0,failed=0,total=0; const errs=[];
+  let sent=0,failed=0,total=0,held=0; const errs=[];
   try{
     for(let i=0;i<chunks.length;i++){
-      if(chunks.length>1) setMsg('bulkMsg','Sending batch '+(i+1)+' of '+chunks.length+' — '+sent+' sent so far…',null);
+      if(chunks.length>1) setMsg('bulkMsg',verb+' batch '+(i+1)+' of '+chunks.length+' — '+sent+' so far…',null);
       let r;
-      try{ r=await api('bulkSend',[BULK.kind,chunks[i]]); }
+      try{ r=await api(draft?'bulkDraft':'bulkSend',[BULK.kind,chunks[i]]); }
       catch(e){ errs.push('batch '+(i+1)+': '+e.message); break; }
-      if(!r||!r.ok){ errs.push('batch '+(i+1)+': '+((r&&r.error)||'send failed')); break; }
-      sent+=r.sent||0; total+=r.total||0; failed+=r.failed||0;
+      if(!r||!r.ok){ errs.push('batch '+(i+1)+': '+((r&&r.error)||(draft?'draft failed':'send failed'))); break; }
+      sent+=(draft?r.made:r.sent)||0; total+=r.total||0; failed+=r.failed||0; held+=(draft?r.waiting:r.held)||0;
     }
-    const msg='Sent to '+sent+' of '+n+' customer(s).'+(failed?' '+failed+' failed — see the Activity Log.':'')+
-      (errs.length?' Stopped: '+errs.join('; ')+'. Check each quote\'s email history before re-sending — '+
-        'a batch whose reply was lost may still have gone out.':'');
+    const msg=(draft?'Created '+sent+' draft(s) in Gmail for ':'Sent to '+sent+' of ')+n+' customer(s).'+
+      (held?' '+held+(draft?' already had a draft waiting.':' held back — a draft is already waiting in Gmail.'):'')+
+      (failed?' '+failed+' failed — see the Activity Log.':'')+
+      (errs.length?' Stopped: '+errs.join('; ')+'. Check each quote\'s email history before trying again — '+
+        'a batch whose reply was lost may still have gone through.':'');
     setMsg('bulkMsg',msg,!errs.length&&!failed);
-    $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(msg)+'</b><br>Recorded in the Activity Log '+
-      'and on each quote\'s email history.</div>';
+    $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(msg)+'</b><br>'+(draft
+      ? 'Open Gmail → Drafts on the questwsottawa account and send each one. The console records a draft as sent '+
+        'at the 6:30pm check, or when you press "Check drafts now".'
+      : 'Recorded in the Activity Log and on each quote\'s email history.')+'</div>';
     BULK=null;
-    if(sent) toast('Sent to '+sent);
+    if(sent) toast(draft?sent+' draft(s) created':'Sent to '+sent);
   }catch(e){ setMsg('bulkMsg',e.message,false); }
-  finally{ if(b){ b.disabled=false; b.textContent='Send to all'; } }
+  finally{ if(b){ b.disabled=false; b.textContent=draft?'Create drafts':'Send to all'; } }
+}
+/* Ask Gmail which drafts have gone. A write on the server (it can move a row
+   off the Import tab), so it posts and is never retried on its own. */
+async function runDraftSweep(){
+  const b=$('draftSweepBtn'); b.disabled=true; b.textContent='Checking Gmail…';
+  setMsg('draftSweepMsg','',null);
+  try{
+    const r=await api('draftSweep',[]);
+    if(!r||!r.ok){ setMsg('draftSweepMsg',(r&&r.error)||'Could not check.',false); return; }
+    setMsg('draftSweepMsg',r.msg,true);
+    /* The roster's "draft waiting" badges are now out of date. */
+    if(BULK) previewBulk();
+  }catch(e){ setMsg('draftSweepMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Check drafts now'; }
 }
 
 /* ---------- Haul-out list ----------

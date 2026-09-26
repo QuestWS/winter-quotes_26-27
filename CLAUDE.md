@@ -134,7 +134,7 @@ serves the cached old version and you'll debug a ghost.
 | Function | When | Notes |
 |---|---|---|
 | `initStaff()` | once, ever | Prints 6 PINs to the log. Refuses to run twice (won't clobber the roster). |
-| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
+| `setupAllTriggers()` | once, or to repair | Reminder 9am, backup 6pm, draft sweep 6:30pm, balance report 7am, lead follow-up 12:15pm. All **Central** (the script's timezone). Idempotent — re-run after any change to the trigger list. |
 | `migrateColumnOrder()` | once, after the column reorder | Skips tabs already migrated. |
 | `testLogo()` | once | Forces the Drive/Gmail scope grant for logo embedding. |
 | `bulkImport1_Scan()` | once, to carry a season folder over | Reads every file, writes a **report to Drive**, touches no quote. Resumable; emails Chris when done. |
@@ -213,9 +213,8 @@ quietly dropping it is not.
 **The spreadsheet holds live customers, not test rows.** As of Aug 2026 the
 only test quote is **`QW-26-1255` (John White, "Demo Test Boat",
 john@questwatersports.com)**. Every other row is a paying customer with a real
-name, email and phone. (`QW-26-3477`, the golf cart this file used to name as
-the test quote, **no longer exists** — it survives only in Activity Log
-history, and the Golf Cart tab is empty. Don't go looking for it.)
+name, email and phone. (`QW-26-3477`, the old golf-cart test quote, **no
+longer exists** — don't go looking for it.)
 
 Rules, non-negotiable:
 
@@ -224,7 +223,8 @@ Rules, non-negotiable:
   Quest staff. If you need to see an email, use `adminEmailPreview` /
   `buildEmailFor_`, which render without sending.
 - **Never create a Gmail draft addressed to a customer.** A draft one click
-  away from sending is the same hazard.
+  away from sending is the same hazard. (Staff's own **Create drafts** button
+  is the one exception — `docs/ref/EMAILS.md`.)
 - **Test only against `QW-26-1255`.** Any save, payment, adjustment, line edit
   or season-done change goes on that quote and no other.
 - **Treat the sheet as read-only** unless the task is explicitly to change a

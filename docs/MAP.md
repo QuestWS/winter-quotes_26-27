@@ -79,6 +79,7 @@ symptom.
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
+| Drafts instead of sends, and the 6:30pm sweep that records them | `adminBulkDraft`, `draftOpts_`, `openDraftFor_`, `draftSweep_`, `draftWasSent_`, `draftSweepCheck`, `adminDraftSweep` | `.gs` (console: `doBulkSend`, `runDraftSweep`) |
 | Spreadsheet-menu sends | `menuSendKind_`, `menuBulkSend_` | `.gs` |
 
 ### Staff console

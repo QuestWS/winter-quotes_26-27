@@ -321,13 +321,65 @@ It attaches the PDF and stamps status `Firm quote sent`.
   land on the third draft's row.
 - **Sent in batches of 10** (`batch`), each its own call: every send fetches a
   PDF from Drive and Apps Script stops a call at six minutes.
-- **Gmail quota.** A free Gmail account's Apps Script send quota is far below
-  the ~500 the send-to-all warning mentions — plan on roughly 100 recipients a
-  day and work down the list over several days; "Already sent" is what stops a
-  second day re-sending the first day's customers.
+- **Gmail quota.** A free Gmail account's Apps Script send quota is ~100
+  recipients a day, and every customer save's service@ notification, every
+  receipt and the 9am reminders draw on the same pot — so the send button is
+  good for ~25 firm quotes a day. **Create drafts** (next section) is how a
+  season's worth goes out in a week.
 - `tools/check-firm-quote.js` builds it for every case above and reads the
   answer; `check-bulk-targets.js` pins the picker rules (drafts in for this
   kind only, held-back quotes reported, nobody pre-ticked).
+
+## Drafts instead of sends
+
+*"Can you put all of the bulk sends into my drafts so I can send them
+manually? … Having everything in draft and just needing to open and hit send
+is absolutely okay."* — Chris, Sept 2026.
+
+Creating a Gmail draft costs nothing against the Apps Script send quota, and
+sending one by hand from Gmail runs under Gmail's own, far larger limit. So
+the send-to-all picker has a second button, **Create N drafts in Gmail**
+(`adminBulkDraft`): the same recipients, the same `buildEmailFor_`, the same
+PDF and inline logo — into `questwsottawa@gmail.com`'s Drafts instead of out
+of the door. Every draft **CCs `NOTIFY_EMAIL` (service@)** and keeps
+`REPLY_TO`, because no notification is sent for a draft and that CC is the
+office's copy.
+
+- **A draft is not a send.** Creating one appends an Email History entry with
+  `draft: {id, state:'open', subject, status, total, made}` and changes
+  nothing else: no status, no reminder-hold release, no Import-tab move.
+  `verify.sh` executes it and fails if `recordEmail_` runs on creation.
+- **The sweep is what turns it into a send.** `draftSweepCheck` runs at
+  **6:30pm Central** (Chris's call — end of the working day) and from the
+  console's **Check drafts now** (`adminDraftSweep`). `draftSweep_` reads every
+  quote with an open draft, asks Gmail which drafts still exist, and for each
+  one that is gone searches Sent for the quote number and compares the
+  **exact subject**. Found → state `sent`, the stored status is stamped, and
+  `recordEmail_` runs with `by = "<who drafted it> (sent from Gmail)"` — the
+  full treatment a scripted send gets, including releasing an imported draft.
+- **Gone is not discarded.** Gmail's search index can lag a fresh send, so a
+  draft gone from Drafts but not yet in Sent is stamped `missing` and stays
+  open; only a sweep more than `DRAFT_MISSING_GRACE_MS_` (~a day) later that
+  still cannot find it marks it `discarded`. An unreachable Gmail leaves every
+  entry untouched and is reported, never treated as "not sent".
+- **Stale drafts are flagged, not fixed.** A draft is frozen when created; if
+  the quote's total has changed since, the sweep marks it `stale` and both the
+  picker and Email History say *delete it in Gmail and re-create it*.
+- **One draft per email per quote.** Creating another is skipped ("already
+  waiting"), and the scripted send holds back any quote with an open draft
+  (`bulkSendKind_` → `held`) — otherwise the customer gets it twice the moment
+  somebody opens Drafts.
+- **"Already sent" counts only real sends.** An open draft is not one; a
+  sweep-confirmed one is. The picker shows *Draft waiting in Gmail since …*
+  separately.
+- **The sweep sends nothing**, so the automatic-email pause does not apply to
+  it. `bulkDraft` and `draftSweep` are POST-only (the sweep can move a row).
+- **Why this is not the CLAUDE.md hazard.** "Never create a Gmail draft
+  addressed to a customer" is about Claude doing so while testing; this is
+  staff ticking each name and pressing a button, and every draft goes through
+  the same builder and the same picker rules as a send.
+- `tools/check-draft-sweep.js` runs `draftSweep_` and `adminBulkDraft` against
+  a fake Gmail and sheet for every case above.
 
 ## The provisional-pricing disclaimer rides every customer email
 While `PRICING.provisional` is true, `customerEmailHtml_` puts

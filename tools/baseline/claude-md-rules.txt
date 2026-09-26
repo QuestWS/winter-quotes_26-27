@@ -337,10 +337,10 @@ for a while; that gap is the kind of thing to actively check. Every menu email
 now goes through `menuSendKind_` → `buildEmailFor_`, the same builder the
 console previews from, so the two cannot say different things. The old
 `springAlertFor_` was a second hand-written copy of the spring wording and is
-Two kinds and only two — `BULK_KINDS_` is the whole allow-list: `spring` (skips
-`No Storage`; nothing to relaunch for a unit we never stored) and `fall` (skips
-nothing; a No Storage customer still has to get the unit to us). Reachable from
-the console with **no quote loaded**, gated on `email`, and from the sheet menu.
+Three kinds and only three — `BULK_KINDS_` is the whole allow-list: `spring` (skips
+`No Storage`; nothing to relaunch for a unit we never stored), `fall` (skips
+nothing; a No Storage customer still has to get the unit to us) and `firmquote`
+the console with **no quote loaded**, gated on `email`, and from the sheet menu
 - **One recipient list, `bulkTargets_`.** Console and menu share it, and both
 send through `bulkSendKind_`. A menu item that walks the sheets itself is a
 second copy of the lead-exclusion rule, and the second copy is the one that

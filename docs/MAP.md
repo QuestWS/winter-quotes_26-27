@@ -78,6 +78,7 @@ symptom.
 | Holding the reminder off an imported quote | `isImportHoldMark_`, `isImportSentMark_`, `importSentAt_`, `releaseImportHold_` | `.gs` |
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
+| The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
 | Spreadsheet-menu sends | `menuSendKind_`, `menuBulkSend_` | `.gs` |
 
 ### Staff console
@@ -106,6 +107,8 @@ symptom.
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
+| The customer's own note (list tag, Customer notes tab, quote card) | `customerNoteOf_` (`cnote` on the storage rows, `customerNote` on `adminLookup`) | `renderStorage`, `renderQuote` |
+| Imported drafts as a scrollable list | `adminDraftList` | `loadDrafts_`, `renderDrafts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
 | Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |
 | Keys, slip and trailer location | `KEYFIELDS_`, `KEYLABELS_`, `sanitizeKeys_`, `adminKeysApply` | `renderKeys`, `saveKeys` |

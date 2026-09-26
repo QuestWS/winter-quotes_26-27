@@ -296,6 +296,18 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 .srow .bl{font-family:var(--mono);text-align:right;white-space:nowrap}
 .srow .bl.paid{color:var(--green)}.srow .bl.owe{color:var(--gold)}
 @media(max-width:640px){.srow{grid-template-columns:1fr auto}.srow .un{grid-column:1/-1;font-size:12px}}
+/* The customer's own note. Frost, not red or gold: it is something they asked
+   for, not a hold and not money, so it must not read like either. */
+.tagnote{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800;
+letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:var(--ice);
+color:var(--navy);border:1.5px solid var(--frost)}
+.cnotebox{grid-column:1/-1;margin:4px 0 0;padding:6px 10px;border-left:4px solid var(--frost);
+background:var(--ice);border-radius:6px;font-size:13px;color:var(--ink);line-height:1.4}
+.cnotebox b{color:var(--navy)}
+.custnote{margin-top:10px;padding:10px 12px;border-left:4px solid var(--frost);background:var(--ice);
+border-radius:8px;font-size:14px;line-height:1.45;white-space:pre-wrap;color:var(--ink)}
+.custnote .lab{display:block;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--frost);
+text-transform:uppercase;margin-bottom:3px;white-space:normal}
 #printArea{display:none}
 @media print{
   body>*{display:none!important}
@@ -421,6 +433,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
+            <div class="custnote hide" id="qCustNote"></div>
             <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">Print quote</button></div>
             <div class="lnkbox hide" id="linkBox">
               <div class="lab" id="linkLab">Customer link — opens this quote already filled in</div>
@@ -660,7 +673,13 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
                    is a web form to send them to. Previewed like every other
                    email before anything leaves. -->
               <button class="btn gold hide" id="em_signreminder" onclick="sendKind('signreminder')">Ask them to sign</button>
+              <!-- "Rates are final, here is your firm quote." Always shown, so
+                   it can be found; when this quote cannot be called firm yet the
+                   reason is printed under the buttons (firmBlock from the
+                   server) and the preview refuses with the same words. -->
+              <button class="btn navy" id="em_firmquote" onclick="sendKind('firmquote')">Firm quote — rates final</button>
             </div>
+            <div class="msg" id="firmNote" style="margin-top:6px"></div>
             <div class="row2" style="margin-top:10px">
               <div><label class="fld">Up next — which way?</label>
                 <select class="txt" id="upnextDir">
@@ -810,6 +829,7 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
       <select class="txt" id="bulkKind">
         <option value="fall">End of season note — winding down, last call for work, haul-out timing</option>
         <option value="spring">Spring relaunch alert — launch timing and last-minute work</option>
+        <option value="firmquote">Firm quote — rates are final; change it online, or sign &amp; pay as-is (PDF attached, pick who)</option>
       </select>
       <button class="btn navy" id="bulkPrevBtn" onclick="previewBulk()">See who this goes to</button>
       <div class="msg" id="bulkMsg"></div>
@@ -898,7 +918,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,photoInfo:1,
+const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,draftList:1,photoInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1608,6 +1628,12 @@ function renderQuote(r){
 
     kv('Email',r.hasEmail?r.email:'— none on file —')+(r.phone?kv('Phone',r.phone):'')+
     kv('Terms accepted',termsText(r.terms));
+  /* What the customer wrote in "Notes / special requests". It used to reach
+     staff only on the PDF. Plain text, so pre-wrap keeps their line breaks and
+     esc() keeps it text. */
+  const cn=String(r.customerNote||'').trim();
+  $('qCustNote').innerHTML=cn?'<span class="lab">Customer note</span>'+esc(cn):'';
+  $('qCustNote').classList.toggle('hide',!cn);
   window._lines=r.linesRaw||[];
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
@@ -1666,6 +1692,8 @@ function renderQuote(r){
   }
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
   syncSignAsk_(P);
+  /* Older backend: no firmBlock at all, so say nothing rather than guess. */
+  $('firmNote').textContent=r.firmBlock?'Firm quote not available yet — '+r.firmBlock:'';
   $('photoCard').classList.toggle('hide',!P.photos);
   if(P.photos)refreshPhotos();
   /* Deleting is admin-only. The SERVER decides that (canDelete), not the
@@ -2254,6 +2282,9 @@ async function loadStorage(){
   $('adminCard').classList.add('hide');
   $('storageTabs').classList.add('hide');
   $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
+  /* In parallel, not awaited: a draft sent since the last look must drop off,
+     and the storage view must not wait on it. */
+  window._drafts=null; loadDrafts_();
   try{
     const r=await api('storageView',[]);
     if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
@@ -2277,12 +2308,56 @@ async function loadStorage(){
    deposit" would bury the customers who actually owe one. They stay visible
    under "Everyone", which is where staff already look for them. */
 let SFILTER='all';
-const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid'};
-function setStorageFilter(f){ if(!SFILTER_LABEL[f])return; SFILTER=f; renderStorage(); }
+const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid',notes:'Customer notes',drafts:'Imported'};
+function setStorageFilter(f){
+  if(!SFILTER_LABEL[f])return; SFILTER=f;
+  if(f==='drafts'&&!window._drafts) loadDrafts_();
+  renderStorage();
+}
 function storageKeeps_(g,x){
   if(SFILTER==='all') return true;
+  /* Drafts are not in _sg at all — they come from their own call and render
+     on their own (renderDrafts_). Keeping nothing here is what keeps a draft
+     off the printed storage sheets whichever tab is showing. */
+  if(SFILTER==='drafts') return false;
+  /* Anyone who wrote us a note, leads included: an unfinished quote with a
+     question in it is still a question somebody should answer. */
+  if(SFILTER==='notes') return !!x.cnote;
   if(g.lead) return false;
   return SFILTER==='dep' ? !!x.deposit : !x.deposit;
+}
+/* ---------------------------------------------------------------------------
+   IMPORTED DRAFTS — the Import tab, as a list
+   ---------------------------------------------------------------------------
+   The storage view leaves them out on purpose (it also feeds Harbor Haul Out
+   and the haul-out sheets, and the crew must not see a boat nobody agreed to
+   store). They come from their own call, draftList, into window._drafts —
+   never into window._sg — so nothing that prints or plans a haul-out can
+   pick one up. Fetched alongside the storage view so the tab has its count. */
+async function loadDrafts_(){
+  window._draftsErr='';
+  try{
+    const r=await api('draftList',[]);
+    if(r&&r.ok){ window._drafts=r.rows||[]; }
+    else{ window._draftsErr=(r&&r.error)||'Could not load the imported drafts.'; }
+  }catch(e){ window._draftsErr=e.message; }
+  if(!$('storageCard').classList.contains('hide')) renderStorage();
+}
+function renderDrafts_(){
+  if(window._draftsErr&&!window._drafts) return '<span class="msg err">'+esc(window._draftsErr)+'</span>';
+  if(!window._drafts) return '<span class="msg">Loading imported drafts…</span>';
+  const d=window._drafts;
+  const head='<div class="msg" style="margin:0 0 4px"><b>'+d.length+'</b> imported quote'+(d.length===1?'':'s')+
+    ' not yet sent — tap any row to open it. These are not on the storage or haul-out sheets; '+
+    'emailing the customer is what moves one onto its storage area.</div>';
+  if(!d.length) return head+'<div class="msg" style="padding:6px">— nothing waiting on the Import tab —</div>';
+  return head+d.map(x=>`<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+    <span class="nm">${esc(x.name)}${x.cnote?'<span class="tagnote">\u{1F4AC} NOTE</span>':''}${
+      x.hasEmail?'':'<span class="tagmute">no email</span>'}</span>
+    <span class="un">${esc(x.qn)} · ${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${
+      x.dest?' · goes to '+esc(x.dest):''} · ${esc(x.status)}</span>
+    <span class="bl owe">${esc(x.total)}</span>${
+      x.cnote?'<div class="cnotebox"><b>Customer note:</b> '+esc(x.cnote)+'</div>':''}</div>`).join('');
 }
 /* Groups with their rows narrowed to the current view. Under "Everyone" an
    empty building still prints, because knowing a building is empty is worth a
@@ -2294,9 +2369,10 @@ function storageGroups_(){
   }).filter(g=>SFILTER==='all'||g.count>0);
 }
 function storageCounts_(){
-  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0};
+  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0};
   (window._sg||[]).forEach(g=>(g.rows||[]).forEach(function(x){
     c.all++;
+    if(x.cnote) c.notes++;
     /* Counted for everybody, leads included: "may we touch this unit" does not
        care which tab it is on. */
     const a=haulAuth_(x);
@@ -2314,8 +2390,10 @@ function renderStorage(){
   const tab=(k,n)=>`<button class="${SFILTER===k?'on':''}" onclick="setStorageFilter('${k}')">`+
     `${SFILTER_LABEL[k]}<span class="n">${n}</span></button>`;
   const t=$('storageTabs');
-  t.innerHTML=tab('all',c.all)+tab('nodep',c.nodep)+tab('dep',c.dep);
+  t.innerHTML=tab('all',c.all)+tab('nodep',c.nodep)+tab('dep',c.dep)+tab('notes',c.notes)+
+    tab('drafts',window._drafts?window._drafts.length:'…');
   t.classList.remove('hide');
+  if(SFILTER==='drafts'){ $('storageBody').innerHTML=renderDrafts_(); return; }
   const gs=storageGroups_();
   const shown=gs.reduce((n,g)=>n+g.count,0);
   const body=gs.map(function(g){
@@ -2336,10 +2414,16 @@ function renderStorage(){
       const al=String(x.alert||'').trim()
         ? '<div class="alertbox" style="grid-column:1/-1;margin:6px 0 0"><span>\u26A0</span><span>'+
           esc(x.alert)+'</span></div>' : '';
+      /* The customer's note: a tag on the name so it is seen while scrolling,
+         and the words themselves under the row so reading it does not take a
+         tap. The server trims it for the list; the quote card has it whole. */
+      const cn=String(x.cnote||'').trim();
+      const ntag=cn?'<span class="tagnote">\u{1F4AC} NOTE</span>':'';
+      const nbox=cn?'<div class="cnotebox"><b>Customer note:</b> '+esc(cn)+'</div>':'';
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
-        <span class="nm">${esc(x.name)}${tag}</span>
+        <span class="nm">${esc(x.name)}${tag}${ntag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
-        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}</div>`;
+        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
     return `<div class="sgH"><b>${esc(g.tab)}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
   }).join('');
@@ -2355,6 +2439,8 @@ function renderStorage(){
       (c.unpaid?`, of which <b>${c.unpaid}</b> ${c.unpaid===1?'has':'have'} already signed and ${
                   c.unpaid===1?'is':'are'} only waiting on a deposit (tagged in gold).`:'.')+
       ' Unfinished quotes are left out, since there is nothing to take a deposit on until a quote is saved.';
+  }else if(SFILTER==='notes'){
+    head=`${shown} quote${shown===1?' has':'s have'} a note from the customer — tap any row to open it and read the whole thing.`;
   }else{
     head=`${shown} total units on file — tap any row to open it.`+
       (c.held?` <b>${c.held}</b> cannot be pulled yet — ${c.unsigned} awaiting a signature, ${
@@ -2372,6 +2458,7 @@ async function printStorage(){
      header. A partial sheet that looks like the whole building is how a unit
      gets missed; naming the filter on the paper is what stops that.
      The haul-out list is deliberately not filtered — see printHaulOut. */
+  if(SFILTER==='drafts'){ toast('Imported drafts are not on the storage sheets until they are sent.'); return; }
   const gs=storageGroups_().filter(g=>g.count>0);
   if(!gs.length){ toast('Nothing to print in this view.'); return; }
   const scope=SFILTER==='all'?'winter services':'winter services · '+SFILTER_LABEL[SFILTER]+' only';
@@ -2670,7 +2757,7 @@ function renderReprice(r){
       '<input type="checkbox" class="rpick" data-qn="'+esc(x.qn)+'" checked onchange="syncRpCount()">'+
       '<span class="who"><b>'+esc(x.name||'(no name)')+'</b>'+
         '<span>'+esc(x.qn)+' · '+esc(x.tab)+(x.locked?' · deposit '+esc(x.paid):'')+'</span></span>'+
-      '<span class="money"><b class="'+dir+'">'+esc(x.delta)+'</b>'+
+      '<span class="money"><b class="'+dir+'">'+esc(x.restamp&&dir==='same'?'re-date only':x.delta)+'</b>'+
         esc(x.before)+' → '+esc(x.after)+
         (x.locked?'<br>bal '+esc(x.newBalance):'')+'</span></label>';
   };
@@ -2839,6 +2926,14 @@ function renderBulk(r){
       ' — nothing to relaunch for units we never stored.</div>' : '';
   const noEmail=r.noEmail
     ? '<div class="msg" style="margin-top:4px">'+r.noEmail+' quote(s) have no email address and will be skipped.</div>' : '';
+  /* Held back by the kind's own bar (the firm quote), each with its reason —
+     "why isn't Smith on the list" must be answerable from here. */
+  const nr=r.notReady||[];
+  const notReady=nr.length
+    ? '<details style="margin-top:6px"><summary class="msg" style="cursor:pointer"><b>'+nr.length+
+      '</b> quote(s) are not ready for this email and are not in the list below — see why</summary>'+
+      nr.map(x=>'<div class="rpskip"><b>'+esc(x.qn)+'</b> '+esc(x.name||'')+' ('+esc(x.tab)+') — '+esc(x.why)+'</div>').join('')+
+      '</details>' : '';
   const quota=r.quotaWarning
     ? '<div class="bkwarn"><b>That is a lot of email for one day.</b> This account can send roughly '+
       '500 a day before Google stops it. If the send stops part way through, wait until tomorrow '+
@@ -2846,9 +2941,13 @@ function renderBulk(r){
       'Activity Log first.</div>' : '';
   $('bulkReport').innerHTML=
     '<div style="font-size:13.5px;color:var(--navy);font-weight:700">'+esc(r.label)+'</div>'+
-    '<div class="msg" style="margin:2px 0 6px">Goes to <b>'+r.count+'</b> customer(s). Leads who never '+
-      'finished a quote are always excluded.</div>'+
-    tabs+skipped+noEmail+quota+
+    (r.startTicked===false
+      ? '<div class="msg" style="margin:2px 0 6px"><b>'+r.count+'</b> customer(s) can receive it. <b>Nobody is ticked</b> — '+
+        'tick each one to send to. Each email carries that customer\'s own quote as a PDF. Imported drafts are '+
+        'included; sending one moves it onto its storage area. Leads are always excluded.</div>'
+      : '<div class="msg" style="margin:2px 0 6px">Goes to <b>'+r.count+'</b> customer(s). Leads who never '+
+      'finished a quote are always excluded.</div>')+
+    tabs+skipped+noEmail+notReady+quota+
     (r.sample?'<div style="margin-top:10px"><button class="btn ghost sm" onclick="showBulkSample()">Preview the email</button></div>':'')+
     renderRecipients(r)+
     '<button class="btn gold" id="bulkSendBtn" style="margin-top:10px" onclick="doBulkSend()"></button>';
@@ -2857,7 +2956,9 @@ function renderBulk(r){
 }
 /* Everyone is ticked to begin with — this is a send-to-all, and the picker is
    there to drop the occasional customer who should not get it, not to build a
-   list from scratch. Unticking is the deliberate act. */
+   list from scratch. Unticking is the deliberate act.
+   EXCEPT a kind whose preview says startTicked:false (the firm quote): there
+   the list IS built by hand, one tick per customer, and nobody starts on it. */
 function renderRecipients(r){
   const list=r.recipients||[];
   if(!list.length) return '';
@@ -2881,8 +2982,12 @@ function renderRecipients(r){
       '<button type="button" onclick="pickTab('+JSON.stringify(tab).replace(/"/g,'&quot;')+',0)">None</button></span></div>'+
       byTab[tab].map(x=>
         '<label class="rcp" data-tab="'+esc(tab)+'">'+
-        '<input type="checkbox" class="rcpBox_'+safe+'" data-qn="'+esc(x.qn)+'" checked onchange="syncBulkCount()">'+
-        '<span class="who"><b>'+esc(x.name||'(no name)')+'</b><span>'+esc(x.email||'')+'</span></span>'+
+        '<input type="checkbox" class="rcpBox_'+safe+'" data-qn="'+esc(x.qn)+'"'+(r.startTicked===false?'':' checked')+' onchange="syncBulkCount()">'+
+        '<span class="who"><b>'+esc(x.name||'(no name)')+'</b>'+(x.cnote?'<span class="tagnote">\u{1F4AC} NOTE</span>':'')+
+          '<span>'+esc(x.email||'')+(x.total&&r.startTicked===false?' · '+esc(x.total):'')+'</span>'+
+          /* Already sent this kind: say when, so a second day down the list
+             does not send it twice. */
+          (x.lastSent?'<span style="color:var(--gold);font-weight:700">Already sent '+esc(x.lastSent)+'</span>':'')+'</span>'+
         '<span class="qn">'+esc(x.qn)+'</span></label>').join('');
   }).join('');
   return '<div class="rcpBar"><span id="rcpCount"></span>'+
@@ -2936,14 +3041,33 @@ async function doBulkSend(){
       '\n\nThis cannot be un-sent.'))return;
   const b=$('bulkSendBtn'); if(b){ b.disabled=true; b.textContent='Sending…'; }
   setMsg('bulkMsg','Sending — this can take a minute.',null);
+  /* A kind that attaches a PDF to every email goes in batches (BULK.batch):
+     each send fetches a PDF from Drive, and Apps Script stops a call at six
+     minutes. Each batch is its own call with its own rid, so a lost reply
+     loses one batch's answer, never the record of the ones before it. The
+     selection is still a FILTER on the server — batching narrows it further,
+     it can never widen it. */
+  const size=(hasPicker&&BULK.batch)?BULK.batch:0;
+  const chunks=size?[]:[only];
+  if(size) for(let i=0;i<only.length;i+=size) chunks.push(only.slice(i,i+size));
+  let sent=0,failed=0,total=0; const errs=[];
   try{
-    const r=await api('bulkSend',[BULK.kind,only]);
-    if(!r||!r.ok){ setMsg('bulkMsg',(r&&r.error)||'Send failed.',false); return; }
-    setMsg('bulkMsg',r.msg,true);
-    $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b><br>Recorded in the Activity Log '+
+    for(let i=0;i<chunks.length;i++){
+      if(chunks.length>1) setMsg('bulkMsg','Sending batch '+(i+1)+' of '+chunks.length+' — '+sent+' sent so far…',null);
+      let r;
+      try{ r=await api('bulkSend',[BULK.kind,chunks[i]]); }
+      catch(e){ errs.push('batch '+(i+1)+': '+e.message); break; }
+      if(!r||!r.ok){ errs.push('batch '+(i+1)+': '+((r&&r.error)||'send failed')); break; }
+      sent+=r.sent||0; total+=r.total||0; failed+=r.failed||0;
+    }
+    const msg='Sent to '+sent+' of '+n+' customer(s).'+(failed?' '+failed+' failed — see the Activity Log.':'')+
+      (errs.length?' Stopped: '+errs.join('; ')+'. Check each quote\'s email history before re-sending — '+
+        'a batch whose reply was lost may still have gone out.':'');
+    setMsg('bulkMsg',msg,!errs.length&&!failed);
+    $('bulkReport').innerHTML='<div class="bkwarn"><b>'+esc(msg)+'</b><br>Recorded in the Activity Log '+
       'and on each quote\'s email history.</div>';
     BULK=null;
-    toast('Sent to '+r.sent);
+    if(sent) toast('Sent to '+sent);
   }catch(e){ setMsg('bulkMsg',e.message,false); }
   finally{ if(b){ b.disabled=false; b.textContent='Send to all'; } }
 }

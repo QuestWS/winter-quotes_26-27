@@ -419,6 +419,15 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: deposit filter / sign-chase email"; sed 's/^/       /' "$TMP/signchase.txt"; FAIL=1
   fi
+  # The firm-quote email promises a customer their price will not move. It
+  # must refuse while rates are estimates, for a quote priced under them, and
+  # for one whose stored total differs from today's price — and when it does
+  # build, carry their own quote link, the sign and pay links, and the PDF.
+  if node tools/check-firm-quote.js > "$TMP/firmquote.txt" 2>&1; then
+    echo "  OK   gate: firm-quote email refuses unless the price is really firm"
+  else
+    echo "  FAIL gate: firm-quote email"; sed 's/^/       /' "$TMP/firmquote.txt"; FAIL=1
+  fi
   # The scan-to-sign page. A customer standing at the counter must reach the
   # contract whatever the lookup is doing, so the page's real script is run
   # against a backend that is missing, slow, refusing and lying in turn.

@@ -240,10 +240,12 @@ human**: the 10-day reminder and the lead follow-up.
 
 ## Send to all
 
-Two kinds and only two — `BULK_KINDS_` is the whole allow-list: `spring` (skips
-`No Storage`; nothing to relaunch for a unit we never stored) and `fall` (skips
-nothing; a No Storage customer still has to get the unit to us). Reachable from
-the console with **no quote loaded**, gated on `email`, and from the sheet menu.
+Three kinds and only three — `BULK_KINDS_` is the whole allow-list: `spring` (skips
+`No Storage`; nothing to relaunch for a unit we never stored), `fall` (skips
+nothing; a No Storage customer still has to get the unit to us) and `firmquote`
+(see *The firm quote* below — hand-picked, not a blast). Reachable from
+the console with **no quote loaded**, gated on `email`, and from the sheet menu
+(the two announcements only; the menu has no picker, so it has no firm quote).
 
 - **One recipient list, `bulkTargets_`.** Console and menu share it, and both
   send through `bulkSendKind_`. A menu item that walks the sheets itself is a
@@ -271,6 +273,61 @@ the console with **no quote loaded**, gated on `email`, and from the sheet menu.
 - Every bulk send is audited (`SEND TO ALL "…" — n of m`) and lands in each
   quote's Email History.
 
+
+## The firm quote (`firmquote`)
+
+*"Is there a pre-set email that says our rates have been updated and here is
+your firm quote? … scroll through all quotes and send those firm rates one by
+one, or by checking a box next to each person"* — Chris, Sept 2026, the week
+before the 2026-2027 rate card.
+
+"Our rates are final — the attached quote is your firm price, unless we
+re-measure or you change your selections." Then exactly two ways forward:
+**Option 1** opens their own quote on the quote page (`quoteLinkFor_`) to change
+anything; **Option 2** accepts it as-is — the sign button (`signUrlFor_`,
+dropped when a contract is already on file) and the pay button (deposit, or
+balance once something is paid; neither once it is paid in full and signed).
+It attaches the PDF and stamps status `Firm quote sent`.
+
+- **`firmQuoteBlocker_` is the whole bar, and it is shared.** The builder, the
+  preview, the send, the bulk picker and the console's button all ask it, so
+  they cannot disagree about a quote. It refuses — with a reason staff can act
+  on — whenever calling the price firm would be false:
+  - `PRICING.provisional` is still on. **Nothing can send this until the rates
+    are in and the switch is off**, preview included;
+  - the quote's season stamp is from the estimate days (`priceStampStale_`) —
+    the answer is always the season re-price, which re-stamps it and rebuilds
+    the PDF this email attaches;
+  - pricing a copy at today's rates gives a different total than the one on
+    file (a rate edited after the re-price ran) — the PDF would contradict the
+    email;
+  - a lead, no priced total, no last name (no link for Option 1), or the one
+    `FIRM_QUOTE_NO` quote that already has an agreed price.
+- **The re-price offers "re-date only" rows.** A quote whose total did not move
+  but whose stamp is from the estimate days is ticked in the re-price like a
+  changed one. Otherwise it would keep last season's pay-by date and an
+  estimate-bannered PDF, and this email would refuse it for ever.
+- **In `BULK_KINDS_`, but not a blast.** `startTicked:false`: the picker opens
+  with nobody ticked, and each recipient shows their total, a 💬 if they left a
+  note, and **"Already sent …"** if this kind has gone to them before. Quotes
+  the bar holds back are listed under the picker with their reason.
+- **It reaches imported drafts (`includeImports`)** — they are exactly the
+  quotes waiting for it, and `recordEmail_` releasing a draft onto its storage
+  tab is the same event as Chris emailing it one at a time. Leads stay out.
+- **Sending a draft moves its row**, which shifts every draft below it up one.
+  `bulkSendKind_` therefore re-checks the quote number at the remembered row
+  before writing, for any kind that reaches drafts, and follows the quote with
+  `findQuoteCtx_` if it moved — otherwise the second draft's status and payload
+  land on the third draft's row.
+- **Sent in batches of 10** (`batch`), each its own call: every send fetches a
+  PDF from Drive and Apps Script stops a call at six minutes.
+- **Gmail quota.** A free Gmail account's Apps Script send quota is far below
+  the ~500 the send-to-all warning mentions — plan on roughly 100 recipients a
+  day and work down the list over several days; "Already sent" is what stops a
+  second day re-sending the first day's customers.
+- `tools/check-firm-quote.js` builds it for every case above and reads the
+  answer; `check-bulk-targets.js` pins the picker rules (drafts in for this
+  kind only, held-back quotes reported, nobody pre-ticked).
 
 ## The provisional-pricing disclaimer rides every customer email
 While `PRICING.provisional` is true, `customerEmailHtml_` puts

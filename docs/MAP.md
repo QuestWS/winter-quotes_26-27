@@ -108,7 +108,7 @@ symptom.
 | Which imports went missing | `importAudit` | `.gs` (editor) |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
-| Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet` |
+| Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet`; customer page `trailerLocApplies` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | The customer's own note (list tag, Customer notes tab, quote card, staff edit) | `customerNoteOf_`, `adminSetCustomerNote` (`cnote` on the storage rows, `customerNote` on `adminLookup`) | `renderStorage`, `renderCustomerNote`, `saveCustomerNote` |
 | Imported drafts as a scrollable list | `adminDraftList` | `loadDrafts_`, `renderDrafts_` |

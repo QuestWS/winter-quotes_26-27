@@ -8701,6 +8701,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const stF = effectiveState_(d) || d.state || d || {};
     const keyLoc = String((stF.keyLoc !== undefined ? stF.keyLoc : d.keyLoc) || '').trim();
     const slipNo = String((stF.slipNo !== undefined ? stF.slipNo : d.slipNo) || '').trim();
+    const trailerLoc = String((stF.trailerLoc !== undefined ? stF.trailerLoc : d.trailerLoc) || '').trim();
     const need = missingHaulInfo_(d);
 
     /* Keys are a boat / jet ski / golf cart thing — an e-bike has none, and
@@ -8744,9 +8745,14 @@ function buildEmailFor_(d, kind, extra, photos) {
       const have = [];
       if (keyLoc) have.push('your keys as <b>' + esc_(keyLoc) + '</b>');
       if (slipNo) have.push('your slip as <b>' + esc_(slipNo) + '</b>');
+      /* Never asked for (missingHaulInfo_ leaves it optional), but said back
+         when the customer or staff recorded one — a trailer that moved over
+         the winter is the same kind of quietly-stale fact as the keys. */
+      if (trailerLoc) have.push('your trailer location as <b>' + esc_(trailerLoc) + '</b>');
       if (have.length) {
         ask = '<div style="font-size:13px;color:#5C7185;margin:4px 0 8px">We have ' +
-          have.join(' and ') + '. If that has changed, reply and let us know.</div>';
+          (have.length > 1 ? have.slice(0, -1).join(', ') + ' and ' + have[have.length - 1] : have[0]) +
+          '. If that has changed, reply and let us know.</div>';
       }
     }
     return {
@@ -9965,7 +9971,8 @@ function quoteHtml_(d) {
       '<td><b>Owner</b><br>' + esc_(d.owner) + '<br>' + esc_(fmtPhone(d.phone)) + '<br>' + esc_(d.email) + '</td>' +
       '<td><b>Unit</b><br>' + esc_(d.unit) + (d.ymm ? '<br>' + esc_(d.ymm) : '') +
         (d.dims ? '<br>' + esc_(d.dims) : '') +
-        (d.keyLoc ? '<br>Keys: ' + esc_(d.keyLoc) : '') + '</td>' +
+        (d.keyLoc ? '<br>Keys: ' + esc_(d.keyLoc) : '') +
+        (d.trailerLoc ? '<br>Trailer: ' + esc_(d.trailerLoc) : '') + '</td>' +
     '</tr></table>' +
     /* The estimate disclaimer, above the prices it applies to rather than in
        the fine print — a customer reading the PDF sees it before the totals.

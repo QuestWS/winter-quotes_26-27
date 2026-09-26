@@ -270,6 +270,38 @@ totals agree and no drift note fires. An approved line carries the wording
 *"Tiered on your final services total, so adding or removing services can
 change it"* — the customer is told up front that it follows the services.
 
+## Where is the trailer
+The review step asks, under *"Where will the keys be?"*, one more thing of a
+customer who said **I have a trailer** on the first step: *"Where is the
+trailer?"* It is a different question from whether there is one. A Heritage
+Harbor customer can keep the boat in a slip and the trailer at home, in Quest's
+lot or at the harbor, and come spring the crew has to find the trailer before
+it can splash anything. Chris's rule: **never ask it of a boat listed as not on
+a trailer** — a blocked-on-stands boat has nothing to find, and an unanswerable
+box reads as something the customer forgot.
+
+- **One predicate, `trailerLocApplies()`**: boat or jet ski, and `hasTrailer`.
+  Jet skis are always on one (the page refuses a jet ski without), so they are
+  always asked; golf carts and e-bikes never are. It is the customer-page
+  half of the server's `needsTrailerLoc_` (`docs/ref/STAFF-CONSOLE.md`
+  § *Keys & slip*), which decides the same thing for the console's field and
+  Harbor Haul Out's *"Trailer is"* row.
+- **The answer is cleared the moment it stops applying.** `syncStartUI` blanks
+  `S.trailerLoc` when the trailer answer flips to "No trailer" or the unit
+  changes to a land unit. The server treats *any* recorded location as proof
+  there is a trailer to find, so a stale one would put the field back on the
+  console and send the crew looking for a trailer that was never there. The
+  cost is that flipping the radio to No and back loses the typed text, which
+  is the right way round.
+- **Optional, not a gate.** It is not on the sign step's *"go back and add"*
+  list and `missingHaulInfo_` never asks for it: a blank is something staff
+  fill in from the console, not a reason to stop a customer signing.
+- **Where it goes.** Same `trailerLoc` key at the top level of the payload and
+  inside `state`, beside `keyLoc`, so `rebuildLinesFromState_` upgrades the
+  top-level copy on a customer save exactly as it does the keys, the PDF prints
+  it under the keys in the Unit cell, and the haul-out *"you're up next"* email
+  says it back with the keys and the slip when it is known.
+
 ## The provisional-pricing banner
 `#pricingNotice` sits in `<main>` **above the step nav**, outside every
 `.panel`, so it is on screen at every step and cannot scroll away with a

@@ -381,8 +381,8 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   card on an action the server still accepts.
   `tools/check-perms-pause.js` runs the real roster through it.
 
-- **Journalled like a re-measure, never written into `d.state`.** Both fields
-  exist in the customer's browser too and are re-posted on every save, so a
+- **Journalled like a re-measure, never written into `d.state`.** All three
+  fields exist in the customer's browser too and are re-posted on every save, so a
   staff correction written into `d.state` would survive right up until their
   next save. They go into `manual.measured`; `effectiveState_` overlays them.
   `verify.sh` fails if `adminKeysApply` assigns into `d.state`.
@@ -419,6 +419,12 @@ what a customer owes. Chris, Jeff, John, Rex and Jess have it; Marina does not.
   - **Boat or jet ski → follow `hasTrailer`.** The quote page puts the trailer
     question to these two and nobody else (`#trailerFs`), so for them the flag
     is the *customer's own answer* — "No trailer, boat is blocked on stands".
+    **The quote page asks the same customers where the trailer is**, on the
+    review step under the keys question, behind the same rule
+    (`trailerLocApplies`, `docs/ref/QUOTE-PAGE.md` § *Where is the trailer*).
+    So the console's field usually arrives filled in; staff correct it the way
+    they correct a key location, and a staff value still wins over the
+    customer's next save.
   - **Golf cart or e-bike → never.** Carts are driven here and bikes are
     carried. An intermediate version gave carts the field on the theory that
     one might turn up towed; Chris corrected that flatly, and it had put a red

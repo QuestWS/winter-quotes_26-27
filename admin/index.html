@@ -125,6 +125,14 @@ border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);backgro
 /* Before/after diff for a re-measure. Money that moves has to be readable at
    arm's length at the harbor, so the amounts are monospaced and aligned and the
    direction of the change is carried by colour AND by the +/- sign. */
+.svcgrp{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:12px 0 2px}
+.svcrow{display:flex;gap:10px;align-items:center;padding:7px 4px;border-bottom:1px dashed var(--ice)}
+.svcrow .sl{flex:1;min-width:0;font-size:14px}
+.svcrow .sl .sh{color:var(--muted);font-size:12px}
+.svcrow input[type=checkbox]{width:22px;height:22px;flex:0 0 auto}
+.svcrow input.cnt{width:64px;padding:8px 10px;font-size:15px;border:1.5px solid var(--line);border-radius:8px;text-align:center;font-family:var(--disp)}
+.svcrow.choice{flex-wrap:wrap}
+.svcrow.choice select.txt{width:100%;padding:9px 10px;font-size:14px}
 .dfrow{display:flex;gap:8px;align-items:baseline;padding:5px 4px;border-bottom:1px dashed var(--ice);font-size:12.5px}
 .dfrow .dl{flex:1;min-width:0;overflow-wrap:anywhere}
 .dfrow .da{font-family:"IBM Plex Mono","Courier New",monospace;white-space:nowrap}
@@ -620,6 +628,21 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             <div class="msg" id="noteMsg"></div>
           </div>
 
+          <!-- Services from the menu the customer's own page offers, added or
+               taken off here. Priced by the engine, so they follow a re-measure
+               and next season's rates — unlike a line typed into the Adjustment
+               card, which is a frozen figure. -->
+          <div class="card hide" id="svcCard">
+            <h2>Add or remove services</h2>
+            <div class="msg" id="svcNow" style="margin:0 0 6px"></div>
+            <div id="svcRows"></div>
+            <div class="msg" style="margin:6px 0 0;color:var(--muted)">Motors, service level, dimensions and storage are under
+              <b>Unit details &amp; storage</b>. Anything not on this list goes on the Adjustment card.</div>
+            <button class="btn navy" id="svcPrevBtn" onclick="previewServices()">Preview the change</button>
+            <div id="svcDiff" class="hide" style="margin-top:10px"></div>
+            <div class="msg" id="svcMsg"></div>
+          </div>
+
           <div class="card hide" id="penaltyCard">
             <h2>Penalties</h2>
             <div class="msg" style="margin:0 0 8px">Charges the customer is never offered on the quote
@@ -937,7 +960,7 @@ const $=id=>document.getElementById(id);
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
 const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,draftList:1,photoInfo:1,
-  listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,bulkPreview:1,
+  listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
 /* Once a POST has come back lost, every later READ goes straight to GET — no
@@ -1337,6 +1360,121 @@ function collectDims(){
   return out;
 }
 
+/* ---------- Add or remove services ----------
+   The list is SERVICE_MENU in the engine, sent by the server pre-filled with
+   what is in force on this quote. Staff tick, count or pick, preview the line
+   diff, then apply. The server journals the change (manual.services) and
+   re-runs the engine, so the new line prices like one the customer chose:
+   it follows a re-measure and re-prices at next season's rates. */
+let SVC=null;
+function renderServices(sv){
+  SVC=sv||null;
+  $('svcDiff').classList.add('hide'); setMsg('svcMsg','');
+  if(!SVC||!SVC.editable){
+    $('svcRows').innerHTML='';
+    $('svcNow').textContent=(SVC&&SVC.why)||'This backend does not support adding services yet — deploy the Apps Script.';
+    $('svcPrevBtn').classList.add('hide');
+    return;
+  }
+  $('svcPrevBtn').classList.remove('hide');
+  const staffed=(SVC.items||[]).filter(i=>i.byStaff);
+  $('svcNow').innerHTML=staffed.length
+    ? '<span style="color:var(--muted)">Quest has changed '+staffed.length+' of these — marked below. Whatever is set here wins over the customer\'s own page, on or off.</span>'
+    : '<span style="color:var(--muted)">As the customer chose them. Whatever you set here wins over their own page, on or off.</span>';
+  let html='', grp='';
+  (SVC.items||[]).forEach(it=>{
+    if(it.group!==grp){ grp=it.group; html+='<div class="svcgrp">'+esc(grp)+'</div>'; }
+    const tag=it.byStaff
+      ? ' <span class="taggold">Quest'+(it.kind==='flag'?(it.value?' added':' removed'):' set')+'</span>'
+      : '';
+    const hint=[it.hint,it.note].filter(Boolean).map(esc).join(' · ');
+    let ctl='';
+    if(it.kind==='flag'){
+      ctl='<input type="checkbox" class="svcf" data-key="'+esc(it.key)+'"'+(it.value?' checked':'')+' aria-label="'+esc(it.label)+'">';
+    }else if(it.kind==='count'){
+      ctl='<input class="cnt svcf" data-key="'+esc(it.key)+'" inputmode="numeric" value="'+esc(String(it.value))+'" aria-label="'+esc(it.label)+'">';
+    }else{
+      ctl='<select class="txt svcf" data-key="'+esc(it.key)+'" aria-label="'+esc(it.label)+'">'+
+        (it.options||[]).map(o=>'<option value="'+esc(o[0])+'"'+(o[0]===it.value?' selected':'')+'>'+esc(o[1])+'</option>').join('')+
+        '</select>';
+    }
+    html+='<div class="svcrow'+(it.kind==='choice'?' choice':'')+'"><div class="sl">'+esc(it.label)+tag+(hint?'<div class="sh">'+hint+'</div>':'')+'</div>'+ctl+'</div>';
+  });
+  $('svcRows').innerHTML=html;
+}
+/* Only what differs from what is in force now, so the journal records a
+   decision rather than every control on the card. */
+function collectServices(){
+  const out={};
+  if(!SVC||!SVC.editable) return out;
+  document.querySelectorAll('#svcRows .svcf').forEach(el=>{
+    const k=el.dataset.key, it=(SVC.items||[]).find(i=>i.key===k); if(!it) return;
+    if(it.kind==='flag'){ if(!!el.checked!==!!it.value) out[k]=el.checked?1:0; }
+    else if(it.kind==='count'){ const v=el.value.trim(); if(v!==''&&String(v)!==String(it.value)) out[k]=v; }
+    else if(el.value!==it.value) out[k]=el.value;
+  });
+  return out;
+}
+async function previewServices(){
+  if(!QN||!SVC) return;
+  const changes=collectServices();
+  if(!Object.keys(changes).length){ setMsg('svcMsg','Tick, count or pick a service first.',false); return; }
+  const b=$('svcPrevBtn'); b.disabled=true; b.textContent='Pricing…';
+  setMsg('svcMsg','');
+  try{
+    const r=await api('servicesPreview',[QN,changes]);
+    if(!r||!r.ok){ setMsg('svcMsg',(r&&r.error)||'Could not price that.',false); $('svcDiff').classList.add('hide'); return; }
+    renderSvcDiff(r);
+  }catch(e){ setMsg('svcMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Preview the change'; }
+}
+/* One line per priced line that moves — shared with the dimension editor so
+   the two diffs read the same. */
+function diffRowsHtml_(diff){
+  return (diff||[]).map(x=>{
+    const cls=x.kind==='added'?'add':x.kind==='removed'?'rem':'';
+    const amt=x.kind==='changed'?(x.was+' → '+x.now):(x.kind==='added'?'+ '+x.now:'− '+x.was);
+    return '<div class="dfrow '+cls+'"><span class="dl">'+esc(x.label)+'</span><span class="da">'+esc(amt)+'</span></div>';
+  }).join('');
+}
+function renderSvcDiff(r){
+  const rows=diffRowsHtml_(r.diff);
+  const rq=(r.requestsOpened||[]).map(q=>'<div class="dfrow add"><span class="dl">Quote request opened: '+esc(q)+'</span><span class="da">price it after</span></div>').join('')+
+    (r.requestsClosed||[]).map(q=>'<div class="dfrow rem"><span class="dl">Quote request withdrawn: '+esc(q)+'</span><span class="da"></span></div>').join('');
+  /* The engine will not guess a missing measurement — it asks for it. Say so,
+     or a powerwash on a boat with no LOA "applies" and adds nothing. */
+  const need=(r.need||[]).length
+    ? '<div class="dfwarn"><b>Still needed to price this</b><br>'+r.need.map(esc).join('<br>')+
+      '<br><br>Enter it under Unit details &amp; storage and the line prices itself.</div>'
+    : '';
+  $('svcDiff').innerHTML=
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:4px">What will change</div>'+
+    (rows+rq||'<div class="dfrow"><span class="dl">No line items change</span><span class="da"></span></div>')+
+    '<div class="dftot"><span>'+esc(r.beforeTotal)+' → '+esc(r.afterTotal)+'</span><span>'+esc(r.delta)+'</span></div>'+
+    '<div style="font-size:12.5px;color:var(--muted);margin-top:3px">Paid '+esc(r.paid)+' · new balance '+esc(r.newBalance)+' · nobody is emailed</div>'+
+    need+
+    '<div class="row2" style="margin-top:10px">'+
+      '<button class="btn navy sm" id="svcApplyBtn" onclick="applyServices()">Apply this change</button>'+
+      '<button class="btn ghost sm" onclick="$(\'svcDiff\').classList.add(\'hide\')">Cancel</button>'+
+    '</div>';
+  $('svcDiff').classList.remove('hide');
+  window._svcPending=r.changes;
+}
+async function applyServices(){
+  if(!QN||!window._svcPending) return;
+  const b=$('svcApplyBtn'); if(b){ b.disabled=true; b.textContent='Applying…'; }
+  try{
+    const r=await api('servicesApply',[QN,window._svcPending],{withQuote:QN});
+    if(!r||!r.ok){ setMsg('svcMsg',(r&&r.error)||'Could not apply that.',false); return; }
+    toast('Services updated');
+    $('svcDiff').classList.add('hide');
+    window._svcPending=null;
+    await afterWrite_(r);          // reload: lines, totals and any new quote request
+    setMsg('svcMsg',r.msg,true);
+  }catch(e){ setMsg('svcMsg',e.message,false); }
+  finally{ if(b){ b.disabled=false; b.textContent='Apply this change'; } }
+}
+
 /* ---------- Penalties ----------
    Pumpout and late retrieval are charges the customer cannot pick. They live
    in the manual journal, not in the customer's own selections, so a customer
@@ -1543,11 +1681,7 @@ async function previewDims(){
 }
 
 function renderDimsDiff(r,changes){
-  const rows=(r.diff||[]).map(x=>{
-    const cls=x.kind==='added'?'add':x.kind==='removed'?'rem':'';
-    const amt=x.kind==='changed'?(x.was+' → '+x.now):(x.kind==='added'?'+ '+x.now:'− '+x.was);
-    return '<div class="dfrow '+cls+'"><span class="dl">'+esc(x.label)+'</span><span class="da">'+esc(amt)+'</span></div>';
-  }).join('');
+  const rows=diffRowsHtml_(r.diff);
   const moved=r.beforeTab!==r.afterTab
     ? '<div class="dfrow"><span class="dl">Storage location</span><span class="da">'+esc(r.beforeTab)+' → '+esc(r.afterTab)+'</span></div>'
     : '';
@@ -1702,6 +1836,10 @@ function renderQuote(r){
   /* Same permission as any other change that moves money. */
   $('penaltyCard').classList.toggle('hide',!P.adjust);
   if(P.adjust) renderPenalties(r.penalties);
+  /* Adding a service moves money, so it sits with the other adjustments. An
+     older backend sends no `services` at all; the card then says so. */
+  $('svcCard').classList.toggle('hide',!P.adjust);
+  if(P.adjust) renderServices(r.services);
   /* Shown once the customer has said they are a slipholder, and kept after a
      decision even if they later uncheck it, so the decision stays visible. */
   const hhoShow=!!(P.adjust&&r.hho&&(r.hho.asked||r.hho.status!=='pending'));

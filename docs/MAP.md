@@ -64,6 +64,7 @@ symptom.
 | Late fee | `adminLateFee` | `.gs` |
 | Line edit and delete | `adminEditLine` (the action argument selects which) | `.gs` |
 | Price a requested service | `adminPriceRequest` | `.gs` |
+| Add or remove a menu service (engine-priced, journalled) | `SERVICE_MENU` (engine), `sanitizeServices_`, `servicesProposal_`, `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | both |
 | Balance columns on the sheet | `writeMoneyCols_` | `.gs` |
 
 ### Email
@@ -93,6 +94,7 @@ symptom.
 | Speed: every tab in one read | `quoteTabGrids_` (used by `adminStorageView`, `adminSearch`, `findQuoteCtx_`) | — |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
+| Add or remove services | `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | `renderServices`, `collectServices`, `previewServices`, `applyServices` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
 | Heritage Harbor slipholder discount | `adminHho`, `hhoSetDecision_`, `hhoInfo_`, `hhoLineEdit_`; tiers `RULES.hhoTiers`, `withHhoDiscount` (engine) | `renderHho`, `saveHho` |
@@ -162,6 +164,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `price-fixtures.js --check-baseline` | Nine quotes still price to the committed cent |
 | `check-bulk-targets.js` | A lead is never a send-to-all recipient; the picker can only narrow |
 | `check-haul-info.js` | Who gets asked for keys and slip, over every combination |
+| `check-service-menu.js` | A service added from the console reaches the engine through the journal, prices like the customer's own, follows a re-measure, comes off cleanly, and never touches `d.state` |
 | `check-hho-discount.js` | The slipholder discount is asked, never shown; nothing applies until staff approve; a tiered approval follows the services total down when a service comes off; a typed amount stays fixed |
 | `check-engine-rules.js` | One motor type per boat, whole counts only |
 | `check-perms-pause.js` | The `keys` fallback, and that a corrupt pause reads as PAUSED |

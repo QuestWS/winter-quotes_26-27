@@ -299,6 +299,73 @@ decision (`adminHho`). Nobody is emailed.
   the line editor and a bare re-total, fixed amounts, and the base.
 
 
+## Adding or removing services (console)
+
+`Add or remove services` card, gated on `adjust`. Every service the customer's
+own page offers — drive train, water systems, retrieval, shrinkwrap, washing,
+the jetski detail, and the quoted-on-request items (detail, impeller, bottom
+paint…) — is listed with what is in force now. Tick, count or pick →
+**Preview the change** → the server prices it with the shared engine and
+shows a before/after line diff → **Apply**. Nothing is written until Apply,
+and nobody is emailed.
+
+**Why it exists:** before this, a phoned-in powerwash went on through the
+Adjustment card as a typed line — a frozen dollar figure. It never followed a
+re-measure, never re-priced at the next season's rates, and the alternative
+was re-opening the customer's builder and re-saving on their behalf. A service
+added here is, to the engine, exactly what the customer ticking it would have
+been.
+
+- **The catalogue is `SERVICE_MENU` in the engine**, keyed by the *same state
+  keys the customer page's controls write*. That is the whole mechanism: the
+  server prices from a state, so putting `powerwash:true` into the state it
+  prices from produces the customer's own powerwash line, at the per-foot rate,
+  against the boat's current LOA. Adding a service to the menu is one entry
+  there; the console renders whatever the server sends.
+- **It is journalled as `manual.services`, never written into `d.state`.**
+  Same overlay as a re-measure and a penalty (`effectiveState_`), for the same
+  reason: the customer's browser posts its own state on their next save, and
+  anything written into `d.state` would be replaced by whatever is still ticked
+  there. `verify.sh` fails if `adminServicesApply` ever assigns into `d.state`.
+  Because the page round-trips the effective state, the first apply snapshots
+  the customer's original into `manual.customerState`, exactly as the
+  dimension editor does.
+- **Whatever is in the journal is Quest's decision and wins, on or off.** A
+  value staff set overrides the customer's answer in both directions: adding
+  the powerwash they phoned in, *or* taking off the detailing they decided
+  against. Tradeoff, chosen deliberately: a customer who reloads their quote
+  and unticks a staff-added service will see it come back on save — and the
+  drift alarm on the `service@` notification says so, which is the right
+  moment for a phone call. The card says this in its own words.
+- **A quoted-on-request item opens a request, it does not price.** Ticking
+  *Impeller change* puts it on the open quote requests under Line items, to be
+  priced with **Price this** as if the customer had asked. Same journal entry
+  (`manual.priced`), same replay. The preview says *Quote request opened*.
+- **A blank count is refused, not read as zero** (`cleanServiceValue_`) — the
+  same trap as the motor count. A dependent service with nothing to depend on
+  (additional heads with no head system, in-water wrap with no wrap) is
+  refused with a message rather than "applied" at $0. A change to the value
+  already in force is dropped, so the journal only ever holds decisions.
+- **The engine asks for a missing measurement rather than guessing.** A
+  powerwash on a boat with no LOA prices nothing; the preview lists what is
+  still needed and points at Unit details & storage.
+- **Not on this card, on purpose:** motors, service level, dimensions, trailer
+  and storage (one bound control group on the unit-details card, gated on
+  `measure`); pumpout and late retrieval (penalties — charges the customer is
+  never offered); the slipholder discount (its own approval). Golf carts and
+  e-bikes are one flat line each and get the card's "nothing to add" message.
+  Anything genuinely off-menu still goes on the Adjustment card.
+- **The preview writes nothing** and is on `CONSOLE_GET_FNS_`; the apply is
+  POST-only and carries a `rid`. Staff can add a service after a deposit — the
+  payment lock is the customer save path's only. `verify.sh` holds all of it.
+- `tools/check-service-menu.js` executes the rest: every menu item reaches the
+  engine through the real `effectiveState_` and comes off cleanly; `d.state`
+  is untouched; every key is a control the customer page can show back;
+  nothing overlaps the other cards; the sanitizer refuses blank, negative,
+  fractional, orphaned and foreign keys; a staff-added powerwash re-prices
+  when the boat is re-measured; a staff "off" beats the customer's browser.
+
+
 ## Keys & slip (console) and the missing-info chase
 
 `Keys & slip` card, gated on its **own `keys` permission** — recording where the

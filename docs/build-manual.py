@@ -208,6 +208,7 @@ def manual():
         ['Adjustment (discount or charge)', perm('adjust'), 'Optional email of updated copy'],
         ['Edit or delete a line item', perm('adjust'), ''],
         ['Late fee', perm('adjust'), 'Card only shows when a balance is owed'],
+        ['Add or remove services (powerwash, impeller, detail…)', perm('adjust'), 'Preview then apply; nobody is emailed'],
         ['Penalties (pumpout, late retrieval)', perm('adjust'), 'Nobody is emailed'],
         ['Price a quote request', perm('adjust'), 'Items the customer asked to have quoted'],
         ['Season timing (done now / date / will call)', perm('adjust'), 'Late date adds surcharge'],
@@ -423,6 +424,17 @@ def manual():
             'Write why the quote is the way it is — discounts, odd dimensions, phone agreements.',
             '<b>Save note</b>. Never on the PDF or in any email.',
         ], None),
+        ('Add or remove services', 'adjust', [
+            'Every service the customer\'s own page offers is listed, showing what is on the quote now: '
+            'drive train, water systems, retrieval, shrinkwrap, washing, jetski detail and the '
+            'quoted-on-request items (detail, impeller, bottom paint…).',
+            'Tick, count or pick what the customer asked for — or untick what they no longer want.',
+            '<b>Preview the change</b>: the before/after lines, the new total and balance.',
+            '<b>Apply this change</b>. A quoted-on-request item (impeller, detail) opens a quote '
+            'request under Line items — price it there with <b>Price this</b>.',
+        ], 'Priced by the same rules as the customer\'s own selections, so it follows a re-measure and '
+           'next season\'s rates — unlike a line typed into the Adjustment card, which is a fixed '
+           'figure. What you set here wins over the customer\'s own page, on or off. Nobody is emailed.'),
         ('Penalties', 'adjust', [
             'Tap to apply or remove <b>Pumpout service charge</b> or <b>Late retrieval surcharge</b>.',
         ], 'Charges the customer is never offered on the quote page. Nobody is emailed.'),
@@ -663,7 +675,7 @@ def manual():
             'change the quote and it reads <b>Invoice</b>. Staff can still adjust, edit lines, '
             're-measure and re-price.')]
     s += [B('<b>Staff changes survive customer saves.</b> Discounts, line edits, priced '
-            'requests, penalties, fees and measurements are replayed on top every time the '
+            'requests, added services, penalties, fees and measurements are replayed on top every time the '
             'quote is re-priced.')]
     s += [B('<b>Late retrieval surcharge</b> — added automatically when a requested date is '
             'after the pay-by date; removed if the date moves back.')]

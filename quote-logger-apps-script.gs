@@ -3355,8 +3355,30 @@ function adminAuth(pin) {
   const token = Utilities.getUuid();
   const sess = { name: name, exp: Date.now() + SESSION_HOURS * 3600 * 1000 };
   PropertiesService.getScriptProperties().setProperty('SESS_' + token, JSON.stringify(sess));
+  sweepSessions_();
   const st = roster[name];
   return { ok: 1, token: token, name: name, admin: !!st.admin, perms: resolvedPerms_(st) };
+}
+/* Every sign-in writes a SESS_ property and nothing removed the expired ones
+   — requireAuth_ deletes a session only when somebody presents it after it
+   has expired, so a phone that simply stopped opening the app left its entry
+   behind for good. Chris's Project Settings page (Sep 2026) was a wall of
+   them. Swept here, on each successful sign-in: one read of the property
+   store, one delete per expired entry, nothing else touched. Never on a
+   read path — requireAuth_ runs on every console call and must stay two
+   property reads. */
+function sweepSessions_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const all = props.getProperties();
+    const now = Date.now();
+    Object.keys(all).forEach(function (k) {
+      if (k.indexOf('SESS_') !== 0) return;
+      let exp = 0;
+      try { exp = Number(JSON.parse(all[k]).exp || 0); } catch (e) { exp = 0; }
+      if (!(exp > now)) props.deleteProperty(k);
+    });
+  } catch (e) {}
 }
 
 /* Recording where the keys are and which slip a boat is in is physical work, not a

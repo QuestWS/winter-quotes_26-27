@@ -255,12 +255,33 @@ running instead. So, the same day:
   which lists ~300 functions in file order; Chris spent ten minutes not
   finding it three-quarters of the way down. Keep it there.
 
+Then `diagnoseSpeed()` ran (30 Sep 2026, from the editor): the batch road was
+on, the storage view rebuilt in 1.7 s, from cache in 12 ms, one quote found
+cold in 1.1 s. **The server's work was one to two seconds while the phone
+waited fifty.** The time is between the phone and the function — Apps Script
+starting the request, the redirect leg a POST's answer travels through, the
+first attempt stalling on the harbor's signal — and the transport waited for
+the POST to give up before trying GET, which is the wait in the recording. So:
+
+- **A read is asked twice** (`readHedged_`). A read that has not answered in
+  six seconds is also sent over GET, and the first real answer wins; the other
+  is ignored when it lands, and if one road fails the other is asked at once.
+  **Only reads.** A write is sent once, with its `rid`, and if its answer goes
+  missing it is asked about (`settle_`), never re-sent — the guard asserts a
+  stalled POST is answered over GET, and that `api()` hedges nothing that
+  carries a `rid`. The second execution costs nothing that matters: every read
+  is idempotent and the storage view is cached on the server.
+- **Expired sessions are swept on sign-in** (`sweepSessions_`). Nothing had
+  ever removed a `SESS_` property whose phone simply stopped opening the app,
+  and Project Settings had become a wall of them. Not on any read path.
+
 `check-harbor-haul-out.js` executes all of it: a phone with a saved list and
 no signal still shows the list and is told how old it is; a saved detail is
 drawn and a row-built one is marked partial; nothing is written to the phone
-until the server has answered; `sw.js` serves the shell and is handed the API
-and Drive and declines both. `check-fast-reads.js` counts the fallback at one
-trip per tab and checks that every storage view reply says which road it took.
+until the server has answered; a read whose POST stalls is answered over GET;
+`sw.js` serves the shell and is handed the API and Drive and declines both.
+`check-fast-reads.js` counts the fallback at one trip per tab and checks that
+every storage view reply says which road it took.
 
 ## THE APP DECIDES NOTHING ABOUT PULLING
 

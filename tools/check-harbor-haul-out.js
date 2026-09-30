@@ -1083,6 +1083,35 @@ async function loadChecks() {
     if (/QLOAD\+\+/.test(W.ev('String(closeSheet)'))) ok('closing the sheet disowns the answer still in flight');
     else fail('an answer arriving after the sheet was closed would redraw it');
   }
+  /* A READ IS ASKED TWICE. The POST here never answers; the GET answers at
+     once. The harness's setTimeout fires immediately, so the hedge is taken
+     straight away — the read must resolve with the GET's reply rather than
+     wait on the POST. And a write must NOT be hedged: it is sent once. */
+  {
+    let posts = 0, gets = 0;
+    const H = load({
+      localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
+      fetch: async (u, o) => {
+        /* Only the storage view is counted: the page's own boot-time ping
+           goes through this stub too. */
+        if (o && o.method === 'POST') {
+          if (/storageView/.test(String(o.body || ''))) posts++;
+          return new Promise(() => {});                                            // stalls forever
+        }
+        if (/fn=storageView/.test(String(u))) gets++;
+        return { ok: true, status: 200, json: async () => ({ _api: 'console', ok: 1, groups: [], via: 'get' }) };
+      } });
+    const r = await Promise.race([H.api('storageView', []), new Promise((res) => setTimeout(() => res('hung'), 50))]);
+    if (r && r.via === 'get' && posts === 1 && gets === 1) ok('a read whose POST stalls is answered over GET without waiting for the POST');
+    else fail('a stalled POST still holds the read: ' + JSON.stringify({ r, posts, gets }));
+    if (!/readHedged_\(body\)/.test(H.ev('String(api)')) || /if\(isRead\) return readHedged_/.test(H.ev('String(api)')) === false)
+      fail('api() does not hedge reads through readHedged_');
+    else ok('reads go through readHedged_');
+    const src = H.ev('String(api)');
+    const hedgeAt = src.indexOf('readHedged_('), ridAt = src.indexOf('rid_()');
+    if (hedgeAt > -1 && ridAt > hedgeAt && /if\(isRead\) return readHedged_\(body\);/.test(src)) ok('a write is never hedged — it is sent once, with its rid');
+    else fail('a write could be sent twice');
+  }
   /* The fonts stylesheet must not block the first paint. */
   if (/<link[^>]*fonts\.googleapis\.com\/css2[^>]*media="print"[^>]*onload=/.test(HTML))
     ok('the Google Fonts stylesheet is off the critical path');

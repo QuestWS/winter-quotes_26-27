@@ -2945,7 +2945,9 @@ function hhoAddForgotten_(d, slip, amt, byName) {
   if (!st) return { ok: 0, error: 'This quote has no stored selections, so this can\'t be added automatically. Use the Adjustment card instead.' };
   if (isLandUnit_({ unit: st.unit || d.unit })) return { ok: 0, error: 'The slipholder discount is for boats and jet skis in a Heritage Harbor slip.' };
   let keys;
-  try { keys = sanitizeKeys_({ slipNo: slip }); }
+  /* A blank box means "the slip already on the quote" — Keys & slip may have
+     recorded it — rather than an error. */
+  try { keys = sanitizeKeys_({ slipNo: String(slip || '').trim() || String(st.slipNo || d.slipNo || '') }); }
   catch (err) { return { ok: 0, error: String(err.message || err) }; }
   if (!keys.set.slipNo) return { ok: 0, error: 'Enter the slip number — the discount line names it.' };
   const m = ensureManual_(d);

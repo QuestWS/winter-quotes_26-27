@@ -227,4 +227,23 @@ if (typeof engine.normalizeQuoteNo !== 'function') {
   else ok('the public lookup is throttled');
 }
 
+/* ---- 5. THE CONFIRM-YOUR-EMAIL NOTE. Adobe does not count a signature until
+   the signer clicks the link in its follow-up email, and its last screen reads
+   like "done". Every surface that sends somebody to sign must say so, in the
+   engine's one wording. ---- */
+{
+  const c = engine.SIGNING && engine.SIGNING.confirm;
+  if (!c || !c.headline || !c.body || !c.action) bad('SIGNING.confirm is missing — nobody is told to confirm their email');
+  else {
+    ok('SIGNING.confirm wording exists');
+    if (!/signConfirmHtml_\(\)/.test(gas) || (gas.match(/signConfirmHtml_\(\)/g) || []).length < 4)
+      bad('an email with a sign button no longer carries signConfirmHtml_() (expected: definition + customer email, firm quote, sign reminder)');
+    else ok('every email with a sign button carries the confirm note');
+    if (!/SIGNING\.confirm/.test(page)) bad('index.html no longer shows SIGNING.confirm beside the sign step');
+    else ok('quote page shows the confirm note');
+    if (!/SIGNING\.confirm/.test(read('sign.html'))) bad('sign.html no longer shows SIGNING.confirm before the hand-off');
+    else ok('scan-to-sign page shows the confirm note');
+  }
+}
+
 process.exit(fail);

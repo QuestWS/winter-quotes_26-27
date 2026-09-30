@@ -413,6 +413,21 @@ const SIGNING = {
     quoteNo: 'Quote_Number',
     slipNo:  'Slip_Number',
   },
+  /* THE STEP AFTER SIGNING. Adobe does not count a signature until the signer
+     clicks the link in the "Please confirm your signature" email it sends
+     straight afterwards -- and its own last screen ("Just one more step") is
+     easy to read as "done". Customers have stopped there, and an unconfirmed
+     signature is not a contract. Every surface that sends somebody to sign
+     (quote page, scan-to-sign page, every email with a sign button) says this
+     one thing in these words, so it is worded once, here. `action` is the
+     link's label in Adobe's email, and the surfaces bold it. */
+  confirm: {
+    headline: 'Signing isn\'t finished until you confirm your email',
+    body:     'Right after you sign, Adobe emails you a message titled \u201cPlease confirm your signature.\u201d ' +
+              'Open it and click the link inside. Until you do, your signature is not official and we do not have your agreement. ' +
+              'Nothing arrived? Check your junk or spam folder \u2014 it comes from Adobe Sign.',
+    action:   'Confirm my email address',
+  },
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
 
@@ -8522,7 +8537,7 @@ function buildEmailFor_(d, kind, extra, photos) {
           ? 'Accept the attached ' + term + ' exactly as it is: ' + steps.join(', then ') +
             '. Please put quote # <b>' + esc_(d.quoteNo || '') + '</b> in the payment memo.'
           : 'Give us a call on (815) 433-2200 and we\'ll get your agreement to you.');
-      const btns = (signLink ? buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') : '') +
+      const btns = (signLink ? buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') + signConfirmHtml_() : '') +
         (paidInFull ? '' : buttonHtml_(PAYMENT_URL,
           (paid > 0.005 || noStorage) ? 'Pay online' : 'Pay my deposit online', '#C08A22'));
       opt2 = choice('Option 2 —', 'Happy with it as it is?', body, btns);
@@ -8586,7 +8601,7 @@ function buildEmailFor_(d, kind, extra, photos) {
       'Nothing to do — give us a call on (815) 433-2200 and we\'ll match it up.';
 
     const btn = '<div style="margin:6px 0 10px">' +
-      buttonHtml_(signLink, 'Review &amp; sign', '#C08A22') + '</div>';
+      buttonHtml_(signLink, 'Review &amp; sign', '#C08A22') + '</div>' + signConfirmHtml_();
 
     return {
       subject: 'One thing left — your Quest winter services agreement · ' + (d.quoteNo || ''),
@@ -9232,6 +9247,17 @@ function moneyRow_(label, amt, bold) {
     '</td><td align="right" style="padding:4px 0;font-size:' + (bold ? '18px;font-weight:bold;color:#14293E' : '14px;color:#1D2B38') + '">' + amt + '</td></tr>';
 }
 
+/* The step after signing, for the emails that carry a sign button. Adobe only
+   counts a signature once the signer clicks the link in its "Please confirm
+   your signature" email, and its last screen reads like "done". Wording is
+   SIGNING.confirm in the engine -- the page says the same thing. */
+function signConfirmHtml_() {
+  const c = SIGNING.confirm;
+  return '<div style="background:#FDF3E0;border:1px solid #C08A22;border-left:5px solid #C08A22;border-radius:8px;' +
+    'padding:12px 16px;margin:8px 0 14px;font-size:14px;line-height:1.5;color:#5A431A">' +
+    '<b>' + esc_(c.headline) + '.</b> ' + esc_(c.body) + ' Look for <b>' + esc_(c.action) + '</b>.</div>';
+}
+
 function buttonHtml_(url, label, bg) {
   return '<a href="' + url + '" style="display:inline-block;background:' + bg +
     ';color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;' +
@@ -9270,7 +9296,7 @@ function customerEmailHtml_(o) {
       : moneyRow_('Balance due', usd_(o.balance), true);
   }
   let buttons = '';
-  if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E');
+  if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E') + signConfirmHtml_();
   if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
   /* Their own quote, already filled in — no quote number to find, no last name
      to type. Secondary to signing and paying on purpose: those are what this

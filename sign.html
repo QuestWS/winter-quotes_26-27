@@ -82,6 +82,8 @@
              enterkeyhint="go" placeholder="B-14">
     </div>
 
+    <div class="msg warn" id="confirmNote" hidden></div>
+
     <div class="actions">
       <button class="btn" id="go" type="button">Continue to the agreement</button>
       <div class="skip"><a id="skip" href="#">I don't have my quote number</a></div>
@@ -236,6 +238,15 @@ function paint(res, qn) {
      one, theirs wins. */
   if (res.slip && !slipTouched && !slipEl.value) slipEl.value = res.slip;
 }
+
+/* Said BEFORE they leave for Adobe, because Adobe's own last screen looks like
+   the end. SIGNING.confirm holds the wording -- see pricing-engine.js. */
+(function () {
+  var c = E.SIGNING && E.SIGNING.confirm, el = document.getElementById('confirmNote');
+  if (!c || !el) return;
+  el.innerHTML = '<b>' + c.headline + '.</b> ' + c.body + ' Look for <b>' + c.action + '</b>.';
+  el.hidden = false;
+})();
 
 /* ---- the hand-off ------------------------------------------------------ */
 function signUrl(qn) {

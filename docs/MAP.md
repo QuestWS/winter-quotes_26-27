@@ -23,6 +23,7 @@ in a day and a function name does not.
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |
 | `docs/build-guides.py` | ~1,140 | Builds the four staff PDFs in `docs/pdf/` |
+| `diagnoseSpeed()` (in the `.gs`) | — | Run from the editor: times every read road from inside and prints which one the app is on; writes nothing to a quote |
 | `docs/build-manual.py` | ~620 | Builds `docs/pdf/5 - Winter Services Program Manual.pdf` — every feature, how-to and permission in one volume. Rebuild when a feature or permission changes; not part of `emailGuides()` |
 
 ## Backend entry points
@@ -175,7 +176,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |
 | `check-sign-page.js` | The scan-to-sign page still hands off correctly, and still fails **open** against a backend that is missing, slow, refusing or lying |
-| `check-harbor-haul-out.js` | Harbor Haul Out renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, and its GET retry list is a subset of the server's |
+| `check-harbor-haul-out.js` | Harbor Haul Out renders the server's pull verdict rather than forming one, an unstamped row reads as blocked, the pull list is slip-only, its GET retry list is a subset of the server's, and the list and the detail open from the phone before the server answers |
 | `check-sign-chase.js` | A unit is cleared to pull if and only if it is BOTH signed and paid, and the two holds name their own reason; the deposit tabs sort by payment rather than balance; a lead sits outside both; the sign nudge refuses to build rather than ship a dead button |
 | `check-design-tokens.js` | One Quest palette — every page that copies it still matches `quest.css`, and every deliberate difference is declared |
 | `check-season-stamp.js` | A re-price re-dates as well as re-costs, an import carries a season stamp at all, and a batch import cannot trip the automatic reminder |

@@ -90,7 +90,8 @@ function build(ss) {
     /* takenQuoteNos_ asks quoteTabGrids_ first; with no Sheets service in this
        sandbox it answers null and the per-tab reads below are what run — which
        is exactly the fallback these checks exist to hold correct. */
-    gas.match(/^let _tabGridsOff_.*$/m)[0], fn('quoteTabGrids_'),
+    gas.match(/^let _tabGridsOff_.*$/m)[0], gas.match(/^let _gridsRoute_.*$/m)[0],
+    fn('quoteTabGrids_'), fn('quoteTabGridsBatch_'), fn('quoteTabGridsSlow_'),
     fn('takenQuoteNos_'), fn('readReservations_'), fn('uniqueQuoteNo_'),
     'return {uniqueQuoteNo_, takenQuoteNos_, readReservations_};'
   ].join('\n'))(SpreadsheetApp, PropertiesService, LockService, E.normalizeQuoteNo);

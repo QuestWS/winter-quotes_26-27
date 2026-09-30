@@ -44,6 +44,20 @@ function makeBook(tabs) {
     return {
       getName: () => t.name,
       getLastRow: () => { stats.trips++; return lastRow(); },
+      /* One trip for every populated row of the columns asked for; -1 means
+         all, as in Apps Script. This is what the rewritten fallback rides. */
+      getSheetValues: (r, c, nr, nc) => {
+        stats.trips++;
+        const last = lastRow();
+        const rows = nr === -1 ? Math.max(0, last - r + 1) : nr;
+        const out = [];
+        for (let i = 0; i < rows; i++) {
+          const row = [];
+          for (let j = 0; j < (nc || 1); j++) row.push(cell(r + i, c + j));
+          out.push(row);
+        }
+        return out;
+      },
       getRange: (r, c, nr, nc) => ({
         getValue: () => { stats.trips++; return cell(r, c); },
         getValues: () => {
@@ -149,7 +163,9 @@ const J = (v) => JSON.stringify(v);
 {
   const slow = backend(false), fast = backend(true);
   const a = slow.ctx.adminStorageView('t'), b = fast.ctx.adminStorageView('t');
-  if (J(a) !== J(b)) fail('the storage view differs between the batch read and the per-tab reads:\n       ' + J(a) + '\n       ' + J(b));
+  /* The groups are the answer; `_t` and `reads` say what it cost and which
+     road it took, and those are allowed to differ. */
+  if (J(a.groups) !== J(b.groups)) fail('the storage view differs between the batch read and the per-tab reads:\n       ' + J(a.groups) + '\n       ' + J(b.groups));
   else if (!a.groups || a.groups.length < 3) fail('the storage view fixture produced too little to compare: ' + J(a));
   else ok('the storage view is identical from one batch read and from the per-tab reads (' + a.groups.length + ' tabs)');
   if (J(a).indexOf('QW-26-1005') > -1) fail('the Import tab reached the storage view');
@@ -183,9 +199,25 @@ const J = (v) => JSON.stringify(v);
   const a = slow.ctx.adminStorageView('t');
   const b = broken.ctx.adminStorageView('t');
   const c = broken.ctx.adminSearch('t', 'ald');
-  if (J(a) !== J(b) || !c.ok) fail('a refused batch read does not fall back to the per-tab reads');
+  /* The groups are the answer; `_t` and `reads` say what it cost and which
+     road it took, and those are allowed to differ. */
+  if (J(a.groups) !== J(b.groups) || !c.ok) fail('a refused batch read does not fall back to the per-tab reads');
   else if (broken.stats.batch !== 1) fail('a refused batch read was asked again ' + broken.stats.batch + ' times in one execution');
   else ok('a refused batch read falls back to the old reads, and is not asked again in the same execution');
+  /* And that fallback is ONE trip per tab. It was three or four, and at the
+     second a trip costs from a phone that was the fifty-second storage view
+     Chris recorded (Sep 2026). The Import tab is left out before the read. */
+  const nTabs = tabs().filter((t) => t.name !== 'Import').length;
+  const fb = backend(true, { brokenSheets: true });
+  const v = fb.ctx.adminStorageView('t');
+  if (fb.stats.trips !== nTabs)
+    fail('the storage view on the fallback road made ' + fb.stats.trips + ' per-tab trip(s) for ' + nTabs + ' tabs; want one per tab');
+  else if (v.reads !== 'tabs') fail('the fallback does not report itself: reads=' + v.reads);
+  else ok('the fallback road is one trip per tab (' + fb.stats.trips + ' for ' + nTabs + '), and the reply says so (reads=tabs)');
+  const fast = backend(true);
+  const w = fast.ctx.adminStorageView('t');
+  if (w.reads !== 'batch' || !w._t || typeof w._t.total !== 'number') fail('the storage view does not say which road it read by, or what it cost: ' + J({ reads: w.reads, _t: w._t }));
+  else ok('the storage view reports reads=batch and its timings');
 }
 
 /* ---- 2. one trip per click ---- */

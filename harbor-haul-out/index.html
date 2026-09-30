@@ -246,6 +246,7 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
     <button class="x" onclick="closeSheet()" aria-label="Close">✕</button>
   </div>
   <div id="dAuth"></div>
+  <div class="fresh hide" id="dFresh"></div>
   <div id="dAlert"></div>
   <div class="wrap">
     <div id="dCall"></div>
@@ -501,7 +502,7 @@ async function doLogin(){
 function signOut(keep){
   T=''; ME=null;
   try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); }catch(e){}
-  if(!keep){ listDrop_(); ROWS=[]; LIST_AT=0; }
+  if(!keep){ listDrop_(); qDropAll_(); ROWS=[]; LIST_AT=0; }
   $('app').classList.add('hide'); $('sheet').classList.add('hide');
   $('login').classList.remove('hide'); $('pin').value='';
 }
@@ -595,8 +596,19 @@ function keepOld_(why){
   if(ROWS.length) setFresh_('Could not refresh — showing the list from '+ago_(LIST_AT)+'. '+why,'err');
   else setMsg('listMsg',why,false);
 }
+/* What a refresh cost, shown for a few seconds after it lands: the round
+   trip the phone saw against the time the server says it spent, and which
+   road the server read the sheet by. This is the number that decides whether
+   the next fix belongs in the app, in the .gs, or is the signal. */
+function tookTxt_(t0,r){
+  const took=((Date.now()-t0)/1000).toFixed(1)+'s';
+  const sv=r&&r.serverMs!=null?(Number(r.serverMs)/1000).toFixed(1)+'s on the server':'';
+  const how=r&&r.reads?String(r.reads)+' read':'';
+  return took+(sv||how?' ('+[sv,how].filter(Boolean).join(', ')+')':'');
+}
 async function loadList(force){
   const seq=++LOADING;
+  const t0=Date.now();
   if(!ROWS.length){
     const c=listLoad_();
     if(c){ ROWS=c.rows; LIST_AT=c.at; render(); }
@@ -620,7 +632,9 @@ async function loadList(force){
     });
     LIST_AT=Date.now(); listSave_();
     render();
-    setFresh_('');
+    setFresh_('Updated \u00b7 '+tookTxt_(t0,r));
+    try{ console.log('storageView',r._t||'',r.reads||''); }catch(e2){}
+    setTimeout(function(){ if(seq===LOADING) setFresh_(''); },8000);
   }catch(e){ if(seq===LOADING) keepOld_(e.message); }
 }
 /* Ready now → stated dates → will call → not answered. Same order the printed
@@ -873,6 +887,7 @@ async function markState(qn,to){
     if(CUR&&CUR.quoteNo===qn) CUR.placement=r.placement||{state:to};
     render(); if(CUR&&CUR.quoteNo===qn) renderState();
     listSave_();                                  // the phone's copy moves with it
+    if(CUR&&CUR.quoteNo===qn) qSave_(CUR);
     toast(r.msg||'Recorded');
   }catch(e){
     if(row) row.placementState=before;
@@ -1079,6 +1094,44 @@ function renderState(){
 /* ---------------------------------------------------------------------------
    ONE UNIT
 --------------------------------------------------------------------------- */
+/* THE DETAIL IS ON THE PHONE TOO.
+   Opening a unit sat on "Loading…" with every section empty for as long as
+   the server took — over half a minute in Chris's recording. So the last
+   full detail this phone loaded for a unit is kept (qwhho-q:<quote>) and
+   shown at once, stamped with its age; failing that, the sheet is drawn from
+   what the LIST ROW already knows (name, unit, phone, slip, keys, the verdict,
+   where it is in the season) and the rest fills in. The fresh answer replaces
+   either when it lands and is saved for next time. Same rule as the list:
+   nothing here decides anything, every button still asks the server. */
+const Q_KEY='qwhho-q:';
+let QLOAD=0;
+function qSave_(r){ if(!r||!r.quoteNo||r.partial) return; try{ localStorage.setItem(Q_KEY+r.quoteNo,JSON.stringify({at:Date.now(),r:r})); }catch(e){} }
+function qLoad_(qn){
+  try{ const c=JSON.parse(localStorage.getItem(Q_KEY+qn)||'null'); return (c&&c.r&&c.r.quoteNo&&c.at>0)?c:null; }
+  catch(e){ return null; }
+}
+function qDropAll_(){
+  try{
+    const ks=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf(Q_KEY)===0) ks.push(k); }
+    ks.forEach(function(k){ localStorage.removeItem(k); });
+  }catch(e){}
+}
+function setFreshQ_(t,cls){
+  const f=$('dFresh'); if(!f) return;
+  f.textContent=t||''; f.className='fresh'+(cls?' '+cls:'')+(t?'':' hide');
+}
+/* The detail the list row can already stand up. `partial` marks it: the log,
+   the measurements and the trailer question wait for the server rather than
+   being drawn as "nothing here". */
+function fromRow_(x){
+  return { quoteNo:x.qn, name:x.name||'', unit:x.unit||'', ymm:x.ymm||'', phone:x.phone||'', balance:x.balance||'',
+    keys:{ slipNo:x.slip||'', keyLoc:x.keys||'', trailerLoc:x.trailerLoc||'',
+           hasTrailer:x.trailer===true?true:x.trailer===false?false:undefined,
+           needsTrailerLoc:!!x.trailerLoc },
+    placement:{ state:x.placementState||'', at:x.placementAt||'' },
+    placementAlert:x.alert?{ text:x.alert }:null,
+    placementNotes:null, dims:null, partial:true };
+}
 async function openQuote(qn){
   CUR=null; PHOTOURL='';
   $('sheet').classList.remove('hide');
@@ -1091,14 +1144,32 @@ async function openQuote(qn){
   $('dLog').innerHTML=''; $('noteText').value=''; setMsg('noteMsg',''); setMsg('upMsg','');
   $('photoCounts').textContent='—';
   window.scrollTo(0,0);
+  const seq=++QLOAD, t0=Date.now();
+  const c=qLoad_(qn), row=ROWS.filter(x=>x.qn===qn)[0];
+  if(c){ CUR=c.r; renderSheet(c.r); setFreshQ_('Details from '+ago_(c.at)+' \u00b7 refreshing\u2026'); }
+  else if(row){ CUR=fromRow_(row); renderSheet(CUR); setFreshQ_('Loading the log and measurements\u2026'); }
+  else setFreshQ_('Loading\u2026');
   try{
     const r=await api('lookup',[qn]);
-    if(!r||!r.ok){ $('dName').textContent='Not found'; setMsg('noteMsg',(r&&r.error)||'Could not open that quote.',false); return; }
-    CUR=r; renderSheet(r);
+    if(seq!==QLOAD) return;                      // closed, or another unit opened
+    if(!r||!r.ok){
+      const why=(r&&r.error)||'Could not open that quote.';
+      if(CUR) setFreshQ_('Could not refresh \u2014 '+why,'err');
+      else { $('dName').textContent='Not found'; setMsg('noteMsg',why,false); }
+      return;
+    }
+    CUR=r; renderSheet(r); qSave_(r);
+    setFreshQ_('Updated \u00b7 '+tookTxt_(t0,r));
+    try{ console.log('lookup',r._t||'',r.reads||''); }catch(e2){}
+    setTimeout(function(){ if(seq===QLOAD) setFreshQ_(''); },8000);
     if(canPhotos()) refreshPhotos(qn);
-  }catch(e){ $('dName').textContent='Error'; setMsg('noteMsg',e.message,false); }
+  }catch(e){
+    if(seq!==QLOAD) return;
+    if(CUR) setFreshQ_('Could not refresh \u2014 '+e.message,'err');
+    else { $('dName').textContent='Error'; setMsg('noteMsg',e.message,false); }
+  }
 }
-function closeSheet(){ $('sheet').classList.add('hide'); stopDictation(); }
+function closeSheet(){ $('sheet').classList.add('hide'); stopDictation(); QLOAD++; }
 function renderSheet(r){
   const listRow=ROWS.filter(x=>x.qn===r.quoteNo)[0]||{};
   $('dName').textContent=r.name||r.quoteNo;
@@ -1153,8 +1224,16 @@ function renderSheet(r){
 
   renderAlert();
   renderState();
-  renderDims(r.dims);
-  renderLog(r.placementNotes||[]);
+  if(r.partial){
+    /* The row knows nothing about measurements or the log: leave the one
+       hidden and say the other is on its way, rather than drawing an empty
+       log that reads as "nothing was ever written". */
+    $('dimsBlk').classList.add('hide'); DIMS=null;
+    $('dLog').innerHTML='<div class="msg" style="margin-top:0">Loading the log\u2026</div>';
+  }else{
+    renderDims(r.dims);
+    renderLog(r.placementNotes||[]);
+  }
   const w=canWrite();
   $('noteBtn').disabled=!w;
   $('noteText').disabled=!w;
@@ -1209,6 +1288,7 @@ async function saveNote(){
     RECBLOB=null; drawRecorder();
     CUR.placementNotes=(CUR.placementNotes||[]).concat([r.note]);
     renderLog(CUR.placementNotes);
+    qSave_(CUR);
     /* Keep the list badge honest without re-fetching the whole list. */
     ROWS.forEach(x=>{ if(x.qn===CUR.quoteNo) x.notes=(x.notes||0)+1; });
     setMsg('noteMsg','Saved.',true); toast('Logged');

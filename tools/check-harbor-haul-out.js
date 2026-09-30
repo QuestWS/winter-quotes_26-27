@@ -1036,6 +1036,53 @@ async function loadChecks() {
   else fail('signOut does not clear the saved list on a deliberate sign-out, or clears it on expiry too');
   if (/signOut\(true\)/.test(ll)) ok('an expired session keeps the list for the next sign-in');
   else fail('an expired session throws the list away — every morning starts blank');
+  /* THE DETAIL, TOO. Opening a unit sat on "Loading…" with every section
+     empty for as long as the server took — over half a minute in Chris's
+     recording. A saved detail goes up first; with none, the list row is
+     enough to draw the top of the sheet. Both executed with fetch failing. */
+  {
+    const detail = JSON.stringify({ at: Date.now() - 3 * 60000, r: { quoteNo: 'QW-26-1255', name: 'Demo Test',
+      unit: 'Boat', phone: '(815) 555-0100', balance: 'Paid', keys: { slipNo: 'B-1', keyLoc: 'hook 4', trailerApplies: true },
+      placement: { state: '' }, placementNotes: [{ text: 'gelcoat crack, port side', by: 'Jeff', ts: '2026-10-01T12:00:00Z' }],
+      dims: { editable: false, why: 'x' } } });
+    /* One element PER ID here: the default harness hands every id the same
+       stub, so "what did the log show" would read whatever was written last. */
+    const els = {};
+    const mk = () => ({ textContent: '', className: '', innerHTML: '', value: '', disabled: false,
+      classList: { add: noop, remove: noop, toggle: noop, contains: () => false }, addEventListener: noop, click: noop });
+    const W = load({
+      localStorage: { getItem: (k) => (k === 'qwhho-list' ? saved : k === 'qwhho-q:QW-26-1255' ? detail : null), setItem: noop, removeItem: noop },
+      document: { getElementById: (id) => els[id] || (els[id] = mk()), addEventListener: noop, createElement: mk, body: mk() } });
+    await W.loadList();
+    await W.openQuote('QW-26-1255');
+    const cur = W.ev('CUR');
+    if (cur && cur.quoteNo === 'QW-26-1255' && !cur.partial) ok('a saved detail is on screen while the server is asked');
+    else fail('the saved detail was not shown: ' + JSON.stringify(cur && { qn: cur.quoteNo, partial: cur.partial }));
+    const de = W.document.getElementById('dLog'), df = W.document.getElementById('dFresh');
+    if (/gelcoat crack/.test(de.innerHTML)) ok('the saved log was drawn, not just held');
+    else fail('the saved log was not drawn');
+    if (/Could not refresh/.test(df.textContent) && /gelcoat crack/.test(de.innerHTML))
+      ok('a failed detail refresh says so and leaves the detail up');
+    else fail('a failed detail refresh does not say so: ' + JSON.stringify(df.textContent));
+    /* No saved detail: the row stands the sheet up, marked partial, log pending. */
+    await W.openQuote('QW-26-0002');
+    const p = W.ev('CUR');
+    if (p && p.partial && p.name === 'Baker, Bo') ok('with no saved detail the list row stands the sheet up, marked partial');
+    else fail('with no saved detail the sheet stays blank: ' + JSON.stringify(p && { name: p.name, partial: p.partial }));
+    if (/Loading the log/.test(de.innerHTML)) ok('a partial detail says the log is on its way rather than "nothing logged"');
+    else fail('a partial detail draws an empty log: ' + JSON.stringify(de.innerHTML.slice(0, 80)));
+    const oq = W.ev('String(openQuote)');
+    if (oq.indexOf('qLoad_(') > -1 && oq.indexOf('qLoad_(') < oq.indexOf("api('lookup'")) ok('openQuote reads the phone before it asks the server');
+    else fail('openQuote asks the server before showing what it has');
+    if (/qSave_\(r\)/.test(oq)) ok('a fresh detail is saved for next time');
+    else fail('a fresh detail is not saved — the next open waits on the server again');
+    if (/if\(!r\|\|!r\.quoteNo\|\|r\.partial\) return;/.test(W.ev('String(qSave_)'))) ok('a partial detail is never saved as if it were the real one');
+    else fail('qSave_ would save a row-built partial detail over a real one');
+    if (/qDropAll_\(\)/.test(W.ev('String(signOut)'))) ok('Sign out clears the saved details too');
+    else fail('Sign out leaves the saved details on the phone');
+    if (/QLOAD\+\+/.test(W.ev('String(closeSheet)'))) ok('closing the sheet disowns the answer still in flight');
+    else fail('an answer arriving after the sheet was closed would redraw it');
+  }
   /* The fonts stylesheet must not block the first paint. */
   if (/<link[^>]*fonts\.googleapis\.com\/css2[^>]*media="print"[^>]*onload=/.test(HTML))
     ok('the Google Fonts stylesheet is off the critical path');

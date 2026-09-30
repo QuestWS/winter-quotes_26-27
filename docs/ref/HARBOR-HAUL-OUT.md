@@ -223,10 +223,41 @@ Three things changed, and the first is the one that matters:
   still drops it), and the **Refresh** button passes `fresh` so a deliberate
   tap gets the sheet as it is now.
 
+Chris's screen recording of the result (30 Sep 2026) showed the list up in
+four seconds and then **fifty seconds** on *refreshing…*, and a unit that sat
+on *Loading…* for over half a minute. Both are the server, and both are far
+past what two batch trips cost, which points at the per-tab fallback quietly
+running instead. So, the same day:
+
+- **The detail is on the phone too.** The last full detail this phone loaded
+  for a unit (`qwhho-q:<quote>`) goes up at once, stamped with its age; with
+  none, the sheet is drawn from what the **list row** already knows (name,
+  unit, phone, slip, keys, the verdict, where it is in the season), marked
+  `partial` so the log says *Loading the log…* and the measurements card
+  stays hidden rather than either being drawn as empty. The fresh answer
+  replaces it and is saved; a partial is never saved as if it were real.
+  Closing the sheet, or opening another unit, disowns the answer in flight.
+- **Every refresh says what it cost.** For eight seconds after a list or a
+  unit lands the strip reads *Updated · 48.2s (46.1s on the server, tabs
+  read)*: the round trip the phone saw, `serverMs`, and which road the server
+  read the sheet by (`reads`: `cache`, `batch`, `tabs` or `scan`). That one
+  line is how the next report from the harbor gets pinned to the phone, the
+  server or the signal.
+- **The fallback is one trip per tab, not four** (`quoteTabGridsSlow_`), and
+  it lives inside `quoteTabGrids_`, so every caller gets it. **Opening a unit
+  is one verified trip**: the storage view primes the quote → row cache for
+  every unit it lists (`rememberQuoteRows_`, six hours), and the hit reads
+  the whole row once so the status and photo cells cost nothing more.
+- **`diagnoseSpeed()`**, run from the editor, times every road from inside
+  and prints which one the app is actually on — the fallbacks are silent by
+  design, and this is the only way to know. `CLAUDE.md` §2.
+
 `check-harbor-haul-out.js` executes all of it: a phone with a saved list and
-no signal still shows the list and is told how old it is; nothing is written
-to the phone until the server has answered; `sw.js` serves the shell and is
-handed the API and Drive and declines both.
+no signal still shows the list and is told how old it is; a saved detail is
+drawn and a row-built one is marked partial; nothing is written to the phone
+until the server has answered; `sw.js` serves the shell and is handed the API
+and Drive and declines both. `check-fast-reads.js` counts the fallback at one
+trip per tab and checks that every storage view reply says which road it took.
 
 ## THE APP DECIDES NOTHING ABOUT PULLING
 

@@ -69,7 +69,9 @@ const MUST_EXCLUDE = [
   ['dailyReminderCheck', 'emails customers at 9am on a trigger, with nobody watching'],
   ['bulkTargets_',       'builds the send-to-all recipient list'],
   ['balanceReportCheck', 'reports money owed; a draft owes nothing'],
-  ['adminStorageView',   'the storage view, Harbor Haul Out and the printed haul-out sheets'],
+  /* adminStorageView is the session check; storageViewBuild_ is the scan
+     (split Sep 2026 so diagnoseSpeed can time it from the editor). */
+  ['storageViewBuild_',  'the storage view, Harbor Haul Out and the printed haul-out sheets'],
   ['signLookup_',        'the public scan-to-sign lookup']
 ];
 MUST_EXCLUDE.forEach(function (pair) {

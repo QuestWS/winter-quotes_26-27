@@ -21,8 +21,8 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 |---|---|---|
 | `index.html` | GitHub Pages root | Customer quote page |
 | `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
-| `sign.html` | GitHub Pages root | **Scan to sign** — the QR-code page at the service counter: quote number in, pre-filled Adobe agreement out |
-| `quest.css` | GitHub Pages root | **The canonical Quest palette**, linked by `sign.html`; `check-design-tokens.js` holds every other copy to it |
+| `sign.html` | GitHub Pages root | **Scan to sign** — the counter QR page: quote number in, pre-filled Adobe agreement out |
+| `quest.css` | GitHub Pages root | **The canonical Quest palette**; `check-design-tokens.js` holds every other copy to it |
 | `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
 | `terms-config.js` | GitHub Pages root | **`QuestTerms.version`, single source of truth** — read by the page *and* both legal pages |
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
@@ -141,6 +141,7 @@ serves the cached old version and you'll debug a ghost.
 | `bulkImport1_Scan()` | once, to carry a season folder over | Reads every file, writes a **report to Drive**, touches no quote. Resumable; emails Chris when done. |
 | `bulkImport2_Apply()` | after reading that report | Imports each row still marked `IMPORT` onto the **Import** tab. Both: `docs/ref/STAFF-CONSOLE.md` § *Bulk import*. |
 | `emailGuides()` | whenever the guides change | Fetches the four PDFs from `main` and mails them to `REPORT_EMAIL` (Chris). Rebuild first: `python3 docs/build-guides.py`, commit, then run it — it reads the repo, not the local copy. |
+| `diagnoseSpeed()` | when the app is slow | Times every read road from inside; prints which one the app is on. Writes nothing. |
 
 ---
 
@@ -355,7 +356,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 ## 8. What's deliberately still open
 | Item | State | Notes |
 |---|---|---|
-| Scan-to-sign QR flyer | **Page live — flyer not yet printed** | `sign.html` is deployed and guarded. The laminated counter flyer's QR must be generated against `.../sign.html`, **not** the Adobe link. The same live-test rule applies: one real signature through it after any Adobe field rename. |
+| Scan-to-sign QR flyer | **Page live — flyer not yet printed** | Generate the flyer's QR against `.../sign.html`, **not** the Adobe link, and send one real signature through it after any Adobe field rename. |
 | Adobe Sign web form | **Live — needs one test signature** | Wired end to end. `SIGNING.webFormUrl` (`pricing-engine.js`) holds the published form; the page embeds it and every customer email carries a **Review & sign** button. Two fields pre-fill from the URL fragment, `Quote_Number` (read-only on the Adobe side) and `Slip_Number` (editable — most quotes have no slip to send). A field name that stops matching the Adobe side fails **silently** — blank contracts, no error — so send one live test link after any rename: `docs/adobe-webform-field-map.md`. |
 | Excel import of last year's selections | **Built — one at a time, or the whole folder** | `Load from an old sheet` for one file; `bulkImport1_Scan()` / `bulkImport2_Apply()` for a whole season folder onto the **Import** tab (§2). Both recover the `#REF!` files from the master grid and price at today's rates. Only the bulk run skips customers who already have a quote. Detail: `docs/ref/STAFF-CONSOLE.md`. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |

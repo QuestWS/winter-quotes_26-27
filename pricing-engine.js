@@ -155,6 +155,21 @@ const SIGNING = {
     quoteNo: 'Quote_Number',
     slipNo:  'Slip_Number',
   },
+  /* THE STEP AFTER SIGNING. Adobe does not count a signature until the signer
+     clicks the link in the "Please confirm your signature" email it sends
+     straight afterwards -- and its own last screen ("Just one more step") is
+     easy to read as "done". Customers have stopped there, and an unconfirmed
+     signature is not a contract. Every surface that sends somebody to sign
+     (quote page, scan-to-sign page, every email with a sign button) says this
+     one thing in these words, so it is worded once, here. `action` is the
+     link's label in Adobe's email, and the surfaces bold it. */
+  confirm: {
+    headline: 'Signing isn\'t finished until you confirm your email',
+    body:     'Right after you sign, Adobe emails you a message titled \u201cPlease confirm your signature.\u201d ' +
+              'Open it and click the link inside. Until you do, your signature is not official and we do not have your agreement. ' +
+              'Nothing arrived? Check your junk or spam folder \u2014 it comes from Adobe Sign.',
+    action:   'Confirm my email address',
+  },
 };
 /* ========================= END ANNUAL UPDATE ZONE ========================= */
 

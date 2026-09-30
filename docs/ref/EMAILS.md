@@ -71,6 +71,14 @@ turns on across every email from that one string.
 way.
 
 
+**Every sign button is followed by the "confirm your email" note**
+(`signConfirmHtml_()`, wording in `SIGNING.confirm` in the engine). Adobe does
+not count a signature until the signer clicks the link in its follow-up
+"Please confirm your signature" email, and its own last screen reads like
+"done" — customers stopped there. The quote page and `sign.html` say the same
+words; `tools/check-sign-link.js` fails a surface that drops them.
+
+
 ## The sign chase (`signreminder`)
 
 "We still need your signature" — the nudge for a quote with no signed agreement

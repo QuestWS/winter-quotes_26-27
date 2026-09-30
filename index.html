@@ -297,6 +297,8 @@ aside.ticket{position:sticky;top:18px}
 .refline{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:15px;margin:8px 0}
 .copybtn{font-family:var(--body);font-size:12px;font-weight:700;border:1.5px solid var(--frost);color:var(--frost);background:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
 .copybtn:hover{background:var(--frost-soft)}
+.confirmbox{background:#FDF3E0;border:1px solid var(--gold);border-left-width:5px;border-radius:8px;padding:11px 14px;font-size:14px;line-height:1.5;color:#5A431A;margin:0 0 12px}
+.confirmbox b{color:#7A5A12}
 .okbox{border:1.5px solid var(--ok);background:var(--ok-bg);color:var(--ok);border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600;margin:10px 0}
 
 /* modal */
@@ -597,6 +599,7 @@ aside.ticket{position:sticky;top:18px}
       <div class="sc-head"><div class="sc-num">1</div><div class="sc-title">Review &amp; sign your agreement</div></div>
       <div class="sc-body">
         <p class="note" id="signNote" style="margin:0 0 12px">Your agreement opens with your quote number already filled in, and covers Quest's <span data-cfg="seasonLabel"></span> storage terms. Sign right here — a completed copy is emailed to you and to Quest automatically.</p>
+        <div class="confirmbox" id="signConfirm" hidden></div>
         <div id="signEmbed"></div>
       </div>
     </div>
@@ -1363,6 +1366,11 @@ function renderSignPay(){
   const src=adobeSignUrl();
   const target=$('#signEmbed');
   $('#signNote').style.display = src ? '' : 'none';
+  /* Adobe's last screen reads like "done"; it is not. Same wording as the
+     scan-to-sign page and every sign email -- SIGNING.confirm, in the engine. */
+  const cf=$('#signConfirm'), cc=SIGNING.confirm;
+  cf.hidden = !src;
+  cf.innerHTML = '<b>'+cc.headline+'.</b> '+cc.body.replace(/\u201cPlease confirm your signature\.\u201d/,'<b>\u201cPlease confirm your signature\u201d</b>')+' Look for <b>'+cc.action+'</b>.';
   if(src){
     /* The link is built WITHOUT embed:true on purpose: that one opens Adobe's
        own hosted page, so it must not claim to be embedded in ours. Same

@@ -115,7 +115,7 @@ on every tab, and column 21 is the full JSON payload — kilobytes per quote. By
 September that was tens of seconds of Sheets traffic for one tap, which is what
 put the calls over the edge Google gives up at.
 
-- **The storage view is cached for two minutes**, split across CacheService
+- **The storage view is cached for ten minutes**, split across CacheService
   entries (`cachePutBig_` / `cacheGetBig_`, 100KB cap each). A missing chunk is
   a miss, never half a storage sheet.
 - **Every write drops that cache**, from one place: `consoleServe_` invalidates
@@ -1099,7 +1099,7 @@ but never signed", asked from a phone.
   below.
 - **The storage view's cached copy carries a version** (`STORAGE_VIEW_V_`).
   Without it, a deploy that adds a field to those rows would be answered for
-  two minutes from a cache that lacks it — and the console cannot tell "no
+  ten minutes from a cache that lacks it — and the console cannot tell "no
   deposit" from "this row predates the flag", so every quote would read as
   unpaid until the cache aged out. Bump it whenever the row or group shape
   changes.

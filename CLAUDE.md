@@ -28,14 +28,15 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `legal.css` | GitHub Pages root | Shared styling for the two legal pages |
 | `favicon.png` | GitHub Pages root | **The Quest mark — every page links this one file** |
 | `admin/index.html` | GitHub Pages `/admin/` | Staff console (PIN-gated) |
-| `harbor-haul-out/index.html` | GitHub Pages `/harbor-haul-out/` | **Harbor Haul Out** — the haul-out list on a phone, installable, PIN-gated |
-| `harbor-haul-out/manifest.json` | GitHub Pages `/harbor-haul-out/` | What makes Harbor Haul Out installable (Add to Home Screen) |
+| `harbor-haul-out/index.html` | GitHub Pages `/harbor-haul-out/` | **Harbor Haul Out** — the haul-out list on a phone, PIN-gated |
+| `harbor-haul-out/manifest.json` | GitHub Pages `/harbor-haul-out/` | Makes it installable (Add to Home Screen) |
+| `harbor-haul-out/sw.js` | GitHub Pages `/harbor-haul-out/` | Service worker: shell off the phone; never the API |
 | `quote-logger-apps-script.gs` | Apps Script, bound to the Sheet | The entire backend |
 
 - **Repo:** `QuestWS/winter-quotes_26-27`
 - **Customer page:** `https://questws.github.io/winter-quotes_26-27/`
 - **Staff console:** `https://questws.github.io/winter-quotes_26-27/admin/`
-- **Harbor Haul Out** (renamed from "the yard app"): `https://questws.github.io/winter-quotes_26-27/harbor-haul-out/` — *add to home screen; same PIN as the console. `/yard/` redirects here; re-add to home screen for the standalone icon.*
+- **Harbor Haul Out**: `https://questws.github.io/winter-quotes_26-27/harbor-haul-out/` — *add to home screen; same PIN as the console. `/yard/` redirects here.*
 - **Scan to sign:** `https://questws.github.io/winter-quotes_26-27/sign.html` — *the URL the counter QR code is generated against*
 - **Spreadsheet:** "Winter Quotes 2026-2027" (Google Sheets, script is bound to it)
 - **Drive:** season folder holds quote PDFs, `Unit Photos/`, `Signed Contracts/`

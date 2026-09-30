@@ -167,7 +167,13 @@ if [ -f harbor-haul-out/index.html ]; then
   sweep harbor-haul-out/index.html "harbor-haul-out" \
     "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" "putDirect_" "uploadOne_" "upPump_" "upChip_" "uploadSession" \
     "uploadPhoto" "placementNote" "manifest.json" "storageView" \
-    "renderDims" "previewDims" "applyDims" "collectDims" "canMeasure" "dimsBlk" "dimsPreview" "dimsApply"
+    "renderDims" "previewDims" "applyDims" "collectDims" "canMeasure" "dimsBlk" "dimsPreview" "dimsApply" \
+    "listLoad_" "listSave_" "keepOld_" "serviceWorker.register"
+  # The shell is served by a service worker after the first visit; it is a
+  # file of its own and is executed by check-harbor-haul-out.js.
+  if [ -f harbor-haul-out/sw.js ]; then
+    cp harbor-haul-out/sw.js "$TMP/sw.js"; check_js "$TMP/sw.js" "harbor-haul-out/sw.js"
+  else echo "  FAIL harbor-haul-out/sw.js is missing — the app fetches its shell on every open"; FAIL=1; fi
   # One big script here too, so the same shadowing trap applies.
   DUPY=$(grep -oE '^\s*(async )?function [A-Za-z0-9_$]+' "$TMP/hho.js" \
          | grep -oE '[A-Za-z0-9_$]+$' | sort | uniq -d)

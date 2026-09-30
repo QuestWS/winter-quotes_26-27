@@ -1420,7 +1420,7 @@ function consoleFns_(p) {
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
-    storageView: function (a) { return adminStorageView(p.token); },
+    storageView: function (a) { return adminStorageView(p.token, a[0]); },
     draftList:   function (a) { return adminDraftList(p.token); },
     jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
@@ -3321,7 +3321,7 @@ function auditLog_(who, action) {
 
    - `cachePutBig_` / `cacheGetBig_` split a value across CacheService entries,
      which cap at 100KB each. A missing chunk is a miss, never a half-answer.
-   - The storage view is cached for two minutes and **thrown away by every
+   - The storage view is cached for ten minutes and **thrown away by every
      write**, from one place — `consoleServe_` invalidates after any function
      that is not on the read-only allow-list, so a write added later cannot
      forget to. The customer save path does the same at the end of `doPost`.
@@ -3334,7 +3334,11 @@ function auditLog_(who, action) {
    that breaks when the cache is unavailable would be worse than a slow one.
 =========================================================================== */
 const CACHE_CHUNK_ = 90 * 1024;          // CacheService caps a value at 100KB
-const STORAGE_VIEW_TTL_ = 120;           // seconds
+/* Ten minutes, not two: every write drops it anyway (consoleServe_, doPost),
+   so the TTL only decides how often an UNCHANGED sheet is re-read — and a
+   change made by hand in the spreadsheet itself waits at most this long.
+   Harbor Haul Out's Refresh passes `fresh` and skips it altogether. */
+const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
@@ -7374,10 +7378,13 @@ function haulAuth_(hasDeposit, hasContract) {
            stamp: 'NO SIGNED CONTRACT \u2014 DO NOT PULL' };
 }
 
-function adminStorageView(token) {
+/* `opt.fresh`: Harbor Haul Out's Refresh button. A deliberate tap asks for the
+   sheet as it is now, past the cache; opening the app, and the console, take
+   the cached copy. */
+function adminStorageView(token, opt) {
   requireAuth_(token, 'view');
   /* The heaviest read in the console — every row of every tab, and the payload
-     of each one. Two minutes of cache, dropped by any write (see the cache
+     of each one. Ten minutes of cache, dropped by any write (see the cache
      section above), is the difference between a storage sheet that opens and one
      that times out. */
   /* The cached copy carries the shape it was built with. A deploy that adds a
@@ -7385,7 +7392,7 @@ function adminStorageView(token) {
      with rows that do not have it -- and the console cannot tell "no deposit"
      from "this row predates the deposit flag", so every quote would read as
      unpaid until the cache aged out. A version that does not match is a miss. */
-  const cached = cacheGetBig_('storageView');
+  const cached = (opt && opt.fresh) ? null : cacheGetBig_('storageView');
   if (cached) {
     try {
       const r = JSON.parse(cached);
@@ -7394,7 +7401,12 @@ function adminStorageView(token) {
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const groups = [];
-  const sheets = ss.getSheets();
+  /* The Import tab is left out of the READ, not just skipped below. Its rows
+     never reach this view, and it holds more payloads than every storage tab
+     put together (122 drafts against some 30 units, Sep 2026) — so fetching
+     it was most of what this call shipped out of Sheets and then threw away,
+     on the one read Harbor Haul Out waits on at the harbor. */
+  const sheets = ss.getSheets().filter(function (sh) { return !isImportTab_(sh.getName()); });
   /* Every quote tab in one batch (quoteTabGrids_) — this view is dropped by
      every write, so it is rebuilt often, and it was four trips per tab. The
      per-tab reads below are the fallback. */

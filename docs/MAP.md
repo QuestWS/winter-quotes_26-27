@@ -17,7 +17,8 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
-| `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: four lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console |
+| `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: four lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console. The last list is kept on the phone (`listLoad_`/`listSave_`) and shown before the server answers |
+| `harbor-haul-out/sw.js` | ~100 | Harbor Haul Out's service worker: the shell (page, `quest.css`, fonts, icon) off the phone after the first visit, network-first with a timeout; never the API |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
 | `terms.html`, `privacy.html`, `legal.css`, `terms-config.js` | small | Legal pages and the single `QuestTerms` version constant |
 | `tools/verify.sh` | ~570 | Runs before every deploy; calls each `tools/check-*.js` |

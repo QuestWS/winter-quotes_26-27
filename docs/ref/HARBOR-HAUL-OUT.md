@@ -2,7 +2,9 @@
 
 `harbor-haul-out/index.html` — the haul-out list as something you open on a phone,
 standing next to the boat. Installable (Add to Home Screen), PIN-gated,
-and deliberately narrow.
+and deliberately narrow. It was "the yard app" until Sep 2026; `/yard/`
+redirects here, and a phone that installed it from there needs to re-add it
+to the home screen for the standalone icon.
 
 *Detail for `harbor-haul-out/index.html` lives here rather than in `CLAUDE.md` so it is
 read when it is relevant. `tools/check-docs-coverage.js` fails if any of it
@@ -174,6 +176,57 @@ panel over the list they were working down. The guard asserts both.
 
 Lead rows never appear on any list. A quote nobody finished is not a unit we
 are holding.
+
+## Opening fast: the list is on the phone
+
+Chris, Sep 2026: *"It takes FOREVER for the Harbor Haul Out app to load.
+There's no way I can expect guys to stand around for multiple minutes waiting
+for an app. They're just going to skip it and its whole purpose will be
+lost."* He is right, and the cause was structural: every open fetched the
+page, the stylesheet and three font families before it could draw anything,
+then sat on a blank screen until Apps Script had cold-started a 10,000-line
+script and walked the spreadsheet for `storageView`. On the harbor's signal
+that was the minutes he saw, and a call slow enough is a call Google drops
+(`CLAUDE.md` §7), so the app then retried over GET and waited again.
+
+Three things changed, and the first is the one that matters:
+
+- **The last list this phone loaded is shown first.** `loadList` keeps the
+  rows in `localStorage` (`qwhho-list`, with the time they were fetched) and
+  puts them on screen the moment the app opens, with a strip above the list
+  saying *List from 12 min ago · refreshing…*. The fresh copy replaces it
+  when it lands. A refresh that **fails leaves the list up** and says so —
+  *Could not refresh — showing the list from 12 min ago* — because an old list
+  of what is in the water beats no list, and nothing on it is a decision: every
+  tap still goes to the server, which confirms or refuses it there, and the
+  pull verdict on every row is still the server's stamp (below). The copy is
+  written only after the server answered and again after a recorded move, so
+  what is on the phone is always something the server said. **Sign out
+  clears it; an expired session does not**, or every morning would start with
+  the blank screen this exists to remove. The first open on a new phone is
+  still the slow one, and says so rather than sitting on *Loading…*.
+- **The shell is served by a service worker** (`harbor-haul-out/sw.js`): the
+  page, `quest.css`, the manifest, the icon and the fonts come off the phone
+  after the first visit. It is **network-first with a four-second timeout**,
+  so a deploy still reaches the phone on the next open with signal and the
+  cache only answers when the network is slow or gone — cache-first would have
+  made the "hard-refresh or you are debugging a ghost" rule permanent on every
+  phone in the crew. It **never touches the API**: nothing from
+  `script.google.com` or the `googleusercontent.com` redirect leg goes through
+  it, because a cached console reply would be stale data that looks fresh.
+  The Google Fonts stylesheet is also loaded off the critical path
+  (`media="print"` + `onload`) so a slow font server cannot hold the whole page
+  blank.
+- **The server reads less.** The Import tab — more payloads than every
+  storage tab put together — is left out of the read rather than skipped after
+  it, the storage view is cached for ten minutes instead of two (every write
+  still drops it), and the **Refresh** button passes `fresh` so a deliberate
+  tap gets the sheet as it is now.
+
+`check-harbor-haul-out.js` executes all of it: a phone with a saved list and
+no signal still shows the list and is told how old it is; nothing is written
+to the phone until the server has answered; `sw.js` serves the shell and is
+handed the API and Drive and declines both.
 
 ## THE APP DECIDES NOTHING ABOUT PULLING
 

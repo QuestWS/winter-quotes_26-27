@@ -168,7 +168,7 @@ if [ -f harbor-haul-out/index.html ]; then
     "API_URL" "API_GET_OK" "pullList_" "auth_" "saveNote" "startRec" "stopRec" "recSupported_" "blobB64_" "listOf_" "storeList_" "markState" "renderState" "toggleSort" "tabStore" "tabStored" "alert_" "renderAlert" "dAlert" "putDirect_" "uploadOne_" "upPump_" "upChip_" "uploadSession" \
     "uploadPhoto" "placementNote" "manifest.json" "storageView" \
     "renderDims" "previewDims" "applyDims" "collectDims" "canMeasure" "dimsBlk" "dimsPreview" "dimsApply" \
-    "listLoad_" "listSave_" "keepOld_" "serviceWorker.register"
+    "listLoad_" "listSave_" "keepOld_" "serviceWorker.register" "qLoad_" "fromRow_" "tookTxt_"
   # The shell is served by a service worker after the first visit; it is a
   # file of its own and is executed by check-harbor-haul-out.js.
   if [ -f harbor-haul-out/sw.js ]; then

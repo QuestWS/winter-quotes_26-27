@@ -2149,8 +2149,56 @@ function colA1_(n) {
   return String.fromCharCode(64 + n);
 }
 function tabA1_(sh) { return "'" + String(sh.getName()).replace(/'/g, "''") + "'!"; }
+/* Which route the last grid read took: 'batch' (the Sheets API, two trips
+   for the whole spreadsheet), 'tabs' (one getSheetValues per tab) or '' (no
+   read yet). Reported on console replies as `reads`, because the fallback is
+   SILENT by design and a phone at the harbor cannot tell a fast path that is
+   working from a slow one that is quietly running instead. */
+let _gridsRoute_ = '';
 function quoteTabGrids_(ss, sheets, spans) {
-  if (_tabGridsOff_ || !sheets.length || !spans.length) return null;
+  if (!sheets.length || !spans.length) return null;
+  const fast = quoteTabGridsBatch_(ss, sheets, spans);
+  if (fast) { _gridsRoute_ = 'batch'; return fast; }
+  const slow = quoteTabGridsSlow_(ss, sheets, spans);
+  _gridsRoute_ = slow ? 'tabs' : '';
+  return slow;
+}
+/* The fallback, rewritten (Sep 2026) after Harbor Haul Out was clocked at
+   fifty seconds for one storage view. The old fallback lived in every caller
+   and cost three or four trips PER TAB — is this a quote tab, where does it
+   end, then each column span — and at the second or so a Sheets trip costs
+   from a web-app request, ten tabs was most of a minute. getSheetValues(-1)
+   is ONE trip per tab and returns every populated row, so the header test and
+   every span come out of the same answer. A non-quote tab is read whole rather
+   than to its header, which is the price of one trip instead of two; the only
+   big one is the Activity Log, and it is a few hundred short rows.
+   Returns the same shape as the batch read. `null` only when the sheet object
+   cannot do it (a stub without getSheetValues), so every caller's own per-tab
+   fallback still exists behind this one. */
+function quoteTabGridsSlow_(ss, sheets, spans) {
+  if (typeof sheets[0].getSheetValues !== 'function') return null;
+  let maxCol = 0;
+  spans.forEach(function (sp) { if (sp[1] > maxCol) maxCol = sp[1]; });
+  const out = sheets.map(function () { return null; });
+  sheets.forEach(function (sh, i) {
+    const all = sh.getSheetValues(1, 1, -1, maxCol) || [];
+    if (!all.length || all[0][COL.QN - 1] !== 'Quote #') return;
+    out[i] = spans.map(function (sp) {
+      const w = sp[1] - sp[0] + 1;
+      return all.map(function (r) {
+        const row = new Array(w);
+        for (let c = 0; c < w; c++) {
+          const v = r[sp[0] - 1 + c];
+          row[c] = (v === undefined || v === null) ? '' : v;
+        }
+        return row;
+      });
+    });
+  });
+  return out;
+}
+function quoteTabGridsBatch_(ss, sheets, spans) {
+  if (_tabGridsOff_) return null;
   if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) return null;
   try {
     SpreadsheetApp.flush();
@@ -3328,7 +3376,11 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
 const STORAGE_VIEW_V_ = 6;
-const QROW_TTL_ = 1800;                  // seconds
+/* Six hours, the most CacheService allows. Safe at any length because the
+   hint is verified against the sheet before it is trusted (cachedQuoteRow_),
+   and the storage view re-primes every row it reads (rememberQuoteRows_), so
+   opening a unit from Harbor Haul Out's list never scans the spreadsheet. */
+const QROW_TTL_ = 21600;                 // seconds
 
 function cachePutBig_(key, str, ttl) {
   try {
@@ -3377,33 +3429,61 @@ function rememberQuoteRow_(qn, tabName, rowNum) {
       JSON.stringify({ tab: tabName, row: rowNum }), QROW_TTL_);
   } catch (e) {}
 }
-/* The cached location, only if the sheet still says so. One cell read replaces
-   a scan of every tab; a wrong guess costs that one read and nothing else. */
+/* Every row the storage view just read, in one cache call. A unit opened from
+   Harbor Haul Out's list is then found in one verified trip rather than a
+   scan — the list and the tap that follows it are the same person. */
+function rememberQuoteRows_(list) {
+  if (!list || !list.length) return;
+  try {
+    const all = {};
+    list.forEach(function (x) { all[qrowKey_(x.qn)] = JSON.stringify({ tab: x.tab, row: x.row }); });
+    CacheService.getScriptCache().putAll(all, QROW_TTL_);
+  } catch (e) {}
+}
+/* The cached location, only if the sheet still says so. ONE trip reads the
+   whole row and the quote number on it is the proof; it used to be three
+   (getLastRow, the quote cell, then the payload cell), and at a second a
+   trip that was the difference on a phone. A hint pointing past the sheet
+   throws or comes back blank, and either way simply misses. The row travels
+   with the answer so adminLookup reads nothing else. */
 function cachedQuoteRow_(ss, qn) {
   let hint = null;
   try { hint = JSON.parse(CacheService.getScriptCache().get(qrowKey_(qn)) || 'null'); }
   catch (e) { hint = null; }
   if (!hint || !hint.tab || !(hint.row > 1)) return null;
   const sh = ss.getSheetByName(hint.tab);
-  if (!sh || sh.getLastRow() < hint.row) return null;
-  if (String(sh.getRange(hint.row, COL.QN).getValue() || '').trim().toUpperCase() !== String(qn).trim().toUpperCase()) return null;
-  return { sh: sh, rowNum: hint.row };
+  if (!sh) return null;
+  let row;
+  try { row = sh.getRange(hint.row, 1, 1, COL.PHOTOS).getValues()[0] || []; } catch (e) { return null; }
+  if (String(row[COL.QN - 1] || '').trim().toUpperCase() !== String(qn).trim().toUpperCase()) return null;
+  return { sh: sh, rowNum: hint.row, row: row };
+}
+/* A cell of the quote's row: off the row findQuoteCtx_ already holds when it
+   has one, one trip otherwise. Reads only — a write that changed the sheet
+   in this execution must keep reading the sheet. */
+function ctxCell_(ctx, col) {
+  if (ctx.row) { const v = ctx.row[col - 1]; return (v === undefined || v === null) ? '' : v; }
+  return ctx.sh.getRange(ctx.rowNum, col).getValue();
 }
 
 function findQuoteCtx_(qn) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const want = String(qn).trim().toUpperCase();
-  const build = function (sh, rowNum) {
-    const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
+  /* `row`: the whole sheet row when the caller already has it (the verified
+     cache hit brings it; the scan fetches it in the one trip the payload cost
+     anyway), so the status and photo cells adminLookup wants are free. `how`
+     is reported on the reply as `reads`. */
+  const build = function (sh, rowNum, row, how) {
+    const payloadJson = row ? row[COL.PAYLOAD - 1] : sh.getRange(rowNum, COL.PAYLOAD).getValue();
     if (!payloadJson) return null;
     const d = JSON.parse(payloadJson);
     reconcileManual_(d);
     rememberQuoteRow_(want, sh.getName(), rowNum);
-    return { sh: sh, rowNum: rowNum, quoteNo: d.quoteNo, d: d,
+    return { sh: sh, rowNum: rowNum, quoteNo: d.quoteNo, d: d, row: row || null, how: how || '',
              ui: { alert: function(){}, prompt: function(){} } };
   };
   const hit = cachedQuoteRow_(ss, want);
-  if (hit) { const ctx = build(hit.sh, hit.rowNum); if (ctx) return ctx; }
+  if (hit) { const ctx = build(hit.sh, hit.rowNum, hit.row, 'cache'); if (ctx) return ctx; }
   const sheets = ss.getSheets();
   /* A miss used to cost three trips per tab. A batch read of column C on
      every quote tab finds it; the old loop below stays as the fallback. The first
@@ -3414,7 +3494,12 @@ function findQuoteCtx_(qn) {
       if (!grids[i]) continue;
       const g = grids[i][0];
       for (let r = 1; r < g.length; r++) {
-        if (String(g[r][0]) === want) return build(sheets[i], r + 1);
+        if (String(g[r][0]) === want) {
+          /* The whole row for the price of the payload cell. */
+          let row = null;
+          try { row = sheets[i].getRange(r + 1, 1, 1, COL.PHOTOS).getValues()[0] || null; } catch (e) { row = null; }
+          return build(sheets[i], r + 1, row, _gridsRoute_ || 'batch');
+        }
       }
     }
     return null;
@@ -3423,7 +3508,7 @@ function findQuoteCtx_(qn) {
     const sh = sheets[i];
     if (sh.getRange(1, 3).getValue() !== 'Quote #') continue;
     const rowNum = findQuoteRow_(sh, want);
-    if (rowNum > 0) return build(sh, rowNum);
+    if (rowNum > 0) return build(sh, rowNum, null, 'scan');
   }
   return null;
 }
@@ -5093,17 +5178,22 @@ function adminQuoteHtml(token, qn) {
 }
 
 function adminLookup(token, qn) {
+  const T0 = Date.now();
   const who = requireAuth_(token, 'view');
+  const tAuth = Date.now() - T0;
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found (or saved before the current system — re-save it from the quote page once).' };
   const d = ctx.d;
   const paid = paymentsTotal_(d);
   const bal = Number(d.total || 0) - paid;
-  return { ok: 1, quoteNo: d.quoteNo, name: [d.firstName, d.lastName].filter(Boolean).join(' '),
+  /* What this call spent and which way it found the row — the numbers that
+     decide whether the next speed fix belongs on the phone or in here. */
+  return { ok: 1, reads: ctx.how, _t: { auth: tAuth, find: Date.now() - T0 - tAuth },
+    quoteNo: d.quoteNo, name: [d.firstName, d.lastName].filter(Boolean).join(' '),
     /* Quote vs Invoice, so the console can follow the same terminology flip as
        the page, the PDF and the emails once a payment exists. */
     term: docTerm_(d),
-    unit: d.unit, ymm: d.ymm || '', status: String(ctx.sh.getRange(ctx.rowNum, COL.STATUS).getValue() || ''),
+    unit: d.unit, ymm: d.ymm || '', status: String(ctxCell_(ctx, COL.STATUS) || ''),
     total: usd_(d.total), paid: usd_(paid), balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)),
     balNum: Math.round(bal * 100) / 100,
     feeSuggest10: bal > 0 ? Math.round(bal * ADJ_LATE_PCT) / 100 : 0,
@@ -5122,7 +5212,7 @@ function adminLookup(token, qn) {
     /* The services card: SERVICE_MENU for this unit, pre-filled with what is
        in force and marked where it is Quest's doing rather than the customer's. */
     services: servicesInfo_(d),
-    photos: String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || ''),
+    photos: String(ctxCell_(ctx, COL.PHOTOS) || ''),
     contractUrl: d.contractUrl || '',
     /* Whether there is a signing link to send at all, not the link itself —
        the console only needs to decide whether to offer the "ask them to sign"
@@ -7367,7 +7457,20 @@ function haulAuth_(hasDeposit, hasContract) {
    sheet as it is now, past the cache; opening the app, and the console, take
    the cached copy. */
 function adminStorageView(token, opt) {
+  const T0 = Date.now();
   requireAuth_(token, 'view');
+  const out = storageViewBuild_(opt);
+  /* `_t`: what each phase cost, and `reads`: which route the sheet read took
+     ('cache' when nothing was read). Harbor Haul Out shows the round trip
+     against serverMs after every refresh, so a slow open can be pinned to the
+     server or to the signal from the phone itself. */
+  out._t = Object.assign({ auth: Date.now() - T0 - (out._t ? out._t.total : 0) }, out._t || {});
+  return out;
+}
+/* The view itself, no session check: adminStorageView is the console's way in
+   and diagnoseSpeed() (run from the editor) times the same code. */
+function storageViewBuild_(opt) {
+  const T0 = Date.now();
   /* The heaviest read in the console — every row of every tab, and the payload
      of each one. Ten minutes of cache, dropped by any write (see the cache
      section above), is the difference between a storage sheet that opens and one
@@ -7381,7 +7484,10 @@ function adminStorageView(token, opt) {
   if (cached) {
     try {
       const r = JSON.parse(cached);
-      if (r && r.groups && r.v === STORAGE_VIEW_V_) { r.cached = 1; return r; }
+      if (r && r.groups && r.v === STORAGE_VIEW_V_) {
+        r.cached = 1; r.reads = 'cache'; r._t = { cache: Date.now() - T0, total: Date.now() - T0 };
+        return r;
+      }
     } catch (e) {}
   }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -7395,7 +7501,10 @@ function adminStorageView(token, opt) {
   /* Every quote tab in one batch (quoteTabGrids_) — this view is dropped by
      every write, so it is rebuilt often, and it was four trips per tab. The
      per-tab reads below are the fallback. */
+  const tRead0 = Date.now();
   const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const tRead = Date.now() - tRead0;
+  const where = [];                      // every (quote, tab, row) read, for the row cache
   sheets.forEach(function (sh, si) {
     if (grids) {
       if (!grids[si]) return;
@@ -7422,6 +7531,7 @@ function adminStorageView(token, opt) {
     {
       head.forEach(function (r, i) {
         if (!r[COL.QN - 1]) return;
+        where.push({ qn: r[COL.QN - 1], tab: sh.getName(), row: i + 2 });
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '';
@@ -7503,7 +7613,61 @@ function adminStorageView(token, opt) {
   });
   const out = { ok: 1, v: STORAGE_VIEW_V_, groups: groups };
   cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
+  /* The tap that follows this list is "open one of these": prime the row cache
+     for every unit so that lookup is one verified trip, not a scan. Not part
+     of what is cached above — the hints have their own, longer life. */
+  rememberQuoteRows_(where);
+  out.reads = grids ? _gridsRoute_ : 'scan';
+  out._t = { read: tRead, rows: Date.now() - tRead0 - tRead, total: Date.now() - T0 };
   return out;
+}
+
+/* ===========================================================================
+   diagnoseSpeed() — run from the editor when a phone says the app is slow.
+   ---------------------------------------------------------------------------
+   Chris clocked Harbor Haul Out at fifty seconds for a list and longer for one
+   unit (Sep 2026) on a backend whose reads were meant to be two trips. Every
+   fallback in this file is silent by design, so the only way to know which
+   road a request is actually on is to time the roads from inside. This times
+   each one and prints the answer to the execution log; it writes nothing to
+   any quote (the caches it drops rebuild themselves).
+
+   Run: Apps Script editor → function dropdown → diagnoseSpeed → Run → View →
+   Execution log. Read it top to bottom; the line that says FAILED or MISSING,
+   or the number that is ten times the others, is the answer. */
+function diagnoseSpeed() {
+  const out = [];
+  const lap = function (label, t) { out.push((Date.now() - t) + ' ms  ' + label); };
+  let t = Date.now();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  lap('open the spreadsheet and list its ' + sheets.length + ' tabs', t);
+  const hasApi = typeof Sheets !== 'undefined' && Sheets.Spreadsheets && Sheets.Spreadsheets.Values;
+  out.push(hasApi ? 'Sheets advanced service: present'
+                  : 'Sheets advanced service: MISSING — every read is on the per-tab road (enable it: Services + → Google Sheets API, then deploy)');
+  if (hasApi) {
+    t = Date.now();
+    try {
+      Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: [tabA1_(sheets[0]) + 'C1'] });
+      lap('one batchGet of one cell', t);
+    } catch (e) { lap('one batchGet FAILED: ' + (e.message || e) + ' — every read is on the per-tab road', t); }
+  }
+  t = Date.now(); sheets[0].getRange(1, 3).getValue(); lap('one single-cell read (what each old-style trip costs)', t);
+  const spans = [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]];
+  t = Date.now(); _tabGridsOff_ = false; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ as the app gets it — route: ' + _gridsRoute_, t);
+  t = Date.now(); _tabGridsOff_ = true; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ forced onto per-tab reads — route: ' + _gridsRoute_, t);
+  _tabGridsOff_ = false;
+  invalidateStorageView_();
+  t = Date.now(); const sv = storageViewBuild_(); lap('storage view, rebuilt from the sheet (reads=' + sv.reads + ', ' + JSON.stringify(sv._t) + ')', t);
+  t = Date.now(); const sv2 = storageViewBuild_(); lap('storage view again, from the cache (reads=' + sv2.reads + ')', t);
+  const qn = 'QW-26-1255';
+  try { CacheService.getScriptCache().remove(qrowKey_(qn)); } catch (e) {}
+  t = Date.now(); const c1 = findQuoteCtx_(qn); lap('find ' + qn + ' cold (how=' + (c1 && c1.how) + ')', t);
+  t = Date.now(); const c2 = findQuoteCtx_(qn); lap('find ' + qn + ' again, row cache warm (how=' + (c2 && c2.how) + ')', t);
+  t = Date.now(); PropertiesService.getScriptProperties().getProperty('STAFF'); lap('read the roster (what every session check pays twice)', t);
+  const text = out.join('\n');
+  Logger.log(text);
+  return text;
 }
 
 /* THE CUSTOMER'S NOTE — "Notes / special requests" on the quote page.

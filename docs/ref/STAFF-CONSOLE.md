@@ -122,9 +122,20 @@ put the calls over the edge Google gives up at.
   after any function that is *not* on the read-only allow-list. Deriving it from
   that list is the point — a write added later cannot forget to. The customer
   save path does the same at the end of `doPost`.
-- **The quote → (tab, row) index is cached for half an hour and verified before
-  it is trusted**: one cell is re-read to confirm the quote number still matches
-  there. A row that moved simply misses and falls back to the full scan.
+- **The quote → (tab, row) index is cached for six hours and verified before
+  it is trusted**: the row is re-read, in one trip, and the quote number on it
+  must match. A row that moved simply misses and falls back to the full scan.
+  The verified read brings the whole row, so `adminLookup` takes the status and
+  photo cells off it (`ctxCell_`) instead of two more trips. **The storage view
+  primes this index for every unit it lists** (`rememberQuoteRows_`), because
+  the tap that follows a list is "open one of these".
+- **The per-tab fallback is one trip per tab** (`quoteTabGridsSlow_`,
+  `getSheetValues(-1)`), inside `quoteTabGrids_` so every caller gets it; it
+  used to be three or four trips per tab in each caller. **Every storage view
+  and lookup reply says which road it took** (`reads`: `cache`, `batch`,
+  `tabs` or `scan`) and what each phase cost (`_t`), because the fallback is
+  silent by design. `diagnoseSpeed()` from the editor prints the same from
+  inside (`CLAUDE.md` §2).
 - **The storage view and the search read columns 1..`COL.DIMS`**, plus the
   payload column on its own for the storage view. Neither needs the itemised
   services, the customer notes or the link columns, and those were the bulk of

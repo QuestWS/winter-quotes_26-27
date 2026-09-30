@@ -1416,9 +1416,9 @@ function renderSvcHho(){
   }
   const tier=Number(h.tier||0);
   box.innerHTML='<div class="svcgrp">Heritage Harbor slipholder</div>'+
-    '<div class="msg" style="margin:0 0 6px">The customer did not say they have a slip. Add the slipholder discount for them'+
+    '<div class="msg" style="margin:0 0 6px">'+(h.slip?'Slip <b>'+esc(h.slip)+'</b> is already recorded (Keys &amp; slip) and filled in below. ':'')+'The customer did not say they have a slip. Add the slipholder discount for them'+
     (tier?' — the rate card suggests <b>$'+tier.toFixed(2)+'</b> off today\'s total (it follows the total unless you change it under the slipholder card).':' — today\'s services total is under the lowest tier, so it will be $0 until it grows.')+'</div>'+
-    '<div class="row2"><div><label class="fld">Slip number</label><input class="txt" id="svcHhoSlip" placeholder="e.g. B-14" maxlength="120"></div>'+
+    '<div class="row2"><div><label class="fld">Slip number</label><input class="txt" id="svcHhoSlip" placeholder="e.g. B-14" maxlength="120" value="'+esc(h.slip||'')+'"></div>'+
     '<div style="align-self:end"><button class="btn navy" id="svcHhoBtn" onclick="addSlipholder()">Add slipholder discount</button></div></div>';
   box.classList.remove('hide');
 }

@@ -189,6 +189,11 @@ console.log('\n=== 9. staff add it for a customer who forgot their slip ===');
   d.state.hho = false; d.state.slipNo = ''; resave(d);          // the customer's browser posts its own answer back
   check('survives the customer re-saving their own answer', disc(d) === 50 && count(d) === 1, 'discount $' + disc(d));
   check('the card now reports them as a slipholder', B.hhoInfo_(d).asked && B.hhoInfo_(d).slip === 'B-14');
+  const k = quoteFrom('jetski-inside-detail', { hho: false, slipNo: '' });
+  B.ensureManual_(k).measured = { slipNo: 'C-9' };               // recorded under Keys & slip
+  resave(k);
+  check('the card is handed the recorded slip', B.hhoInfo_(k).slip === 'C-9');
+  check('a blank box uses the slip already recorded', B.hhoAddForgotten_(k, '', '', 'Test').ok === 1 && /slip C-9/.test(k.lines.find(l => l.hho).label));
   const cart = { quoteNo: 'QW-26-TEST', state: { unit: 'golf' }, lines: [], total: '0' };
   check('a golf cart is refused', B.hhoAddForgotten_(cart, 'B-14', '', 'Test').ok === 0);
   check('the console sends add through the same endpoint', /api\('hho',\[QN,'add'/.test(admin) && /act === 'add'/.test(fn('adminHho')));

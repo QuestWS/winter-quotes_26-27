@@ -294,6 +294,14 @@ font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical
 .alertbox{display:flex;gap:7px;align-items:flex-start;background:#FBEEE2;
   border-left:4px solid var(--red);border-radius:6px;padding:8px 10px;margin:6px 0;
   font-size:13.5px;font-weight:600;color:#6B3A14;line-height:1.35}
+/* Winterize pending — the same strip Harbor Haul Out draws, and like there
+   kept apart from the alert above: navy on ice with a snowflake, not the
+   alert's outlined warning. Worked out by the server from the mechanics'
+   ticks in the service tracker; nothing on this page sets or clears it. */
+.winterbox{display:flex;gap:7px;align-items:flex-start;background:var(--ice);
+  border-left:4px solid var(--navy);border-radius:6px;padding:8px 10px;margin:6px 0;
+  font-size:13.5px;font-weight:600;color:var(--navy);line-height:1.35}
+.winterbox ul{margin:4px 0 0;padding-left:18px;font-weight:400}
 .taggold{background:var(--gold-soft);color:#7A5714;border:1.5px solid var(--gold)}
 .tagmute{background:#fff;color:var(--muted);border:1.5px solid var(--line);font-weight:700}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
@@ -339,6 +347,9 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
   /* The paper is what the crew is actually holding at the harbor, so an alert
      has to survive the trip onto it — in words and a box, never a colour. */
   .palert{display:block;border:1.5px solid #000;padding:2px 5px;margin-top:3px;
+    font-size:10px;font-weight:bold;text-transform:uppercase}
+  /* Winterize pending on paper: dashed, so it is not mistaken for the alert. */
+  .pwinter{display:block;border:1.5px dashed #000;padding:2px 5px;margin-top:3px;
     font-size:10px;font-weight:bold;text-transform:uppercase}
   .rule{border:2px solid #000;padding:6px 8px;margin:6px 0 8px;font-size:11px;font-weight:bold;
     letter-spacing:.02em;text-transform:uppercase}
@@ -591,6 +602,13 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
               <button class="btn ghost" id="alertClearBtn" onclick="saveAlert('')">Clear it</button>
             </div>
             <div class="msg" id="alertMsg"></div>
+          </div>
+
+          <!-- Read-only. Set by the mechanics' ticks in the service tracker,
+               never from here — see winterizeStatusOf_ in the backend. -->
+          <div class="card hide" id="winterCard">
+            <h2>Winterization</h2>
+            <div id="winterNow"></div>
           </div>
 
           <div class="card hide" id="placementStateCard">
@@ -1899,6 +1917,7 @@ function renderQuote(r){
   $('alertCard').classList.toggle('hide',!P.keys);
   window._alert=r.placementAlert||null;
   if(P.keys) renderAlert();
+  renderWinterCard(r.winter||null);
   $('placementStateCard').classList.toggle('hide',!P.keys);
   window._placementState=r.placement||{state:''};
   window._pullAuth=r.pullAuth||null;
@@ -2009,6 +2028,20 @@ function renderPlacementLog(list){
 /* The same four states Harbor Haul Out shows, named the same way — the office
    and the crew talking about different words for the same boat is how a unit
    ends up recorded twice. */
+/* Hidden when the quote has no winterization or the unit is not here yet —
+   an empty card on every quote is how people stop reading the one that
+   matters. Otherwise it says what is left, or that it is all done. */
+function renderWinterCard(w){
+  $('winterCard').classList.toggle('hide',!w);
+  if(!w){ $('winterNow').innerHTML=''; return; }
+  const p=w.pending||[];
+  $('winterNow').innerHTML=p.length
+    ? '<div class="winterbox"><span>\u2744</span><span>Winterize pending \u2014 '+p.length+' of '+w.total+
+      ' not done<ul>'+p.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul></span></div>'+
+      '<div class="msg" style="margin:0">Clears when the mechanics tick these off in the Service Tracker app.</div>'
+    : '<div class="msg" style="margin:0">\u2744 All '+w.total+' winterization item'+(w.total===1?'':'s')+
+      ' ticked off by the mechanics.</div>';
+}
 function renderAlert(){
   const a=window._alert;
   const t=String((a&&a.text)||'');
@@ -2634,6 +2667,11 @@ function renderStorage(){
       const al=String(x.alert||'').trim()
         ? '<div class="alertbox" style="grid-column:1/-1;margin:6px 0 0"><span>\u26A0</span><span>'+
           esc(x.alert)+'</span></div>' : '';
+      /* Its own strip, after the alert and never instead of it. */
+      const wp=(x.winter&&x.winter.pending&&x.winter.pending.length)||0;
+      const wz=wp
+        ? '<div class="winterbox" style="grid-column:1/-1;margin:6px 0 0"><span>\u2744</span><span>Winterize pending \u2014 '+
+          wp+' of '+x.winter.total+' not done</span></div>' : '';
       /* The customer's note: a tag on the name so it is seen while scrolling,
          and the words themselves under the row so reading it does not take a
          tap. The server trims it for the list; the quote card has it whole. */
@@ -2643,7 +2681,7 @@ function renderStorage(){
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
         <span class="nm">${esc(x.name)}${tag}${ntag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
-        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${nbox}</div>`;
+        <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
     return `<div class="sgH"><b>${esc(g.tab)}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
   }).join('');
@@ -2696,7 +2734,8 @@ async function printStorage(){
           <td>${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?'<br><span class="ysub">'+esc(x.dims)+'</span>':''}</td>
           <td>${x.keys?esc(x.keys):'—'}</td>
           <td>${esc(x.status)}${haulAuth_(x).state!=='cleared'?'<br><span class="hold">'+esc(haulAuth_(x).label)+'</span>':''}${
-            String(x.alert||'').trim()?'<span class="palert">⚠ '+esc(x.alert)+'</span>':''}</td>
+            String(x.alert||'').trim()?'<span class="palert">⚠ '+esc(x.alert)+'</span>':''}${
+            (x.winter&&x.winter.pending&&x.winter.pending.length)?'<span class="pwinter">❄ Winterize pending: '+esc(x.winter.pending.join(', '))+'</span>':''}</td>
           <td class="ybal" style="text-align:right">${esc(x.balance)}</td></tr>`).join('')}
       </table>
       <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>

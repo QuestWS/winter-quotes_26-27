@@ -23,7 +23,13 @@
 <meta name="apple-mobile-web-app-title" content="Harbor Haul Out">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- Loaded without blocking the first paint: on a weak signal a blocking
+     stylesheet from fonts.googleapis.com held the WHOLE page blank until it
+     answered or timed out. media="print" makes the browser fetch it off the
+     critical path; onload switches it on, and text renders in the fallback
+     face until then (display=swap). -->
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"></noscript>
 <!-- The shared Quest palette. Linked, not re-typed — same bargain sign.html
      makes, and tools/check-design-tokens.js holds every copy to this file. -->
 <link rel="stylesheet" href="../quest.css">
@@ -58,6 +64,11 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .msg{font-size:13.5px;color:var(--muted);margin:6px 2px}
 .msg.err{color:var(--warn)}
 .msg.ok{color:var(--ok)}
+/* The freshness strip: what the crew is looking at came off the phone, and
+   how old it is. Shown only while a refresh is running or has failed. */
+.fresh{font-size:13px;color:var(--muted);margin:8px 2px 4px;padding:7px 10px;
+  border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.fresh.err{color:var(--warn);border-color:var(--warn);background:var(--warn-bg)}
 
 /* ---- list ---- */
 .grp{font-family:var(--disp);text-transform:uppercase;letter-spacing:.05em;color:var(--navy);
@@ -221,6 +232,7 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
              autocomplete="off" autocapitalize="none" oninput="render()" aria-label="Search">
       <button id="sortBtn" onclick="toggleSort()">Location</button>
     </div>
+    <div class="fresh hide" id="fresh"></div>
     <div class="msg" id="listMsg">Loading…</div>
     <div id="list"></div>
     <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
@@ -483,9 +495,13 @@ async function doLogin(){
   }catch(e){ setMsg('loginMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Sign in'; }
 }
-function signOut(){
+/* `keep`: an expired session sends the crew back to the PIN screen but keeps
+   the list on the phone, or every morning would start with the blank screen
+   the list cache exists to remove. The Sign out button clears it. */
+function signOut(keep){
   T=''; ME=null;
   try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); }catch(e){}
+  if(!keep){ listDrop_(); ROWS=[]; LIST_AT=0; }
   $('app').classList.add('hide'); $('sheet').classList.add('hide');
   $('login').classList.remove('hide'); $('pin').value='';
 }
@@ -530,23 +546,82 @@ function showApp(){
 /* ---------------------------------------------------------------------------
    THE TWO LISTS
 --------------------------------------------------------------------------- */
-async function loadList(force){
-  setMsg('listMsg','Loading Harbor Haul Out…');
-  if(force) $('list').innerHTML='';
+/* THE LIST IS ON THE PHONE FIRST.
+   Opening this app used to mean a blank screen until Apps Script had started
+   up and answered storageView — cold, on two bars at the harbor, that ran to
+   minutes, and a crew member who has to stand around for a list does not open
+   the list. So the last list this phone loaded is kept in localStorage and put
+   on screen the moment the app opens, stamped with how old it is, and the
+   fresh copy replaces it when it lands. A refresh that fails leaves the list
+   up rather than taking it down: an hour-old list of what is in the water
+   beats no list, and every ACTION still goes to the server, which confirms or
+   refuses it there — nothing here decides anything (see auth_). It is saved
+   only after the server answered, and again after a recorded move, so what is
+   on the phone is always something the server said. */
+const LIST_KEY='qwhho-list';
+let LIST_AT=0, LOADING=0;
+function listSave_(){
+  try{ localStorage.setItem(LIST_KEY,JSON.stringify({at:LIST_AT||Date.now(),rows:ROWS})); }catch(e){}
+}
+function listLoad_(){
   try{
-    const r=await api('storageView',[]);
+    const c=JSON.parse(localStorage.getItem(LIST_KEY)||'null');
+    return (c&&Array.isArray(c.rows)&&c.rows.length&&c.at>0)?c:null;
+  }catch(e){ return null; }
+}
+function listDrop_(){ try{ localStorage.removeItem(LIST_KEY); }catch(e){} }
+function ago_(t){
+  const m=Math.round((Date.now()-t)/60000);
+  if(m<1) return 'just now';
+  if(m<60) return m+' min ago';
+  const h=Math.round(m/60);
+  return h<48 ? h+' hr ago' : Math.round(h/24)+' days ago';
+}
+function setFresh_(t,cls){
+  const f=$('fresh'); if(!f) return;
+  f.textContent=t||''; f.className='fresh'+(cls?' '+cls:'')+(t?'':' hide');
+}
+/* Nothing on screen yet and the server is slow: say so, rather than leaving
+   "Loading…" up for a minute with no hint that anything is happening. Only
+   the first open on a phone gets here; after that the list is local. */
+function slowNote_(seq){
+  setTimeout(function(){ if(seq===LOADING&&!ROWS.length)
+    setMsg('listMsg','Still loading — waking the server up. This first load is the slow one; from now on the list opens from the phone.'); },6000);
+  setTimeout(function(){ if(seq===LOADING&&!ROWS.length)
+    setMsg('listMsg','Still loading. Weak signal makes this slow — it will appear when it lands.'); },25000);
+}
+/* A refresh that failed: keep what is up, say how old it is. */
+function keepOld_(why){
+  if(ROWS.length) setFresh_('Could not refresh — showing the list from '+ago_(LIST_AT)+'. '+why,'err');
+  else setMsg('listMsg',why,false);
+}
+async function loadList(force){
+  const seq=++LOADING;
+  if(!ROWS.length){
+    const c=listLoad_();
+    if(c){ ROWS=c.rows; LIST_AT=c.at; render(); }
+  }
+  if(ROWS.length) setFresh_('List from '+ago_(LIST_AT)+' · refreshing…');
+  else { setMsg('listMsg','Loading Harbor Haul Out…'); slowNote_(seq); }
+  try{
+    /* Refresh is a deliberate tap, so it asks the server for a rebuilt list
+       rather than its cached copy; opening the app takes whichever is faster. */
+    const r=await api('storageView',force?[{fresh:1}]:[]);
+    if(seq!==LOADING) return;              // a later load owns the screen
     if(!r||!r.ok){
       /* An expired session is the overwhelmingly likely cause out here. */
-      if(/sign in|session|token/i.test(String(r&&r.error||''))){ signOut(); return; }
-      setMsg('listMsg',(r&&r.error)||'Could not load Harbor Haul Out.',false); return;
+      if(/sign in|session|token/i.test(String(r&&r.error||''))){ signOut(true); return; }
+      keepOld_((r&&r.error)||'Could not load Harbor Haul Out.'); return;
     }
     ROWS=[];
     (r.groups||[]).forEach(function(g){
       if(g.lead) return;                 // a lead has no unit with us
       (g.rows||[]).forEach(function(x){ ROWS.push(Object.assign({tab:g.tab},x)); });
     });
+    LIST_AT=Date.now(); listSave_();
     render();
-  }catch(e){ setMsg('listMsg',e.message,false); }
+    setFresh_('');
+  }catch(e){ if(seq===LOADING) keepOld_(e.message); }
 }
 /* Ready now → stated dates → will call → not answered. Same order the printed
    haul-out sheet uses, so the app and the paper agree about what is next. */
@@ -797,6 +872,7 @@ async function markState(qn,to){
     if(row){ row.placementState=to; row.placementAt=(r.placement&&r.placement.at)||''; }
     if(CUR&&CUR.quoteNo===qn) CUR.placement=r.placement||{state:to};
     render(); if(CUR&&CUR.quoteNo===qn) renderState();
+    listSave_();                                  // the phone's copy moves with it
     toast(r.msg||'Recorded');
   }catch(e){
     if(row) row.placementState=before;
@@ -1607,6 +1683,14 @@ $('vidIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value
 $('galIn').addEventListener('change',e=>{ upload(e.target.files); e.target.value=''; });
 $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 
+/* The shell — this page, its stylesheet, the fonts — is served by sw.js after
+   the first visit, so opening the app on a bad signal does not wait on GitHub
+   Pages and Google Fonts before it can even show the list it already has.
+   Network-first with a short timeout, so a deploy still reaches the phone on
+   the next open with signal, and it never touches the API. */
+if(typeof navigator!=='undefined'&&navigator&&navigator.serviceWorker){
+  try{ navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
+}
 /* A cached token may be hours old and already expired; loadList finds out and
    drops back to the PIN screen rather than showing an empty list. */
 if(T&&ME) showApp();

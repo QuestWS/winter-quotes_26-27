@@ -38,7 +38,7 @@ const eq = (got, want, what) => {
 const SRC = (HTML.match(/<script>([\s\S]*?)<\/script>/g) || [])
   .map((b) => b.replace(/^<script>/, '').replace(/<\/script>$/, '')).join('\n;\n');
 
-function load() {
+function load(over) {
   const noop = () => {};
   const el = { textContent: '', className: '', innerHTML: '', value: '', disabled: false,
                classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
@@ -51,6 +51,7 @@ function load() {
     fetch: async () => { throw new Error('this guard makes no requests'); },
     scrollTo: noop
   };
+  if (over) Object.assign(ctx, over);
   ctx.window = ctx; ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx, { filename: 'harbor-haul-out/index.html' });
@@ -984,7 +985,108 @@ async function uploadChecks() {
   }
 }
 
-uploadChecks().then(function () {
+/* =====================================================================
+   THE LIST OPENS FROM THE PHONE.
+   ---------------------------------------------------------------------
+   Opening the app meant a blank screen until Apps Script had cold-started and
+   answered storageView — minutes, at the harbor, and a crew that has to stand
+   around for a list does not open the list. So the last list is kept on the
+   phone and shown first, and the shell is served by a service worker. Both
+   are executed here, because each is two lines to take back out by hand:
+   "just fetch it fresh" and "just delete sw.js". And the worker is pinned to
+   NEVER touch the API — a cached console reply would be stale data that
+   looks fresh, which is worse than the blank screen.
+   ===================================================================== */
+async function loadChecks() {
+  const saved = JSON.stringify({ at: Date.now() - 5 * 60000, rows: [
+    { qn: 'QW-26-1255', name: 'Test, Demo', unit: 'Boat', slip: 'B-1', tab: 'Inside',
+      placementState: '', auth: { state: 'cleared' } },
+    { qn: 'QW-26-0002', name: 'Baker, Bo', unit: 'Boat', slip: '', tab: 'Outside',
+      placementState: 'stored', auth: { state: 'cleared' } } ] });
+  const puts = {};
+  const noop = () => {};
+  /* A phone with a saved list and no signal: fetch throws (the harness's
+     default), so both the POST and the GET retry fail. */
+  const Z = load({ localStorage: {
+    getItem: (k) => (k === 'qwhho-list' ? saved : null),
+    setItem: (k, v) => { puts[k] = v; }, removeItem: (k) => { delete puts[k]; } } });
+  await Z.loadList();
+  const el = Z.document.getElementById('list');
+  eq(Z.ev('ROWS.length'), 2, 'a saved list is on screen before the server has answered');
+  if (el.innerHTML.indexOf('QW-26-1255') > -1) ok('the saved rows were rendered, not just counted');
+  else fail('the saved list was loaded but nothing was drawn from it');
+  if (/Could not refresh/.test(el.textContent) && /5 min ago/.test(el.textContent))
+    ok('a failed refresh says so and how old the list is, and leaves it up');
+  else fail('a failed refresh does not tell the crew the list is old: ' + JSON.stringify(el.textContent));
+  if (puts['qwhho-list']) fail('a failed refresh re-saved the list — the phone\'s copy must only ever be something the server said');
+  else ok('nothing is written to the phone until the server has answered');
+  /* Source order: the phone's copy is read BEFORE the network is asked, so a
+     slow server cannot hold the screen blank; and the cache is read only into
+     an empty list, so a refresh never puts an older copy over a newer one. */
+  const ll = Z.ev('String(loadList)');
+  if (ll.indexOf('listLoad_(') > -1 && ll.indexOf('listLoad_(') < ll.indexOf("api('storageView'"))
+    ok('loadList reads the phone\'s copy before it asks the server');
+  else fail('loadList asks the server before showing the copy it already has');
+  if (/if\(!ROWS\.length\)\{\s*const c=listLoad_\(\)/.test(ll)) ok('the phone\'s copy is only used when nothing is on screen');
+  else fail('a refresh could replace a fresher list with the saved one');
+  if (/listSave_\(\)/.test(Z.ev('String(markState)'))) ok('a recorded move updates the phone\'s copy');
+  else fail('marking a unit does not update the saved list — the next open would put it back');
+  const so = Z.ev('String(signOut)');
+  if (/listDrop_\(\)/.test(so) && /if\(!keep\)/.test(so)) ok('Sign out clears the list; an expired session keeps it');
+  else fail('signOut does not clear the saved list on a deliberate sign-out, or clears it on expiry too');
+  if (/signOut\(true\)/.test(ll)) ok('an expired session keeps the list for the next sign-in');
+  else fail('an expired session throws the list away — every morning starts blank');
+  /* The fonts stylesheet must not block the first paint. */
+  if (/<link[^>]*fonts\.googleapis\.com\/css2[^>]*media="print"[^>]*onload=/.test(HTML))
+    ok('the Google Fonts stylesheet is off the critical path');
+  else fail('the Google Fonts stylesheet is render-blocking — a weak signal holds the whole page blank');
+  /* The service worker: registered, and never between the app and the API. */
+  if (/navigator\.serviceWorker\.register\('sw\.js'\)/.test(SRC)) ok('the page registers sw.js');
+  else fail('the page does not register the service worker — the shell is fetched on every open');
+  if (!fs.existsSync(path.join(ROOT, 'harbor-haul-out/sw.js'))) { fail('harbor-haul-out/sw.js is missing'); return; }
+  const handlers = {};
+  const sw = {
+    self: null, console, URL, setTimeout, clearTimeout, Promise,
+    caches: { open: async () => ({ match: async () => undefined, put: async () => {}, add: async () => {} }),
+              keys: async () => [], delete: async () => true },
+    fetch: async () => ({ ok: true, clone: () => ({}) })
+  };
+  sw.self = { addEventListener: (n, f) => { handlers[n] = f; }, skipWaiting: async () => {},
+              clients: { claim: async () => {} }, location: { origin: 'https://questws.github.io' } };
+  sw.location = sw.self.location;
+  vm.createContext(sw);
+  vm.runInContext(read('harbor-haul-out/sw.js'), sw, { filename: 'harbor-haul-out/sw.js' });
+  if (!handlers.fetch) { fail('sw.js installs no fetch handler'); return; }
+  const handled = (url, mode, method) => {
+    let r = false;
+    handlers.fetch({ request: { url, method: method || 'GET', mode: mode || 'cors' }, respondWith: () => { r = true; } });
+    return r;
+  };
+  const api = 'https://script.google.com/macros/s/AKfycbx/exec';
+  if (handled(api + '?api=console&fn=storageView&token=t&args=%5B%5D')) fail('sw.js intercepts the API over GET — a cached console reply is a stale list that looks fresh');
+  else ok('sw.js leaves the API alone (GET)');
+  if (handled(api, 'cors', 'POST')) fail('sw.js intercepts the API over POST');
+  else ok('sw.js leaves the API alone (POST)');
+  if (handled('https://script.googleusercontent.com/macros/echo?user_content_key=x')) fail('sw.js intercepts the redirect leg a POST answers with');
+  else ok('sw.js leaves the POST redirect leg alone');
+  if (handled('https://drive.google.com/uc?id=x')) fail('sw.js caches Drive — a photo would come back stale');
+  else ok('sw.js leaves Drive alone');
+  const site = 'https://questws.github.io/winter-quotes_26-27/';
+  if (handled(site + 'harbor-haul-out/', 'navigate') && handled(site + 'harbor-haul-out/index.html', 'navigate'))
+    ok('sw.js serves the page itself');
+  else fail('sw.js does not serve the page — a phone with no signal gets the browser\'s error page');
+  if (handled(site + 'quest.css') && handled(site + 'favicon.png') && handled(site + 'harbor-haul-out/manifest.json'))
+    ok('sw.js serves the stylesheet, the icon and the manifest');
+  else fail('sw.js does not serve the shell\'s files');
+  if (handled('https://fonts.googleapis.com/css2?family=Barlow') && handled('https://fonts.gstatic.com/s/x.woff2'))
+    ok('sw.js keeps the fonts');
+  else fail('sw.js does not keep the fonts — three families are fetched on every open');
+  const swsrc = read('harbor-haul-out/sw.js');
+  if (/withTimeout_\(fetch\(req\)/.test(swsrc) && /cache\.match\(req/.test(swsrc)) ok('the site\'s own files are network-first with a timeout, cache behind it');
+  else fail('sw.js is not network-first for the site — every phone would be debugging a ghost after each deploy');
+}
+
+uploadChecks().then(loadChecks).then(function () {
   if (bad) { console.error('FAIL: ' + bad + ' problem(s) with Harbor Haul Out'); process.exit(1); }
   console.log('Harbor Haul Out: renders the server\'s verdict rather than forming one, lists slip boats for ' +
               'pulling and everything for placing, uploads straight to Drive with a relay behind it, ' +

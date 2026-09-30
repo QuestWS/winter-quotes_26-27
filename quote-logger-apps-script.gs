@@ -1409,7 +1409,7 @@ function consoleFns_(p) {
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
     servicesPreview: function (a) { return adminServicesPreview(p.token, a[0], a[1]); },
     servicesApply:   function (a) { return adminServicesApply(p.token, a[0], a[1]); },
-    hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2]); },
+    hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2], a[3]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
@@ -2643,8 +2643,12 @@ function servicesInfo_(d) {
   const valOf = function (item, src) {
     return item.kind === 'flag' ? !!src[item.key] : item.kind === 'count' ? Number(src[item.key] || 0) : String(src[item.key] || 'none');
   };
+  const hhoI = hhoInfo_(d);
   return {
     editable: true, unitKind: kind,
+    /* The slipholder discount is not a menu item — it is an approval — but the
+       customer who forgot to mention their slip is fixed from this card. */
+    hho: { offer: !hhoI.asked && hhoI.status === 'pending', asked: hhoI.asked, status: hhoI.status, tier: hhoI.tier, slip: hhoI.slip },
     items: menu.map(function (item) {
       return {
         key: item.key, label: item.label, kind: item.kind, group: item.group,
@@ -2829,15 +2833,43 @@ function hhoLineEdit_(d, action, newAmt, byName) {
                              : hhoSetDecision_(d, 'approve', newAmt, byName);
 }
 
-function adminHho(token, qn, action, amt) {
+/* A customer who forgot to say they are a slipholder: staff mark them as one
+   and give the slip, from the Add or remove services card. Same journal as
+   Keys & slip (manual.measured), never d.state, because the customer's browser
+   re-posts hho:false and their own slip on the next save and would undo it.
+   The discount is then approved at the tier like any other. Mutates d; the
+   caller saves. */
+function hhoAddForgotten_(d, slip, amt, byName) {
+  const st = effectiveState_(d);
+  if (!st) return { ok: 0, error: 'This quote has no stored selections, so this can\'t be added automatically. Use the Adjustment card instead.' };
+  if (isLandUnit_({ unit: st.unit || d.unit })) return { ok: 0, error: 'The slipholder discount is for boats and jet skis in a Heritage Harbor slip.' };
+  let keys;
+  try { keys = sanitizeKeys_({ slipNo: slip }); }
+  catch (err) { return { ok: 0, error: String(err.message || err) }; }
+  if (!keys.set.slipNo) return { ok: 0, error: 'Enter the slip number — the discount line names it.' };
+  const m = ensureManual_(d);
+  if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
+  m.measured = Object.assign({}, m.measured || {}, { hho: true, slipNo: keys.set.slipNo });
+  /* Re-run the engine so the slip on the quote follows, then approve. The
+     rebuild prices at today's rates like every other console write. */
+  const cross = rebuildLinesFromState_(d);
+  if (cross.rebuilt) applyManualOps_(d);
+  d.slipNo = keys.set.slipNo;
+  return hhoSetDecision_(d, 'approve', amt, byName);
+}
+
+function adminHho(token, qn, action, amt, slip) {
   const who = requireAuth_(token, 'adjust');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
-  const r = hhoSetDecision_(d, String(action || ''), amt, who.name);
+  const act = String(action || '');
+  const r = act === 'add'
+    ? hhoAddForgotten_(d, slip, amt, who.name)
+    : hhoSetDecision_(d, act, amt, who.name);
   if (!r.ok) return r;
   saveQuoteRow_(ctx);
-  auditLog_(who.name, 'Slipholder discount on ' + (d.quoteNo || qn) + ': ' + r.msg);
+  auditLog_(who.name, (act === 'add' ? 'Slipholder added by staff (slip ' + String(d.slipNo || '') + ') on ' : 'Slipholder discount on ') + (d.quoteNo || qn) + ': ' + r.msg);
   return { ok: 1, msg: r.msg + ' The customer has not been emailed.', total: usd_(d.total), hho: hhoInfo_(d) };
 }
 

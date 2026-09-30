@@ -47,9 +47,10 @@ const B = new Function([
   fn('usd_'), decl('KEYFIELDS_'),
   fn('effectiveState_'), fn('serverPrice_'), fn('linesTotal_'), fn('rebuildLinesFromState_'),
   fn('ensureManual_'), fn('applyManualOps_'), fn('reconcileManual_'), fn('recomputeTotals_'),
-  fn('hhoInfo_'), fn('hhoSetDecision_'), fn('hhoLineEdit_'),
+  fn('hhoInfo_'), fn('hhoSetDecision_'), fn('hhoLineEdit_'), fn('hhoAddForgotten_'), fn('sanitizeKeys_'),
+  decl('KEYLABELS_'), fn('isLandUnit_'),
   'return {RULES,computeQuote,hhoDiscountFor,withHhoDiscount,effectiveState_,rebuildLinesFromState_,' +
-  'ensureManual_,applyManualOps_,reconcileManual_,recomputeTotals_,hhoInfo_,hhoSetDecision_,hhoLineEdit_};'
+  'ensureManual_,applyManualOps_,reconcileManual_,recomputeTotals_,hhoInfo_,hhoSetDecision_,hhoLineEdit_,hhoAddForgotten_};'
 ].join('\n'))();
 
 const states = JSON.parse(execSync('node tools/price-fixtures.js --dump-states', { cwd: ROOT, maxBuffer: 1e8 }));
@@ -174,6 +175,23 @@ console.log('\n=== 8. the customer never sees a discount they could play with ==
   check('the page replays an approved discount like the server', /withHhoDiscount\(r\.L, S, MANUAL\.hho\)/.test(page));
   check('the console has the card and sends the decision', /id="hhoCard"/.test(admin) && /api\('hho'/.test(admin));
   check('the console dispatches it', /hho:\s+function \(a\) \{ return adminHho\(/.test(gas));
+}
+
+console.log('\n=== 9. staff add it for a customer who forgot their slip ===');
+{
+  const d = quoteFrom('jetski-inside-detail', { hho: false, slipNo: '' });   // $1,127.40, never said slipholder
+  check('not asked, so the card offers it', !B.hhoInfo_(d).asked && B.hhoInfo_(d).status === 'pending' && count(d) === 0);
+  check('a blank slip is refused', B.hhoAddForgotten_(d, '  ', '', 'Test').ok === 0 && count(d) === 0);
+  const r = B.hhoAddForgotten_(d, 'B-14', '', 'Test');
+  check('adding it approves the tier', r.ok && disc(d) === 50 && d.manual.hho.amt === null, r.msg);
+  check('the label carries the slip', /slip B-14/.test(d.lines.find(l => l.hho).label));
+  check('journalled in manual.measured, never d.state', d.manual.measured.hho === true && d.manual.measured.slipNo === 'B-14' && !d.state.hho && !d.state.slipNo);
+  d.state.hho = false; d.state.slipNo = ''; resave(d);          // the customer's browser posts its own answer back
+  check('survives the customer re-saving their own answer', disc(d) === 50 && count(d) === 1, 'discount $' + disc(d));
+  check('the card now reports them as a slipholder', B.hhoInfo_(d).asked && B.hhoInfo_(d).slip === 'B-14');
+  const cart = { quoteNo: 'QW-26-TEST', state: { unit: 'golf' }, lines: [], total: '0' };
+  check('a golf cart is refused', B.hhoAddForgotten_(cart, 'B-14', '', 'Test').ok === 0);
+  check('the console sends add through the same endpoint', /api\('hho',\[QN,'add'/.test(admin) && /act === 'add'/.test(fn('adminHho')));
 }
 
 if (fails) { console.error('\nFAIL: ' + fails + ' slipholder discount problem(s)'); process.exit(1); }

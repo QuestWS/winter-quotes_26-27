@@ -51,7 +51,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "quoteLink_" "quoteLinkFor_" "showQuoteLink" \
     "consoleServe_" "consoleFns_" "CONSOLE_GET_FNS_" \
     "sanitizeEngines_" "engineSummary_" "adminBulkPreview" "adminBulkSend" "bulkTargets_" \
-    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "importApplyCore_" "legacyToState_" "IMPORT_TAB" "isImportTab_" "isOffstageTab_" "bulkImport1_Scan" "bulkImport2_Apply" "bulkImportContinue" "bulkImportStep" "bulkImportRepair" "adminBulkImportStart" "adminBulkImportState" "bulkImportOne_" "bulkImportDuplicateOf_" "BULKIMP_NOT_A_QUOTE_" "adminRepricePreview" "adminRepriceApply" "repriceScan_"
+    "BULK_KINDS_" "upnextfall" "adminSetStaffNote" "adminImportList" "adminImportPreview" "adminImportApply" "importApplyCore_" "legacyToState_" "IMPORT_TAB" "isImportTab_" "isOffstageTab_" "bulkImport1_Scan" "bulkImport2_Apply" "bulkImportContinue" "bulkImportStep" "bulkImportRepair" "adminBulkImportStart" "adminBulkImportState" "bulkImportOne_" "bulkImportDuplicateOf_" "BULKIMP_NOT_A_QUOTE_" "adminRepricePreview" "adminRepriceApply" "repriceScan_" "trackerServe_" "trackerFeed_" "trackerKeyOk_"
   # traps
   if grep -q "getService().getUrl()" quote-logger-apps-script.gs; then
     echo "  FAIL trap: getService().getUrl() present — /dev URL will leak into emails"; FAIL=1
@@ -432,6 +432,12 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: key-location / slip rules hold"
   else
     echo "  FAIL gate: key-location / slip rules broken"; sed 's/^/       /' "$TMP/haul.txt"; FAIL=1
+  fi
+  # The service tracker's feed: which units, what work, no money, and the key.
+  if node tools/check-tracker-feed.js > "$TMP/tracker.txt" 2>&1; then
+    echo "  OK   gate: service tracker feed holds"
+  else
+    echo "  FAIL gate: service tracker feed broken"; sed 's/^/       /' "$TMP/tracker.txt"; FAIL=1
   fi
   # The Adobe Sign hand-off. A field name that stops matching the Adobe form
   # fails silently -- blank contracts, no error -- so everything that can drift

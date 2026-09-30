@@ -1180,6 +1180,8 @@ function doPost(e) {
 
     // ---- Staff console API (the GitHub admin site posts here) ----
     if (d.api === 'console') return consoleServe_(d, 'POST');
+    // ---- The service tracker's feed (server to server, shared key) ----
+    if (d.api === 'tracker') return trackerServe_(d);
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -7758,6 +7760,148 @@ function customerNoteOf_(d) {
   const v = (d.notes !== undefined && d.notes !== null && String(d.notes).trim() !== '')
     ? d.notes : (d.state && d.state.notes);
   return String(v || '').trim();
+}
+
+/* THE SERVICE TRACKER'S FEED — the work waiting on units that are here.
+   ---------------------------------------------------------------------------
+   Chris, Sep 2026: "have the service tracker pull winterize jobs from the
+   winter system when boats are marked as either pulled or dropped off, so the
+   mechanics can see what needs to be winterized or any other jobs that need
+   to be completed before storage."
+
+   So the mechanic app (QuestWS/servicetracker) asks here for every unit on
+   Harbor Haul Out's **To store** list — placement 'pulled' or 'dropped', the
+   same two states PLACEMENT_STATES_ files under 'store' — and gets back what
+   the quote says is to be done to it. Nothing else crosses.
+
+   What decides each piece:
+
+   - ONE DIRECTION. This answers; it never writes, and nothing the service
+     tracker does changes a quote. What a mechanic ticks off lives over there.
+     A read that can write is a read that can re-price a quote by accident.
+   - A SHARED KEY, NOT A STAFF PIN. There is no person on the other end to
+     sign in: it is one Apps Script asking another. `TRACKER_KEY` in this
+     script's properties and `WINTER_KEY` in the tracker's hold the same long
+     random string, and neither repo holds it (both are public). No key set
+     here means the feed answers nobody — the safe default for a fresh copy.
+   - THE WORK, NOT THE MONEY. Labels only. No amount, no balance, no deposit,
+     no contract, no phone or email: a mechanic needs to know that the boat
+     wants a full-service winterization and a shrinkwrap, not what it cost.
+     Storage, Retrieval, Misc, Discounts and Adjustments are left out — they
+     are not work anybody does to the unit before it goes into a spot.
+   - THE ALERT AND THE CUSTOMER'S NOTE DO CROSS. Both are staff-facing
+     already (Harbor Haul Out shows them on the row), both are about the unit
+     in front of the mechanic, and "owner says don't touch the canvas" is the
+     one thing somebody about to wrap it must know. Neither reaches a customer
+     from the tracker: its mechanic app is behind a sign-in.
+   - OPEN QUOTE REQUESTS CROSS, MARKED. "Impeller change — quote to follow"
+     is still work the customer asked for; the mechanic sees it flagged as
+     not yet priced, which is also a nudge to get it priced. */
+const TRACKER_SKIP_SECS_ = { 'Storage': 1, 'Retrieval': 1, 'Misc': 1, 'Discounts': 1, 'Adjustments': 1 };
+const TRACKER_FEED_V_ = 1;
+
+/* What is to be done to the unit, off the stored (server-priced, journal-
+   replayed) lines. Pure, so check-tracker-feed.js can run it. */
+function trackerWorkOf_(d) {
+  const out = [];
+  const seen = {};
+  (d && d.lines || []).forEach(function (l) {
+    if (!l || TRACKER_SKIP_SECS_[String(l.sec || '')] || l.hho) return;
+    const label = String(l.label || '').trim();
+    if (!label || seen[label]) return;
+    seen[label] = 1;
+    out.push({ sec: String(l.sec || ''), label: label });
+  });
+  String((d && d.quotesRequested) || '').split('; ').forEach(function (rq) {
+    const label = String(rq || '').trim();
+    if (!label || seen[label]) return;
+    seen[label] = 1;
+    out.push({ sec: 'Quote requested', label: label, requested: true });
+  });
+  return out;
+}
+
+/* One unit as the tracker sees it, or null when it is not on To store.
+   `r` is the row's 1..DIMS cells, `pd` its parsed payload. */
+function trackerUnitOf_(r, pd, tab) {
+  const state = placementStateOf_(pd);
+  if (!PLACEMENT_STATES_[state] || PLACEMENT_STATES_[state].list !== 'store') return null;
+  const st = effectiveState_(pd) || pd.state || null;
+  const pick = function (k) { return String((st && st[k] !== undefined ? st[k] : pd[k]) || ''); };
+  const alert = placementAlertOf_(pd);
+  return {
+    qn: String(r[COL.QN - 1] || ''),
+    name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
+    unit: String(r[COL.UNIT - 1] || ''), ymm: String(r[COL.YMM - 1] || ''),
+    dims: String(r[COL.DIMS - 1] || ''),
+    tab: String(tab || ''),
+    slip: pick('slipNo'), keys: pick('keyLoc'), trailerLoc: pick('trailerLoc'),
+    state: state, stateLabel: PLACEMENT_STATES_[state].label,
+    stateAt: String((placementOf_(pd) && placementOf_(pd).at) || ''),
+    alert: String((alert && alert.text) || ''),
+    cnote: customerNoteOf_(pd),
+    work: trackerWorkOf_(pd)
+  };
+}
+
+/* Every unit on To store, in the order it arrived here (oldest first — the
+   one that has waited longest is the one to start on). Same read as the
+   storage view: every quote tab but Import in one batch, lead tabs skipped. */
+function trackerFeed_() {
+  const T0 = Date.now();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets().filter(function (sh) { return !isOffstageTab_(sh.getName()); });
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const units = [];
+  sheets.forEach(function (sh, si) {
+    let head = [], pays = [];
+    if (grids) {
+      if (!grids[si]) return;
+      head = grids[si][0].slice(1);
+      pays = grids[si][1].slice(1);
+    } else {
+      if (sh.getRange(1, COL.QN).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+      pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    }
+    head.forEach(function (r, i) {
+      if (!r[COL.QN - 1]) return;
+      let pd;
+      try { pd = JSON.parse((pays[i] && pays[i][0]) || '{}') || {}; } catch (e) { return; }
+      const u = trackerUnitOf_(r, pd, sh.getName());
+      if (u) units.push(u);
+    });
+  });
+  units.sort(function (a, b) { return String(a.stateAt).localeCompare(String(b.stateAt)); });
+  return { ok: 1, v: TRACKER_FEED_V_, units: units, at: new Date().toISOString(),
+           _t: { total: Date.now() - T0 } };
+}
+
+/* The key check, and the whole of this door. Compared in full every time so
+   the answer does not say how much of a guess was right. A key shorter than
+   24 characters is treated as none: a short one would be a guessable one. */
+function trackerKeyOk_(given) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('TRACKER_KEY') || '');
+  const got = String(given || '');
+  if (want.length < 24 || got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return diff === 0;
+}
+
+function trackerServe_(p) {
+  let out;
+  try {
+    if (!trackerKeyOk_(p && p.key)) out = { ok: 0, error: 'Not authorised.' };
+    else if (String(p.fn || '') === 'winterWork') out = trackerFeed_();
+    else out = { ok: 0, error: 'Unknown function.' };
+  } catch (err) {
+    out = { ok: 0, error: String(err.message || err) };
+  }
+  out._api = 'tracker';
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /* THE IMPORTED DRAFTS, as a list you can scroll.

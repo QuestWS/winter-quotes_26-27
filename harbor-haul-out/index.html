@@ -448,10 +448,47 @@ async function settle_(rid){
   }
   return {};
 }
+/* A READ IS ASKED TWICE. diagnoseSpeed() (30 Sep 2026) put the server's own
+   work at one to two seconds, while the phone waited fifty for the same list
+   and longer for one unit. The time is between the phone and the function —
+   Apps Script starting the request, the redirect leg a POST's answer travels
+   through, the first attempt stalling on the harbor's signal — and the old
+   shape waited for the POST to give up before trying the GET route, which is
+   exactly the wait Chris recorded. Now a read that has not answered in
+   HEDGE_MS is also asked over GET, and the first real answer wins; the other
+   is ignored when it lands. Only READS: a write is sent once and, if its
+   answer goes missing, asked about (settle_), never re-sent. Every read here
+   is idempotent and the storage view is cached on the server, so the second
+   execution costs nothing that matters. */
+const HEDGE_MS=6000;
+function readHedged_(body){
+  return new Promise(function(resolve,reject){
+    let settled=false, getFired=false, errs=0, firstErr=null;
+    const done=function(j){ if(!settled){ settled=true; resolve(j); } };
+    const fireGet=function(){
+      if(getFired||settled) return;
+      getFired=true;
+      get_(body).then(take,fail);
+    };
+    const fail=function(e){
+      if(settled) return;
+      if(!firstErr) firstErr=e;
+      if(++errs>=2){ settled=true; reject(firstErr); return; }
+      fireGet();                                   // one road failed: ask the other now
+    };
+    const take=function(j){ if(lost_(j)) fail(terr_('The request never reached the console API.',0)); else done(j); };
+    post_(body).then(take,function(e){
+      if(!isTerr_(e)){ if(!settled){ settled=true; reject(e); } return; }
+      fail(e);
+    });
+    setTimeout(fireGet,HEDGE_MS);
+  });
+}
 async function api(fn,args){
   const isRead=!!API_GET_OK[fn];
   const body={api:'console',fn:fn,token:T,args:args||[]};
-  if(!isRead) body.rid=rid_();
+  if(isRead) return readHedged_(body);
+  body.rid=rid_();
   let dropped=null;
   try{
     const j=await post_(body);
@@ -460,12 +497,6 @@ async function api(fn,args){
   }catch(e){
     if(!isTerr_(e)) throw e;
     dropped=e;
-  }
-  if(isRead){
-    /* The route the customer page has used all season. Worth one retry. */
-    const j=await get_(body);
-    if(!lost_(j)) return j;
-    throw dropped;
   }
   const out=await settle_(body.rid);
   if(out.reply) return out.reply;

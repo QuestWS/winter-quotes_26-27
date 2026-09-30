@@ -302,6 +302,15 @@ decision (`adminHho`). Nobody is emailed.
   before this card existed would stack with an approval here. The card spots
   an `Adjustments` line that looks like one and says so; delete it under Line
   items, or Remove here.
+- **A customer who forgot their slip is fixed from the services card.** The
+  card only appears once the customer has said they are a slipholder, so for
+  someone who did not, *Add or remove services* shows a **Heritage Harbor
+  slipholder** form (slip number + **Add slipholder discount**) while nobody has
+  asked for or decided it. It sends `hho` with action `add` (`hhoAddForgotten_`):
+  the slip and `hho:true` are journalled in `manual.measured` — never `d.state`,
+  because the customer's browser re-posts `hho:false` on its next save — and the
+  discount is approved at the tier, then this card takes over for change/remove.
+  A slip is required (the discount line names it) and land units are refused.
 - **Finding the pending ones:** the `service@` new-quote email carries a
   `Slipholder:` line that says *AWAITING APPROVAL* with the suggested tier.
   There is no console list of pending approvals yet.
@@ -363,7 +372,9 @@ been.
 - **Not on this card, on purpose:** motors, service level, dimensions, trailer
   and storage (one bound control group on the unit-details card, gated on
   `measure`); pumpout and late retrieval (penalties — charges the customer is
-  never offered); the slipholder discount (its own approval). Golf carts and
+  never offered); the slipholder discount (its own approval — though a small
+  *Heritage Harbor slipholder* form at the foot of this card adds it for a
+  customer who forgot to say they have a slip, see below). Golf carts and
   e-bikes are one flat line each and get the card's "nothing to add" message.
   Anything genuinely off-menu still goes on the Adjustment card.
 - **The preview writes nothing** and is on `CONSOLE_GET_FNS_`; the apply is

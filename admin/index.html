@@ -636,6 +636,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             <h2>Add or remove services</h2>
             <div class="msg" id="svcNow" style="margin:0 0 6px"></div>
             <div id="svcRows"></div>
+            <div id="svcHho" class="hide" style="margin:10px 0 0;padding:10px 0 0;border-top:1px solid var(--line,#ddd)"></div>
             <div class="msg" style="margin:6px 0 0;color:var(--muted)">Motors, service level, dimensions and storage are under
               <b>Unit details &amp; storage</b>. Anything not on this list goes on the Adjustment card.</div>
             <button class="btn navy" id="svcPrevBtn" onclick="previewServices()">Preview the change</button>
@@ -1371,7 +1372,7 @@ function renderServices(sv){
   SVC=sv||null;
   $('svcDiff').classList.add('hide'); setMsg('svcMsg','');
   if(!SVC||!SVC.editable){
-    $('svcRows').innerHTML='';
+    $('svcRows').innerHTML=''; $('svcHho').classList.add('hide');
     $('svcNow').textContent=(SVC&&SVC.why)||'This backend does not support adding services yet — deploy the Apps Script.';
     $('svcPrevBtn').classList.add('hide');
     return;
@@ -1401,6 +1402,41 @@ function renderServices(sv){
     html+='<div class="svcrow'+(it.kind==='choice'?' choice':'')+'"><div class="sl">'+esc(it.label)+tag+(hint?'<div class="sh">'+hint+'</div>':'')+'</div>'+ctl+'</div>';
   });
   $('svcRows').innerHTML=html;
+  renderSvcHho();
+}
+/* The customer forgot to say they are a Heritage Harbor slipholder. Not a menu
+   item — it is an approval — so it has its own small form here. Shown only
+   while nobody has asked for or decided it; after that the slipholder card
+   below is the place. */
+function renderSvcHho(){
+  const box=$('svcHho'), h=SVC&&SVC.hho;
+  if(!h||!h.offer){
+    box.classList.add('hide'); box.innerHTML='';
+    return;
+  }
+  const tier=Number(h.tier||0);
+  box.innerHTML='<div class="svcgrp">Heritage Harbor slipholder</div>'+
+    '<div class="msg" style="margin:0 0 6px">The customer did not say they have a slip. Add the slipholder discount for them'+
+    (tier?' — the rate card suggests <b>$'+tier.toFixed(2)+'</b> off today\'s total (it follows the total unless you change it under the slipholder card).':' — today\'s services total is under the lowest tier, so it will be $0 until it grows.')+'</div>'+
+    '<div class="row2"><div><label class="fld">Slip number</label><input class="txt" id="svcHhoSlip" placeholder="e.g. B-14" maxlength="120"></div>'+
+    '<div style="align-self:end"><button class="btn navy" id="svcHhoBtn" onclick="addSlipholder()">Add slipholder discount</button></div></div>';
+  box.classList.remove('hide');
+}
+async function addSlipholder(){
+  if(!QN||!SVC||!SVC.hho) return;
+  const slip=($('svcHhoSlip').value||'').trim();
+  if(!slip){ setMsg('svcMsg','Enter the slip number first.',false); return; }
+  if(!confirm('Add the Heritage Harbor slipholder discount to '+QN+' (slip '+slip+')?\n\nThe total changes immediately. The customer is not emailed.')) return;
+  const b=$('svcHhoBtn'); b.disabled=true;
+  setMsg('svcMsg','Saving…',null);
+  try{
+    const r=await api('hho',[QN,'add','',slip],{withQuote:QN});
+    if(!r||!r.ok){ setMsg('svcMsg',(r&&r.error)||'Could not do that.',false); return; }
+    toast('Slipholder discount added');
+    await afterWrite_(r);
+    setMsg('svcMsg',r.msg,true);
+  }catch(e){ setMsg('svcMsg',e.message,false); }
+  finally{ b.disabled=false; }
 }
 /* Only what differs from what is in force now, so the journal records a
    decision rather than every control on the card. */

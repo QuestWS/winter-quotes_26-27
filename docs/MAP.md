@@ -96,10 +96,10 @@ symptom.
 | Speed: every tab in one read | `quoteTabGrids_` (used by `adminStorageView`, `adminSearch`, `findQuoteCtx_`) | — |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |
-| Add or remove services | `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | `renderServices`, `collectServices`, `previewServices`, `applyServices` |
+| Add or remove services | `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | `renderServices`, `renderSvcHho`, `addSlipholder`, `collectServices`, `previewServices`, `applyServices` |
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
-| Heritage Harbor slipholder discount | `adminHho`, `hhoSetDecision_`, `hhoInfo_`, `hhoLineEdit_`; tiers `RULES.hhoTiers`, `withHhoDiscount` (engine) | `renderHho`, `saveHho` |
+| Heritage Harbor slipholder discount | `adminHho`, `hhoSetDecision_`, `hhoInfo_`, `hhoLineEdit_`, `hhoAddForgotten_` (staff add for a customer who forgot); tiers `RULES.hhoTiers`, `withHhoDiscount` (engine) | `renderHho`, `saveHho` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |

@@ -210,6 +210,34 @@ once it is marked **Stored** it drops off their list.
 lines count as work, that nothing monetary or contact-shaped is on a unit,
 and that the key is checked first and in full.
 
+### Winterize pending — the second strip
+
+Chris, Sep 2026: *"add an alert in the Harbor Haul Out app for boats that are
+pending winterization. Winterizes will need to be marked off in the mechanic
+app and then will clear that alert. Please make it separate from the existing
+alert banner so that existing alerts do not get lost."*
+
+- **Derived, never typed.** A unit that is here (pulled, dropped off or stored)
+  whose quote carries winterization — `WINTERIZE_SECS_`: Winterization, Engine
+  winterization, Drive train, Water systems; everything that freezes — not yet
+  ticked off in the service tracker. `winterizeStatusOf_` works it out; nobody
+  sets it and nobody clears it from here. The last tick clears it. Shrinkwrap,
+  washing and detailing are on the mechanic's list but do not hold the strip.
+- **The ticks come back** on the same key (`fn:'winterTicks'` →
+  `trackerSetTicks_`): the whole state for each quote, so a repeat changes
+  nothing, stored as `d.winterWork` — payload only, like placement, and carried
+  across a customer save. One grid read finds which quotes differ; only those
+  are re-read and written. The tracker sends on every tick and catches up
+  hourly.
+- **Its own field and its own strip.** `winter` on the storage row and on
+  `adminLookup`, drawn by `winterize_` on the row and `renderWinter` on the
+  opened unit (`#dWinter`, directly under `#dAlert`). Navy on frost with ❄ —
+  not the alert's orange ⚠ — and it never reads or writes `placementAlert`.
+  Both can be on one unit; neither hides the other.
+- **A stored boat keeps it.** A unit put away with winterization still pending
+  stays on the mechanics' list too, or the boat that most needs doing would
+  vanish from it the moment it was stored.
+
 ## Opening fast: the list is on the phone
 
 Chris, Sep 2026: *"It takes FOREVER for the Harbor Haul Out app to load.

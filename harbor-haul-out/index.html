@@ -117,6 +117,20 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .alert .i{flex:0 0 auto;font-size:15px}
 .sheet .alert{margin:0;border-radius:0;border-left:0;border-top:3px solid var(--warn);
   padding:13px 14px;font-size:15px}
+/* WINTERIZE PENDING. The second strip, and kept visibly different from THE
+   ALERT above: navy on ice with a snowflake, not warning orange with a ⚠.
+   The alert is what somebody typed and means "read this first"; this one is
+   worked out by the server from the mechanics' ticks and means "the engine
+   still needs doing". Both can be on the same row and must both be seen —
+   neither replaces, hides or reuses the other. Icon AND words, never colour
+   alone. Cleared by the last tick in the mechanic app, never from here. */
+.winterize{display:flex;gap:7px;align-items:flex-start;background:var(--frost-soft);
+  border-left:4px solid var(--navy);border-radius:6px;padding:8px 10px;margin-top:8px;
+  font-size:13.5px;font-weight:600;color:var(--navy);line-height:1.35}
+.winterize .i{flex:0 0 auto;font-size:15px}
+.sheet .winterize{margin:0;border-radius:0;border-left:0;border-top:3px solid var(--navy);
+  padding:13px 14px;font-size:15px}
+.winterize ul{margin:6px 0 0;padding-left:18px;font-weight:400}
 
 /* ---- detail sheet ---- */
 .sheet{position:fixed;inset:0;z-index:60;background:var(--ice);overflow-y:auto;
@@ -248,6 +262,7 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
   <div id="dAuth"></div>
   <div class="fresh hide" id="dFresh"></div>
   <div id="dAlert"></div>
+  <div id="dWinter"></div>
   <div class="wrap">
     <div id="dCall"></div>
     <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
@@ -772,6 +787,15 @@ function alert_(x){
   const t=String((x&&x.alert)||'').trim();
   return t?'<div class="alert"><span class="i">\u26A0</span><span>'+esc(t)+'</span></div>':'';
 }
+/* Only when there is something pending — the same rule as the alert: an
+   empty strip on every row is how people stop seeing the one that matters. */
+function winterize_(x){
+  const w=x&&x.winter;
+  const n=(w&&w.pending&&w.pending.length)||0;
+  if(!n) return '';
+  return '<div class="winterize"><span class="i">\u2744</span><span>Winterize pending \u2014 '+
+    n+' of '+w.total+' not done</span></div>';
+}
 function notes_(x){
   return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';
 }
@@ -786,7 +810,7 @@ function row_(x,right,action){
     '<span class="slip">'+esc(right||'')+'</span></div>'+
     '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
-    alert_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
+    alert_(x)+winterize_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
 }
 /* The one-tap move along the line, used by the Awaiting and To store lists.
    The pull list deliberately has no such button: pulling a boat is the act the
@@ -933,6 +957,20 @@ async function markState(qn,to){
 
    Renders NOTHING when there is no alert: an empty warning strip on every
    unit is how people stop seeing the strip that matters. */
+/* The winterize strip on the opened unit: which items are still to do, and
+   where they get ticked off. Read-only here, like the alert — the ticks are
+   the mechanics', made in the service tracker app. */
+function renderWinter(){
+  const listRow=CUR?ROWS.filter(x=>x.qn===CUR.quoteNo)[0]||{}:{};
+  const w=(CUR&&CUR.winter!==undefined)?CUR.winter:listRow.winter;
+  const p=(w&&w.pending)||[];
+  $('dWinter').innerHTML=p.length
+    ? '<div class="winterize"><span class="i">\u2744</span><span>Winterize pending \u2014 '+
+      p.length+' of '+w.total+' not done<ul>'+p.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul>'+
+      '<span style="font-weight:400;font-size:12px">Clears when the mechanics tick these off in the Service Tracker app.</span>'+
+      '</span></div>'
+    : '';
+}
 function renderAlert(){
   const a=CUR&&CUR.placementAlert;
   const t=String((a&&a.text)||'').trim();
@@ -1161,6 +1199,7 @@ function fromRow_(x){
            needsTrailerLoc:!!x.trailerLoc },
     placement:{ state:x.placementState||'', at:x.placementAt||'' },
     placementAlert:x.alert?{ text:x.alert }:null,
+    winter:x.winter||null,
     placementNotes:null, dims:null, partial:true };
 }
 async function openQuote(qn){
@@ -1168,7 +1207,7 @@ async function openQuote(qn){
   $('sheet').classList.remove('hide');
   $('dName').textContent='Loading…'; $('dQn').textContent=qn;
   $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
-  $('dAlert').innerHTML='';
+  $('dAlert').innerHTML=''; $('dWinter').innerHTML='';
   $('dimsBlk').classList.add('hide'); $('dimsFields').innerHTML='';
   $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
   setMsg('dimsMsg',''); DIMS=null; PENDING=null;
@@ -1254,6 +1293,7 @@ function renderSheet(r){
     kv('Balance',esc(r.balance||''));
 
   renderAlert();
+  renderWinter();
   renderState();
   if(r.partial){
     /* The row knows nothing about measurements or the log: leave the one

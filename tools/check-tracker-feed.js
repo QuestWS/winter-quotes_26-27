@@ -33,10 +33,11 @@ const decl = (n) => {
 let KEY = '';
 const B = new Function('PropertiesService', [
   decl('COL'), decl('PLACEMENT_STATES_'), decl('TRACKER_SKIP_SECS_'),
+  decl('WINTERIZE_SECS_'), decl('WINTERIZE_STATES_'), fn('winterDoneOf_'), fn('winterizeStatusOf_'),
   fn('placementOf_'), fn('placementStateOf_'), fn('placementAlertOf_'),
   fn('effectiveState_'), fn('customerNoteOf_'),
   fn('trackerWorkOf_'), fn('trackerUnitOf_'), fn('trackerKeyOk_'),
-  'return {trackerWorkOf_, trackerUnitOf_, trackerKeyOk_, COL};'
+  'return {trackerWorkOf_, trackerUnitOf_, trackerKeyOk_, winterizeStatusOf_, COL};'
 ].join('\n'))({ getScriptProperties: () => ({ getProperty: () => KEY }) });
 
 let fails = 0;
@@ -77,7 +78,13 @@ check('pulled is on the feed', !!B.trackerUnitOf_(row('A'), quote('pulled'), 'In
 check('dropped off is on the feed', !!B.trackerUnitOf_(row('A'), quote('dropped'), 'Inside'));
 check('still in the water is not', B.trackerUnitOf_(row('A'), quote(''), 'Inside') === null);
 check('nothing recorded is not', B.trackerUnitOf_(row('A'), quote(null), 'Inside') === null);
-check('already stored is not', B.trackerUnitOf_(row('A'), quote('stored'), 'Inside') === null);
+check('stored with winterization still pending IS — it is the boat that most needs a mechanic',
+  !!B.trackerUnitOf_(row('A'), quote('stored'), 'Inside'));
+check('stored and fully winterized is not',
+  B.trackerUnitOf_(row('A'), quote('stored', { winterWork: { done: [
+    { label: 'Full service — Inboard' }, { label: 'Ballast drain × 3 tanks' }] } }), 'Inside') === null);
+check('stored with no winterization on the quote is not',
+  B.trackerUnitOf_(row('A'), quote('stored', { lines: [{ sec: 'Shrinkwrap', label: 'Wrap', amt: 1 }] }), 'Inside') === null);
 check('an unknown state is not', B.trackerUnitOf_(row('A'), quote('launched'), 'Inside') === null);
 check('the pre-rename d.yard still counts',
   !!B.trackerUnitOf_(row('A'), quote(null, { yard: { state: 'pulled', at: 'x' } }), 'Inside'));
@@ -101,6 +108,52 @@ console.log('\n=== 2. what work ===');
   check('no duplicate labels', new Set(labels).size === labels.length);
   check('a quote with no lines has no work, not a crash',
     B.trackerUnitOf_(row('A'), { placement: { state: 'dropped' } }, 'X').work.length === 0);
+}
+
+console.log('\n=== 2b. winterize pending ===');
+{
+  const s = B.winterizeStatusOf_(quote('pulled'));
+  check('engines and water systems are winterization', s && s.total === 2 &&
+    s.pending.join('|') === 'Full service — Inboard|Ballast drain × 3 tanks', JSON.stringify(s));
+  const labels = B.trackerWorkOf_(quote('pulled')).filter((w) => w.winterize).map((w) => w.label);
+  check('shrinkwrap, extras and requests are not', !labels.some((l) => /Shrinkwrap|Bottom|Impeller|Wash/.test(l)), JSON.stringify(labels));
+  const one = B.winterizeStatusOf_(quote('dropped', { winterWork: { done: [{ label: 'Full service — Inboard', by: 'Dale' }] } }));
+  check('a tick takes that item off the pending list', one.pending.join('|') === 'Ballast drain × 3 tanks');
+  const all = B.winterizeStatusOf_(quote('pulled', { winterWork: { done: [
+    { label: 'Full service — Inboard' }, { label: 'Ballast drain × 3 tanks' }] } }));
+  check('the last tick clears it', all && all.pending.length === 0);
+  check('ticks on other work do not clear it',
+    B.winterizeStatusOf_(quote('pulled', { winterWork: { done: [{ label: 'Shrinkwrap package (standard)' }] } })).pending.length === 2);
+  check('a boat still in the water has no winterize alert', B.winterizeStatusOf_(quote('')) === null);
+  check('nor one with nothing recorded', B.winterizeStatusOf_(quote(null)) === null);
+  check('a stored boat keeps it until it is done', B.winterizeStatusOf_(quote('stored')).pending.length === 2);
+  check('a quote with no winterization has none',
+    B.winterizeStatusOf_(quote('pulled', { lines: [{ sec: 'Shrinkwrap', label: 'Wrap', amt: 1 }] })) === null);
+  check('it never touches the typed alert', !/placementAlert/.test(fn('winterizeStatusOf_') + fn('trackerSetTicks_')));
+  check('the ticks survive a customer save',
+    /if \(oldD\.winterWork\) d\.winterWork = oldD\.winterWork;/.test(gas));
+  check('the ticks endpoint is behind the key',
+    /trackerKeyOk_[\s\S]*winterTicks[\s\S]*trackerSetTicks_/.test(fn('trackerServe_')));
+  check('a tick write is payload only — no status, no re-price, no PDF',
+    !/savePdf_|recomputeTotals_|rebuildLinesFromState_|COL\.STATUS/.test(fn('trackerSetTicks_')));
+  check('the storage row and the lookup carry it as its own field',
+    /winter: winter,/.test(fn('storageViewBuild_')) && /winter: winterizeStatusOf_\(d\)/.test(fn('adminLookup')));
+}
+
+console.log('\n=== 2c. Harbor Haul Out draws it apart from the alert ===');
+{
+  const app = fs.readFileSync(path.join(ROOT, 'harbor-haul-out/index.html'), 'utf8');
+  const script = app.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/) || app.match(/<script>([\s\S]*)<\/script>/);
+  const body = new Function('esc', script[1].match(/function winterize_\(x\)\{[\s\S]*?\n\}/)[0] + '; return winterize_;')(
+    (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+  check('a row with winterization pending gets its own strip',
+    /class="winterize"/.test(body({ winter: { total: 2, pending: ['a', 'b'] } })) &&
+    /2 of 2 not done/.test(body({ winter: { total: 2, pending: ['a', 'b'] } })));
+  check('nothing at all when none is pending', body({ winter: { total: 2, pending: [] } }) === '' && body({}) === '' && body({ winter: null }) === '');
+  check('the row draws both strips, alert first', /alert_\(x\)\+winterize_\(x\)/.test(app));
+  check('the opened unit has its own place for it, beside the alert', /<div id="dAlert"><\/div>\s*<div id="dWinter"><\/div>/.test(app));
+  check('it is not styled as the alert', /\.winterize\{/.test(app) && !/function winterize_[\s\S]*?class="alert"/.test(app.match(/function winterize_\(x\)\{[\s\S]*?\n\}/)[0]));
+  check('and the app offers no way to clear it', !/api\('winterTicks'|winterTicks/.test(app));
 }
 
 console.log('\n=== 3. no money ===');

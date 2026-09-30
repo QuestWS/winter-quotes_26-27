@@ -1247,6 +1247,10 @@ function doPost(e) {
          down. Same pre-rename fallback. */
       if (oldD.placementAlert) d.placementAlert = oldD.placementAlert;
       else if (oldD.yardAlert) d.placementAlert = oldD.yardAlert;
+      /* The mechanics' winterization ticks, from the service tracker. The
+         customer's browser has never heard of them, so a save that dropped
+         them would put the winterize alert back on a boat already done. */
+      if (oldD.winterWork) d.winterWork = oldD.winterWork;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -3501,7 +3505,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 6;
+const STORAGE_VIEW_V_ = 7;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -5385,6 +5389,9 @@ function adminLookup(token, qn) {
       ? { text: String(placementAlertOf_(d).text || ''), at: String(placementAlertOf_(d).at || ''),
           by: String(placementAlertOf_(d).by || '') }
       : null,
+    /* Winterization still pending, derived from the service tracker's ticks.
+       Separate from placementAlert on purpose — see WINTERIZE_SECS_. */
+    winter: winterizeStatusOf_(d),
     /* The customer's own words from the quote page — the opposite of the
        staff note below, and shown beside it so nobody has to open the PDF to
        find out what they asked for. */
@@ -7660,7 +7667,8 @@ function storageViewBuild_(opt) {
         where.push({ qn: r[COL.QN - 1], tab: sh.getName(), row: i + 2 });
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
-            trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '';
+            trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
+            winter = null;
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -7695,6 +7703,9 @@ function storageViewBuild_(opt) {
              customer who wrote an essay cannot put this call back over the
              edge; the quote card shows the whole thing. */
           cnote = customerNoteOf_(pd).slice(0, CNOTE_LIST_MAX_);
+          /* The derived winterization alert — its own field, never folded into
+             `alert`. See WINTERIZE_SECS_. */
+          winter = winterizeStatusOf_(pd);
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
         } catch (e) {}
@@ -7718,6 +7729,8 @@ function storageViewBuild_(opt) {
           placementState: placementState, placementAt: placementAt,
           /* The one thing somebody must know before touching this boat. */
           alert: alert,
+          /* Winterization still to be ticked off in the mechanic app, or null. */
+          winter: winter,
           /* The customer's own note, trimmed for the list. See customerNoteOf_. */
           cnote: cnote,
           /* Signed agreement on file. Deposit taken and this still false is the
@@ -7800,6 +7813,109 @@ function customerNoteOf_(d) {
 const TRACKER_SKIP_SECS_ = { 'Storage': 1, 'Retrieval': 1, 'Misc': 1, 'Discounts': 1, 'Adjustments': 1 };
 const TRACKER_FEED_V_ = 1;
 
+/* WINTERIZATION PENDING — the second alert, and deliberately not the first.
+   ---------------------------------------------------------------------------
+   Chris, Sep 2026: "add an alert in the Harbor Haul Out app for boats that are
+   pending winterization. Winterizes will need to be marked off in the mechanic
+   app and then will clear that alert. Please make it separate from the
+   existing alert banner so that existing alerts do not get lost."
+
+   So it is DERIVED, never typed: a unit that is here (pulled, dropped off or
+   stored) and whose quote carries winterization work not yet ticked off in the
+   service tracker's mechanic app. Nobody sets it and nobody clears it by hand;
+   the last tick clears it. It is its own field (`winter` on the storage row and
+   on adminLookup), drawn in its own strip, and never touches d.placementAlert —
+   "no keys, do not tow" must not be buried under, or overwritten by, a
+   reminder that the engine still needs antifreeze.
+
+   Which lines are winterization: the engines (Winterization, Engine
+   winterization), the drive train and the water systems — everything that
+   freezes and cracks. Shrinkwrap, washing and detailing are before-storage
+   work too, and they are on the mechanic's list, but a boat stored without a
+   wash is not a boat with a cracked block in March.
+
+   The ticks arrive from the tracker (trackerSetTicks_) and live on the payload
+   as d.winterWork = { done: [{label, by, at}], at } — payload only, like
+   d.placement: no status, no re-price, no PDF. Carried across a customer save
+   for the same reason placement is. A still-in-the-water unit has no alert:
+   nobody can winterize a boat that is not here yet. */
+const WINTERIZE_SECS_ = { 'Winterization': 1, 'Engine winterization': 1, 'Drive train': 1, 'Water systems': 1 };
+const WINTERIZE_STATES_ = { 'pulled': 1, 'dropped': 1, 'stored': 1 };
+
+function winterDoneOf_(d) {
+  const out = {};
+  ((d && d.winterWork && d.winterWork.done) || []).forEach(function (t) {
+    if (t && t.label) out[String(t.label)] = t;
+  });
+  return out;
+}
+
+/* {total, pending:[labels]} for a unit that is here with winterization on its
+   quote; null when there is nothing to say. */
+function winterizeStatusOf_(d) {
+  if (!WINTERIZE_STATES_[placementStateOf_(d)]) return null;
+  const items = trackerWorkOf_(d).filter(function (w) { return w.winterize; });
+  if (!items.length) return null;
+  const done = winterDoneOf_(d);
+  return { total: items.length,
+           pending: items.filter(function (w) { return !done[w.label]; }).map(function (w) { return w.label; }) };
+}
+
+/* The service tracker's ticks, for one quote or many: {qn: [{label, by, at}]}.
+   Each list is the WHOLE state for that quote, so sending it twice changes
+   nothing and an item un-ticked over there is un-ticked here. One read of every
+   quote tab finds the ones that actually differ; only those are re-read and
+   written, each immediately after its own fresh read, the same window every
+   console write has. */
+const TRACKER_TICKS_MAX_ = 300;
+function trackerSetTicks_(ticks) {
+  const want = {};
+  Object.keys(ticks || {}).slice(0, TRACKER_TICKS_MAX_).forEach(function (qn) {
+    const list = (Array.isArray(ticks[qn]) ? ticks[qn] : []).map(function (t) {
+      return { label: String((t && t.label) || '').trim().slice(0, 200),
+               by: String((t && t.by) || '').slice(0, 80), at: String((t && t.at) || '').slice(0, 40) };
+    }).filter(function (t) { return t.label; });
+    list.sort(function (a, b) { return a.label.localeCompare(b.label); });
+    want[String(qn).trim().toUpperCase()] = list;
+  });
+  const same = function (d, list) {
+    const had = ((d && d.winterWork && d.winterWork.done) || []).map(function (t) { return t.label; }).sort();
+    return JSON.stringify(had) === JSON.stringify(list.map(function (t) { return t.label; }));
+  };
+  /* Which of them differ, from one read. A quote this read cannot see is
+     re-checked below rather than assumed unchanged. */
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets().filter(function (sh) { return !isOffstageTab_(sh.getName()); });
+  const grids = quoteTabGrids_(ss, sheets, [[COL.QN, COL.QN], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const seen = {};
+  if (grids) {
+    grids.forEach(function (g) {
+      if (!g) return;
+      for (let r = 1; r < g[0].length; r++) {
+        const qn = String(g[0][r][0] || '').trim().toUpperCase();
+        if (!want[qn]) continue;
+        let d = null;
+        try { d = JSON.parse(g[1][r][0] || '{}'); } catch (e) { d = null; }
+        if (d && same(d, want[qn])) seen[qn] = 'same';
+      }
+    });
+  }
+  const changed = [];
+  Object.keys(want).forEach(function (qn) {
+    if (seen[qn] === 'same') return;
+    const ctx = findQuoteCtx_(qn);
+    if (!ctx || same(ctx.d, want[qn])) return;
+    ctx.d.winterWork = { done: want[qn], at: new Date().toISOString() };
+    ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(ctx.d));
+    changed.push(qn);
+  });
+  if (changed.length) {
+    invalidateStorageView_();
+    auditLog_('Service tracker', 'Winterization ticks updated from the mechanic app: ' + changed.join(', '));
+  }
+  return { ok: 1, changed: changed.length };
+}
+
 /* What is to be done to the unit, off the stored (server-priced, journal-
    replayed) lines. Pure, so check-tracker-feed.js can run it. */
 function trackerWorkOf_(d) {
@@ -7810,7 +7926,9 @@ function trackerWorkOf_(d) {
     const label = String(l.label || '').trim();
     if (!label || seen[label]) return;
     seen[label] = 1;
-    out.push({ sec: String(l.sec || ''), label: label });
+    const w = { sec: String(l.sec || ''), label: label };
+    if (WINTERIZE_SECS_[w.sec]) w.winterize = true;
+    out.push(w);
   });
   String((d && d.quotesRequested) || '').split('; ').forEach(function (rq) {
     const label = String(rq || '').trim();
@@ -7825,7 +7943,12 @@ function trackerWorkOf_(d) {
    `r` is the row's 1..DIMS cells, `pd` its parsed payload. */
 function trackerUnitOf_(r, pd, tab) {
   const state = placementStateOf_(pd);
-  if (!PLACEMENT_STATES_[state] || PLACEMENT_STATES_[state].list !== 'store') return null;
+  if (!PLACEMENT_STATES_[state]) return null;
+  /* To store, as asked — plus a unit already put away with its winterization
+     still pending, or the one boat that most needs a mechanic would drop off
+     the list the moment somebody stored it. */
+  const wz = winterizeStatusOf_(pd);
+  if (PLACEMENT_STATES_[state].list !== 'store' && !(state === 'stored' && wz && wz.pending.length)) return null;
   const st = effectiveState_(pd) || pd.state || null;
   const pick = function (k) { return String((st && st[k] !== undefined ? st[k] : pd[k]) || ''); };
   const alert = placementAlertOf_(pd);
@@ -7896,6 +8019,7 @@ function trackerServe_(p) {
   try {
     if (!trackerKeyOk_(p && p.key)) out = { ok: 0, error: 'Not authorised.' };
     else if (String(p.fn || '') === 'winterWork') out = trackerFeed_();
+    else if (String(p.fn || '') === 'winterTicks') out = trackerSetTicks_(p.ticks);
     else out = { ok: 0, error: 'Unknown function.' };
   } catch (err) {
     out = { ok: 0, error: String(err.message || err) };

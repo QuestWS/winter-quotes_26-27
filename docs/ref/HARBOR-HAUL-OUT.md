@@ -250,7 +250,10 @@ running instead. So, the same day:
   the whole row once so the status and photo cells cost nothing more.
 - **`diagnoseSpeed()`**, run from the editor, times every road from inside
   and prints which one the app is actually on — the fallbacks are silent by
-  design, and this is the only way to know. `CLAUDE.md` §2.
+  design, and this is the only way to know. `CLAUDE.md` §2. It is the **first
+  function in the file** so it is the first entry in the editor's dropdown,
+  which lists ~300 functions in file order; Chris spent ten minutes not
+  finding it three-quarters of the way down. Keep it there.
 
 `check-harbor-haul-out.js` executes all of it: a phone with a saved list and
 no signal still shows the list and is told how old it is; a saved detail is

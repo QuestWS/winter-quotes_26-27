@@ -63,6 +63,59 @@ const LOGO_URL = 'https://raw.githubusercontent.com/QuestWS/winter-quotes_26-27/
 // from the editor to activate the daily check. Set REMINDER_ENABLED=false to pause.
 const REMINDER_ENABLED = true;
 
+/* ===========================================================================
+   diagnoseSpeed() — run from the editor when a phone says the app is slow.
+   ---------------------------------------------------------------------------
+   Chris clocked Harbor Haul Out at fifty seconds for a list and longer for one
+   unit (Sep 2026) on a backend whose reads were meant to be two trips. Every
+   fallback in this file is silent by design, so the only way to know which
+   road a request is actually on is to time the roads from inside. This times
+   each one and prints the answer to the execution log; it writes nothing to
+   any quote (the caches it drops rebuild themselves).
+
+   Run: Apps Script editor → function dropdown → diagnoseSpeed → Run → View →
+   Execution log. Read it top to bottom; the line that says FAILED or MISSING,
+   or the number that is ten times the others, is the answer.
+
+   IT SITS AT THE TOP OF THE FILE ON PURPOSE. The editor's dropdown lists the
+   file's ~300 functions in FILE ORDER, so anything else is a scroll nobody
+   finds — Chris looked for it for ten minutes. First function, first entry.
+   Keep it here. */
+function diagnoseSpeed() {
+  const out = [];
+  const lap = function (label, t) { out.push((Date.now() - t) + ' ms  ' + label); };
+  let t = Date.now();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  lap('open the spreadsheet and list its ' + sheets.length + ' tabs', t);
+  const hasApi = typeof Sheets !== 'undefined' && Sheets.Spreadsheets && Sheets.Spreadsheets.Values;
+  out.push(hasApi ? 'Sheets advanced service: present'
+                  : 'Sheets advanced service: MISSING — every read is on the per-tab road (enable it: Services + → Google Sheets API, then deploy)');
+  if (hasApi) {
+    t = Date.now();
+    try {
+      Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: [tabA1_(sheets[0]) + 'C1'] });
+      lap('one batchGet of one cell', t);
+    } catch (e) { lap('one batchGet FAILED: ' + (e.message || e) + ' — every read is on the per-tab road', t); }
+  }
+  t = Date.now(); sheets[0].getRange(1, 3).getValue(); lap('one single-cell read (what each old-style trip costs)', t);
+  const spans = [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]];
+  t = Date.now(); _tabGridsOff_ = false; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ as the app gets it — route: ' + _gridsRoute_, t);
+  t = Date.now(); _tabGridsOff_ = true; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ forced onto per-tab reads — route: ' + _gridsRoute_, t);
+  _tabGridsOff_ = false;
+  invalidateStorageView_();
+  t = Date.now(); const sv = storageViewBuild_(); lap('storage view, rebuilt from the sheet (reads=' + sv.reads + ', ' + JSON.stringify(sv._t) + ')', t);
+  t = Date.now(); const sv2 = storageViewBuild_(); lap('storage view again, from the cache (reads=' + sv2.reads + ')', t);
+  const qn = 'QW-26-1255';
+  try { CacheService.getScriptCache().remove(qrowKey_(qn)); } catch (e) {}
+  t = Date.now(); const c1 = findQuoteCtx_(qn); lap('find ' + qn + ' cold (how=' + (c1 && c1.how) + ')', t);
+  t = Date.now(); const c2 = findQuoteCtx_(qn); lap('find ' + qn + ' again, row cache warm (how=' + (c2 && c2.how) + ')', t);
+  t = Date.now(); PropertiesService.getScriptProperties().getProperty('STAFF'); lap('read the roster (what every session check pays twice)', t);
+  const text = out.join('\n');
+  Logger.log(text);
+  return text;
+}
+
 /* ---------------------------------------------------------------------------
    THE AUTOMATIC-EMAIL PAUSE
    ---------------------------------------------------------------------------
@@ -7667,54 +7720,6 @@ function storageViewBuild_(opt) {
   out.reads = grids ? _gridsRoute_ : 'scan';
   out._t = { read: tRead, rows: Date.now() - tRead0 - tRead, total: Date.now() - T0 };
   return out;
-}
-
-/* ===========================================================================
-   diagnoseSpeed() — run from the editor when a phone says the app is slow.
-   ---------------------------------------------------------------------------
-   Chris clocked Harbor Haul Out at fifty seconds for a list and longer for one
-   unit (Sep 2026) on a backend whose reads were meant to be two trips. Every
-   fallback in this file is silent by design, so the only way to know which
-   road a request is actually on is to time the roads from inside. This times
-   each one and prints the answer to the execution log; it writes nothing to
-   any quote (the caches it drops rebuild themselves).
-
-   Run: Apps Script editor → function dropdown → diagnoseSpeed → Run → View →
-   Execution log. Read it top to bottom; the line that says FAILED or MISSING,
-   or the number that is ten times the others, is the answer. */
-function diagnoseSpeed() {
-  const out = [];
-  const lap = function (label, t) { out.push((Date.now() - t) + ' ms  ' + label); };
-  let t = Date.now();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = ss.getSheets();
-  lap('open the spreadsheet and list its ' + sheets.length + ' tabs', t);
-  const hasApi = typeof Sheets !== 'undefined' && Sheets.Spreadsheets && Sheets.Spreadsheets.Values;
-  out.push(hasApi ? 'Sheets advanced service: present'
-                  : 'Sheets advanced service: MISSING — every read is on the per-tab road (enable it: Services + → Google Sheets API, then deploy)');
-  if (hasApi) {
-    t = Date.now();
-    try {
-      Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: [tabA1_(sheets[0]) + 'C1'] });
-      lap('one batchGet of one cell', t);
-    } catch (e) { lap('one batchGet FAILED: ' + (e.message || e) + ' — every read is on the per-tab road', t); }
-  }
-  t = Date.now(); sheets[0].getRange(1, 3).getValue(); lap('one single-cell read (what each old-style trip costs)', t);
-  const spans = [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]];
-  t = Date.now(); _tabGridsOff_ = false; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ as the app gets it — route: ' + _gridsRoute_, t);
-  t = Date.now(); _tabGridsOff_ = true; quoteTabGrids_(ss, sheets, spans); lap('quoteTabGrids_ forced onto per-tab reads — route: ' + _gridsRoute_, t);
-  _tabGridsOff_ = false;
-  invalidateStorageView_();
-  t = Date.now(); const sv = storageViewBuild_(); lap('storage view, rebuilt from the sheet (reads=' + sv.reads + ', ' + JSON.stringify(sv._t) + ')', t);
-  t = Date.now(); const sv2 = storageViewBuild_(); lap('storage view again, from the cache (reads=' + sv2.reads + ')', t);
-  const qn = 'QW-26-1255';
-  try { CacheService.getScriptCache().remove(qrowKey_(qn)); } catch (e) {}
-  t = Date.now(); const c1 = findQuoteCtx_(qn); lap('find ' + qn + ' cold (how=' + (c1 && c1.how) + ')', t);
-  t = Date.now(); const c2 = findQuoteCtx_(qn); lap('find ' + qn + ' again, row cache warm (how=' + (c2 && c2.how) + ')', t);
-  t = Date.now(); PropertiesService.getScriptProperties().getProperty('STAFF'); lap('read the roster (what every session check pays twice)', t);
-  const text = out.join('\n');
-  Logger.log(text);
-  return text;
 }
 
 /* THE CUSTOMER'S NOTE — "Notes / special requests" on the quote page.

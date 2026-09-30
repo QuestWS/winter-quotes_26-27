@@ -177,6 +177,39 @@ panel over the list they were working down. The guard asserts both.
 Lead rows never appear on any list. A quote nobody finished is not a unit we
 are holding.
 
+## The service tracker reads To store
+
+Chris, Sep 2026: *"Can we have the service tracker pull winterize jobs from
+the winter system when boats are marked as either pulled or dropped off? This
+way the mechanics can see what needs to be winterized or any other jobs that
+need to be completed before storage."*
+
+So every unit on **To store** — placement `pulled` or `dropped` — is also on
+the mechanic app's **Winter work** list in QuestWS/servicetracker, with the
+work its quote carries. The shop records the pull or the drop-off here, as
+now; the mechanics see it there within five minutes (at once on Refresh);
+once it is marked **Stored** it drops off their list.
+
+- **Read-only, one direction.** `trackerServe_` answers `{api:'tracker',
+  fn:'winterWork', key}` on `doPost`, before anything treats the body as a
+  quote save, and writes nothing — no status, no re-price, no audit row. What
+  a mechanic ticks off is recorded on the tracker's side, not here.
+- **A shared key, not a PIN.** It is one script asking another, so there is no
+  person to sign in. `TRACKER_KEY` in this script's properties must equal
+  `WINTER_KEY` in the tracker's; unset, or shorter than 24 characters, means
+  the feed answers nobody. Neither repo holds it.
+- **The work, not the money.** Labels only (`trackerWorkOf_`): every line
+  except Storage, Retrieval, Misc, Discounts and Adjustments, plus open quote
+  requests marked `requested`. No amount, balance, deposit, contract, phone or
+  email. The unit's alert and the customer's own note do cross — both are
+  staff-facing already and both are about the boat in front of the mechanic.
+- **Lead and Import tabs are left out of the read**, same as the storage
+  view: a draft nobody agreed to is not a boat anybody is working on.
+
+`check-tracker-feed.js` runs all of it: which states make the list, which
+lines count as work, that nothing monetary or contact-shaped is on a unit,
+and that the key is checked first and in full.
+
 ## Opening fast: the list is on the phone
 
 Chris, Sep 2026: *"It takes FOREVER for the Harbor Haul Out app to load.

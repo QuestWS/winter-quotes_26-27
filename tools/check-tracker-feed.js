@@ -156,6 +156,17 @@ console.log('\n=== 2c. Harbor Haul Out draws it apart from the alert ===');
   check('and the app offers no way to clear it', !/api\('winterTicks'|winterTicks/.test(app));
 }
 
+console.log('\n=== 2d. the staff console shows it too, and cannot change it ===');
+{
+  const con = fs.readFileSync(path.join(ROOT, 'admin/index.html'), 'utf8');
+  check('the storage view row draws it after the alert, as its own strip', /\$\{al\}\$\{wz\}/.test(con) && /class="winterbox"/.test(con));
+  check('the quote has a read-only Winterization card', /id="winterCard"/.test(con) && /renderWinterCard\(r\.winter\|\|null\)/.test(con));
+  check('the printed storage sheet carries it, apart from the alert', /class="pwinter"/.test(con));
+  check('nothing on the console sends ticks', !/winterTicks/.test(con));
+  const fnSrc = con.match(/function renderWinterCard\(w\)\{[\s\S]*?\n\}/)[0];
+  check('the card never reads or writes the alert', !/_alert|placementAlert/.test(fnSrc));
+}
+
 console.log('\n=== 3. no money ===');
 {
   const u = B.trackerUnitOf_(row('A'), quote('pulled'), 'Inside');

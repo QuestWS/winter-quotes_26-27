@@ -228,6 +228,14 @@ both gated on `keys`:
   the stamp instead of a button, and `adminSetPlacementState` re-checks `haulAuth_`
   server-side whichever surface asked. The gate is about the boat, never about
   who is holding the phone.
+- **Winterization** — read-only, and not gated: it shows what winterization is
+  still to be ticked off in the service tracker's mechanic app, or that it is
+  all done. Hidden when the unit is not here yet or its quote has none. Nothing
+  on the console sets or clears it — the mechanics' ticks do
+  (`docs/ref/HARBOR-HAUL-OUT.md` § *Winterize pending*). The same **❄ Winterize
+  pending** strip sits on the storage overview's rows, after the alert and never
+  in place of it, and the printed storage sheets carry it in a dashed box so the
+  paper cannot confuse it with the alert's solid one.
 
 ## Filing a signed contract
 

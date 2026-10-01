@@ -1556,18 +1556,21 @@ function upWaitOnline_(ms){
    no feedback looks identical to a phone doing nothing. */
 function upPut_(url,body,type,range,size,onBytes){
   return new Promise(function(res){
-    let x, moved=false;
+    let x, moved=false, got=0;
+    const want=body?(body.size||0):0;
     try{ x=new XMLHttpRequest(); }catch(e){ return res({status:-1,reason:'no-xhr'}); }
     x.open('PUT',url,true);
     x.setRequestHeader('Content-Type',type||'application/octet-stream');
     if(range) x.setRequestHeader('Content-Range',
       range[1]>range[0]?'bytes '+range[0]+'-'+(range[1]-1)+'/'+size:'bytes */'+size);
-    if(x.upload) x.upload.onprogress=e=>{ if(e.loaded>0) moved=true; if(onBytes) onBytes(e.loaded); };
+    if(x.upload) x.upload.onprogress=e=>{ if(e.loaded>0) moved=true; got=Math.max(got,e.loaded||0);
+      if(onBytes) onBytes(e.loaded); };
     /* A CORS refusal and a dropped signal both surface here as a status-0 error
-       with no detail. `moved` is what tells them apart: a refusal is decided
-       before a single byte goes. */
-    x.onerror=()=>res({status:0,moved:moved});
-    x.onabort=()=>res({status:0,moved:moved});
+       with no detail. `moved` says bytes went; `sent` says ALL of them did —
+       an error after that is an answer the browser would not show us, not a
+       connection that went mid-file. */
+    x.onerror=()=>res({status:0,moved:moved,sent:got>=want});
+    x.onabort=()=>res({status:0,moved:moved,sent:got>=want});
     x.onload=()=>{
       let next=null;
       /* 308 "resume incomplete": Range says how much Drive has. */
@@ -1594,11 +1597,18 @@ async function upAsk_(url,file){
 async function putDirect_(url,file,onPct,from,ask){
   const size=file.size||0;
   const canSlice=typeof file.slice==='function';
-  let off=from||0, moved=false, drops=0;
+  /* `heard`: Drive has given us an answer we could READ on this session. Until
+     it has, a status-0 error while the phone is online is as likely to be an
+     answer the browser hid (no CORS headers) as a dropped signal — and with a
+     single-PUT photo that hidden answer is usually "done". That was the
+     "Signal lost — waiting to carry on…" that never ended, on full wifi, over
+     a photo already in Drive. Such a case goes back as 'unread' and Apps
+     Script, which can see the folder, says whether the file landed. */
+  let off=from||0, moved=false, drops=0, heard=false;
   if(ask){
     const a=await upAsk_(url,file);
     if(a.done) return {ok:1};
-    if(a.offline) return {ok:0,reason:'dropped'};
+    if(a.offline) return {ok:0,reason:upOnline_()?'unread':'dropped'};
     if(a.lost) return {ok:0,reason:'restart'};
     off=a.next; moved=true;
   }
@@ -1611,19 +1621,22 @@ async function putDirect_(url,file,onPct,from,ask){
     const r=await upPut_(url,body,file.type,whole?null:[off,end],size,
       b=>{ if(size) onPct(Math.round(100*(base+b)/size)); });
     if(r.status===-1) return {ok:0,reason:'no-xhr'};
+    if(r.status>0) heard=true;
     if(r.status>=200&&r.status<300) return {ok:1};
     if(r.status===308){ moved=true; drops=0; off=(r.next===null?end:r.next); continue; }
     if(r.status===0){
-      /* Nothing ever moved on this session and the phone thinks it is online:
-         that is the browser refusing the request, which the relay exists for. */
-      if(!moved&&!r.moved&&upOnline_()) return {ok:0,reason:'blocked'};
+      /* Never heard from Drive, phone online, and either every byte went or
+         none did: not a drop mid-file. Whether it is a refusal or a hidden
+         "done" is for the folder to say, not for a guess. */
+      if(!heard&&upOnline_()&&(r.sent||!r.moved)) return {ok:0,reason:'unread'};
       moved=true;
       if(++drops>UP_MAX_DROPS) return {ok:0,reason:'dropped'};
       upChip_('Signal lost — waiting to carry on…',size?Math.round(100*off/size):0);
       await upWaitOnline_(Math.min(30000,2000*Math.pow(2,drops-1)));
       const a=await upAsk_(url,file);
       if(a.done) return {ok:1};
-      if(a.offline) continue;
+      if(a.offline){ if(!heard&&upOnline_()) return {ok:0,reason:'unread'}; continue; }
+      heard=true;
       if(a.lost) return {ok:0,reason:'restart'};
       off=a.next;
       continue;
@@ -1666,7 +1679,7 @@ function upTx_(mode,fn){
   });
 }
 function upRec_(job){ return {id:job.id,qn:job.qn,season:job.season,name:job.name,file:job.file,
-  url:job.url||'',urlAt:job.urlAt||0,at:job.at}; }
+  url:job.url||'',urlAt:job.urlAt||0,dname:job.dname||'',at:job.at}; }
 function upSave_(job){ job.saving=upTx_('readwrite',st=>st.put(upRec_(job))); return job.saving; }
 /* Waits for the job's own save first: a delete that overtook the write would
    leave a finished file queued to go up again. */
@@ -1678,6 +1691,15 @@ function upId_(){
 /* Drive keeps an unfinished session for about a week; older than this, start a
    new one rather than asking about one that may be gone. */
 const UP_SESSION_MAX_MS=5*24*3600*1000;
+/* Ask Apps Script whether the file is in the folder: true, false, or null when
+   the question itself did not get through (wait for signal). */
+async function upLanded_(job){
+  const f=job.file;
+  const r=await api('uploadCheck',[job.qn,job.season,job.dname||f.name||'',f.size||0,job.urlAt||0]);
+  if(r&&r.lost) return null;
+  return !!(r&&r.ok&&r.found);
+}
+function upOrigin_(){ try{ return location.origin||''; }catch(e){ return ''; } }
 async function uploadOne_(job){
   const f=job.file;
   const pct=p=>upChip_(job.label,p);
@@ -1690,19 +1712,33 @@ async function uploadOne_(job){
       const r=await putDirect_(job.url,f,pct,0,true);
       if(r.ok) return {ok:1,how:'direct'};
       if(r.reason==='dropped') return {ok:0,keep:1};
+      if(r.reason==='unread'){
+        const got=await upLanded_(job);
+        if(got) return {ok:1,how:'direct'};
+        if(got===null) return {ok:0,keep:1};
+      }
       /* Anything else: that session is no use now. A fresh one, below. */
     }
     job.url='';
     for(let attempt=0;attempt<2;attempt++){
-      const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size]);
+      const sess=await api('uploadSession',[job.qn,job.season,f.name||'upload',f.type||'',f.size,upOrigin_()]);
       /* The ask was lost on the way. A session creates nothing in Drive until
          a file is finished, so asking again later is harmless: wait for signal. */
       if(sess&&sess.lost) return {ok:0,keep:1};
       if(!(sess&&sess.ok&&sess.url)) break;
-      job.url=sess.url; job.urlAt=Date.now(); upSave_(job);
+      job.url=sess.url; job.urlAt=Date.now(); job.dname=sess.name||''; upSave_(job);
       const r=await putDirect_(sess.url,f,pct,0,false);
       if(r.ok) return {ok:1,how:'direct'};
       if(r.reason==='dropped') return {ok:0,keep:1};
+      /* The browser could not read Drive's answer. If the file is there, it is
+         done — sending it through the relay as well is how a photo lands twice.
+         If it is not, the direct road is shut for this phone: the relay. */
+      if(r.reason==='unread'){
+        const got=await upLanded_(job);
+        if(got) return {ok:1,how:'direct'};
+        if(got===null) return {ok:0,keep:1};
+        break;
+      }
       /* Drive could not say how far it got: one clean start on a new session.
          An unfinished session leaves nothing in Drive, so this cannot duplicate. */
       if(r.reason==='restart'){ job.url=''; if(attempt) return {ok:0,keep:1}; continue; }

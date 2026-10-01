@@ -2480,10 +2480,18 @@ async function queueFiles(fileList){
   }
   async function sendOne(f,setStatus){
     try{
-      const sess=await api('uploadSession',[QN,SEASON,f.name,f.type||'',f.size]);
+      const t0=Date.now();
+      const sess=await api('uploadSession',[QN,SEASON,f.name,f.type||'',f.size,location.origin]);
       if(sess&&sess.ok&&sess.url){
         const r=await putDirect(sess.url,f,p=>setStatus(p+'%'));
         if(r.ok) return {ok:1};
+        /* A bare status-0 can be Drive's "done" that the browser would not let
+           us read. Ask whether the file is in the folder before relaying it, or
+           the same photo lands twice. */
+        if(r.reason==='blocked'){
+          const c=await api('uploadCheck',[QN,SEASON,sess.name||f.name,f.size,t0]);
+          if(c&&c.ok&&c.found) return {ok:1};
+        }
         if(String(r.reason||'').indexOf('http-')===0) return {ok:0,error:'Drive refused it ('+r.reason+')'};
       }
     }catch(e){}

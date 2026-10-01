@@ -16,6 +16,10 @@
       session — once — and still lands exactly once.
    5. What Drive assembles is byte-for-byte the file the phone was handed, with
       the type the camera gave it.
+   6. When Drive takes the file but the browser is not allowed to READ its
+      answer (no CORS headers — status 0, exactly like a drop), the app asks
+      Apps Script whether the file landed: no endless "Signal lost", and no
+      second copy through the relay.
 
    The real script is lifted out of harbor-haul-out/index.html and run against a fake Drive
    resumable-upload endpoint that honours Content-Range, answers 308 with a
@@ -76,6 +80,8 @@ function makeDrive(opts) {
     x.setRequestHeader = (k, v) => { x.headers[k.toLowerCase()] = v; };
     x.getResponseHeader = (k) => (opts.hideRange ? null : (x.resHeaders || {})[k.toLowerCase()] || null);
     x.send = (body) => setImmediate(() => {
+      /* Drive does the work; the browser hides whatever it answered. */
+      if (opts.hideAnswers) { const err = x.onerror; x.onload = () => { x.status = 0; err(); }; }
       const s = sessions[x.url];
       if (!s) { x.status = 404; return x.onload(); }
       if (opts.offline && opts.offline()) { x.status = 0; return x.onerror(); }
@@ -167,6 +173,7 @@ function harness(opts) {
       let out = { ok: 1 };
       if (b.fn === 'uploadSession') out = { ok: 1, url: drive.open(b.args[4]) };
       if (b.fn === 'photoInfo') out = { ok: 1, counts: { winter: 1, spring: 0 } };
+      if (b.fn === 'uploadCheck') out = { ok: 1, found: drive.finished().some((u) => drive.sessions[u].size === b.args[3]) };
       return { ok: true, status: 200, json: async () => Object.assign({ _api: 'console' }, out) };
     }
   };
@@ -292,6 +299,39 @@ const count = (arr, v) => arr.filter((x) => x === v).length;
     await drain(h);
     if (h.calls.indexOf('uploadPhoto') < 0) fail('a browser that refuses the direct PUT no longer falls back to the relay');
     else ok('a browser that refuses the direct PUT outright still falls back to the relay');
+  }
+
+  /* 7. Drive takes the photo but the browser may not read the answer. */
+  {
+    const h = harness({ hideAnswers: true });
+    const f = fakeFile('IMG_3310.jpg', 3 * MB, 'image/jpeg');
+    await h.ctx.upload([f]);
+    await drain(h);
+    const done = h.drive.finished();
+    if (done.length !== 1) fail('the photo did not land once in Drive (' + done.length + ')');
+    else ok('a photo whose answer the browser hides still lands exactly once');
+    if (h.calls.indexOf('uploadCheck') < 0) fail('the app never asked Apps Script whether the file landed');
+    else ok('the app asks Apps Script whether it landed instead of guessing "signal lost"');
+    if (h.calls.indexOf('uploadPhoto') > -1) fail('the photo was ALSO sent through the relay — a duplicate in Drive');
+    else ok('and does not send a second copy through the relay');
+    if (h.idb.rows.size) fail('the landed photo is still queued on the phone — it would retry forever');
+    else ok('nothing is left queued to retry');
+    const msg = (h.els.upMsg && h.els.upMsg.textContent) || '';
+    if (/signal/i.test(msg)) fail('the crew is told it is waiting for signal over a photo already in Drive: "' + msg + '"');
+    else ok('and the crew is not told it is waiting for signal (' + msg + ')');
+  }
+
+  /* 8. Same, but the file never got there (a real refusal): relay, once. */
+  {
+    const h = harness({ hideAnswers: true });
+    h.ctx.XMLHttpRequest = function () {
+      this.upload = {}; this.open = () => {}; this.setRequestHeader = () => {};
+      this.send = () => setImmediate(() => { this.status = 0; this.onerror(); });
+    };
+    await h.ctx.upload([fakeFile('port.jpg', 2 * MB, 'image/jpeg')]);
+    await drain(h);
+    if (count(h.calls, 'uploadPhoto') !== 1) fail('a file that did not land was not relayed exactly once (' + count(h.calls, 'uploadPhoto') + ')');
+    else ok('a file Apps Script cannot find goes through the relay, once');
   }
 
   if (bad) { console.error('yard uploads: ' + bad + ' failure(s)'); process.exit(1); }

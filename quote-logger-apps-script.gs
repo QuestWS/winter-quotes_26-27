@@ -1486,7 +1486,10 @@ function consoleFns_(p) {
     uploadPhoto: function (a) { return adminUploadPhoto(p.token, a[0], a[1], a[2], a[3], a[4]); },
     /* A write: it creates a Drive session. Deliberately NOT on CONSOLE_GET_FNS_
        — a link that mints an upload slot is a link that can be followed twice. */
-    uploadSession: function (a) { return adminUploadSession(p.token, a[0], a[1], a[2], a[3], a[4]); },
+    uploadSession: function (a) { return adminUploadSession(p.token, a[0], a[1], a[2], a[3], a[4], a[5]); },
+    /* "Did that file land?" — asked when the browser could not read Drive's own
+       answer. POST like the session it follows: it walks a Drive folder. */
+    uploadCheck: function (a) { return adminUploadCheck(p.token, a[0], a[1], a[2], a[3], a[4]); },
     uploadContract: function (a) { return adminUploadContract(p.token, a[0], a[1], a[2], a[3]); },
     editLine:    function (a) { return adminEditLine(p.token, a[0], a[1], a[2], a[3], a[4]); },
     emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2]); },
@@ -5779,10 +5782,30 @@ const MAX_UPLOAD_BYTES_ = 25 * 1024 * 1024;
    origin and exposes X-GUploader-UploadID, which is only useful to a browser),
    but a preflight against a live session could not be tested without a staff
    PIN. So the client tries this first and falls back to the base64 path — the
-   first real video upload is the last word on it either way. */
-const MAX_DIRECT_BYTES_ = 1024 * 1024 * 1024;   // a sanity bound, not a real limit
+   first real video upload is the last word on it either way.
 
-function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes) {
+   IT WAS THE LAST WORD: Drive took every byte and the phone still said "Signal
+   lost — waiting to carry on…" forever. A session opened server-side, with no
+   Origin, answers the browser's PUTs WITHOUT CORS headers — the file lands, and
+   the browser is not allowed to read the 200 that says so, which looks exactly
+   like a dropped connection. Google's rule for this split (server opens, browser
+   uploads) is that the opening request carries the browser's Origin; Drive then
+   allows that origin on every answer the session gives. So the session is opened
+   with the page's origin, from an allow-list — never whatever the caller says.
+   adminUploadCheck below is the belt to these braces. */
+const MAX_DIRECT_BYTES_ = 1024 * 1024 * 1024;   // a sanity bound, not a real limit
+const UPLOAD_ORIGINS_ = ['https://questws.github.io'];
+function uploadOrigin_(origin) {
+  const o = String(origin || '').replace(/\/+$/, '');
+  return UPLOAD_ORIGINS_.indexOf(o) > -1 ? o : UPLOAD_ORIGINS_[0];
+}
+function uploadName_(fileName) {
+  /* Drive takes the name as data, not as a path, but a newline in a filename
+     would still be a header-shaped surprise in the JSON below. */
+  return String(fileName || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200);
+}
+
+function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes, origin) {
   const who = requireAuth_(token, 'photos');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
@@ -5790,10 +5813,7 @@ function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes
   if (size > MAX_DIRECT_BYTES_) {
     return { ok: 0, error: 'That file is over ' + Math.round(MAX_DIRECT_BYTES_ / 1048576) + ' MB.' };
   }
-  /* Drive takes the name as data, not as a path, but a newline in a filename
-     would still be a header-shaped surprise in the JSON below. */
-  const name = String(fileName || '').replace(/[\r\n]/g, ' ').trim().slice(0, 200) ||
-    ('upload-' + Date.now());
+  const name = uploadName_(fileName) || ('upload-' + Date.now());
   const mime = String(mimeType || '').replace(/[^\w\/.+-]/g, '') || 'application/octet-stream';
   const ff = ensurePhotoFolders_(ctx);
   const target = seasonName === 'spring' ? ff.spring : ff.winter;
@@ -5804,6 +5824,7 @@ function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes
       contentType: 'application/json; charset=UTF-8',
       headers: {
         Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+        Origin: uploadOrigin_(origin),
         'X-Upload-Content-Type': mime,
         'X-Upload-Content-Length': String(size)
       },
@@ -5822,6 +5843,36 @@ function adminUploadSession(token, qn, seasonName, fileName, mimeType, sizeBytes
   auditLog_(who.name, 'Upload session opened for ' + qn + ' (' + seasonName + '): ' + name +
     ' — ' + Math.round(size / 1048576) + ' MB');
   return { ok: 1, url: url, name: name };
+}
+
+/* Did a direct upload land? The phone asks this when Drive's own answer was
+   unreadable (a status-0 error after every byte had gone), because that is
+   either a dropped signal or a finished file the browser was not shown — and
+   guessing wrong is either a crew told "signal lost" about a photo that is
+   already in Drive, or the same photo uploaded twice through the relay. We can
+   see the folder; the browser cannot. A file only counts if it has this name,
+   this exact size, and was made after the session opened (`sinceMs`), so an
+   older photo that happens to share a camera filename does not answer for it.
+   Reads only — the folders exist, because the session that preceded this made
+   them. */
+function adminUploadCheck(token, qn, seasonName, fileName, sizeBytes, sinceMs) {
+  requireAuth_(token, 'photos');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const name = uploadName_(fileName);
+  const size = Math.floor(Number(sizeBytes) || 0);
+  if (!name) return { ok: 1, found: false };
+  const since = Math.max(0, Number(sinceMs) || 0) - 5 * 60 * 1000;   // clock slack
+  const ff = ensurePhotoFolders_(ctx);
+  const target = seasonName === 'spring' ? ff.spring : ff.winter;
+  const it = target.getFilesByName(name);
+  while (it.hasNext()) {
+    const f = it.next();
+    if (size && f.getSize() !== size) continue;
+    if (since > 0 && f.getDateCreated().getTime() < since) continue;
+    return { ok: 1, found: true };
+  }
+  return { ok: 1, found: false };
 }
 
 function adminUploadPhoto(token, qn, seasonName, fileName, base64Data, mimeType) {

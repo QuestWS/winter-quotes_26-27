@@ -640,6 +640,24 @@ exposes `X-GUploader-UploadID` — a header only a browser would want. What coul
 the client tries direct first and falls back; the first real video upload is
 the last word either way.
 
+**What the first real uploads said (Oct 2026).** Drive took every byte and the
+phone still showed *"Signal lost — waiting to carry on…"* on full wifi, forever.
+A session opened server-side **without an `Origin`** answers the browser's PUTs
+with no CORS headers: the file lands, and the browser may not read the 200 that
+says so, which is indistinguishable from a dropped connection. Two fixes, both
+kept:
+
+- `adminUploadSession` opens the session with the page's origin
+  (`UPLOAD_ORIGINS_` allow-list, never whatever the caller sends), which is
+  Google's rule for "server opens, browser uploads".
+- A status-0 on a session Drive has **never given a readable answer on**, with
+  the phone online and either every byte sent or none, is not treated as a
+  drop. The app asks `uploadCheck` (`adminUploadCheck`) whether a file of that
+  name and exact size, made since the session opened, is in the folder. Found:
+  done. Not found: the relay. Never relay first — that is how the same photo
+  lands twice. The staff console's uploader asks the same question before its
+  relay.
+
 ### The base64 relay (the fallback)
 
 The original path: base64 through `adminUploadPhoto`. Still there, still capped

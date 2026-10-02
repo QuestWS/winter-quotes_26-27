@@ -433,7 +433,8 @@ def manual():
             'Not every marina customer has a slip — some only have fuel or food accounts. Tap '
             '<b>Yes — slipholder</b> or <b>No — not a slipholder</b>. <b>Undo</b> puts the flag back.',
             'Or just save the slip number under <b>Keys &amp; slip</b> — a slip number settles it '
-            'on its own.',
+            'on its own. When the slip list has them, <b>Put B-14 in Keys &amp; slip</b> fills the '
+            'box; press <b>Save keys &amp; slip</b> to keep it.',
         ], 'Answering yes does not add the slipholder discount — that is still Add or remove '
            'services. The answer survives the customer re-saving their quote.'),
         ('Add or remove services', 'adjust', [
@@ -589,6 +590,13 @@ def manual():
     s += [P('Matches on email, phone, or first and last name. A quote with a slip number is '
             'never flagged. Only ID, email, name and phone are kept; a new upload replaces the '
             'list. Nobody is emailed and no price changes.', SMALL)]
+    s += steps([
+        'Then load the <b>slip list</b> (same card, <b>Choose the slip list</b>): a spreadsheet with '
+        'a <b>Slip</b> column and a <b>Name</b> (or Email / Phone) column — the Dockwa assignments.',
+        'Everyone on it is settled as a <b>slipholder</b>, and the quote shows their slip. Every '
+        'Heritage Harbor customer <i>not</i> on it is settled as <b>not a slipholder</b>.',
+        'Parking, ramp-pass and In &amp; Out rows never count — they are left out automatically.',
+    ])
 
     s += [P('Restore from a backup — <font color="#A6341F">admin</font>', H2)]
     s += steps([

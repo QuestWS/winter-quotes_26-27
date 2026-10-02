@@ -225,6 +225,7 @@ def manual():
         ['Staff notes', perm('keys'), 'Never seen by the customer'],
         ['Heritage Harbor list: answer slipholder yes / no', perm('keys'), 'No price change'],
         ['Heritage Harbor list: load the marina export', perm('admin'), 'Replaces the old list'],
+        ['Fill blank slip numbers from the slip list', perm('admin'), 'Preview first; snapshot; no re-price'],
         ['Re-measure / change storage / motors', perm('measure'), 'Re-prices; preview then apply'],
         ['Staff accounts, PINs, permissions', perm('admin'), ''],
         ['Pause / resume automatic emails', perm('admin'), 'Banner shows for everyone'],
@@ -596,6 +597,11 @@ def manual():
         'Everyone on it is settled as a <b>slipholder</b>, and the quote shows their slip. Every '
         'Heritage Harbor customer <i>not</i> on it is settled as <b>not a slipholder</b>.',
         'Parking, ramp-pass and In &amp; Out rows never count — they are left out automatically.',
+        'Then <b>See which quotes it would fill</b> → check the list (look twice at any marked '
+        '<b>name only</b>) → <b>Fill these slip numbers</b>. Only quotes with no slip yet are filled; '
+        'a snapshot is saved to Drive first. No price changes, nobody is emailed.',
+        'Anyone listed with more than one slip is not filled — set theirs under Keys &amp; slip. '
+        'Run it again after new quotes come in.',
     ])
 
     s += [P('Restore from a backup — <font color="#A6341F">admin</font>', H2)]

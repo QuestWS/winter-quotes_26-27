@@ -100,7 +100,7 @@ symptom.
 | Keys and slip | `adminKeysApply`, `sanitizeKeys_`, `missingHaulInfo_` | `renderKeys`, `saveKeys` |
 | Staff notes | `adminSetStaffNote` | `renderStaffNote`, `saveStaffNote` |
 | Heritage Harbor slipholder discount | `adminHho`, `hhoSetDecision_`, `hhoInfo_`, `hhoLineEdit_`, `hhoAddForgotten_` (staff add for a customer who forgot); tiers `RULES.hhoTiers`, `withHhoDiscount` (engine) | `renderHho`, `saveHho` |
-| Heritage Harbor customer list (flag until slip or answer) and the slip list | `adminHhListUpload`, `hhParseExport_`, `hhParseSlips_`, `hhIsSlipSpace_`, `hhIndex_`, `hhSlipIndex_`, `hhIndexes_`, `hhMatch_`, `hhFlagOf_`, `adminHhConfirm`, `adminHhListInfo` | `toggleHhList`, `readHhListFile`, `renderHhList`, `saveHhList`, `useHhSlip` |
+| Heritage Harbor customer list (flag until slip or answer) and the slip list | `adminHhListUpload`, `hhParseExport_`, `hhParseSlips_`, `hhIsSlipSpace_`, `hhIndex_`, `hhSlipIndex_`, `hhIndexes_`, `hhMatch_`, `hhFlagOf_`, `adminHhConfirm`, `adminHhListInfo`; filling blank slips: `hhSlipChoice_`, `hhSlipFillScan_`, `adminHhSlipFillPreview`, `adminHhSlipFillApply` | `toggleHhList`, `readHhListFile`, `renderHhList`, `saveHhList`, `useHhSlip`, `previewSlipFill`, `applySlipFill` |
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |

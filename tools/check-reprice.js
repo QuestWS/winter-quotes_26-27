@@ -30,6 +30,10 @@ function payload(name,extra){
   const lines=r.lines.map(l=>({sec:l.sec,label:l.label,calc:l.calc||'',amt:Number(l.amt||0),desc:l.desc||''}));
   return Object.assign({quoteNo:'X',unit:'Boat',depositBase:500,state,lines,
     total:lines.reduce((a,b)=>a+b.amt,0).toFixed(2),payments:[],
+    /* Stamped under today's rates, as a real save would be — otherwise, once
+       PRICING.provisional is false, every fixture reads as stale and is
+       (correctly) offered for a re-date, and "rates unchanged" means nothing. */
+    season:P.seasonStamp(),
     storageTab:P.storageTabFor(state)},extra||{});
 }
 
@@ -74,7 +78,7 @@ function build(engine){
     'const ADJ_CC_PCT=3, ADJ_LATE_PCT=10;',
     'function usd_(n){n=Number(n||0);return "$"+Math.abs(n).toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g,",").replace(/^/, n<0?"-":"");}',
     "const STARTED_TAB='Quote Started';", fn('isStartedTab_'),
-    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
+    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'), fn('priceStampStale_'),
     decl('HEADERS'), decl('COL'), decl('KEYFIELDS_'),
     fn('paymentsTotal_'), fn('effectiveState_'), fn('serverPrice_'), fn('linesTotal_'),
     fn('rebuildLinesFromState_'), fn('ensureManual_'), fn('applyManualOps_'),

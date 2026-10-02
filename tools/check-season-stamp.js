@@ -149,7 +149,7 @@ console.log('=== a re-priced quote is re-dated, not just re-costed ===');
     /* repriceScan_ asks isOffstageTab_ — the lead tab OR the bulk Import tab.
        Both stubs, or it throws and this guard reports a broken season rule
        where there is only a missing definition. */
-    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
+    "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'), fn('priceStampStale_'),
     'const ADJ_CC_PCT=3, ADJ_LATE_PCT=10;',
     'function usd_(n){return "$"+Number(n||0).toFixed(2);}',
     fn('paymentsTotal_'), fn('effectiveState_'), fn('serverPrice_'), fn('linesTotal_'),
@@ -218,7 +218,7 @@ console.log('=== the 10-day reminder and an imported quote ===');
       /* repriceScan_ asks isOffstageTab_ — the lead tab OR the bulk Import tab.
          Both stubs, or it throws and this guard reports a broken season rule
          where there is only a missing definition. */
-      "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
+      "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'), fn('priceStampStale_'),
       'function autoEmailsPaused_(){return false;}',
       /* Nothing is paused in these cases, so no cooldown is running. The
          "lifting a pause restarts the ten days" rule has its own guard, in

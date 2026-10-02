@@ -90,9 +90,11 @@ append-only ledger, never deleted.
 
 
 ## Provisional pricing — a deposit holds a space, not a price
-`PRICES` in the Annual Update Zone still holds **2025–2026** rates, so every
-figure this system produces is an estimate until the 2026–2027 rate card
-lands. `PRICING.provisional` in that same zone is the only switch for it.
+`PRICES` in the Annual Update Zone holds the **2026–2027** card (loaded Oct
+2026) and `PRICING.provisional` is **false**, so quotes are firm. For the
+2026–27 season up to then, `PRICES` held 2025–2026 rates and every figure
+was an estimate; whenever that happens again, `PRICING.provisional` in that
+same zone is the only switch for it.
 
 While it is true, three engine helpers supply every word of it and nothing
 else may:
@@ -197,6 +199,16 @@ and files under 2026-2027 today.
 - **The pre-restore snapshot belongs to the season, not a quote**, so it stays
   on `getFolder_()`, which now follows the current season automatically.
 - `tools/check-season-folders.js` executes all of it, including the rollover.
+
+### The 2026–2027 rollover (Oct 2026)
+Loaded from Chris's *2026-27 Winter Services Menu & Terms* sheet: `SEASON`
+dates (storage Oct 15 2026 – Apr 15 2027, pay by Nov 15 2026, service charge
+from Dec 1 2026), every `PRICES` line on the card, `provisional:false`.
+**Not on the card, so unchanged from 2025–26:** e-bike storage, jet-ski
+detail, acid washes, the impeller "starting at" figure, the Heritage Harbor
+tiers. Blocking is still one $194 line, so `blocking` and `blockingPontoon`
+both carry it. Existing quotes keep their 2025–26 figures until the console's
+**Season re-price** runs; then the **Firm quote** goes out.
 
 ### At the rollover
 1. Update `PRICES` (and `SEASON`) in the Annual Update Zone.

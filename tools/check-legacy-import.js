@@ -278,8 +278,22 @@ console.log('\n=== 14. parse -> state -> priced by the LIVE engine ===');
     /belongs with the OUTSIDE option/.test(m.notes.join(' ')),JSON.stringify(m.notes).slice(0,120));
   const noWrap=JSON.parse(JSON.stringify(st)); noWrap.wrap=false;
   console.log('   without the wrap: $'+money(noWrap).toFixed(2)+'   (sheet inside = $2,648)');
-  check('dropping the wrap lands within a few dollars of the sheet',
-    Math.abs(money(noWrap)-2648)<25,'got '+money(noWrap).toFixed(2));
+  /* The sheet was priced on the 2025-26 card, so the comparison has to be
+     too — this proves the SELECTIONS carried over, which a rate rollover must
+     not be able to break. Last season's card is laid over PRICES only for
+     this one figure and then put back. */
+  const LAST_CARD={basic:{inboard:298,io:298,outboard:177,pwc:111,jet:111},
+    full:{inboard:458,io:502,outboard:253,pwc:230,jet:230},dtTrans:144,dtTransom:191,
+    retrieveSmall:17,retrieveLarge:23,retrieveCustTrailer:198,outsidePerFt:18,
+    insidePremNT:8.29,insidePremT:7.29,insideNT:6.29,insideT:5.29,golfCart:365,
+    wrapLaborFt:23,wrapInWaterFt:11,wrapMatSqft:0.75,wrapFlat20:325,wrapFlat24:425,
+    powerwashFt:5.39,blocking:185,blockingPontoon:185};
+  const saved={};Object.keys(LAST_CARD).forEach(k=>{saved[k]=P.PRICES[k];P.PRICES[k]=LAST_CARD[k];});
+  const lastSeason=money(noWrap);
+  Object.keys(saved).forEach(k=>{P.PRICES[k]=saved[k];});
+  console.log('   at the 2025-26 card: $'+lastSeason.toFixed(2));
+  check('dropping the wrap lands within a few dollars of the sheet (at the card it was priced on)',
+    Math.abs(lastSeason-2648)<25,'got '+lastSeason.toFixed(2));
 }
 
 console.log('\n=== 15. a comparison sheet with NO pick imports without storage ===');

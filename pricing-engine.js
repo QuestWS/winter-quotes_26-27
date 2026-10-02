@@ -27,40 +27,40 @@
    ANNUAL UPDATE ZONE — everything that changes year to year lives here.
 ============================================================================ */
 const SEASON = {
-  seasonLabel:      '2025–2026',
-  payByDate:        'November 15, 2025',
+  seasonLabel:      '2026–2027',
+  payByDate:        'November 15, 2026',
   payByShort:       'Nov 15',
-  lateChargeStart:  'Dec 1, 2025',
-  storageStart:     'October 15, 2025',
+  lateChargeStart:  'Dec 1, 2026',
+  storageStart:     'October 15, 2026',
   storageStartShort:'Oct 15',
-  storageEnd:       'April 15, 2026',
+  storageEnd:       'April 15, 2027',
 };
 
 const PRICES = {
-  basic:  { inboard:298, io:298, outboard:177, pwc:111 },
-  full:   { inboard:458, io:502, outboard:253, pwc:230 },
-  dtTrans:144, dtTransom:191,
+  basic:  { inboard:304, io:304, outboard:187, pwc:117 },
+  full:   { inboard:475, io:526, outboard:263, pwc:233 },
+  dtTrans:144, dtTransom:197,
   ballast:80, waterCold:122, waterHead:252, pumpout:88, addlHeads:46, ac:116, genBasic:101, genFull:270,
-  retrieveSmall:17,
-  retrieveLarge:23,
-  retrieveCustTrailer:198,
-  outsidePerFt:18,
-  insidePremNT:8.29, insidePremT:7.29, insideNT:6.29, insideT:5.29,
-  golfCart:365,
+  retrieveSmall:18,
+  retrieveLarge:24,
+  retrieveCustTrailer:208,
+  outsidePerFt:19,
+  insidePremNT:8.70, insidePremT:7.65, insideNT:6.60, insideT:5.55,
+  golfCart:385,
   ebikeStorage:160,     // includes a tune-up
   skiDetail:175,        // flat, per ski
-  wrapLaborFt:23, wrapInWaterFt:11, wrapMatSqft:0.75, wrapFlat20:325, wrapFlat24:425,
-  powerwashFt:5.39, acidNarrowFt:17, acidWideFt:22, lateRetrieval:225,
+  wrapLaborFt:24, wrapInWaterFt:12, wrapMatSqft:0.88, wrapFlat20:350, wrapFlat24:450,
+  powerwashFt:5.66, acidNarrowFt:17, acidWideFt:22, lateRetrieval:225,
   /* Impeller change stays a QUOTE_ITEMS request — boat-to-boat variance is
      too wide to price outright — but showing a baseline next to the checkbox
      gives customers something to plan around. Display only; not a priced
      line, so this number is never added into any total. */
   impellerStartingAt:225,
   /* Blocking a pontoon is a different job from blocking a deep-V on stands.
-     Both rates are $185 for 2025-2026; Chris splits them at the 2026-2027
-     rollover, and this is already wired so that is a one-number edit here
-     rather than a change to the engine. */
-  blocking:185, blockingPontoon:185,
+     The 2026-2027 card still prices them as one line ($194, "all boats
+     w/out trailers"), so both carry it; splitting them later is a
+     one-number edit here rather than a change to the engine. */
+  blocking:194, blockingPontoon:194,
 };
 /* Jet-drive boats winterize exactly like a PWC/jetski — no drive oil, no
    gimbal ring, none of the shaft-drive steps — so this ALIASES the pwc rate
@@ -94,8 +94,8 @@ const RULES = {
    PROVISIONAL PRICING — the one switch that turns every estimate disclaimer
    on, and off again.
    ----------------------------------------------------------------------------
-   PRICES above still holds last season's numbers because the next rate card
-   is not published yet, so every quote we hand out is an ESTIMATE: a deposit
+   Whenever PRICES has to hold last season's numbers because the next rate
+   card is not published yet, every quote we hand out is an ESTIMATE: a deposit
    reserves a storage space and a place in the retrieval order, it does not
    hold a price. While `provisional` is true, the banner on the quote page,
    the wording on the pay step, the live ticket, the PDF and every customer
@@ -111,9 +111,9 @@ const RULES = {
    false.
 ---------------------------------------------------------------------------- */
 const PRICING = {
-  provisional: true,
-  ratesLabel:  '2025–2026',   // the season the numbers in PRICES came from
-  nextLabel:   '2026–2027',   // the season they are being updated to
+  provisional: false,
+  ratesLabel:  '2026–2027',   // the season the numbers in PRICES came from
+  nextLabel:   '2027–2028',   // the season they are being updated to
 };
 
 /* ----------------------------------------------------------------------------

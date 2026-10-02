@@ -223,6 +223,8 @@ def manual():
         ['Harbor Haul Out status: pulled / dropped off / stored / undo', perm('keys'), 'Pull only if cleared'],
         ['Harbor Haul Out log entry (typed or voice)', perm('keys'), 'Append-only'],
         ['Staff notes', perm('keys'), 'Never seen by the customer'],
+        ['Heritage Harbor list: answer slipholder yes / no', perm('keys'), 'No price change'],
+        ['Heritage Harbor list: load the marina export', perm('admin'), 'Replaces the old list'],
         ['Re-measure / change storage / motors', perm('measure'), 'Re-prices; preview then apply'],
         ['Staff accounts, PINs, permissions', perm('admin'), ''],
         ['Pause / resume automatic emails', perm('admin'), 'Banner shows for everyone'],
@@ -424,6 +426,16 @@ def manual():
             'Write why the quote is the way it is — discounts, odd dimensions, phone agreements.',
             '<b>Save note</b>. Never on the PDF or in any email.',
         ], None),
+        ('Heritage Harbor customer', 'keys', [
+            'Shown when the customer is on the marina\'s customer list. It says which list entry '
+            'matched, and on what — email, phone or name. A name-only match: check it is the '
+            'same person.',
+            'Not every marina customer has a slip — some only have fuel or food accounts. Tap '
+            '<b>Yes — slipholder</b> or <b>No — not a slipholder</b>. <b>Undo</b> puts the flag back.',
+            'Or just save the slip number under <b>Keys &amp; slip</b> — a slip number settles it '
+            'on its own.',
+        ], 'Answering yes does not add the slipholder discount — that is still Add or remove '
+           'services. The answer survives the customer re-saving their quote.'),
         ('Add or remove services', 'adjust', [
             'Every service the customer\'s own page offers is listed, showing what is on the quote now: '
             'drive train, water systems, retrieval, shrinkwrap, washing, jetski detail and the '
@@ -565,6 +577,18 @@ def manual():
 
     s += [P('Staff &amp; permissions — <font color="#A6341F">admin</font>', H2)]
     s += [P('See Section 2.')]
+
+    s += [P('Heritage Harbor customer list — <font color="#A6341F">admin</font>', H2)]
+    s += steps([
+        'Export the contacts list from the marina\'s system (.xlsx or .csv).',
+        'Menu → <b>Heritage Harbor list</b> → <b>Choose the export file</b>. It says how many '
+        'contacts loaded and how many quotes match.',
+        'Storage view → <b>Heritage Harbor</b> tab lists every customer still to answer, imported '
+        'drafts included. Open each one and answer on its Heritage Harbor customer card.',
+    ])
+    s += [P('Matches on email, phone, or first and last name. A quote with a slip number is '
+            'never flagged. Only ID, email, name and phone are kept; a new upload replaces the '
+            'list. Nobody is emailed and no price changes.', SMALL)]
 
     s += [P('Restore from a backup — <font color="#A6341F">admin</font>', H2)]
     s += steps([
@@ -826,6 +850,7 @@ def manual():
         ['Fix the boat\'s size', 'Unit details &amp; storage / Harbor Haul Out Measurements', perm('measure')],
         ['Move them to inside storage', 'Unit details &amp; storage', perm('measure')],
         ['Record keys / slip', 'Keys &amp; slip', perm('keys')],
+        ['Clear a Heritage Harbor flag', 'Storage view → Heritage Harbor, then the quote\'s card', perm('keys')],
         ['Warn staff about a unit', 'Harbor Haul Out alert', perm('keys')],
         ['Mark a unit dropped off', 'Harbor Haul Out app (Awaiting) or status card', perm('keys')],
         ['Mark a unit pulled / stored', 'Harbor Haul Out app, or its status card', perm('keys')],

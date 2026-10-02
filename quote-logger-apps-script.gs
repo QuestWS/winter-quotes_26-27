@@ -1251,6 +1251,10 @@ function doPost(e) {
          customer's browser has never heard of them, so a save that dropped
          them would put the winterize alert back on a boat already done. */
       if (oldD.winterWork) d.winterWork = oldD.winterWork;
+      /* Staff's answer to "is this Heritage Harbor customer a slipholder?"
+         (hhFlagOf_). The browser has never heard of it either, and losing it
+         would put a customer staff already cleared back on the to-confirm list. */
+      if (oldD.hhList) d.hhList = oldD.hhList;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1436,7 +1440,7 @@ const CONSOLE_GET_FNS_ = {
   auth: 1,
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
-  listStaff: 1, autoPause: 1, draftList: 1,
+  listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
      arrives, and it is the cleanest reading of what an empty call costs. */
@@ -1470,6 +1474,10 @@ function consoleFns_(p) {
     servicesApply:   function (a) { return adminServicesApply(p.token, a[0], a[1]); },
     hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2], a[3]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
+    hhConfirm:   function (a) { return adminHhConfirm(p.token, a[0], a[1]); },
+    hhListInfo:  function (a) { return adminHhListInfo(p.token); },
+    /* Replaces the whole Heritage Harbor list tab — a write, so POST only. */
+    hhListUpload:function (a) { return adminHhListUpload(p.token, a[0], a[1]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
@@ -3563,7 +3571,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 8;
+const STORAGE_VIEW_V_ = 9;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -5258,6 +5266,269 @@ function adminSetStaffNote(token, qn, note) {
            staffNote: txt, by: d.staffNoteBy || '', at: d.staffNoteAt || '' };
 }
 
+/* THE HERITAGE HARBOR CUSTOMER LIST — "is this one a slipholder?"
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: the marina's contacts export lists every Heritage Harbor
+   customer, "not all are slip-holders — some may just have fuel or food
+   accounts." Every quote whose customer is on that list is FLAGGED on the
+   console until somebody answers yes or no; a slip number already on the
+   quote answers it without anybody opening the quote.
+
+   What decides each piece:
+
+   - THE LIST LIVES IN THE SPREADSHEET, never the repo. It is real customers'
+     names, emails and phones, and the repo is public (CLAUDE.md §4b). An
+     admin uploads the export on the console (adminHhListUpload); only the
+     four columns matching needs are kept, on the HH_LIST_TAB tab — the
+     addresses and the marina's own notes are dropped on the way in. A new
+     upload replaces the old list entirely.
+   - MATCHED, NOT STORED. Which quotes are on the list is worked out on every
+     read (hhFlagOf_) against a cached index of that tab, so a quote saved
+     tomorrow is flagged tomorrow, and a re-upload re-flags everything at once.
+     Only staff's ANSWER is stored, on the payload as d.hhList.
+   - EMAIL, PHONE OR NAME. Any one is a match: a customer who used a different
+     email with the marina still has the same phone. A name-only match is
+     the weakest, and the card says which ones matched so staff can tell.
+     A false match costs one tap of "No"; a missed one means nobody is ever
+     asked, which is why this leans towards flagging.
+   - A SLIP NUMBER SETTLES IT. Read through the effective state, so a slip
+     recorded under Keys & slip counts the moment it is saved.
+   - NOT MONEY. Answering yes does not add the slipholder discount — that
+     stays its own decision on the services card (hhoAddForgotten_). The
+     answer is the same trusted-staff bar as the staff note: 'keys'. */
+const HH_LIST_TAB = 'Heritage Harbor List';
+const HH_LIST_HEAD_ = ['Customer ID', 'Email', 'Name', 'Phone'];
+const HH_INDEX_TTL_ = 3600;              // seconds; every upload drops it
+const HH_NAME_SKIP_ = { jr: 1, sr: 1, ii: 1, iii: 1, iv: 1, mr: 1, mrs: 1, ms: 1, dr: 1 };
+
+function hhHas_(o, k) { return !!k && Object.prototype.hasOwnProperty.call(o, k); }
+function hhNormEmail_(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s : '';
+}
+/* The last ten digits, so "+1 (815) 555-0123" and "8155550123" agree. Shorter
+   than ten is not a number we can be sure of, so it never matches. */
+function hhNormPhone_(v) {
+  const d = String(v === null || v === undefined ? '' : v).replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : '';
+}
+function hhWords_(s) {
+  return String(s || '').toLowerCase().replace(/['’.]/g, '').replace(/[^a-z]+/g, ' ').trim()
+    .split(' ').filter(function (w) { return w && !HH_NAME_SKIP_[w]; });
+}
+/* "first last" keys for one name as the marina writes it. A couple is one
+   contact — "John & Jane Smith" — and either of them may be the one who
+   quoted, so each gets a key, sharing the surname when only one is written.
+   One word alone (a business, a first name) gives no key: too loose. */
+function hhListNameKeys_(name) {
+  const parts = String(name || '').split(/\s*&\s*|\s+and\s+|\s*\/\s*/i).map(hhWords_)
+    .filter(function (p) { return p.length; });
+  if (!parts.length) return [];
+  const lastPart = parts[parts.length - 1];
+  if (lastPart.length < 2) return [];
+  const surname = lastPart[lastPart.length - 1];
+  const keys = [];
+  parts.forEach(function (p) {
+    const k = p[0] + ' ' + (p.length >= 2 ? p[p.length - 1] : surname);
+    if (keys.indexOf(k) < 0) keys.push(k);
+  });
+  return keys;
+}
+/* The same keys for a quote's first and last name boxes. */
+function hhQuoteNameKeys_(first, last) {
+  const sur = hhWords_(last);
+  if (!sur.length) return [];
+  const s = sur[sur.length - 1];
+  const keys = [];
+  String(first || '').split(/\s*&\s*|\s+and\s+|\s*\/\s*/i).forEach(function (f) {
+    const w = hhWords_(f);
+    if (!w.length) return;
+    const k = w[0] + ' ' + s;
+    if (keys.indexOf(k) < 0) keys.push(k);
+  });
+  return keys;
+}
+/* rows: [[customer id, email, name, phone], ...] — the tab's own shape. */
+function hhBuildIndex_(rows) {
+  const idx = { e: {}, p: {}, n: {}, names: [], count: 0 };
+  (rows || []).forEach(function (r) {
+    const e = hhNormEmail_(r[1]), p = hhNormPhone_(r[3]), ks = hhListNameKeys_(r[2]);
+    if (!e && !p && !ks.length) return;
+    const i = idx.names.length;
+    idx.names.push(String(r[2] || '').trim() || String(r[0] || '').trim());
+    if (e && !hhHas_(idx.e, e)) idx.e[e] = i;
+    if (p && !hhHas_(idx.p, p)) idx.p[p] = i;
+    ks.forEach(function (k) { if (!hhHas_(idx.n, k)) idx.n[k] = i; });
+  });
+  idx.count = idx.names.length;
+  return idx;
+}
+/* {on: ['email','phone','name'], name: <the list's name>} or null. */
+function hhMatch_(idx, email, phone, first, last) {
+  if (!idx || !idx.count) return null;
+  const on = [];
+  let at = -1;
+  const e = hhNormEmail_(email);
+  if (e && hhHas_(idx.e, e)) { on.push('email'); at = idx.e[e]; }
+  const p = hhNormPhone_(phone);
+  if (p && hhHas_(idx.p, p)) { on.push('phone'); if (at < 0) at = idx.p[p]; }
+  hhQuoteNameKeys_(first, last).some(function (k) {
+    if (!hhHas_(idx.n, k)) return false;
+    on.push('name'); if (at < 0) at = idx.n[k];
+    return true;
+  });
+  return on.length ? { on: on, name: String(idx.names[at] || '') } : null;
+}
+function hhIndex_() {
+  const c = cacheGetBig_('hhIndex');
+  if (c) { try { return JSON.parse(c); } catch (e) {} }
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HH_LIST_TAB);
+  const last = sh ? sh.getLastRow() : 0;
+  const idx = hhBuildIndex_(last > 1 ? sh.getRange(2, 1, last - 1, HH_LIST_HEAD_.length).getValues() : []);
+  cachePutBig_('hhIndex', JSON.stringify(idx), HH_INDEX_TTL_);
+  return idx;
+}
+/* The flag for one quote, or null when the customer is not on the list.
+     state 'open' — on the list, nobody has answered: the console flags it
+           'slip' — a slip number is on the quote, which settles it
+           'yes' / 'no' — staff answered (d.hhList)
+   `r` is the quote's sheet row (contact fallback for payloads without one);
+   `slip` the effective slip when the caller already has it. */
+function hhFlagOf_(d, idx, r, slip) {
+  if (!d || !idx || !idx.count) return null;
+  const cell = function (col) { return r ? r[col - 1] : ''; };
+  /* Through the house formatter like every other phone read here; matching
+     only looks at the digits, which fmtPhone never changes. */
+  const m = hhMatch_(idx, d.email || cell(COL.EMAIL), fmtPhone(String(d.phone || cell(COL.PHONE) || '')),
+                     d.firstName || cell(COL.FIRST), d.lastName || cell(COL.LAST));
+  if (!m) return null;
+  if (slip === undefined) {
+    const st = effectiveState_(d) || d.state || {};
+    slip = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '');
+  }
+  slip = String(slip || '').trim();
+  const dec = d.hhList || null;
+  const ans = dec && (dec.answer === 'yes' || dec.answer === 'no') ? dec.answer : '';
+  return { state: slip ? 'slip' : (ans || 'open'), on: m.on, listName: m.name, slip: slip,
+           answer: ans, by: String((dec && dec.by) || ''), at: String((dec && dec.at) || ''),
+           land: isLandUnit_(d) };
+}
+
+/* Yes, no, or 'clear' to take the answer back and flag it again. */
+function adminHhConfirm(token, qn, answer) {
+  const who = requireAuth_(token, 'keys');
+  const a = String(answer || '');
+  if (['yes', 'no', 'clear'].indexOf(a) < 0) return { ok: 0, error: 'Unknown answer.' };
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const had = (d.hhList && d.hhList.answer) || '';
+  if ((a === 'clear' && !had) || a === had) return { ok: 0, error: 'Nothing changed.' };
+  if (a === 'clear') delete d.hhList;
+  else d.hhList = { answer: a, by: who.name, at: new Date().toISOString() };
+  /* Payload only — like the staff note, an answer is not a change to the quote. */
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Heritage Harbor list on ' + d.quoteNo + ': ' +
+    (a === 'yes' ? 'confirmed slipholder' : a === 'no' ? 'confirmed NOT a slipholder' : 'answer cleared, flagged again'));
+  let flag = null;
+  try { flag = hhFlagOf_(d, hhIndex_(), ctx.row || null); } catch (e) { flag = null; }
+  return { ok: 1, msg: a === 'yes' ? 'Marked as a slipholder.' : a === 'no' ? 'Marked as not a slipholder.' : 'Answer cleared.',
+           hhList: flag };
+}
+
+function hhListMeta_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('HH_LIST_META') || 'null'); }
+  catch (e) { return null; }
+}
+function adminHhListInfo(token) {
+  requireAuth_(token, 'view');
+  return { ok: 1, meta: hhListMeta_() };
+}
+
+/* Find the heading row and the four columns in whatever the export gives us.
+   Built for the marina's "Contacts Export" (title rows, then Customer ID,
+   Email, Customer Name, Phone, address..., Customer Notes), tolerant of a
+   CSV of the same, or one with First/Last name columns instead. */
+function hhParseExport_(grid) {
+  const norm = function (v) { return String(v === null || v === undefined ? '' : v).trim().toLowerCase(); };
+  let hr = -1, col = null;
+  for (let i = 0; i < Math.min((grid || []).length, 20) && hr < 0; i++) {
+    const h = (grid[i] || []).map(norm);
+    const find = function (re) { for (let c = 0; c < h.length; c++) if (re.test(h[c])) return c; return -1; };
+    const c = { id: find(/^(customer\s*)?id$|customer\s*(id|#|no)/), email: find(/^e-?mail/),
+                name: find(/^(customer\s*|full\s*|contact\s*)?name$/), first: find(/^first\s*name$/),
+                last: find(/^last\s*name$/), phone: find(/phone|mobile|cell/) };
+    if (c.email >= 0 && (c.name >= 0 || (c.first >= 0 && c.last >= 0))) { hr = i; col = c; }
+  }
+  if (hr < 0) return { error: 'Could not find the column headings in that file — it needs at least an Email column and a Name (or First name and Last name) column.' };
+  const get = function (r, c) { return c >= 0 ? String(r[c] === null || r[c] === undefined ? '' : r[c]).trim() : ''; };
+  const rows = [];
+  grid.slice(hr + 1).forEach(function (r) {
+    const name = col.name >= 0 ? get(r, col.name) : [get(r, col.first), get(r, col.last)].filter(Boolean).join(' ');
+    const row = [get(r, col.id), get(r, col.email), name, get(r, col.phone)];
+    if (row[1] || row[2] || row[3]) rows.push(row);
+  });
+  if (!rows.length) return { error: 'Found the headings, but no customers under them.' };
+  return { rows: rows };
+}
+
+/* Admins only: replaces the list. The upload goes through Drive's converter
+   (uploadAsSheet_, the same road the backup restore takes), is read, and the
+   temporary copy is trashed whatever happens. */
+function adminHhListUpload(token, fileName, base64Data) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  if (!base64Data) return { ok: 0, error: 'No file received.' };
+  const name = String(fileName || 'contacts.xlsx');
+  const csv = /\.csv$/i.test(name);
+  let fileId;
+  try {
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data),
+      csv ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name);
+    fileId = uploadAsSheet_(blob, 'Heritage Harbor list upload ' + new Date().toISOString());
+  } catch (err) {
+    return { ok: 0, error: 'Drive could not read that file. Upload the contacts export as .xlsx or .csv. (' +
+             String(err.message || err).slice(0, 120) + ')' };
+  }
+  let grid;
+  try { grid = SpreadsheetApp.openById(fileId).getSheets()[0].getDataRange().getValues(); }
+  catch (err) { grid = null; }
+  try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
+  if (!grid) return { ok: 0, error: 'Could not read that file.' };
+  const parsed = hhParseExport_(grid);
+  if (parsed.error) return { ok: 0, error: parsed.error };
+  const rows = parsed.rows;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(HH_LIST_TAB);
+  if (!sh) sh = ss.insertSheet(HH_LIST_TAB);
+  sh.clearContents();
+  /* Text, so a phone number or a numeric customer id is not turned into a
+     number Sheets then prints as 1.81555E+10. */
+  sh.getRange(1, 1, rows.length + 1, HH_LIST_HEAD_.length).setNumberFormat('@');
+  sh.getRange(1, 1, 1, HH_LIST_HEAD_.length).setValues([HH_LIST_HEAD_]).setFontWeight('bold');
+  sh.getRange(2, 1, rows.length, HH_LIST_HEAD_.length).setValues(rows);
+  sh.setFrozenRows(1);
+  const meta = { count: rows.length, at: new Date().toISOString(), by: who.name, file: name };
+  PropertiesService.getScriptProperties().setProperty('HH_LIST_META', JSON.stringify(meta));
+  cacheDropBig_('hhIndex');
+
+  /* How many quotes it touches, from the same view the console will show. */
+  let open = 0, matched = 0;
+  try {
+    const v = storageViewBuild_({ fresh: true });
+    (v.groups || []).forEach(function (g) {
+      (g.rows || []).forEach(function (x) { if (x.hh) matched++; if (x.hh === 'open') open++; });
+    });
+  } catch (e) {}
+  auditLog_(who.name, 'Heritage Harbor customer list loaded from ' + name + ': ' + rows.length +
+    ' contacts; ' + matched + ' quote(s) match, ' + open + ' to confirm');
+  return { ok: 1, meta: meta, matched: matched, open: open,
+           msg: rows.length + ' contacts loaded. ' + matched + ' quote' + (matched === 1 ? '' : 's') +
+                ' on the storage list match' + (matched === 1 ? 'es' : '') + '; ' + open +
+                ' still need a yes or no (the rest already have a slip number or an answer).' };
+}
+
 /* THE CUSTOMER'S NOTE, edited by staff.
    ---------------------------------------------------------------------------
    "Notes / special requests" is the customer's box, but an imported quote's
@@ -5436,6 +5707,11 @@ function adminLookup(token, qn) {
       });
     })(),
     hho: hhoInfo_(d),
+    /* On the Heritage Harbor customer list? null when not (or no list loaded).
+       Never the reason a quote fails to open. */
+    hhList: (function () {
+      try { return hhFlagOf_(d, hhIndex_(), ctx.row || null); } catch (e) { return null; }
+    })(),
     /* The services card: SERVICE_MENU for this unit, pre-filled with what is
        in force and marked where it is Quest's doing rather than the customer's. */
     services: servicesInfo_(d),
@@ -7783,6 +8059,11 @@ function storageViewBuild_(opt) {
   const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
   const tRead = Date.now() - tRead0;
   const where = [];                      // every (quote, tab, row) read, for the row cache
+  /* The Heritage Harbor list, matched against every row below. Cached, so
+     this is one cache read, not a sheet read. Never the reason the view
+     fails to open. */
+  let hhIdx = null;
+  try { hhIdx = hhIndex_(); } catch (e) { hhIdx = null; }
   sheets.forEach(function (sh, si) {
     if (grids) {
       if (!grids[si]) return;
@@ -7813,7 +8094,7 @@ function storageViewBuild_(opt) {
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
-            winter = null, season = '';
+            winter = null, season = '', hh = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -7859,6 +8140,12 @@ function storageViewBuild_(opt) {
              what staff need to see during a rollover: who is still on last
              year's rates. Off the payload already parsed; costs nothing. */
           season = String((pd.season && pd.season.label) || '');
+          /* On the Heritage Harbor list and not yet settled: 'open'. The slip
+             just read above is what settles it without anybody opening the
+             quote. Only the state crosses — the matched name and how it
+             matched are the quote card's business. */
+          const hf = hhFlagOf_(pd, hhIdx, r, slip);
+          hh = hf ? hf.state : '';
         } catch (e) {}
         rows.push({ qn: r[COL.QN - 1],
           name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
@@ -7890,6 +8177,9 @@ function storageViewBuild_(opt) {
           /* Season label of the rates on this quote; '' if it predates the
              stamp. The console compares it to currentSeason (below). */
           season: season,
+          /* Heritage Harbor list: '' (not on it), 'open' (confirm), 'slip',
+             'yes' or 'no'. See hhFlagOf_. */
+          hh: hh,
           balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
       });
     }
@@ -8203,6 +8493,8 @@ function adminDraftList(token) {
   const head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
   const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
   const rows = [];
+  let hhIdx = null;
+  try { hhIdx = hhIndex_(); } catch (e) { hhIdx = null; }
   head.forEach(function (r, i) {
     const qn = String(r[COL.QN - 1] || '').trim();
     if (!qn) return;
@@ -8221,6 +8513,9 @@ function adminDraftList(token) {
       total: usd_(Number(pd.total || 0)),
       deposit: paid > 0.005,
       cnote: customerNoteOf_(pd).slice(0, CNOTE_LIST_MAX_),
+      /* Last year's customers are exactly who is on the Heritage Harbor list,
+         so the drafts carry the flag too. */
+      hh: (function () { try { const f = hhFlagOf_(pd, hhIdx, r); return f ? f.state : ''; } catch (e) { return ''; } })(),
       balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
   });
   rows.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });

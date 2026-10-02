@@ -395,6 +395,23 @@ they are a slipholder (Chris, Oct 2026).
   contacts list but not the slip list, not a slipholder. Order: a slip on the
   quote, then staff's answer, then the slip list, then open. With no slip list
   loaded nobody is assumed not to be a slipholder.
+- **Fill blank slip numbers** (same card, admins; Chris, Oct 2026: "instead
+  of the manual flag ... fill in matching names with blank slip numbers").
+  Preview then apply (`hhSlipFillScan_`, `adminHhSlipFillPreview`,
+  `adminHhSlipFillApply`). Only quotes with **no** slip, water units only,
+  and only where exactly one slip fits the unit (`hhSlipChoice_`: an email or
+  phone match beats a name-only one; a jet ski takes a PWC pod and a boat
+  never does). Two candidate slips are listed as ambiguous and left for a
+  person; staff's "not a slipholder" answer wins and is listed, not filled.
+  The write is a staff correction, not a re-save: `manual.measured.slipNo` (so
+  the customer's next save keeps it) plus `d.slipNo` and a `d.slipFill`
+  record, **payload column only** — never `saveQuoteRow_`, which would
+  re-price, rebuild the PDF and mark every quote "Adjusted — not yet sent". A
+  spreadsheet snapshot goes to Drive before the first write (no snapshot, no
+  write), each fill is one Activity Log line, and the payload is re-read
+  right before each write. Clearing the box under Keys & slip undoes one. A
+  quote saved after the run is not filled until it is run again; its card
+  still offers the slip.
 - **Dockwa's assignment view is a PDF calendar, not a list.** The console
   takes a spreadsheet, so the first one (Oct 2026) was converted outside the
   repo into `Slip, Boat, Name`. Dockwa truncates long names in that view

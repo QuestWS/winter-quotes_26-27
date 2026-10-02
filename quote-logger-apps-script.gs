@@ -1255,6 +1255,9 @@ function doPost(e) {
          (hhFlagOf_). The browser has never heard of it either, and losing it
          would put a customer staff already cleared back on the to-confirm list. */
       if (oldD.hhList) d.hhList = oldD.hhList;
+      /* Where a slip number came from when it was filled in from the slip
+         list (adminHhSlipFillApply). The slip itself is in the journal. */
+      if (oldD.slipFill) d.slipFill = oldD.slipFill;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1478,6 +1481,10 @@ function consoleFns_(p) {
     hhListInfo:  function (a) { return adminHhListInfo(p.token); },
     /* Replaces the whole Heritage Harbor list tab — a write, so POST only. */
     hhListUpload:function (a) { return adminHhListUpload(p.token, a[0], a[1], a[2]); },
+    /* The preview only reads, but walks every payload — POST like re-price's. */
+    hhSlipFillPreview: function (a) { return adminHhSlipFillPreview(p.token); },
+    /* Writes slip numbers onto many quotes: a write, POST only, carries a rid. */
+    hhSlipFillApply:   function (a) { return adminHhSlipFillApply(p.token, a[0]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
@@ -5353,7 +5360,10 @@ function hhQuoteNameKeys_(first, last) {
    match — the slip list uses it for the slip number and boat. */
 function hhBuildIndex_(rows, extra) {
   const idx = { e: {}, p: {}, n: {}, names: [], count: 0 };
-  if (extra) idx.x = [];
+  /* With `extra` (the slip list) every entry under a key is kept, not just
+     the first: one owner can hold a boat slip and a PWC pod. */
+  if (extra) { idx.x = []; idx.em = {}; idx.pm = {}; idx.nm = {}; }
+  const multi = function (m, k, i) { if (!hhHas_(m, k)) m[k] = []; if (m[k].indexOf(i) < 0) m[k].push(i); };
   (rows || []).forEach(function (r) {
     const e = hhNormEmail_(r[1]), p = hhNormPhone_(r[3]), ks = hhListNameKeys_(r[2]);
     if (!e && !p && !ks.length) return;
@@ -5363,6 +5373,11 @@ function hhBuildIndex_(rows, extra) {
     if (e && !hhHas_(idx.e, e)) idx.e[e] = i;
     if (p && !hhHas_(idx.p, p)) idx.p[p] = i;
     ks.forEach(function (k) { if (!hhHas_(idx.n, k)) idx.n[k] = i; });
+    if (extra) {
+      if (e) multi(idx.em, e, i);
+      if (p) multi(idx.pm, p, i);
+      ks.forEach(function (k) { multi(idx.nm, k, i); });
+    }
   });
   idx.count = idx.names.length;
   return idx;
@@ -5437,6 +5452,45 @@ function hhSlipIndex_() {
   cachePutBig_('hhSlipIndex', JSON.stringify(idx), HH_INDEX_TTL_);
   return idx;
 }
+/* WHICH SLIP. Every slip-list entry this customer matches, narrowed to the
+   one that fits this quote's unit:
+   - an email or phone match beats a name-only one, when there are both;
+   - a jet ski takes a PWC pod and a boat never does — one owner often has
+     both, and the jet ski quote must not be handed the boat's slip;
+   - more than one slip left (two boats, two slips) is AMBIGUOUS: the options
+     are offered, and nothing is filled automatically.
+   Returns null when the customer is not on the slip list at all; otherwise
+   {slip ('' when none fits or ambiguous), boat, name, on, options, ambiguous}. */
+function hhSlipChoice_(sIdx, who, unitKind) {
+  if (!sIdx || !sIdx.count || !sIdx.em) return null;
+  const hits = {};
+  const add = function (arr, how) {
+    (arr || []).forEach(function (i) { hits[i] = hits[i] || []; if (hits[i].indexOf(how) < 0) hits[i].push(how); });
+  };
+  const e = hhNormEmail_(who[0]), p = hhNormPhone_(who[1]);
+  if (e && hhHas_(sIdx.em, e)) add(sIdx.em[e], 'email');
+  if (p && hhHas_(sIdx.pm, p)) add(sIdx.pm[p], 'phone');
+  hhQuoteNameKeys_(who[2], who[3]).forEach(function (k) { if (hhHas_(sIdx.nm, k)) add(sIdx.nm[k], 'name'); });
+  const all = Object.keys(hits).map(function (i) { return { i: Number(i), on: hits[i] }; });
+  if (!all.length) return null;
+  let pool = all.filter(function (h) { return h.on.some(function (o) { return o !== 'name'; }); });
+  if (!pool.length) pool = all;
+  const pwc = function (h) { return /^PWC/i.test(String((sIdx.x[h.i] || {}).slip || '')); };
+  const jet = String(unitKind || '') === 'jetski';
+  const fit = pool.filter(function (h) { return jet ? pwc(h) : !pwc(h); });
+  const slips = [];
+  fit.forEach(function (h) { const sl = String((sIdx.x[h.i] || {}).slip || ''); if (sl && slips.indexOf(sl) < 0) slips.push(sl); });
+  const first = fit[0] || pool[0];
+  const one = slips.length === 1;
+  return { slip: one ? slips[0] : '', boat: one ? String((sIdx.x[fit[0].i] || {}).boat || '') : '',
+           name: String(sIdx.names[first.i] || ''), on: first.on, options: slips, ambiguous: slips.length > 1,
+           all: pool.map(function (h) { return String((sIdx.x[h.i] || {}).slip || ''); }) };
+}
+function hhUnitKind_(d, st) {
+  const u = String((st && st.unit) || d.unit || '').toLowerCase();
+  return u.indexOf('jet') > -1 || u === 'pwc' ? 'jetski' : u.indexOf('golf') > -1 || u.indexOf('bike') > -1 ? 'land' : 'boat';
+}
+
 /* Both lists, for hhFlagOf_. Either may be empty. */
 function hhIndexes_() {
   let s = null;
@@ -5477,10 +5531,16 @@ function hhFlagOf_(d, ix, r, slip) {
   const dec = d.hhList || null;
   const ans = dec && (dec.answer === 'yes' || dec.answer === 'no') ? dec.answer : '';
   const state = slip ? 'slip' : ans ? ans : sm ? 'dockwa' : sIdx ? 'notslip' : 'open';
+  let ch = null;
+  if (sm) { try { ch = hhSlipChoice_(sIdx, who, hhUnitKind_(d, effectiveState_(d) || d.state)); } catch (e) { ch = null; } }
   return { state: state, on: m ? m.on : [], listName: m ? m.name : '', slip: slip,
-           dockwa: sm ? { slip: String((sm.x && sm.x.slip) || ''), boat: String((sm.x && sm.x.boat) || ''),
-                          name: sm.name, on: sm.on } : null,
+           dockwa: sm ? { slip: ch ? ch.slip : String((sm.x && sm.x.slip) || ''),
+                          boat: ch ? ch.boat : String((sm.x && sm.x.boat) || ''),
+                          name: sm.name, on: sm.on, options: ch ? ch.options : [],
+                          ambiguous: !!(ch && ch.ambiguous) } : null,
            slipList: !!sIdx,
+           filled: d.slipFill ? { slip: String(d.slipFill.slip || ''), by: String(d.slipFill.by || ''),
+                                  at: String(d.slipFill.at || '') } : null,
            answer: ans, by: String((dec && dec.by) || ''), at: String((dec && dec.at) || ''),
            land: isLandUnit_(d) };
 }
@@ -5640,6 +5700,140 @@ function adminHhListUpload(token, fileName, base64Data, kind) {
       ' on the storage list match; ' + n.open + ' still need a yes or no.';
   auditLog_(who.name, 'Heritage Harbor ' + (slips ? 'slip list' : 'customer list') + ' loaded from ' + name + ': ' + what);
   return { ok: 1, kind: slips ? 'slips' : 'contacts', meta: meta, counts: n, msg: what };
+}
+
+/* FILLING BLANK SLIP NUMBERS FROM THE SLIP LIST
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: "instead of the manual flag ... fill in matching names
+   with blank slip numbers with the corresponding slip number from this list."
+
+   Preview, then apply, like the season re-price:
+   - ONLY BLANK SLIPS. A quote that has a slip — the customer's or staff's —
+     is never touched, even when the list disagrees (the card shows that).
+   - ONLY WATER UNITS. Golf carts and e-bikes have no slip.
+   - ONE SLIP THAT FITS (hhSlipChoice_). Two candidate slips is ambiguous and
+     listed for a person; a jet ski with no PWC pod, or a boat whose only
+     entry is a pod, is left alone.
+   - STAFF SAID "NOT A SLIPHOLDER" wins over the list: listed, not filled.
+   - WRITTEN LIKE A STAFF CORRECTION, NOT A RE-SAVE. The slip goes in the
+     journal (manual.measured.slipNo, exactly where Keys & slip puts it, so it
+     survives the customer's next save) and the top-level copy, payload only.
+     Deliberately NOT saveQuoteRow_: that re-prices, rebuilds the PDF and
+     marks every quote "Adjusted — not yet sent", which a slip number is not.
+     The slipholder discount line, where one exists, picks the slip up at the
+     quote's next re-total.
+   - A SNAPSHOT of the spreadsheet goes to Drive before the first write, and
+     each fill is one Activity Log line. Clearing the box under Keys & slip
+     undoes one.
+   - The payload is re-read immediately before each write, so a customer save
+     landing mid-run is not overwritten with an older copy. */
+function hhSlipFillScan_() {
+  const sIdx = hhSlipIndex_();
+  if (!sIdx || !sIdx.count) return { error: 'Load the slip list first.' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const fill = [], ambiguous = [], skipped = [];
+  sheets.forEach(function (sh, si) {
+    let head = [], pays = [];
+    if (grids) {
+      if (!grids[si]) return;
+      head = grids[si][0].slice(1); pays = grids[si][1].slice(1);
+    } else {
+      if (sh.getRange(1, COL.QN).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+      pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    }
+    head.forEach(function (r, i) {
+      const qn = String(r[COL.QN - 1] || '').trim();
+      if (!qn) return;
+      let d;
+      try { d = JSON.parse(pays[i][0] || 'null'); } catch (e) { d = null; }
+      if (!d) return;
+      if (isLandUnit_(d)) return;
+      const st = effectiveState_(d) || d.state || {};
+      if (String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim()) return;
+      const who = [d.email || r[COL.EMAIL - 1], fmtPhone(String(d.phone || r[COL.PHONE - 1] || '')),
+                   d.firstName || r[COL.FIRST - 1], d.lastName || r[COL.LAST - 1]];
+      const kind = hhUnitKind_(d, st);
+      const ch = hhSlipChoice_(sIdx, who, kind);
+      if (!ch) return;
+      const x = { qn: qn, tab: sh.getName(), row: i + 2,
+                  name: [r[COL.FIRST - 1], r[COL.LAST - 1]].filter(Boolean).join(' '),
+                  unit: String(r[COL.UNIT - 1] || ''), slip: ch.slip, boat: ch.boat,
+                  listName: ch.name, on: ch.on, options: ch.options };
+      if (d.hhList && d.hhList.answer === 'no') { x.why = 'staff answered not a slipholder'; skipped.push(x); return; }
+      if (ch.ambiguous) { ambiguous.push(x); return; }
+      if (!ch.slip) {
+        x.why = kind === 'jetski' ? 'on the slip list, but no PWC pod for a jet ski' : 'on the slip list with a PWC pod only, no boat slip';
+        skipped.push(x); return;
+      }
+      fill.push(x);
+    });
+  });
+  const byName = function (a, b) { return String(a.name).localeCompare(String(b.name)); };
+  fill.sort(byName); ambiguous.sort(byName); skipped.sort(byName);
+  return { fill: fill, ambiguous: ambiguous, skipped: skipped };
+}
+
+function adminHhSlipFillPreview(token) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  const r = hhSlipFillScan_();
+  if (r.error) return { ok: 0, error: r.error };
+  return { ok: 1, fill: r.fill, ambiguous: r.ambiguous, skipped: r.skipped };
+}
+
+/* `only`: the quote numbers the preview showed. Anything that changed since
+   (a slip got filled by hand, the list was replaced) is re-checked here and
+   left alone. */
+function adminHhSlipFillApply(token, only) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  if (!Array.isArray(only) || !only.length) return { ok: 0, error: 'Nothing to fill.' };
+  const want = {};
+  only.forEach(function (q) { want[String(q).trim().toUpperCase()] = 1; });
+  const scan = hhSlipFillScan_();
+  if (scan.error) return { ok: 0, error: scan.error };
+  const todo = scan.fill.filter(function (x) { return want[String(x.qn).toUpperCase()]; });
+  if (!todo.length) return { ok: 0, error: 'None of those still have a blank slip and one matching slip — refresh the preview.' };
+  let snapshotUrl = '';
+  try { snapshotUrl = snapshotBeforeRestore_().getUrl(); }
+  catch (e) { return { ok: 0, error: 'Could not save a backup first, so nothing was changed: ' + (e.message || e) }; }
+  auditLog_(who.name, 'SLIP FILL from the slip list started (' + todo.length + ' quote(s)) — snapshot saved: ' + snapshotUrl);
+  const meta = hhListMeta_('HH_SLIP_META') || {};
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const done = [], failed = [];
+  todo.forEach(function (x) {
+    try {
+      const sh = ss.getSheetByName(x.tab);
+      if (!sh) throw new Error('tab gone');
+      const cells = sh.getRange(x.row, 1, 1, COL.PAYLOAD).getValues()[0];
+      if (String(cells[COL.QN - 1] || '').trim().toUpperCase() !== String(x.qn).toUpperCase()) throw new Error('row moved');
+      const d = JSON.parse(cells[COL.PAYLOAD - 1] || 'null');
+      if (!d) throw new Error('no payload');
+      const st = effectiveState_(d) || d.state || {};
+      if (String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '').trim()) throw new Error('slip filled since the preview');
+      const m = ensureManual_(d);
+      if (!m.customerState && d.state) m.customerState = JSON.parse(JSON.stringify(d.state));
+      m.measured = Object.assign({}, m.measured || {}, { slipNo: x.slip });
+      d.slipNo = x.slip;
+      d.slipFill = { slip: x.slip, at: new Date().toISOString(), by: who.name,
+                     from: String(meta.file || 'slip list'), on: x.on };
+      sh.getRange(x.row, COL.PAYLOAD).setValue(JSON.stringify(d));
+      auditLog_(who.name, 'Slip filled on ' + x.qn + ' from the slip list: ' + x.slip +
+        ' (matched ' + (x.listName || '?') + ' on ' + (x.on || []).join('+') + ')');
+      done.push(x.qn);
+    } catch (e) {
+      failed.push(x.qn + ' (' + (e.message || e) + ')');
+    }
+  });
+  return { ok: 1, done: done, failed: failed, snapshotUrl: snapshotUrl,
+           msg: done.length + ' slip number' + (done.length === 1 ? '' : 's') + ' filled in.' +
+                (failed.length ? ' Not filled: ' + failed.join('; ') + '.' : '') +
+                ' Nobody was emailed and no price changed.' };
 }
 
 /* THE CUSTOMER'S NOTE, edited by staff.

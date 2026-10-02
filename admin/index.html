@@ -972,6 +972,16 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <input type="file" id="hhSlipFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" class="hide">
       <button class="btn navy" id="hhSlipPickBtn" onclick="$('hhSlipFile').click()">Choose the slip list</button>
       <div class="msg" id="hhSlipUpMsg"></div>
+      <h2 style="margin:16px 0 0">Fill blank slip numbers</h2>
+      <div class="msg" style="margin-top:6px">
+        Puts the slip from the slip list onto every boat and jet ski quote that matches it and has <b>no slip
+        number yet</b>. A quote that already has a slip is never changed. Shows you the list first; nothing is
+        written until you press Apply. A snapshot of the spreadsheet is saved to Drive first. No price changes,
+        no new PDF, nobody is emailed.
+      </div>
+      <button class="btn navy" id="hhFillPrevBtn" onclick="previewSlipFill()">See which quotes it would fill</button>
+      <div class="msg" id="hhFillMsg"></div>
+      <div id="hhFillReport" class="hide" style="margin-top:10px"></div>
     </div>
 
     <div class="card hide" id="storageCard">
@@ -1791,10 +1801,12 @@ function renderHhList(h,P){
     (dw?(h.listName?'<br>':'')+'On the slip list: <b>'+esc(dw.slip||'?')+'</b>'+(dw.boat?' · '+esc(dw.boat):'')+
       ' as <b>'+esc(dw.name)+'</b> (matched on '+esc((dw.on||[]).join(', '))+nameOnly(dw.on)+').':'');
   let st;
-  if(h.state==='slip') st='<b style="color:var(--green)">Settled</b> — slip <b>'+esc(h.slip)+'</b> is on the quote.'+
+  if(h.state==='slip') st='<b style="color:var(--green)">Settled</b> — slip <b>'+esc(h.slip)+'</b> is on the quote'+
+    (h.filled&&h.filled.slip===h.slip?' (filled in from the slip list'+(h.filled.by?' by '+esc(h.filled.by):'')+')':'')+'.'+
     (dw&&dw.slip&&dw.slip!==h.slip?' <b style="color:var(--red)">The slip list says '+esc(dw.slip)+'</b> — check which is right.':'');
   else if(h.state==='dockwa') st='<b style="color:var(--green)">Slipholder</b> — on the slip list.'+
-    (h.land?'':' The quote has no slip number yet'+(can&&dw.slip?' — tap below to put '+esc(dw.slip)+' in Keys &amp; slip, then save it there.':'.'));
+    (h.land?'':' The quote has no slip number yet'+(can&&dw.slip?' — tap below to put '+esc(dw.slip)+' in Keys &amp; slip, then save it there.'
+      :dw.ambiguous?' — the list has more than one slip for them ('+esc((dw.options||[]).join(', '))+'); set the right one under Keys &amp; slip.':'.'));
   else if(h.state==='notslip') st='<b>Not a slipholder</b> — a Heritage Harbor customer, but not on the slip list '+
     '(fuel, food, parking or ramp account). If they do have a slip, answer Yes.';
   else if(h.state==='yes') st='<b style="color:var(--green)">Confirmed slipholder</b>'+who+'.'+
@@ -3845,6 +3857,52 @@ async function toggleHhList(){
     if(r&&r.ok) $('hhSlipMeta').innerHTML=hhMetaText_(r.slipMeta,'slipholders'); }
   catch(e){ $('hhListMeta').textContent=e.message; }
 }
+/* ---------- Fill blank slip numbers from the slip list ---------- */
+let SLIPFILL=null;
+async function previewSlipFill(){
+  const b=$('hhFillPrevBtn'); b.disabled=true;
+  $('hhFillReport').classList.add('hide');
+  setMsg('hhFillMsg','Checking every quote against the slip list…',null);
+  try{
+    const r=await api('hhSlipFillPreview',[]);
+    if(!r||!r.ok){ setMsg('hhFillMsg',(r&&r.error)||'Could not check.',false); return; }
+    SLIPFILL=r; setMsg('hhFillMsg','');
+    const nm=a=>(a||[]).length===1&&a[0]==='name'?' <span class="tagmute">name only</span>':'';
+    const row=(x,right)=>'<div class="bkrow"><span class="q">'+esc(x.qn)+'</span><span>'+esc(x.name)+
+      ' · '+esc(x.unit)+' — '+right+'</span></div>';
+    const fill=r.fill.map(x=>row(x,'<b>'+esc(x.slip)+'</b>'+(x.boat?' ('+esc(x.boat)+')':'')+
+      ' · matched '+esc(x.listName)+' on '+esc((x.on||[]).join(', '))+nm(x.on))).join('');
+    const amb=r.ambiguous.map(x=>row(x,'more than one slip: '+esc((x.options||[]).join(', '))+
+      ' — set the right one under Keys &amp; slip')).join('');
+    const skip=r.skipped.map(x=>row(x,esc(x.why||''))).join('');
+    $('hhFillReport').innerHTML=
+      '<div class="msg"><b>'+r.fill.length+'</b> quote'+(r.fill.length===1?'':'s')+' to fill. '+
+      'Check the <span class="tagmute">name only</span> ones are the same person — a wrong one is undone by clearing '+
+      'the slip under Keys &amp; slip.</div>'+fill+
+      (amb?'<div class="msg" style="margin-top:8px"><b>Not filled — more than one slip on the list:</b></div>'+amb:'')+
+      (skip?'<div class="msg" style="margin-top:8px"><b>Not filled:</b></div>'+skip:'')+
+      (r.fill.length?'<button class="btn gold" id="hhFillApplyBtn" style="margin-top:10px" onclick="applySlipFill()">Fill these '+
+        r.fill.length+' slip number'+(r.fill.length===1?'':'s')+'</button>':
+        '<div class="msg">Nothing to fill — every matching quote already has a slip.</div>');
+    $('hhFillReport').classList.remove('hide');
+  }catch(e){ setMsg('hhFillMsg',e.message,false); }
+  finally{ b.disabled=false; }
+}
+async function applySlipFill(){
+  if(!SLIPFILL||!SLIPFILL.fill.length) return;
+  const n=SLIPFILL.fill.length;
+  if(!confirm('Fill '+n+' slip number'+(n===1?'':'s')+' from the slip list?\n\nA snapshot of the spreadsheet is saved first. No price changes and nobody is emailed.')) return;
+  const b=$('hhFillApplyBtn'); if(b) b.disabled=true;
+  setMsg('hhFillMsg','Filling '+n+'…',null);
+  try{
+    const r=await api('hhSlipFillApply',[SLIPFILL.fill.map(x=>x.qn)]);
+    if(!r||!r.ok){ setMsg('hhFillMsg',(r&&r.error)||'Could not fill.',false); if(b) b.disabled=false; return; }
+    $('hhFillReport').classList.add('hide'); SLIPFILL=null;
+    setMsg('hhFillMsg',r.msg,true);
+    toast('Slip numbers filled');
+  }catch(e){ setMsg('hhFillMsg',e.message,false); if(b) b.disabled=false; }
+}
+
 /* kind '' — the marina contacts export; 'slips' — the slip list. */
 async function readHhListFile(f,kind){
   const slips=kind==='slips', ids=slips?['hhSlipFile','hhSlipPickBtn','hhSlipUpMsg','hhSlipMeta']

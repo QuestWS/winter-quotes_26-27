@@ -292,5 +292,109 @@ if (!/state==='dockwa'/.test(HTML) || !/state==='notslip'/.test(HTML)) fail('the
 if (!/renderHhList\(r\.hhList/.test(HTML)) fail('renderQuote no longer draws the Heritage Harbor card');
 else ok('the quote card, the upload card and the menu entry are all there');
 
+/* ---------------- filling blank slips ---------------- */
+console.log('=== filling blank slip numbers from the slip list ===');
+{
+  const LIST2 = [['Slip', 'Boat', 'Name', 'Email', 'Phone'],
+    ['B-22 Lift', 'Test Boat', 'Pat Example', '', ''],
+    ['PWC: C-1', 'Ski', 'Pat Example', '', ''],
+    ['E-05', 'Boat One', 'Dana Double', '', ''],
+    ['E-06', 'Boat Two', 'Dana Double', '', ''],
+    ['A-01', 'Nope', 'Noel Nope', '', ''],
+    ['C-07', 'Has One', 'Hal Hasslip', '', ''],
+    ['PWC: H-1', 'Only Ski', 'Olly Onlypod', '', '']];
+  const mk = (qn, first, last, unit, extra) => {
+    const r = new Array(23).fill(''); r[0] = last; r[1] = first; r[2] = qn; r[5] = 'Quote sent'; r[6] = unit;
+    r[20] = JSON.stringify(Object.assign({ quoteNo: qn, firstName: first, lastName: last, unit: unit,
+      state: { unit: unit === 'Jetski' ? 'jetski' : unit === 'Golf Cart' ? 'golf' : 'boat' } }, extra || {}));
+    return r;
+  };
+  const data = [HEAD,
+    mk('QW-26-9301', 'Pat', 'Example', 'Boat'),
+    mk('QW-26-9302', 'Pat', 'Example', 'Jetski'),
+    mk('QW-26-9303', 'Dana', 'Double', 'Boat'),
+    mk('QW-26-9304', 'Noel', 'Nope', 'Boat', { hhList: { answer: 'no' } }),
+    mk('QW-26-9305', 'Hal', 'Hasslip', 'Boat', { state: { unit: 'boat', slipNo: 'OWN-1' } }),
+    mk('QW-26-9306', 'Pat', 'Example', 'Golf Cart'),
+    mk('QW-26-9307', 'Olly', 'Onlypod', 'Boat'),
+    mk('QW-26-9308', 'Zed', 'Nobody', 'Boat')];
+  const writes = [];
+  function wsheet(name, rows) {
+    const cell = (r, c) => { const v = (rows[r - 1] || [])[c - 1]; return v === undefined ? '' : v; };
+    return { getName: () => name, getLastRow: () => rows.length,
+      getRange: (r, c, nr, nc) => ({
+        getValue: () => cell(r, c),
+        getValues: () => { const o = []; for (let i = 0; i < (nr || 1); i++) { const rr = []; for (let j = 0; j < (nc || 1); j++) rr.push(cell(r + i, c + j)); o.push(rr); } return o; },
+        setValue: (v) => { writes.push({ tab: name, r, c }); rows[r - 1][c - 1] = v; } }) };
+  }
+  const book2 = [wsheet('Inside', data), wsheet('Heritage Harbor Slips', LIST2)];
+  ctx.SpreadsheetApp = { getActiveSpreadsheet: () => ({ getSheets: () => book2, getId: () => 'B',
+    getSheetByName: (n) => book2.filter((x) => x.getName() === n)[0] || null }) };
+  Object.keys(cache).forEach((k) => delete cache[k]);
+  ctx.requireAuth_ = () => ({ name: 'Tester', admin: true, perms: {} });
+  ctx.auditLog_ = () => {};
+  let snapped = 0;
+  ctx.snapshotBeforeRestore_ = () => { snapped++; return { getUrl: () => 'drive://snap' }; };
+  const pv = ctx.adminHhSlipFillPreview('t');
+  const by = (arr) => Object.fromEntries((arr || []).map((x) => [x.qn, x]));
+  const F2 = by(pv.fill), A2 = by(pv.ambiguous), S2 = by(pv.skipped);
+  if (!pv.ok) fail('preview refused: ' + pv.error);
+  if (!F2['QW-26-9301'] || F2['QW-26-9301'].slip !== 'B-22 Lift') fail('a blank boat quote on the list is not filled with its boat slip');
+  else ok('blank boat quote → its boat slip, not the owner\'s PWC pod');
+  if (!F2['QW-26-9302'] || F2['QW-26-9302'].slip !== 'PWC: C-1') fail('the jet ski quote did not get the PWC pod');
+  else ok('the same owner\'s jet ski quote → the PWC pod');
+  if (!A2['QW-26-9303'] || F2['QW-26-9303']) fail('two boat slips were not held back as ambiguous');
+  else ok('two candidate slips → listed as ambiguous, not filled');
+  if (!S2['QW-26-9304'] || F2['QW-26-9304']) fail('staff "not a slipholder" was overridden by the list');
+  else ok('staff answered No → listed, not filled');
+  if (F2['QW-26-9305'] || A2['QW-26-9305'] || S2['QW-26-9305']) fail('a quote that already has a slip was offered');
+  else ok('a quote that already has a slip is never touched');
+  if (F2['QW-26-9306'] || A2['QW-26-9306'] || S2['QW-26-9306']) fail('a golf cart was offered a slip');
+  else ok('golf carts and e-bikes are never given a slip');
+  if (!S2['QW-26-9307'] || F2['QW-26-9307']) fail('a boat was given a PWC pod');
+  else ok('a boat whose only entry is a PWC pod → listed, not filled');
+  if (F2['QW-26-9308'] || A2['QW-26-9308'] || S2['QW-26-9308']) fail('someone not on the slip list appears in the preview');
+  else ok('not on the slip list → not in the preview at all');
+  if (writes.length || snapped) fail('the preview wrote something or took a snapshot');
+  else ok('the preview writes nothing');
+
+  const statusBefore = data.map((r) => r[5]).join('|');
+  const ap = ctx.adminHhSlipFillApply('t', ['QW-26-9301', 'QW-26-9302', 'QW-26-9305']);
+  if (!ap.ok) fail('apply refused: ' + ap.error);
+  if (snapped !== 1) fail('apply did not snapshot the spreadsheet first');
+  else ok('a snapshot is saved before the first write');
+  if (JSON.stringify(ap.done) !== JSON.stringify(['QW-26-9301', 'QW-26-9302'])) fail('apply filled ' + JSON.stringify(ap.done));
+  else ok('only the previewed, still-blank quotes are filled');
+  const pd1 = JSON.parse(data[1][20]);
+  if (pd1.manual.measured.slipNo !== 'B-22 Lift' || pd1.slipNo !== 'B-22 Lift') fail('the slip is not in the journal and the top-level copy');
+  else ok('written to manual.measured (survives a customer save) and the top-level copy');
+  if (pd1.state.slipNo !== undefined) fail('the customer\'s own state was edited');
+  else ok('the customer\'s own answers (d.state) are left alone');
+  if (state(ctx.hhFlagOf_(pd1, ctx.hhIndexes_(), null)) !== 'slip') fail('a filled quote is not settled');
+  else ok('a filled quote now reads as settled by its slip');
+  if (writes.some((w) => w.c !== 21)) fail('apply wrote a column other than the payload: ' + JSON.stringify(writes));
+  else if (data.map((r) => r[5]).join('|') !== statusBefore) fail('apply changed a status');
+  else ok('payload column only — status, totals and PDF untouched');
+  const fa = fn('adminHhSlipFillApply');
+  if (/saveQuoteRow_|rebuildLinesFromState_|recomputeTotals_|savePdf_|GmailApp|MailApp|sendEmail/.test(fa))
+    fail('the fill re-prices, rebuilds a PDF or emails');
+  else ok('the fill never re-prices, rebuilds a PDF or emails');
+  if (!/who\.admin/.test(fa) || !/who\.admin/.test(fn('adminHhSlipFillPreview'))) fail('the fill is not admins-only');
+  else ok('preview and apply are admins-only');
+  const again = ctx.adminHhSlipFillApply('t', ['QW-26-9301']);
+  if (again.ok) fail('a second apply of the same quote wrote again');
+  else ok('running it twice fills nothing twice');
+  ctx.snapshotBeforeRestore_ = () => { throw new Error('Drive down'); };
+  data[1] = mk('QW-26-9301', 'Pat', 'Example', 'Boat');      // blank again, fillable
+  const before3 = data[1][20];
+  const noSnap = ctx.adminHhSlipFillApply('t', ['QW-26-9301']);
+  if (noSnap.ok || data[1][20] !== before3) fail('wrote without a snapshot');
+  else ok('no snapshot → nothing written');
+  if (!/if \(oldD\.slipFill\) d\.slipFill = oldD\.slipFill;/.test(GS)) fail('a customer save drops where the slip came from');
+  else ok('a customer save keeps the record of the fill');
+  if (/hhSlipFill/.test(getFns)) fail('the slip fill is GET-able');
+  else ok('the fill is POST-only');
+}
+
 if (bad) { console.error('\n' + bad + ' check(s) failed.'); process.exit(1); }
 console.log('\nAll Heritage Harbor list checks pass.');

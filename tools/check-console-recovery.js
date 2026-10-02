@@ -205,6 +205,70 @@ const GOT = (fn, method) => sent.filter((r) => r.fn === fn && (!method || r.meth
   else if (!out || Number(out.ok) !== 1) fail('a write after a lost read did not go through: ' + JSON.stringify(out));
   else ok('writes keep posting even after reads have moved to GET');
 
+  /* =====================================================================
+     7. A READ whose POST stalls gives up on it and asks over GET.
+        2 Oct 2026: `lookup 48.8s · 0.5s on the server` — a POST that hung on
+        the redirect leg with nothing to cut it off. The fetch below never
+        answers unless it is aborted, so a console with no limit would hang
+        this guard rather than pass it.
+     ===================================================================== */
+  const stalling = (c) => {
+    c.AbortController = AbortController;
+    const answer = c.fetch;
+    c.fetch = (url, opts) => {
+      if (((opts && opts.method) || 'GET') !== 'POST') return answer(url, opts);
+      const body = JSON.parse(opts.body);
+      sent.push({ url: String(url), method: 'POST', fn: body.fn, rid: body.rid, args: body.args,
+                  limited: !!(opts && opts.signal) });
+      const sig = opts && opts.signal;
+      return new Promise((res, rej) => {
+        const die = () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (sig && sig.aborted) return die();
+        if (sig) sig.addEventListener('abort', die);
+        /* no signal: this POST would hang forever, so say so loudly instead */
+        else setImmediate(() => res(asResponse({ body: stamped({ ok: 1, hung: true }) })));
+      });
+    };
+    return c;
+  };
+  c = stalling(makeConsole());
+  handler = () => ({ body: stamped({ ok: 1, quoteNo: 'QW-26-1255', serverMs: 500 }) });
+  out = null; err = null;
+  try { out = await c.api('lookup', ['QW-26-1255']); } catch (e) { err = e; }
+  if (err) fail('a lookup whose POST stalled failed instead of asking over GET: ' + err.message);
+  else if (out && out.hung) fail('a lookup POST had no time limit — it waited on a stalled POST');
+  else if (!GOT('lookup', 'GET').length) fail('a stalled lookup POST never fell through to GET');
+  else ok('a read whose POST stalls is abandoned and answered over GET');
+  const t = vm.runInContext('API_TIMINGS[API_TIMINGS.length-1]', c);
+  if (!t || !/^POST timed out after [\d.]+s → GET$/.test(t.route)) fail('the timing does not record the stalled POST and the GET: ' + JSON.stringify(t));
+  else ok('the timing names the route: "' + t.route + '"');
+  const shown = vm.runInContext('document.getElementById("apiTiming").textContent', c);
+  if (!/\(POST timed out after [\d.]+s → GET\) · 0\.5s on the server/.test(shown)) fail('the footer does not show the route: ' + shown);
+  else ok('the footer shows it: "' + shown + '"');
+
+  /* ...a clean POST keeps the footer as it was */
+  c = makeConsole();
+  handler = () => ({ body: stamped({ ok: 1, serverMs: 400 }) });
+  await c.api('lookup', ['QW-26-1255']);
+  const plain = vm.runInContext('document.getElementById("apiTiming").textContent', c);
+  if (/\(/.test(plain)) fail('a clean POST still shows a route: ' + plain);
+  else ok('a clean POST shows no route');
+
+  /* ...and a WRITE is never put on a clock. Abandoning one does not stop it. */
+  c = stalling(makeConsole());
+  await c.api('pay', ['QW-26-1255', 500, 'Cash', 1]);
+  const pp = GOT('pay', 'POST');
+  if (pp.length !== 1 || pp[0].limited) fail('a write was sent with a time limit — the console would give up on a payment that is still running');
+  else ok('writes are never sent with a time limit');
+
+  /* Only reads may carry the limit: the quick list must be a subset of the
+     GET allow-list, which is what the server agrees is read-only. */
+  const quick = Object.keys(vm.runInContext('API_QUICK_READ', c));
+  const getOk = vm.runInContext('API_GET_OK', c);
+  const strays = quick.filter((f) => !getOk[f]);
+  if (strays.length) fail('API_QUICK_READ names calls that are not reads: ' + strays.join(', '));
+  else ok('every call with a POST time limit is on the read-only allow-list (' + quick.length + ')');
+
   if (bad) { console.error('console recovery: ' + bad + ' failure(s)'); process.exit(1); }
   console.log('console recovery: a dropped answer is chased down, never guessed at');
 })().catch((e) => { console.error('console recovery: guard crashed — ' + e.stack); process.exit(1); });

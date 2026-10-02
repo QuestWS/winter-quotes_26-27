@@ -511,6 +511,20 @@ name + unit type** is skipped and reported instead of imported. Surname alone
 would wrongly skip the people who store a boat *and* a jet ski under one name,
 and several do.
 
+**One slice at a time, and Stop means stop.** The run is carried by a trigger
+in four-minute slices, and nothing used to stop two slices running at once (a
+trigger plus a nudge, or two triggers armed in the same instant). Both read the
+same `st.i` and both imported the same files — on 22 Sep 2026 eleven customers
+landed on the Import tab twice, two quote numbers each. `bulkImportSlice_` now
+takes a lease (`claimLease_('bulkImport')`) and a slice that cannot get it does
+nothing at all. Progress is saved after **every file**, so a slice killed by the
+ceiling restarts at the file it died on rather than re-importing the ones before
+it; and a slice checks after each file that the run is still the one it started
+on, so pressing Stop mid-slice is not undone by the slice saving its old state
+back. `tools/check-run-leases.js` executes all three. The Import tab is skipped
+by the "already quoted" match on purpose, so the lease is the only thing that
+stops a second slice importing a file the first just did.
+
 ### The Import tab is a holding pen, not a storage area
 
 Everything lands on one tab, `IMPORT_TAB` (`Import`). A quote there is a
@@ -1001,6 +1015,15 @@ Admin-only console panel; full walkthrough in `docs/BACKUP-RESTORE.md`. Upload
 a nightly `.xlsx`, see a comparison, then choose what to put back. Invariants:
 - **A restore never deletes a live quote.** It only writes rows the backup
   knows about, so work taken since the backup survives either mode.
+- **One restore at a time.** `adminBackupRestore` takes a lease
+  (`claimLease_('restore')`) before it reads the live sheet, and a second
+  restore while one runs is refused without writing anything. The console
+  greys both restore buttons once one is confirmed, and does not re-enable them
+  on a transport failure — the restore may have finished. Before this, two
+  clicks four seconds apart (19 Sep 2026) both read the sheet before either
+  wrote, both saw QW-26-6349 as missing, and put it back on two rows of
+  Premium Inside. `tools/check-run-leases.js` fires the second restore from
+  inside the first and counts rows.
 - **`snapshotBeforeRestore_()` runs first, every time** — the restore is itself
   undoable, and `verify.sh` fails if that call is removed.
 - **Preview writes nothing.** Upload reads and reports; writing needs a second,

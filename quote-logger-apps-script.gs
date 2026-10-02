@@ -1592,6 +1592,61 @@ function finishRid_(rid, out) {
   } catch (e) {}
 }
 
+/* ONE RUNNER AT A TIME, for jobs that must never overlap themselves.
+   ---------------------------------------------------------------------------
+   The rid above stops one tap from running twice. It cannot stop two taps:
+   each is a new rid. On 19 Sep 2026 the backup restore was clicked twice, four
+   seconds apart; both runs read the sheet before either had written, both saw
+   QW-26-6349 as missing, and both put it back — one quote on two rows. On 22
+   Sep two bulk-import slices overlapped for four minutes, each read the same
+   place in the worklist, and eleven customers were imported twice.
+
+   A lease is a named claim in Script Properties with an expiry. The check and
+   the claim happen under the script lock, so of two callers only one can win;
+   the loser is told so and writes nothing. The expiry is what keeps a runner
+   that was killed (the six-minute ceiling) from locking the job out forever.
+
+   Why not just hold the script lock for the whole job: that one lock also
+   serialises quote numbering (uniqueQuoteNo_) and every console write's rid
+   claim. A four-minute import holding it would stall every customer save.
+   The lease is held for minutes; the lock only for the instant of the claim.
+
+   Fails CLOSED: if the lock cannot be had, the claim is refused. Both callers
+   are jobs a person can simply start again; running them twice is the harm. */
+const LEASE_PREFIX_ = 'LEASE_';
+
+function claimLease_(name, ttlMs) {
+  const props = PropertiesService.getScriptProperties();
+  const key = LEASE_PREFIX_ + name;
+  let lock = null, held = false;
+  try { lock = LockService.getScriptLock(); held = lock.tryLock(10000); } catch (e) { held = false; }
+  if (!held) return '';
+  try {
+    let cur = null;
+    try { cur = JSON.parse(props.getProperty(key) || 'null'); } catch (e) { cur = null; }
+    if (cur && Number(cur.until) > Date.now()) return '';
+    const token = Utilities.getUuid();
+    props.setProperty(key, JSON.stringify({ token: token, until: Date.now() + ttlMs }));
+    return token;
+  } catch (e) {
+    return '';
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/* Only the holder releases: a runner that outlived its lease must not free a
+   claim somebody else has since taken. */
+function releaseLease_(name, token) {
+  if (!token) return;
+  const props = PropertiesService.getScriptProperties();
+  const key = LEASE_PREFIX_ + name;
+  try {
+    const cur = JSON.parse(props.getProperty(key) || 'null');
+    if (cur && cur.token === token) props.deleteProperty(key);
+  } catch (e) {}
+}
+
 /* The console's "what happened to my write?" probe. Read-only by construction:
    it reports a stored answer and never makes one. */
 function adminJobStatus(token, rid) {
@@ -4591,6 +4646,29 @@ function bulkImportBlewUp_(err) {
 /* One slice of the worklist. Separate from bulkImportStep so the foreground
    runner can call it too and let the editor show a stack trace. */
 function bulkImportSlice_() {
+  /* One slice at a time (claimLease_). Two slices reading the same st.i is
+     what imported eleven customers twice on 22 Sep 2026. The loser touches
+     nothing — not even the trigger: the slice that holds the lease re-arms
+     when it ends. */
+  const lease = claimLease_('bulkImport', BULKIMP_LEASE_MS_);
+  if (!lease) return { busy: true };
+  try { return bulkImportSliceCore_(); }
+  finally { releaseLease_('bulkImport', lease); }
+}
+
+/* Just over the six-minute execution ceiling, so a slice killed mid-run frees
+   the job for the next trigger rather than locking it out. */
+const BULKIMP_LEASE_MS_ = 6.5 * 60 * 1000;
+
+/* Is the run this slice started on still the run on file? Stop clears the
+   state and a new start replaces it; either way this slice must not write
+   another quote, nor save its old state back over the new one. */
+function bulkImportStillOurs_(st) {
+  const cur = bulkImportState_();
+  return !!(cur && cur.at === st.at && cur.mode === st.mode);
+}
+
+function bulkImportSliceCore_() {
   const st = bulkImportState_();
   if (!st || st.i >= st.jobs.length) { bulkImportClear_(); return { done: true }; }
 
@@ -4613,9 +4691,20 @@ function bulkImportSlice_() {
     }
     rows.push(row);
     st.done++;
+    /* Progress is saved after every file, not once per slice: a slice killed
+       by the ceiling would otherwise leave st.i where it started, and the next
+       one would import every file this one already wrote. Checked first: a
+       Stop pressed while that file was being read must not be undone by
+       saving this slice's state back over it. */
+    if (!bulkImportStillOurs_(st)) {
+      bulkImportAppendReport_(st, rows);
+      return { done: true, stopped: true };
+    }
+    bulkImportSave_(st);
   }
 
   if (rows.length) bulkImportAppendReport_(st, rows);
+  if (!bulkImportStillOurs_(st)) return { done: true, stopped: true };
   /* A slice that got somewhere resets the error count: the next failure is a
      new problem, not the third strike of an old one. */
   if (rows.length) { st.errors = 0; }
@@ -4808,7 +4897,12 @@ function bulkImportContinue() {
      stack. bulkImportStep keeps its catch, because nobody is watching that. */
   const r = bulkImportSlice_();
   const after = bulkImportState_();
-  if (r && r.done) {
+  if (r && r.busy) {
+    console.log('Another slice of this run is working right now (the background trigger, or a second ' +
+      'click). Nothing was done here — leave it, or run bulkImportStatus() to watch it move.');
+  } else if (r && r.stopped) {
+    console.log('The run was stopped (or replaced by a new one) while this slice was working. Nothing more was written.');
+  } else if (r && r.done) {
     console.log('Finished. Check your email and the report.');
   } else if (after) {
     console.log('Stopped at ' + after.i + ' of ' + after.jobs.length + ' (time budget). ' +
@@ -8523,6 +8617,27 @@ function adminBackupRestore(token, fileId, mode, quoteNos) {
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
   if (!fileId) return { ok: 0, error: 'Upload the backup again — the reference expired.' };
 
+  /* One restore at a time (claimLease_). A second one while this runs is
+     refused outright. The live sheet is read only AFTER the claim, so the
+     restore that is let in compares against what any earlier one actually
+     wrote — the September pair both read before either had written. */
+  const lease = claimLease_('restore', RESTORE_LEASE_MS_);
+  if (!lease) {
+    return { ok: 0, busy: 1, error: 'A restore is already running. Wait for it to finish — then upload the ' +
+      'backup again to see what, if anything, is still missing.' };
+  }
+  try {
+    return backupRestoreCore_(who, fileId, mode, quoteNos);
+  } finally {
+    releaseLease_('restore', lease);
+  }
+}
+
+/* Long enough for the slowest restore to finish, short enough that one killed
+   by the six-minute ceiling stops blocking the next within minutes. */
+const RESTORE_LEASE_MS_ = 7 * 60 * 1000;
+
+function backupRestoreCore_(who, fileId, mode, quoteNos) {
   let backSs;
   try { backSs = SpreadsheetApp.openById(fileId); }
   catch (err) { return { ok: 0, error: 'Upload the backup again — the reference expired.' }; }

@@ -9807,27 +9807,32 @@ function buildEmailFor_(d, kind, extra, photos) {
         '<div style="font-size:13.5px;color:#1D2B38;line-height:1.5;margin-bottom:10px">' + body + '</div>' +
         btns + '</div>';
     };
-    const opt1 = choice('Option 1 —', 'Want to change something?',
+    /* A golf cart or e-bike has nothing to change, so it gets no Option 1 and
+       the one remaining box is not numbered or worded as a choice. */
+    const opt1 = land ? '' : choice('Option 1 —', 'Want to change something?',
       'Open your ' + term + ' online — everything you chose is already filled in. Change whatever you like and ' +
       'save it: your new total shows straight away, and we\'re notified of the change.',
       buttonHtml_(quoteUrl, 'Review or change my ' + term, '#4A81A6'));
+    const opt2N = land ? '' : 'Option 2 —';
+    const opt2T = land ? 'Next steps' : 'Happy with it as it is?';
     let opt2;
     if (paidInFull && signed) {
-      opt2 = choice('Option 2 —', 'Happy with it as it is?',
-        'Then you\'re all set — we have your signed agreement and your payment. Nothing more to do.', '');
+      opt2 = choice(opt2N, opt2T,
+        (land ? 'You\'re' : 'Then you\'re') +
+        ' all set — we have your signed agreement and your payment. Nothing more to do.', '');
     } else {
       const steps = [];
       if (signLink) steps.push('sign your winter services agreement');
       if (!paidInFull) steps.push(paid > 0.005 || noStorage ? 'pay online' : 'pay your deposit');
       const body = (signed ? 'We already have your signed agreement on file. ' : '') +
         (steps.length
-          ? 'Accept the attached ' + term + ' exactly as it is: ' + steps.join(', then ') +
+          ? (land ? 'To confirm it, ' : 'Accept the attached ' + term + ' exactly as it is: ') + steps.join(', then ') +
             '. Please put quote # <b>' + esc_(d.quoteNo || '') + '</b> in the payment memo.'
           : 'Give us a call on (815) 433-2200 and we\'ll get your agreement to you.');
       const btns = (signLink ? buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') + signConfirmHtml_() : '') +
         (paidInFull ? '' : buttonHtml_(PAYMENT_URL,
           (paid > 0.005 || noStorage) ? 'Pay online' : 'Pay my deposit online', '#C08A22'));
-      opt2 = choice('Option 2 —', 'Happy with it as it is?', body, btns);
+      opt2 = choice(opt2N, opt2T, body, btns);
     }
 
     return {

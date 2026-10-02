@@ -3563,7 +3563,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 7;
+const STORAGE_VIEW_V_ = 8;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -7813,7 +7813,7 @@ function storageViewBuild_(opt) {
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
-            winter = null;
+            winter = null, season = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -7853,6 +7853,12 @@ function storageViewBuild_(opt) {
           winter = winterizeStatusOf_(pd);
           if (st && st.hasTrailer !== undefined) trailer = !!st.hasTrailer;
           done = pd.seasonDone || null;
+          /* Which season's card this quote is priced on. d.season is written
+             by seasonStamp() on every save, import and re-price, so its label
+             moves to the new season exactly when the money does — which is
+             what staff need to see during a rollover: who is still on last
+             year's rates. Off the payload already parsed; costs nothing. */
+          season = String((pd.season && pd.season.label) || '');
         } catch (e) {}
         rows.push({ qn: r[COL.QN - 1],
           name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
@@ -7881,6 +7887,9 @@ function storageViewBuild_(opt) {
           /* Signed agreement on file. Deposit taken and this still false is the
              chase list -- the console tags those rows in red. */
           contract: contract,
+          /* Season label of the rates on this quote; '' if it predates the
+             stamp. The console compares it to currentSeason (below). */
+          season: season,
           balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
       });
     }
@@ -7895,7 +7904,7 @@ function storageViewBuild_(opt) {
     const w = function (t) { return t === 'No Storage' ? 2 : 1; };
     return w(a.tab) - w(b.tab) || a.tab.localeCompare(b.tab);
   });
-  const out = { ok: 1, v: STORAGE_VIEW_V_, groups: groups };
+  const out = { ok: 1, v: STORAGE_VIEW_V_, currentSeason: SEASON.seasonLabel, groups: groups };
   cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
   /* The tap that follows this list is "open one of these": prime the row cache
      for every unit so that lookup is one verified trip, not a scan. Not part

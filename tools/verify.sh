@@ -676,6 +676,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   # The only console action that removes a row. Admin-only, archived, and
   # invisible to every sheet sweep afterwards — all executed against a fake
   # spreadsheet, because a grep cannot tell an archived row from a lost one.
+  # The storage view's season tag: which card each quote is priced on, from
+  # its own season stamp, compared against the engine's current season.
+  if node tools/check-season-tag.js > "$TMP/stag.txt" 2>&1; then
+    echo "  OK   gate: storage view tags each quote's rate season"
+  else
+    echo "  FAIL gate: storage view season tag broken"; sed 's/^/       /' "$TMP/stag.txt"; FAIL=1
+  fi
   # A restore and a bulk-import slice must never overlap themselves: a double
   # click on Restore and two import slices at once each put the same quote on
   # two rows (Sep 2026). Executed with the second run fired mid-first.

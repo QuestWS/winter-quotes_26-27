@@ -116,8 +116,8 @@ B.PRICING.provisional = false;
     const lu = quote(fx, { unit });
     const lb = B.buildEmailFor_(lu, 'firmquote', '', '');
     if (!lb) { fail('the firm-quote email did not build for a ' + txt); return; }
-    has(lb.html, 'single flat rate', 'a ' + txt + ' is told its price is a flat rate');
-    has(lb.html, 'Storage for your ' + txt, 'and names the ' + txt);
+    has(lb.html, 'firm price for the season', 'a ' + txt + ' is told the attached quote is firm');
+    hasnt(lb.html, 'flat rate', 'a ' + txt + ' is not told what it already knows');
     hasnt(lb.html, 'if we measure', 'a ' + txt + ' is not told a re-measure could change it');
     hasnt(lb.html, 'change services', 'a ' + txt + ' is not told a change of services could change it');
   });

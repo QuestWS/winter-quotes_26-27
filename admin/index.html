@@ -3669,22 +3669,36 @@ function renderBackupReport(r){
     '</div>';
   $('backupReport').classList.remove('hide');
 }
+/* One restore at a time from this page. Both restore buttons go dead the
+   moment one is confirmed: a second click while the first was still running
+   restored the same quote twice (Sep 2026). The server refuses an overlapping
+   restore too (claimLease_) — this just stops the second tap being made. */
+let RESTORING=false;
+function restoreButtons(on){
+  document.querySelectorAll('#backupReport button').forEach(b=>{b.disabled=!on;});
+}
 async function doRestore(mode){
+  if(RESTORING){setMsg('backupMsg','A restore is already running — wait for it to finish.',false);return;}
   if(!BACKUP||!BACKUP.fileId){setMsg('backupMsg','Upload the backup again.',false);return;}
   const n=mode==='all'?(BACKUP.missing.length+BACKUP.differ.length):BACKUP.missing.length;
   if(!confirm('Restore '+n+' quote(s) from '+BACKUP.fileName+'?\n\n'+
     (mode==='all'?'Quotes that differ will be replaced by the backup\'s version.\n\n':'')+
     'A snapshot of the sheet as it is now will be saved to Drive first.'))return;
-  setMsg('backupMsg','Restoring…',null);
+  RESTORING=true; restoreButtons(false);
+  setMsg('backupMsg','Restoring… leave this page open until it says done.',null);
   try{
     const r=await api('backupRestore',[BACKUP.fileId,mode,[]]);
-    if(!r.ok){setMsg('backupMsg',r.error,false);return;}
+    if(!r.ok){setMsg('backupMsg',r.error,false);restoreButtons(true);return;}
     setMsg('backupMsg',r.msg,true);
     $('backupReport').innerHTML='<div class="bkwarn"><b>Restored '+r.restored+' quote(s).</b><br>'+
       'The sheet as it was a moment ago is saved here: <a href="'+esc(r.snapshotUrl)+'" target="_blank" rel="noopener">pre-restore snapshot</a>.</div>';
     BACKUP=null;
     toast('Restored '+r.restored+' quote(s)');
-  }catch(e){ setMsg('backupMsg',e.message,false); }
+  }catch(e){
+    /* Not re-enabled: a transport failure is not an answer (CLAUDE.md §7), and
+       the restore may well have finished. Upload the backup again to see. */
+    setMsg('backupMsg',e.message+' — the restore may still have gone through. Upload the backup again to see what is still missing before restoring again.',false);
+  }finally{ RESTORING=false; }
 }
 document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
   /* Wake Apps Script while the PIN is being typed or the home screen drawn, so

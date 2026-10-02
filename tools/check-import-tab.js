@@ -260,8 +260,10 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
 {
   const start = fn('bulkImportStart_');
   /* bulkImportSlice_, not bulkImportStep: the loop moved there so the
-     foreground runner could share it, leaving step as a catch around it. */
-  const step  = fn('bulkImportSlice_');
+     foreground runner could share it, leaving step as a catch around it.
+     The loop itself is in bulkImportSliceCore_; bulkImportSlice_ is the lease
+     around it (check-run-leases.js executes that part). */
+  const step  = fn('bulkImportSliceCore_');
   const one   = fn('bulkImportOne_');
 
   /* Resumable, because ~139 Drive conversions do not fit in six minutes. */
@@ -389,8 +391,8 @@ eq(B.isOffstageTab_('Outside'), false, 'and nothing else');
   else fail('the foreground runner has its own copy of the work');
 
   /* Progress must survive either path, or a resumed run redoes everything. */
-  const slice = fn('bulkImportSlice_');
-  if (/bulkImportSave_\(st\)/.test(slice)) ok('a slice saves its progress whichever way it was started');
+  const slice = fn('bulkImportSliceCore_');
+  if (/bulkImportSave_\(st\)/.test(slice) && /bulkImportSliceCore_\(\)/.test(fn('bulkImportSlice_'))) ok('a slice saves its progress whichever way it was started');
   else fail('bulkImportSlice_ never saves — a resumed run would start from the beginning');
 }
 

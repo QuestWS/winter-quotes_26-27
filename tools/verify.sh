@@ -676,6 +676,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   # The only console action that removes a row. Admin-only, archived, and
   # invisible to every sheet sweep afterwards — all executed against a fake
   # spreadsheet, because a grep cannot tell an archived row from a lost one.
+  # A restore and a bulk-import slice must never overlap themselves: a double
+  # click on Restore and two import slices at once each put the same quote on
+  # two rows (Sep 2026). Executed with the second run fired mid-first.
+  if node tools/check-run-leases.js > "$TMP/lease.txt" 2>&1; then
+    echo "  OK   gate: one restore / one import slice at a time (claimLease_)"
+  else
+    echo "  FAIL gate: overlapping restore or import run not refused"; sed 's/^/       /' "$TMP/lease.txt"; FAIL=1
+  fi
   if node tools/check-delete-quote.js > "$TMP/del.txt" 2>&1; then
     echo "  OK   gate: quote delete (admins only, archived, number never reissued)"
   else
@@ -783,7 +791,10 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   trap: last admin cannot be demoted"
   else echo "  FAIL trap: adminSetPerm can strand the roster with no admin"; FAIL=1; fi
   # A restore must never delete live work, and must be undoable.
-  if awk '/^function adminBackupRestore/,/^}/' quote-logger-apps-script.gs | grep -q 'snapshotBeforeRestore_'; then
+  # The work lives in backupRestoreCore_; adminBackupRestore is the one-at-a-
+  # time lease around it, and must still route through it.
+  if awk '/^function adminBackupRestore\(/,/^}/' quote-logger-apps-script.gs | grep -q 'backupRestoreCore_' \
+     && awk '/^function backupRestoreCore_/,/^}/' quote-logger-apps-script.gs | grep -q 'snapshotBeforeRestore_'; then
     echo "  OK   trap: restore snapshots the sheet first"
   else echo "  FAIL trap: restore runs without saving a snapshot — it would be irreversible"; FAIL=1; fi
   # Preview reads and reports; it must not write to the live sheet.

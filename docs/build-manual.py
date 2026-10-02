@@ -592,8 +592,9 @@ def manual():
             'never flagged. Only ID, email, name and phone are kept; a new upload replaces the '
             'list. Nobody is emailed and no price changes.', SMALL)]
     s += steps([
-        'Then load the <b>slip list</b> (same card, <b>Choose the slip list</b>): a spreadsheet with '
-        'a <b>Slip</b> column and a <b>Name</b> (or Email / Phone) column — the Dockwa assignments.',
+        'Then load the <b>slip list</b> (same card, <b>Choose the slip list</b>): the Dockwa '
+        '<b>Assignments PDF</b> exactly as Dockwa prints it. The console reads it and says how many '
+        'slipholders it found, and lists any slip whose owner name Dockwa cut short.',
         'Everyone on it is settled as a <b>slipholder</b>, and the quote shows their slip. Every '
         'Heritage Harbor customer <i>not</i> on it is settled as <b>not a slipholder</b>.',
         'Parking, ramp-pass and In &amp; Out rows never count — they are left out automatically.',

@@ -1482,6 +1482,8 @@ function consoleFns_(p) {
     /* Replaces the whole Heritage Harbor list tab — a write, so POST only. */
     hhListUpload:function (a) { return adminHhListUpload(p.token, a[0], a[1], a[2]); },
     /* The preview only reads, but walks every payload — POST like re-price's. */
+    /* Replaces the slip list — a write, POST only. */
+    hhSlipRows:  function (a) { return adminHhSlipRows(p.token, a[0], a[1], a[2]); },
     hhSlipFillPreview: function (a) { return adminHhSlipFillPreview(p.token); },
     /* Writes slip numbers onto many quotes: a write, POST only, carries a rid. */
     hhSlipFillApply:   function (a) { return adminHhSlipFillApply(p.token, a[0]); },
@@ -5644,7 +5646,7 @@ function adminHhListUpload(token, fileName, base64Data, kind) {
   if (!base64Data) return { ok: 0, error: 'No file received.' };
   const slips = kind === 'slips';
   const name = String(fileName || (slips ? 'slips.csv' : 'contacts.xlsx'));
-  if (/\.pdf$/i.test(name)) return { ok: 0, error: 'That is a PDF. Upload the list as .xlsx or .csv.' };
+  if (/\.pdf$/i.test(name)) return { ok: 0, error: 'That is a PDF — the console reads a Dockwa PDF itself; use Choose the slip list.' };
   const csv = /\.csv$/i.test(name);
   let fileId;
   try {
@@ -5662,6 +5664,34 @@ function adminHhListUpload(token, fileName, base64Data, kind) {
   if (!grid) return { ok: 0, error: 'Could not read that file.' };
   const parsed = slips ? hhParseSlips_(grid) : hhParseExport_(grid);
   if (parsed.error) return { ok: 0, error: parsed.error };
+  return hhStoreList_(who, slips, name, parsed);
+}
+
+/* The Dockwa assignments as rows the console read out of the PDF itself
+   (Dockwa offers that view only as a PDF). [[space, boat, name], ...] —
+   through the same hhParseSlips_ as a spreadsheet, so parking, ramp-pass and
+   In & Out rows are dropped by the same rule whichever way they arrive.
+   `cut`: how many entries Dockwa had truncated past reading, for the message. */
+function adminHhSlipRows(token, fileName, rows, cut) {
+  const who = requireAuth_(token, 'view');
+  if (!who.admin) return { ok: 0, error: 'Admins only.' };
+  if (!Array.isArray(rows) || !rows.length) return { ok: 0, error: 'No slip assignments were found in that PDF.' };
+  if (rows.length > 5000) return { ok: 0, error: 'That is more rows than a slip list should have — is it the right file?' };
+  const cell = function (v) { return String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 200); };
+  const grid = [['Slip', 'Boat', 'Name']].concat(rows.map(function (r) {
+    r = Array.isArray(r) ? r : [];
+    return [cell(r[0]), cell(r[1]), cell(r[2])];
+  }));
+  const parsed = hhParseSlips_(grid);
+  if (parsed.error) return { ok: 0, error: parsed.error };
+  const out = hhStoreList_(who, true, String(fileName || 'Dockwa assignments.pdf'), parsed);
+  const n = Math.max(0, Number(cut) || 0);
+  if (out.ok && n) out.msg += ' ' + n + ' entr' + (n === 1 ? 'y' : 'ies') + ' had the owner\'s name cut off by Dockwa and could not be read.';
+  return out;
+}
+
+/* Writes one list to its tab and reports what it did to the quotes. */
+function hhStoreList_(who, slips, name, parsed) {
   const rows = parsed.rows;
   const tab = slips ? HH_SLIP_TAB : HH_LIST_TAB;
   const head = slips ? HH_SLIP_HEAD_ : HH_LIST_HEAD_;

@@ -962,14 +962,14 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div class="msg" id="hhListUpMsg"></div>
       <h2 style="margin:16px 0 0">Slip list (who actually has a slip)</h2>
       <div class="msg" style="margin-top:6px">
-        A <b>.xlsx</b> or <b>.csv</b> with a <b>Slip</b> (or Space) column and a <b>Name</b>, Email or Phone
-        column — e.g. the Dockwa assignments. Once loaded, a customer on it is settled as a slipholder (the
+        The <b>Dockwa assignments PDF</b> as Dockwa prints it — or a <b>.xlsx</b> / <b>.csv</b> with a
+        <b>Slip</b> (or Space) column and a <b>Name</b>, Email or Phone column. Once loaded, a customer on it is settled as a slipholder (the
         quote shows their slip), and a Heritage Harbor customer <i>not</i> on it is settled as not a
         slipholder. Parking, ramp-pass and In &amp; Out rows never count and are left out. Staff can still
         answer Yes or No on any quote, and that wins. A new upload replaces the old list.
       </div>
       <div class="msg" id="hhSlipMeta"></div>
-      <input type="file" id="hhSlipFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" class="hide">
+      <input type="file" id="hhSlipFile" accept=".pdf,.xlsx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" class="hide">
       <button class="btn navy" id="hhSlipPickBtn" onclick="$('hhSlipFile').click()">Choose the slip list</button>
       <div class="msg" id="hhSlipUpMsg"></div>
       <h2 style="margin:16px 0 0">Fill blank slip numbers</h2>
@@ -3903,6 +3903,73 @@ async function applySlipFill(){
   }catch(e){ setMsg('hhFillMsg',e.message,false); if(b) b.disabled=false; }
 }
 
+/* ---------- Reading the Dockwa assignments PDF ----------
+   Dockwa gives its slip assignments only as a printed calendar, so the
+   console reads the PDF here and sends rows. pdf.js is fetched only when a
+   PDF is actually chosen, so the console never depends on a CDN otherwise.
+   The page is two columns: the space ("B-27 Lift", "PWC: C-1", "LL-01
+   (Parking Space)") on the left, and on the right "Boat, 22' Power - Owner".
+   A row with no label of its own belongs to the space above it — which is
+   also how Dockwa draws the ramp-pass block: it follows the last parking
+   space, and its label sits half-way down, so every ramp row ends up on a
+   parking space or on no space at all and the server drops it either way.
+   Dockwa cuts long entries short ("Sea Breeze, 39' Po…"): those are counted
+   and reported by space, never guessed at. */
+const PDFJS_SRC=['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'];
+function loadPdfJs_(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  const one=src=>new Promise((res,rej)=>{const t=document.createElement('script');t.src=src;
+    t.onload=()=>window.pdfjsLib?res(src):rej(new Error('pdf.js did not load'));t.onerror=()=>rej(new Error('could not fetch pdf.js'));
+    document.head.appendChild(t);});
+  return one(PDFJS_SRC[0]).catch(()=>one(PDFJS_SRC[1])).then(src=>{
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc=src.replace(/pdf\.min\.js$/,'pdf.worker.min.js');
+    return window.pdfjsLib;});
+}
+/* pages: [{height, items:[{str, x, y, w}]}] in PDF points, y from the bottom
+   (pdf.js's own coordinates). Returns {rows:[[space, boat, owner]], cut:[space]}. */
+const DOCKWA_LEFT_=140;
+const DOCKWA_SPACE_=/^(PWC:?\s*)?[A-Z&]{1,3}-?\s?\d{1,3}[A-Z]?\b|^Side of|^T of|^Fuel Dock$|^West - 0'/;
+function dockwaRows_(pages){
+  const rows=[],cut=[];
+  let space=null;
+  const clean=t=>String(t||'').replace(/[-⚠]/g,' ').replace(/\s+/g,' ').trim();
+  const join=its=>{its.sort((a,b)=>a.x-b.x);let out='',end=null;
+    its.forEach(i=>{if(!i.str)return;out+=(end!==null&&i.x-end>1&&!/\s$/.test(out)?' ':'')+i.str;end=i.x+(i.w||0);});
+    return clean(out);};
+  (pages||[]).forEach(function(pg,pi){
+    const its=(pg.items||[]).filter(i=>String(i.str||'').trim()).map(i=>({str:i.str,x:i.x,w:i.w,top:pg.height-i.y}));
+    its.sort((a,b)=>a.top-b.top||a.x-b.x);
+    const lines=[];
+    its.forEach(i=>{const l=lines[lines.length-1];if(l&&Math.abs(i.top-l.top)<6)l.its.push(i);else lines.push({top:i.top,its:[i]});});
+    lines.forEach(function(l){
+      if(pi===0&&l.top<60) return;                       // the page header
+      const L=join(l.its.filter(i=>i.x<DOCKWA_LEFT_)), R=join(l.its.filter(i=>i.x>=DOCKWA_LEFT_));
+      if(L){
+        if(/^(COUNT|LOA|SQUARE FOOT)$/.test(L)) space=null;
+        else if(DOCKWA_SPACE_.test(L)) space=L.replace(/\s*\*+/g,'').trim();
+        else if(L!=='Space)'&&!/^(↓|East - \d+')$/.test(L)) space=null;   // a section heading
+      }
+      if(!R||!space) return;
+      if(/^(View:|Search by|October|November|[SMTWF]( [SMTWF])*$|\d+( \d+)*$)/.test(R)) return;
+      const m=R.match(/^(.*?),\s*(\d+)'\s*\S+\s*-\s*(.+)$/);
+      if(!m||/…/.test(m[3])){ if(!/parking|^(LL|UL)-|^I&O/i.test(space)) cut.push(space); return; }
+      rows.push([space,m[1].trim(),m[3].trim()]);
+    });
+  });
+  return {rows:rows,cut:cut};
+}
+async function readDockwaPdf_(f){
+  const lib=await loadPdfJs_();
+  const doc=await lib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+  const pages=[];
+  for(let n=1;n<=doc.numPages;n++){
+    const p=await doc.getPage(n), vp=p.getViewport({scale:1}), tc=await p.getTextContent();
+    pages.push({height:vp.height,items:tc.items.map(i=>({str:i.str,x:i.transform[4],y:i.transform[5],w:i.width}))});
+  }
+  return dockwaRows_(pages);
+}
+
 /* kind '' — the marina contacts export; 'slips' — the slip list. */
 async function readHhListFile(f,kind){
   const slips=kind==='slips', ids=slips?['hhSlipFile','hhSlipPickBtn','hhSlipUpMsg','hhSlipMeta']
@@ -3913,8 +3980,19 @@ async function readHhListFile(f,kind){
   const b=$(ids[1]); b.disabled=true;
   setMsg(ids[2],'Reading '+f.name+'… this takes a moment.',null);
   try{
-    const b64=await fileToB64(f);
-    const r=await api('hhListUpload',[f.name,b64,slips?'slips':'contacts']);
+    let r;
+    if(slips&&/\.pdf$/i.test(f.name)){
+      setMsg(ids[2],'Reading the Dockwa PDF…',null);
+      const d=await readDockwaPdf_(f);
+      if(!d.rows.length){ setMsg(ids[2],'No slip assignments found in that PDF — is it the Dockwa Assignments page?',false); return; }
+      setMsg(ids[2],'Found '+d.rows.length+' assignments — saving…',null);
+      r=await api('hhSlipRows',[f.name,d.rows,d.cut.length]);
+      if(r&&r.ok&&d.cut.length) r.msg+=' Set these by hand under Keys & slip if they have a quote: '+
+        Array.from(new Set(d.cut)).join(', ')+'.';
+    }else{
+      const b64=await fileToB64(f);
+      r=await api('hhListUpload',[f.name,b64,slips?'slips':'contacts']);
+    }
     if(!r||!r.ok){ setMsg(ids[2],(r&&r.error)||'Could not load that file.',false); return; }
     $(ids[3]).innerHTML=hhMetaText_(r.meta,slips?'slipholders':'contacts');
     setMsg(ids[2],r.msg+' Open Storage view → Heritage Harbor to work through any still to answer.',true);

@@ -396,5 +396,63 @@ console.log('=== filling blank slip numbers from the slip list ===');
   else ok('the fill is POST-only');
 }
 
+/* ---------------- reading the Dockwa PDF ---------------- */
+console.log('=== reading the Dockwa assignments PDF (the console\'s reader) ===');
+{
+  /* A page as pdf.js hands it over: items in PDF points, y from the bottom.
+     Laid out like Dockwa's print: label column at x=47, entries from x=159. */
+  const H = 792;
+  let y = H - 40;
+  const items = [];
+  const at = (x, str) => items.push({ str, x, y, w: str.length * 5 });
+  const line = (left, right, rightTail) => {
+    if (left) at(47, left);
+    if (right) at(159, right);
+    if (rightTail) at(159 + right.length * 5 + 3, rightTail);
+    y -= 30;
+  };
+  line('View: Monthly Jump to: Spaces: All', '');                 // page header
+  line('COUNT', '');
+  line('25x12 (Test', '');
+  line('Dock)', '');
+  line('B-27 Lift', " Test Tracker, 22' Power", '- Pat Example');   // bold run + normal run
+  line('', "Second Boat, 18' Power - Robin Sample");                    // same slip, second line
+  line('B-28 *', "River Thing, 39' Po…");                               // cut off by Dockwa
+  line('B-29', '');
+  line('PWC: C-1', "Ski, 10' Power - Lee Sample");
+  line('COUNT', '');
+  line('Parking Marina -', '');
+  line('LL-01 (Parking', "Truck, 15' Power - Kim Parker");
+  line('Space)', '');
+  line('', "Jon Boat, 17' Power - Ray Ramp");                            // ramp block, above its label
+  line('Ramp Pass ⚠', "Other Boat, 19' Power - Rita Ramp");
+  line('Members', '');
+  line('', "Third, 20' Power - Rory Ramp");                              // ramp block, below its label
+  line('COUNT', '');
+  line('I&O-1', "Rack, 23' Power - Ivy Inout");
+  const out = C.dockwaRows_([{ height: H, items }]);
+  const got = out.rows.map((r) => r.join(' | '));
+  const want = ['B-27 Lift | Test Tracker | Pat Example', 'B-27 Lift | Second Boat | Robin Sample',
+    'PWC: C-1 | Ski | Lee Sample', 'LL-01 (Parking | Truck | Kim Parker', 'LL-01 (Parking | Jon Boat | Ray Ramp',
+    'I&O-1 | Rack | Ivy Inout'];
+  if (JSON.stringify(got) !== JSON.stringify(want)) fail('PDF rows read wrong:\n         ' + got.join('\n         '));
+  else ok('slips, a second boat in one slip, PWC pods; header and headings skipped');
+  if (got.some((r) => /Rita|Rory/.test(r))) fail('a ramp-pass row below its label was given a space');
+  else ok('ramp-pass rows below the label get no space at all');
+  if (JSON.stringify(out.cut) !== JSON.stringify(['B-28'])) fail('cut-off entries reported as ' + JSON.stringify(out.cut));
+  else ok('an entry Dockwa cut short is reported by its slip, not guessed at');
+  /* And what the server keeps of it: parking (the ramp row above the label
+     rides on the parking space) and In & Out are dropped. */
+  const kept = ctx.hhParseSlips_([['Slip', 'Boat', 'Name']].concat(out.rows));
+  if (kept.error || kept.rows.map((r) => r[2]).join('|') !== 'Pat Example|Robin Sample|Lee Sample' || kept.skipped !== 3)
+    fail('the server kept the wrong PDF rows: ' + JSON.stringify(kept));
+  else ok('the server keeps only the three slipholders — parking, ramp and In & Out dropped');
+  const sr = fn('adminHhSlipRows');
+  if (!/who\.admin/.test(sr) || !/hhParseSlips_/.test(sr)) fail('adminHhSlipRows is not admins-only, or skips the slip rules');
+  else ok('PDF rows go through the same admins-only path and the same slip rules');
+  if (/hhSlipRows/.test(getFns)) fail('loading PDF rows is GET-able');
+  if (!/pdfjs-dist@3\.11\.174|pdf\.js\/3\.11\.174/.test(HTML)) fail('the console no longer pins its pdf.js version');
+}
+
 if (bad) { console.error('\n' + bad + ' check(s) failed.'); process.exit(1); }
 console.log('\nAll Heritage Harbor list checks pass.');

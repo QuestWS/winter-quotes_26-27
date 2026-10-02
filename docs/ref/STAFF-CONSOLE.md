@@ -412,13 +412,21 @@ they are a slipholder (Chris, Oct 2026).
   right before each write. Clearing the box under Keys & slip undoes one. A
   quote saved after the run is not filled until it is run again; its card
   still offers the slip.
-- **Dockwa's assignment view is a PDF calendar, not a list.** The console
-  takes a spreadsheet, so the first one (Oct 2026) was converted outside the
-  repo into `Slip, Boat, Name`. Dockwa truncates long names in that view
-  ("River Time, 39' Po…"), so those slips carried no owner and cannot match
-  anybody; those customers read as `notslip` until a slip number or a Yes is
-  recorded. An export with emails and phones matches far better and needs no
-  conversion.
+- **Dockwa gives its assignments only as a PDF calendar**, so the console
+  reads that PDF itself (`readDockwaPdf_` → `dockwaRows_`, pdf.js 3.11.174
+  fetched from cdnjs — jsDelivr as fallback — only when a PDF is chosen) and
+  sends `[space, boat, owner]` rows to `adminHhSlipRows`, which runs them
+  through the same `hhParseSlips_`. The page is two columns: the space label
+  at the left (x < 140pt), the entry at the right. A row with no label of its
+  own belongs to the space above it — which is also how the ramp-pass block
+  falls out: it follows the last parking space and its label sits half-way
+  down, so every ramp row lands on a parking space or on none, and is dropped
+  either way. Dockwa cuts long entries short ("Sea Breeze, 39' Po…"); those
+  carry no owner, are reported by slip in the upload message, and those
+  customers read as `notslip` until a slip or a Yes is recorded. Checked
+  against the Oct 2026 PDF: 228 slipholders, 28 cut short. A spreadsheet
+  (Slip + Name/Email/Phone) is still accepted and matches better if Dockwa
+  ever offers one.
 - `tools/check-hh-list.js` executes the export parsing, every matching rule,
   each flag state (including the slip-list ones and what beats what), the save
   carry-over and the console's tag and filter, on invented names only.

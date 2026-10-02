@@ -686,6 +686,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   # A restore and a bulk-import slice must never overlap themselves: a double
   # click on Restore and two import slices at once each put the same quote on
   # two rows (Sep 2026). Executed with the second run fired mid-first.
+  # The Heritage Harbor customer list: matched by email, phone or name, settled
+  # by a slip number or a staff answer, and that answer kept across a customer
+  # save. Executed against a fake list and a fake spreadsheet.
+  if node tools/check-hh-list.js > "$TMP/hhlist.txt" 2>&1; then
+    echo "  OK   gate: Heritage Harbor list flags matches until a slip or an answer settles them"
+  else
+    echo "  FAIL gate: Heritage Harbor list matching or flag broken"; sed 's/^/       /' "$TMP/hhlist.txt"; FAIL=1
+  fi
   if node tools/check-run-leases.js > "$TMP/lease.txt" 2>&1; then
     echo "  OK   gate: one restore / one import slice at a time (claimLease_)"
   else

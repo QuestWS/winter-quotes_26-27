@@ -311,6 +311,12 @@ font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical
 letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:#fff;
 color:var(--muted);border:1.5px solid var(--line)}
 .tagseason.cur{color:var(--green);border-color:var(--green);font-weight:800}
+/* On the Heritage Harbor customer list, slipholder or not still to be answered.
+   Outlined navy: a question for staff, not a hold and not money. */
+.taghh{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800;
+letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:#fff;
+color:var(--navy);border:1.5px solid var(--navy)}
+.card.hhflag{border:2px solid var(--gold)}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
 padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
 .srow:hover{background:#F4F9FC}
@@ -399,6 +405,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
+      <button class="linkbtn hide" id="hhListOpen" onclick="navGo(toggleHhList)">Heritage Harbor list</button>
       <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
       <button class="linkbtn hide" id="repriceOpen" onclick="navGo(toggleReprice)">Re-price at current rates</button>
       <button class="linkbtn hide" id="importOpen" onclick="navGo(toggleImport)">Load from an old sheet</button>
@@ -444,6 +451,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <span>Add or remove staff, and set what each person is allowed to do.</span></button>
       <button class="tile hide" id="backupTile" onclick="navGo(toggleBackup)"><b>Restore from backup</b>
         <span>Read a nightly backup, compare it against the sheet, and put back only what you choose.</span></button>
+      <button class="tile hide" id="hhListTile" onclick="navGo(toggleHhList)"><b>Heritage Harbor list</b>
+        <span>Load the marina's customer export. Every matching quote is flagged until someone confirms slipholder or not.</span></button>
     </div>
 
     <div id="quoteArea" class="hide">
@@ -507,6 +516,21 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             </details>
             <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Email history</summary>
               <div id="qHist" style="margin-top:6px"></div></details>
+          </div>
+
+          <!-- On the Heritage Harbor customer list. Not every marina customer
+               has a slip (fuel and food accounts are on the same export), so
+               staff answer yes or no; a slip number under Keys & slip
+               settles it on its own. Not money — no discount is added here. -->
+          <div class="card hide" id="hhListCard">
+            <h2>Heritage Harbor customer</h2>
+            <div class="msg" id="hhListNow" style="margin:0 0 8px"></div>
+            <div class="row2 hide" id="hhListBtns">
+              <button class="btn navy" onclick="saveHhList('yes')">Yes — slipholder</button>
+              <button class="btn ghost" onclick="saveHhList('no')">No — not a slipholder</button>
+            </div>
+            <button class="btn ghost sm hide" id="hhListUndo" onclick="saveHhList('clear')">Undo this answer</button>
+            <div class="msg" id="hhListMsg"></div>
           </div>
 
           <div class="card hide" id="payCard">
@@ -919,6 +943,24 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div id="backupReport" class="hide" style="margin-top:10px"></div>
     </div>
 
+    <div class="card hide" id="hhListUpCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Heritage Harbor customer list</h2>
+        <button class="btn ghost sm" onclick="$('hhListUpCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Upload the marina's contacts export (<b>.xlsx</b> or <b>.csv</b>). Every quote whose customer
+        is on it — same email, phone, or first and last name — is flagged on the console until somebody
+        answers <b>slipholder</b> or <b>not a slipholder</b>. A quote that already has a slip number is
+        settled without asking. Only the customer ID, email, name and phone are kept; a new upload replaces
+        the old list. Nobody is emailed and no price changes.
+      </div>
+      <div class="msg" id="hhListMeta"></div>
+      <input type="file" id="hhListFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" class="hide">
+      <button class="btn navy" id="hhListPickBtn" onclick="$('hhListFile').click()">Choose the export file</button>
+      <div class="msg" id="hhListUpMsg"></div>
+    </div>
+
     <div class="card hide" id="storageCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Storage overview</h2>
@@ -985,7 +1027,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,draftList:1,photoInfo:1,
+const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,draftList:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1204,6 +1246,7 @@ function boot(){
     const P=ME.perms||{};
     navGate('admin',  ME.admin);
     navGate('backup', ME.admin);
+    navGate('hhList', ME.admin);
     /* Send-to-all is reachable without a quote open, so it is gated here rather
        than by a card on the quote screen. Same permission as any other email. */
     navGate('bulk',   ME.admin||P.email);
@@ -1220,7 +1263,7 @@ function boot(){
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
 const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','importCard',
-  'repriceCard','bulkCard','backupCard','storageCard'];
+  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard'];
 function syncHome(){
   const el=$('homeTiles'); if(!el||!T||!ME) return;
   const busy=HOME_PANELS.some(id=>{const e=$(id); return e&&!e.classList.contains('hide');});
@@ -1673,6 +1716,47 @@ async function saveStaffNote(){
   finally{ b.disabled=false; b.textContent='Save note'; }
 }
 
+/* ---------- Heritage Harbor customer list ----------
+   The server decides who is on the list and whether it is settled (hhFlagOf_);
+   this only draws it and sends the answer. Shown to anyone who can open the
+   quote, answerable with the keys permission — same bar as the staff note. */
+let HHL=null;
+function renderHhList(h,P){
+  HHL=h||null;
+  const card=$('hhListCard');
+  card.classList.toggle('hide',!h);
+  if(!h) return;
+  const can=!!(P&&P.keys);
+  const on=(h.on||[]).join(', ');
+  const who=h.by?' by '+esc(h.by)+(h.at?' on '+esc(new Date(h.at).toLocaleDateString()):''):'';
+  const match='On the marina\'s customer list as <b>'+esc(h.listName||'?')+'</b> (matched on '+esc(on||'?')+
+    ((h.on||[]).length===1&&h.on[0]==='name'?' only — check it is the same person':'')+').';
+  let st;
+  if(h.state==='slip') st='<b style="color:var(--green)">Settled</b> — slip <b>'+esc(h.slip)+'</b> is on the quote.';
+  else if(h.state==='yes') st='<b style="color:var(--green)">Confirmed slipholder</b>'+who+'.'+
+    (h.land?'':' <br>No slip number yet — add it under <b>Keys &amp; slip</b>.')+
+    ' The slipholder discount is separate: <b>Add or remove services</b>.';
+  else if(h.state==='no') st='<b>Confirmed not a slipholder</b> (fuel, food or other account)'+who+'.';
+  else st='<b style="color:var(--red)">Slipholder or not?</b> Not every Heritage Harbor customer has a slip — '+
+    'some only have fuel or food accounts.'+(h.land?'':' Saving a slip number under <b>Keys &amp; slip</b> also settles this.');
+  $('hhListNow').innerHTML=match+'<br>'+st;
+  card.classList.toggle('hhflag',h.state==='open');
+  $('hhListBtns').classList.toggle('hide',!(can&&h.state==='open'));
+  $('hhListUndo').classList.toggle('hide',!(can&&(h.state==='yes'||h.state==='no')));
+  setMsg('hhListMsg','');
+}
+async function saveHhList(answer){
+  if(!QN) return;
+  setMsg('hhListMsg','Saving…',null);
+  try{
+    const r=await api('hhConfirm',[QN,answer]);
+    if(!r||!r.ok){ setMsg('hhListMsg',(r&&r.error)||'Could not save that.',false); return; }
+    renderHhList(r.hhList||null,myPerms_());
+    setMsg('hhListMsg',r.msg,true);
+    toast(r.msg);
+  }catch(e){ setMsg('hhListMsg',e.message,false); }
+}
+
 /* ---------- Keys & slip ----------
    Not part of the dimension editor: nothing here changes a price, so there is
    no before/after to preview — it saves in one press. The server still re-runs
@@ -1721,6 +1805,10 @@ async function saveKeys(){
     if(!r||!r.ok){ setMsg('keysMsg',(r&&r.error)||'Could not save that.',false); return; }
     renderKeys(Object.assign({},KEYS,{keyLoc:r.keyLoc,slipNo:r.slipNo,
       trailerLoc:r.trailerLoc,missing:r.missing||[]}));
+    /* A slip number settles the Heritage Harbor question; clearing it puts
+       back whatever staff answered (or the flag). Same rule as hhFlagOf_. */
+    if(HHL){ HHL.slip=String(r.slipNo||'').trim(); HHL.state=HHL.slip?'slip':(HHL.answer||'open');
+      renderHhList(HHL,myPerms_()); }
     setMsg('keysMsg',r.msg,true);
     toast('Saved');
   }catch(e){ setMsg('keysMsg',e.message,false); }
@@ -1892,6 +1980,7 @@ function renderQuote(r){
   window._canSign=!!r.canSign;
   window._hasEmail=!!r.hasEmail;
   renderContract(P);
+  renderHhList(r.hhList||null,P);
   $('payCard').classList.toggle('hide',!P.pay);
   $('adjCard').classList.toggle('hide',!P.adjust);
   /* Same permission as any other change that moves money. */
@@ -2577,7 +2666,7 @@ async function loadStorage(){
    deposit" would bury the customers who actually owe one. They stay visible
    under "Everyone", which is where staff already look for them. */
 let SFILTER='all';
-const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid',notes:'Customer notes',drafts:'Imported'};
+const SFILTER_LABEL={all:'Everyone',nodep:'No deposit',dep:'Deposit paid',notes:'Customer notes',hh:'Heritage Harbor',drafts:'Imported'};
 function setStorageFilter(f){
   if(!SFILTER_LABEL[f])return; SFILTER=f;
   if(f==='drafts'&&!window._drafts) loadDrafts_();
@@ -2592,6 +2681,8 @@ function storageKeeps_(g,x){
   /* Anyone who wrote us a note, leads included: an unfinished quote with a
      question in it is still a question somebody should answer. */
   if(SFILTER==='notes') return !!x.cnote;
+  /* On the Heritage Harbor list and nobody has answered yet — leads too. */
+  if(SFILTER==='hh') return x.hh==='open';
   if(g.lead) return false;
   return SFILTER==='dep' ? !!x.deposit : !x.deposit;
 }
@@ -2620,13 +2711,17 @@ function renderDrafts_(){
     ' not yet sent — tap any row to open it. These are not on the storage or haul-out sheets; '+
     'emailing the customer is what moves one onto its storage area.</div>';
   if(!d.length) return head+'<div class="msg" style="padding:6px">— nothing waiting on the Import tab —</div>';
-  return head+d.map(x=>`<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+  return head+d.map(draftRow_).join('');
+}
+const HH_TAG='<span class="taghh">\u2693 HH \u2014 SLIPHOLDER?</span>';
+function draftRow_(x){
+  return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
     <span class="nm">${esc(x.name)}${x.cnote?'<span class="tagnote">\u{1F4AC} NOTE</span>':''}${
-      x.hasEmail?'':'<span class="tagmute">no email</span>'}</span>
+      x.hh==='open'?HH_TAG:''}${x.hasEmail?'':'<span class="tagmute">no email</span>'}</span>
     <span class="un">${esc(x.qn)} · ${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${
       x.dest?' · goes to '+esc(x.dest):''} · ${esc(x.status)}</span>
     <span class="bl owe">${esc(x.total)}</span>${
-      x.cnote?'<div class="cnotebox"><b>Customer note:</b> '+esc(x.cnote)+'</div>':''}</div>`).join('');
+      x.cnote?'<div class="cnotebox"><b>Customer note:</b> '+esc(x.cnote)+'</div>':''}</div>`;
 }
 /* Groups with their rows narrowed to the current view. Under "Everyone" an
    empty building still prints, because knowing a building is empty is worth a
@@ -2638,9 +2733,11 @@ function storageGroups_(){
   }).filter(g=>SFILTER==='all'||g.count>0);
 }
 function storageCounts_(){
-  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0,oldRates:0};
+  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0,oldRates:0,hh:0,hhDrafts:0};
+  (window._drafts||[]).forEach(function(x){ if(x.hh==='open') c.hhDrafts++; });
   (window._sg||[]).forEach(g=>(g.rows||[]).forEach(function(x){
     c.all++;
+    if(x.hh==='open') c.hh++;
     if(!g.lead&&seasonTag_(x).old) c.oldRates++;
     if(x.cnote) c.notes++;
     /* Counted for everybody, leads included: "may we touch this unit" does not
@@ -2674,7 +2771,10 @@ function renderStorage(){
   const tab=(k,n)=>`<button class="${SFILTER===k?'on':''}" onclick="setStorageFilter('${k}')">`+
     `${SFILTER_LABEL[k]}<span class="n">${n}</span></button>`;
   const t=$('storageTabs');
+  /* Only once there is something on the Heritage Harbor list to answer. */
+  const hhN=c.hh+c.hhDrafts;
   t.innerHTML=tab('all',c.all)+tab('nodep',c.nodep)+tab('dep',c.dep)+tab('notes',c.notes)+
+    ((hhN||SFILTER==='hh')?tab('hh',hhN):'')+
     tab('drafts',window._drafts?window._drafts.length:'…');
   t.classList.remove('hide');
   if(SFILTER==='drafts'){ $('storageBody').innerHTML=renderDrafts_(); return; }
@@ -2710,8 +2810,9 @@ function renderStorage(){
       const ntag=cn?'<span class="tagnote">\u{1F4AC} NOTE</span>':'';
       const nbox=cn?'<div class="cnotebox"><b>Customer note:</b> '+esc(cn)+'</div>':'';
       const stag=g.lead?'':seasonTag_(x).html;
+      const htag=x.hh==='open'?HH_TAG:'';
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
-        <span class="nm">${esc(x.name)}${tag}${ntag}${stag}</span>
+        <span class="nm">${esc(x.name)}${tag}${htag}${ntag}${stag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
         <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
@@ -2731,14 +2832,23 @@ function renderStorage(){
       ' Unfinished quotes are left out, since there is nothing to take a deposit on until a quote is saved.';
   }else if(SFILTER==='notes'){
     head=`${shown} quote${shown===1?' has':'s have'} a note from the customer — tap any row to open it and read the whole thing.`;
+  }else if(SFILTER==='hh'){
+    const n=shown+c.hhDrafts;
+    head=`<b>${n}</b> customer${n===1?' is':'s are'} on the Heritage Harbor list with no answer yet — open each one and say `+
+      `whether they are a slipholder. Saving a slip number under Keys &amp; slip settles one on its own.`;
   }else{
     head=`${shown} total units on file — tap any row to open it.`+
       (c.oldRates&&window._curSeason?` <b>${c.oldRates}</b> still priced on last season's rates (tagged grey) — Season re-price moves them to ${esc(window._curSeason)}.`:'')+
       (c.held?` <b>${c.held}</b> cannot be pulled yet — ${c.unsigned} awaiting a signature, ${
                 c.unpaid} awaiting a deposit, ${c.blocked} with neither.`:'');
   }
+  /* Imported drafts are never in _sg (they must not reach a storage sheet),
+     so the ones to answer are drawn under their own heading here instead. */
+  const hhDr=SFILTER==='hh'?(window._drafts||[]).filter(x=>x.hh==='open'):[];
+  const drafts=hhDr.length?`<div class="sgH"><b>Imported (not yet sent)</b><span>${hhDr.length}</span></div>`+
+    hhDr.map(draftRow_).join(''):'';
   $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
-    (shown?body:'<div class="msg" style="padding:6px">— nothing in this view —</div>');
+    ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>');
 }
 function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
 async function printStorage(){
@@ -3638,6 +3748,35 @@ async function removeStaff(i){
   loadStaff();
 }
 
+/* ---------- Heritage Harbor customer list (admin only) ---------- */
+function hhMetaText_(m){
+  return m&&m.count?'Loaded now: <b>'+m.count+'</b> contacts from '+esc(m.file||'a file')+', '+
+    esc(new Date(m.at).toLocaleString())+(m.by?' by '+esc(m.by):'')+'.':'No list loaded yet.';
+}
+async function toggleHhList(){
+  const c=$('hhListUpCard');
+  c.classList.toggle('hide');
+  if(c.classList.contains('hide')) return;
+  setMsg('hhListUpMsg','');
+  $('hhListMeta').innerHTML='Checking what is loaded…';
+  try{ const r=await api('hhListInfo',[]); $('hhListMeta').innerHTML=r&&r.ok?hhMetaText_(r.meta):esc((r&&r.error)||''); }
+  catch(e){ $('hhListMeta').textContent=e.message; }
+}
+async function readHhListFile(f){
+  if(!f) return;
+  if(!confirm('Replace the Heritage Harbor list with '+f.name+'?\n\nQuotes are flagged straight away. Nobody is emailed and no price changes.')){ $('hhListFile').value=''; return; }
+  const b=$('hhListPickBtn'); b.disabled=true;
+  setMsg('hhListUpMsg','Reading '+f.name+'… this takes a moment.',null);
+  try{
+    const b64=await fileToB64(f);
+    const r=await api('hhListUpload',[f.name,b64]);
+    if(!r||!r.ok){ setMsg('hhListUpMsg',(r&&r.error)||'Could not load that file.',false); return; }
+    $('hhListMeta').innerHTML=hhMetaText_(r.meta);
+    setMsg('hhListUpMsg',r.msg+' Open Storage view → Heritage Harbor to work through them.',true);
+  }catch(e){ setMsg('hhListUpMsg',e.message,false); }
+  finally{ b.disabled=false; $('hhListFile').value=''; }
+}
+
 /* ---------- Restore from a nightly backup (admin only) ----------
    Two steps on purpose. The upload only reads the file and reports what it
    would change; the restore is a separate, explicit click. */
@@ -3736,6 +3875,7 @@ document.addEventListener('DOMContentLoaded',()=>{wireDrop();boot();
   $('pin').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   $('newStaffName').addEventListener('keydown',e=>{if(e.key==='Enter')addStaff();});
   $('backupFile').addEventListener('change',e=>{readBackupFile(e.target.files[0]);});
+  $('hhListFile').addEventListener('change',e=>{readHhListFile(e.target.files[0]);});
 });
 </script>
 </body>

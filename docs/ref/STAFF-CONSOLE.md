@@ -327,6 +327,51 @@ decision (`adminHho`). Nobody is emailed.
   the line editor and a bare re-total, fixed amounts, and the base.
 
 
+## Heritage Harbor customer list (console)
+
+The marina's contacts export lists **every** Heritage Harbor customer — slip
+holders and people with only a fuel or food account alike. Loaded on the
+console, it flags each quote whose customer is on it until staff say whether
+they are a slipholder (Chris, Oct 2026).
+
+- **Loading it (admins):** menu → **Heritage Harbor list** → choose the export
+  (`.xlsx` or `.csv`). `adminHhListUpload` converts it through Drive (the same
+  `uploadAsSheet_` road as the backup restore — no new scope), finds the
+  heading row itself (the marina export has title rows above it), and writes
+  only **Customer ID, Email, Name, Phone** to the `Heritage Harbor List` tab.
+  Addresses and the marina's own notes are dropped on the way in. A new upload
+  **replaces** the list. The reply says how many quotes match and how many
+  still need an answer. The list is real customer data: it lives in the
+  spreadsheet and **never in the repo** — not as a fixture, not as a sample.
+- **Matching is worked out on every read, not stored** (`hhFlagOf_`, against
+  a cached index of that tab, `hhIndex_`, dropped by every upload). A quote
+  saved tomorrow is flagged tomorrow. Any one of: the **email** (any case), the
+  **phone** (last ten digits, so `+1` and formatting don't matter), or the
+  **first + last name** — a couple written "John & Jane Smith" gives a key for
+  each. One word alone never matches by name (a business, a lone surname). A
+  name-only match is the weakest, so the card says what matched and asks staff
+  to check it is the same person.
+- **Settled by a slip number with nobody opening the quote.** The slip is read
+  through the effective state, so one saved under **Keys & slip** counts the
+  moment it is saved, as does one the customer typed. A slip beats any answer.
+- **Otherwise staff answer** on the quote's **Heritage Harbor customer** card:
+  **Yes — slipholder** or **No — not a slipholder**, with **Undo**
+  (`adminHhConfirm`, `keys` permission — same bar as the staff note). The
+  answer is `d.hhList {answer, by, at}` on the payload, written without a
+  re-price or a new PDF, and **carried across a customer save** like the staff
+  note. Answering **yes does not add the slipholder discount** — that stays
+  its own money decision (`Add or remove services` → Heritage Harbor
+  slipholder).
+- **Where it shows:** a navy `⚓ HH — SLIPHOLDER?` tag on the row in the
+  storage view and on imported drafts, and a **Heritage Harbor** filter tab
+  (shown once anything needs an answer) listing every open one — imported
+  drafts under their own heading, since drafts never reach a storage sheet.
+  Storage rows carry only the state (`hh`: `open` / `slip` / `yes` / `no` /
+  ''); the matched name and how it matched are on `adminLookup` (`hhList`).
+- `tools/check-hh-list.js` executes the export parsing, every matching rule,
+  each flag state, the save carry-over and the console's tag and filter, on
+  invented names only.
+
 ## Adding or removing services (console)
 
 `Add or remove services` card, gated on `adjust`. Every service the customer's

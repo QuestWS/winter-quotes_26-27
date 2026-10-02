@@ -41,17 +41,20 @@ const hasnt = (hay, needle, what) => {
   else fail(what + ' — still contains ' + JSON.stringify(needle));
 };
 
-/* Flip the flag in a COPY of the source and run that copy. Patching the text
+/* Set the flag in a COPY of the source and run that copy. Patching the text
    rather than the loaded object is deliberate: it is exactly the edit Chris
-   makes at the rollover, so this proves that edit and nothing else. */
+   makes at the rollover, so this proves that edit and nothing else. It works
+   in both directions, so both halves stay tested whichever way the committed
+   flag sits — since the 2026-2027 rollover it is false, and the disclaimer
+   half has to keep passing for the next season's estimates. */
 function patched(src, provisional) {
-  if (provisional) return src;
-  const from = 'provisional: true';
-  if (src.split(from).length - 1 !== 1) {
-    console.error('FAIL: expected exactly one "' + from + '" to flip — the flag moved or was duplicated');
+  const t = 'provisional: true', f = 'provisional: false';
+  const nt = src.split(t).length - 1, nf = src.split(f).length - 1;
+  if (nt + nf !== 1) {
+    console.error('FAIL: expected exactly one "provisional: true|false" to set — the flag moved or was duplicated');
     process.exit(1);
   }
-  return src.replace(from, 'provisional: false');
+  return provisional ? src.replace(f, t) : src.replace(t, f);
 }
 
 function loadEngine(provisional) {
@@ -117,12 +120,13 @@ if (!N) {
   const pv = E.pricesValidSentence();
   hasnt(pv, 'Prices shown are valid', 'fine print does not promise valid prices');
   has(pv, 'does not hold the prices shown', 'fine print says paying does not hold a price');
-  has(E.pricesValidSentence('November 15, 2026'), 'November 15, 2026', 'an older quote keeps its own pay-by date');
+  has(E.pricesValidSentence('November 15, 2025'), 'November 15, 2025', 'an older quote keeps its own pay-by date');
 
   const pdf = B.quoteHtml_(FIXTURE);
   has(pdf, N.heading, 'PDF carries the banner heading');
   has(pdf, N.body, 'PDF banner carries the whole notice');
-  has(pdf, pv, 'PDF fine print says paying does not hold a price');
+  /* The PDF prints the quote's OWN pay-by date (its season stamp), not today's. */
+  has(pdf, E.pricesValidSentence(FIXTURE.season.payBy), 'PDF fine print says paying does not hold a price');
   has(pdf, C.depositRow, 'PDF deposit row uses the reserve wording');
   hasnt(pdf, 'Deposit due today to lock in', 'PDF has no lock-in deposit row');
 

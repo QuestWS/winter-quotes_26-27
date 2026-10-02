@@ -76,7 +76,7 @@ console.log('=== 1. the tier table is the rate card ===');
 
 console.log('\n=== 2. nothing until approved; removed takes it off ===');
 {
-  const d = quoteFrom('jetski-inside-detail', { hho: true, slipNo: 'B-14' });   // $1,127.40
+  const d = quoteFrom('jetski-inside-detail', { hho: true, slipNo: 'B-14' });   // $1,149.00
   check('pending: no discount line', count(d) === 0);
   const before = Number(d.total);
   let r = B.hhoSetDecision_(d, 'approve', '', 'Test');
@@ -95,13 +95,13 @@ console.log('\n=== 3. a tiered approval follows the services total down ===');
   const d = quoteFrom('jetski-inside-detail', { hho: true, slipNo: 'B-14' });
   B.hhoSetDecision_(d, 'approve', '50', 'Test');           // typing the tier's figure = the tier
   check('typing the tier figure keeps it tiered', d.manual.hho.amt === null);
-  check('$1,127.40 of services → $50', disc(d) === 50);
+  check('$1,149.00 of services → $50', disc(d) === 50);
   /* The exact complaint this exists to prevent: detailing comes off after the
      discount was set. Via the journal, as the console line editor records it. */
   const det = d.lines.find(l => l.sec === 'Detailing');
   B.ensureManual_(d).removed.push(det.label);
   resave(d);
-  check('detailing removed → $777.40 of services → $25', disc(d) === 25, 'discount $' + disc(d));
+  check('detailing removed → $799.00 of services → $25', disc(d) === 25, 'discount $' + disc(d));
   /* Via a direct splice + re-total, the way every write path finishes. */
   const d2 = quoteFrom('jetski-inside-detail', { hho: true, slipNo: 'B-14' });
   B.hhoSetDecision_(d2, 'approve', '', 'Test');
@@ -128,9 +128,9 @@ console.log('\n=== 4. a fixed amount stays put ===');
 
 console.log('\n=== 5. staff adjustments do not move the tier ===');
 {
-  const d = quoteFrom('boat-late-retrieval-hho-quoterequests');   // $1,140 of services
+  const d = quoteFrom('boat-late-retrieval-hho-quoterequests');   // $1,179 of services
   B.hhoSetDecision_(d, 'approve', '', 'Test');
-  check('$1,140 → $50', disc(d) === 50);
+  check('$1,179 → $50', disc(d) === 50);
   B.ensureManual_(d).adjustments.push({ label: 'December service charge', amt: 1000 });
   resave(d);
   check('a $1,000 late fee does not lift it to $100', disc(d) === 50, 'discount $' + disc(d));
@@ -141,14 +141,14 @@ console.log('\n=== 5. staff adjustments do not move the tier ===');
 
 console.log('\n=== 6. one line, never two; never migrated into adjustments ===');
 {
-  const d = quoteFrom('boat-twin-inboard-full', { hho: true, slipNo: 'C-3' });   // $3,883.60
+  const d = quoteFrom('boat-twin-inboard-full', { hho: true, slipNo: 'C-3' });   // $4,037.12
   B.hhoSetDecision_(d, 'approve', '', 'Test');
   B.recomputeTotals_(d); B.recomputeTotals_(d); resave(d); resave(d);
-  check('still exactly one discount line', count(d) === 1 && disc(d) === 150, count(d) + ' line(s), $' + disc(d));
+  check('still exactly one discount line', count(d) === 1 && disc(d) === 200, count(d) + ' line(s), $' + disc(d));
   check('reconcileManual_ leaves it alone', B.reconcileManual_(d) === false && d.manual.adjustments.length === 0);
   const pending = quoteFrom('boat-twin-inboard-full', { hho: true, slipNo: 'C-3' });
   check('the console sees it as awaiting approval with the right tier',
-    B.hhoInfo_(pending).status === 'pending' && B.hhoInfo_(pending).tier === 150 && B.hhoInfo_(pending).asked);
+    B.hhoInfo_(pending).status === 'pending' && B.hhoInfo_(pending).tier === 200 && B.hhoInfo_(pending).asked);
 }
 
 console.log('\n=== 7. the line editor routes to the same decision ===');
@@ -179,7 +179,7 @@ console.log('\n=== 8. the customer never sees a discount they could play with ==
 
 console.log('\n=== 9. staff add it for a customer who forgot their slip ===');
 {
-  const d = quoteFrom('jetski-inside-detail', { hho: false, slipNo: '' });   // $1,127.40, never said slipholder
+  const d = quoteFrom('jetski-inside-detail', { hho: false, slipNo: '' });   // $1,149.00, never said slipholder
   check('not asked, so the card offers it', !B.hhoInfo_(d).asked && B.hhoInfo_(d).status === 'pending' && count(d) === 0);
   check('a blank slip is refused', B.hhoAddForgotten_(d, '  ', '', 'Test').ok === 0 && count(d) === 0);
   const r = B.hhoAddForgotten_(d, 'B-14', '', 'Test');

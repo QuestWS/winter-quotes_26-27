@@ -257,8 +257,8 @@ embeds verbatim between `ENGINE-START` / `ENGINE-END`.
   code.
 - The **Annual Update Zone** at the top of `pricing-engine.js` is where a season
   rollover happens: one edit updates page and server together.
-- **`PRICES` currently holds 2025–2026 rates, so every quote is an estimate.**
-  `PRICING.provisional` (same zone) is the one switch for that: while it is
+- **`PRICES` holds the 2026–2027 card; `provisional` is false.** When a season
+  quotes ahead of its card, `PRICING.provisional` (same zone) is the one switch: while it is
   true, `pricingNotice()` / `lockinCopy()` / `pricesValidSentence()` put the
   estimate banner on the quote page, the ticket, the PDF and every customer
   email, and replace all "lock in" wording with "reserve your spot" — a
@@ -361,7 +361,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 | Excel import of last year's selections | **Built — one at a time, or the whole folder** | `Load from an old sheet` for one file; `bulkImport1_Scan()` / `bulkImport2_Apply()` for a whole season folder onto the **Import** tab (§2). Both recover the `#REF!` files from the master grid and price at today's rates. Only the bulk run skips customers who already have a quote. Detail: `docs/ref/STAFF-CONSOLE.md`. |
 | Twilio SMS mirroring | Blocked on A2P registration (~$20–65 one-time, ~$50–60/yr, ~1 month approval). `buildEmailFor_` centralization makes mirroring cheap once approved. Reference PDF exists. |
 | Year-over-year rollover | Architected, not exercised | Same script/URL/spreadsheet; archive-rename tabs, update SEASON/PRICES/RULES in the **Annual Update Zone** at the top of `pricing-engine.js` (it moved there from `index.html` — one edit now updates page *and* server). Old quotes re-price against new rates on reload. |
-| 2026–2027 rates | **Waiting on Chris** | `PRICES` still holds 2025–2026 numbers, so quotes go out as estimates behind `PRICING.provisional` (§5). When the rate card lands: update `PRICES`, flip `provisional:false`, re-baseline the fixtures, re-price the season, send the Firm quote. |
+| 2026–2027 rates | **Loaded Oct 2026 — re-price + Firm quote left** | Console: Season re-price, then send the Firm quote. `docs/ref/DATA-AND-MONEY.md` § *The 2026–2027 rollover*. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
 

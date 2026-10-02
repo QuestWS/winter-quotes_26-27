@@ -7067,6 +7067,46 @@ function draftSweepCheck() {
   catch (e) { console.error('draftSweepCheck failed: ' + e); }
 }
 
+/* ONE-TIME, Oct 2026 — delete after it has been run once.
+   The golf cart / e-bike firm-quote drafts were created before that email
+   stopped talking about re-measuring and offering "change something". This
+   rebuilds each still-open one IN PLACE with today's builder: same draft id
+   (so the sweep still tracks it), same subject, PDF and logo re-attached.
+   Writes nothing to the sheet and sends nothing. */
+function fixLandFirmQuoteDrafts() {
+  const drafts = {};
+  GmailApp.getDrafts().forEach(function (dr) { drafts[String(dr.getId())] = dr; });
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const qns = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    const q = sh.getRange(2, COL.QN, last - 1, 1).getValues();
+    const p = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    p.forEach(function (r, i) {
+      const raw = String(r[0] || '');
+      if (raw.indexOf('"firmquote"') < 0 || raw.indexOf('"open"') < 0) return;
+      const qn = String(q[i][0] || '').trim();
+      if (qn && qns.indexOf(qn) < 0) qns.push(qn);
+    });
+  });
+  let fixed = 0;
+  qns.forEach(function (qn) {
+    const ctx = findQuoteCtx_(qn);
+    if (!ctx || !isLandUnit_(ctx.d)) return;
+    const e = openDraftFor_(ctx.d, 'firmquote');
+    const dr = e && drafts[String(e.draft.id)];
+    if (!dr) { console.log(qn + ': no open draft found in Gmail — skipped'); return; }
+    const built = buildEmailFor_(ctx.d, 'firmquote', '', '');
+    if (!built) { console.log(qn + ': ' + unbuildableMsg_('firmquote', ctx.d) + ' — skipped'); return; }
+    dr.update(ctx.d.email, built.subject, built.subject, draftOpts_(built, ctx.d));
+    console.log(qn + ': draft rebuilt');
+    fixed++;
+  });
+  console.log('Done — ' + fixed + ' golf cart / e-bike firm-quote draft(s) rebuilt.');
+}
+
 function adminDraftSweep(token) {
   const who = requireAuth_(token, 'email');
   const r = draftSweep_(who.name);

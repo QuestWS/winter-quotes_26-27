@@ -1158,6 +1158,30 @@ but never signed", asked from a phone.
   changes.
 
 
+## The season tag on the storage overview
+
+Every storage row carries a small tag saying **which season's card the quote
+is priced on**: green **2026–27** for the current season, grey **2025–26
+rates** for anything older, grey **season ?** for a payload with no stamp.
+Asked for at the 2026–27 rollover, so staff can see from a phone who the
+Season re-price has not reached yet; the *Everyone* header counts them.
+
+- **The source is the quote's own `d.season.label`**, written by
+  `seasonStamp()` on a customer save, an import and a re-price — the three
+  ways the money on a quote changes, so the tag moves exactly when the rates
+  do. Off the payload `storageViewBuild_` already parses; no column read.
+- **"Current" is the engine's `SEASON.seasonLabel`**, sent once per response
+  as `currentSeason`, never a literal in the console. Next year's rollover
+  turns every tag grey the moment the new card is loaded, with no edit here.
+- **Grey, not gold or red,** for last season: through a rollover it is most of
+  the list, and the loud colours are taken by the DO-NOT-PULL holds.
+- **Leads get no tag and are not counted** — an unfinished quote has no price
+  on either card. With no `currentSeason` in the response (a view cached
+  before this shipped), no tags are drawn at all rather than all of them
+  reading as old. `STORAGE_VIEW_V_` was bumped for the new fields.
+- `tools/check-season-tag.js` runs `storageViewBuild_` and the console's
+  `seasonTag_` / `renderStorage` against fixture rows.
+
 ## Asking a customer to sign (console)
 
 A quote with no signed agreement on file gets an **Ask them to sign** button,

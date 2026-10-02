@@ -304,6 +304,13 @@ font-weight:800;letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical
 .winterbox ul{margin:4px 0 0;padding-left:18px;font-weight:400}
 .taggold{background:var(--gold-soft);color:#7A5714;border:1.5px solid var(--gold)}
 .tagmute{background:#fff;color:var(--muted);border:1.5px solid var(--line);font-weight:700}
+/* Which season's rates the quote is on (seasonTag_). Current season in green,
+   last season's in grey — outlined, never solid, so neither can be mistaken
+   for a DO-NOT-PULL hold. */
+.tagseason{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;
+letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:#fff;
+color:var(--muted);border:1.5px solid var(--line)}
+.tagseason.cur{color:var(--green);border-color:var(--green);font-weight:800}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
 padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
 .srow:hover{background:#F4F9FC}
@@ -2550,6 +2557,7 @@ async function loadStorage(){
     const r=await api('storageView',[]);
     if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
     window._sg=r.groups;
+    window._curSeason=r.currentSeason||'';
     renderStorage();
   }catch(e){$('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';}
 }
@@ -2630,9 +2638,10 @@ function storageGroups_(){
   }).filter(g=>SFILTER==='all'||g.count>0);
 }
 function storageCounts_(){
-  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0};
+  const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0,oldRates:0};
   (window._sg||[]).forEach(g=>(g.rows||[]).forEach(function(x){
     c.all++;
+    if(!g.lead&&seasonTag_(x).old) c.oldRates++;
     if(x.cnote) c.notes++;
     /* Counted for everybody, leads included: "may we touch this unit" does not
        care which tab it is on. */
@@ -2645,6 +2654,20 @@ function storageCounts_(){
     if(x.deposit) c.dep++; else c.nodep++;
   }));
   return c;
+}
+/* Which season's card a quote is priced on. The label is the payload's own
+   season stamp (seasonStamp in the engine), which moves to the new season on
+   a re-price, an import or a customer save — exactly when the money moves.
+   Not shown on unfinished quotes: a lead has no price to be on either card.
+   Last year's is the quiet one on purpose: through a rollover it is most of
+   the list, and a loud tag on every row trains people to stop seeing tags. */
+function seasonTag_(x){
+  const cur=window._curSeason||'';
+  const lbl=String(x.season||'');
+  const short=lbl.replace(/^(\d{4})(\s*[–-]\s*)\d{2}(\d{2})$/,'$1$2$3');
+  if(!cur) return {html:'',old:false};
+  if(lbl===cur) return {html:'<span class="tagseason cur">'+esc(short)+'</span>',old:false};
+  return {html:'<span class="tagseason">'+esc(lbl?short+' rates':'season ?')+'</span>',old:true};
 }
 function renderStorage(){
   const c=storageCounts_();
@@ -2686,8 +2709,9 @@ function renderStorage(){
       const cn=String(x.cnote||'').trim();
       const ntag=cn?'<span class="tagnote">\u{1F4AC} NOTE</span>':'';
       const nbox=cn?'<div class="cnotebox"><b>Customer note:</b> '+esc(cn)+'</div>':'';
+      const stag=g.lead?'':seasonTag_(x).html;
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
-        <span class="nm">${esc(x.name)}${tag}${ntag}</span>
+        <span class="nm">${esc(x.name)}${tag}${ntag}${stag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
         <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
@@ -2709,6 +2733,7 @@ function renderStorage(){
     head=`${shown} quote${shown===1?' has':'s have'} a note from the customer — tap any row to open it and read the whole thing.`;
   }else{
     head=`${shown} total units on file — tap any row to open it.`+
+      (c.oldRates&&window._curSeason?` <b>${c.oldRates}</b> still priced on last season's rates (tagged grey) — Season re-price moves them to ${esc(window._curSeason)}.`:'')+
       (c.held?` <b>${c.held}</b> cannot be pulled yet — ${c.unsigned} awaiting a signature, ${
                 c.unpaid} awaiting a deposit, ${c.blocked} with neither.`:'');
   }

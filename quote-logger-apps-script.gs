@@ -9752,7 +9752,8 @@ function buildEmailFor_(d, kind, extra, photos) {
      ---------------------------------------------------------------------------
      The email for the day the rate card lands. It tells the customer the
      attached quote is now firm — outside a re-measure or a change of
-     selections — and gives them exactly two ways forward: change something on
+     selections for a boat or jet ski; a golf cart or e-bike is one flat
+     storage price, so its email says plainly that nothing can move — and gives them exactly two ways forward: change something on
      the quote page (their own link, already filled in), or accept it as it is
      by signing and paying the deposit.
 
@@ -9777,10 +9778,15 @@ function buildEmailFor_(d, kind, extra, photos) {
 
     let intro = 'Our <b>' + rates + '</b> winter rates are now final, and your ' + term +
       ' has been updated to them. <b>The attached ' + term + ' is your firm price for the season.</b>' +
-      '<br><br>The only things that would change it are the details themselves: if we measure your ' +
-      unitTxt + ' when it ' + (land ? 'comes in' : 'arrives') + ' and the size differs from what is on the ' +
-      term + ', or if you add, remove or change services. Either way you\'ll see the new total ' +
-      'before you are asked to pay it.';
+      (land
+        // Golf carts and e-bikes are one flat storage price: no size, no
+        // services, so there is nothing that could move the total.
+        ? '<br><br>Storage for your ' + unitTxt + ' is a single flat rate for the season, so this ' +
+          'is the price — there is nothing to measure and nothing to add.'
+        : '<br><br>The only things that would change it are the details themselves: if we measure your ' +
+          unitTxt + ' when it arrives and the size differs from what is on the ' +
+          term + ', or if you add, remove or change services. Either way you\'ll see the new total ' +
+          'before you are asked to pay it.');
     if (paid > 0.005) {
       intro += '<br><br>We already have your payment of <b>' + usd_(paid) + '</b> on this ' + term +
         ' — thank you.' + (paidInFull ? ' That covers it in full.' : ' Your balance at the final rates is below.');

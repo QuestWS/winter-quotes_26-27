@@ -110,6 +110,18 @@ B.PRICING.provisional = false;
       hasnt(built.html, f, 'carries no estimate wording ("' + f + '")'));
   }
 
+  /* Golf carts and e-bikes are one flat storage price: the email must not
+     talk about measuring them or changing services they cannot have. */
+  [['golf-cart', 'Golf Cart', 'golf cart'], ['ebike', 'E-Bike', 'e-bike']].forEach(([fx, unit, txt]) => {
+    const lu = quote(fx, { unit });
+    const lb = B.buildEmailFor_(lu, 'firmquote', '', '');
+    if (!lb) { fail('the firm-quote email did not build for a ' + txt); return; }
+    has(lb.html, 'single flat rate', 'a ' + txt + ' is told its price is a flat rate');
+    has(lb.html, 'Storage for your ' + txt, 'and names the ' + txt);
+    hasnt(lb.html, 'if we measure', 'a ' + txt + ' is not told a re-measure could change it');
+    hasnt(lb.html, 'change services', 'a ' + txt + ' is not told a change of services could change it');
+  });
+
   /* Price on file no longer matches today's rates: the PDF would contradict it. */
   const drift = quote('boat-twin-inboard-full'); drift.total = (Number(drift.total) + 40).toFixed(2);
   has(B.firmQuoteBlocker_(drift), 'At today', 'a quote whose total differs from today\'s price is refused');

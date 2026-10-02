@@ -120,6 +120,10 @@ B.PRICING.provisional = false;
     hasnt(lb.html, 'flat rate', 'a ' + txt + ' is not told what it already knows');
     hasnt(lb.html, 'if we measure', 'a ' + txt + ' is not told a re-measure could change it');
     hasnt(lb.html, 'change services', 'a ' + txt + ' is not told a change of services could change it');
+    hasnt(lb.html, 'Option 1', 'a ' + txt + ' gets no "change something" option');
+    hasnt(lb.html, 'Review or change my', 'a ' + txt + ' gets no change-my-quote button');
+    hasnt(lb.html, 'Option 2', 'and the one box left is not numbered as a choice');
+    has(lb.html, B.PAYMENT_URL, 'a ' + txt + ' still gets the pay button');
   });
 
   /* Price on file no longer matches today's rates: the PDF would contradict it. */

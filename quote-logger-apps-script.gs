@@ -1477,7 +1477,7 @@ function consoleFns_(p) {
     hhConfirm:   function (a) { return adminHhConfirm(p.token, a[0], a[1]); },
     hhListInfo:  function (a) { return adminHhListInfo(p.token); },
     /* Replaces the whole Heritage Harbor list tab — a write, so POST only. */
-    hhListUpload:function (a) { return adminHhListUpload(p.token, a[0], a[1]); },
+    hhListUpload:function (a) { return adminHhListUpload(p.token, a[0], a[1], a[2]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
@@ -5348,14 +5348,18 @@ function hhQuoteNameKeys_(first, last) {
   });
   return keys;
 }
-/* rows: [[customer id, email, name, phone], ...] — the tab's own shape. */
-function hhBuildIndex_(rows) {
+/* rows: [[customer id, email, name, phone], ...] — the tab's own shape.
+   `extra(r)`, when given, is kept per entry (idx.x) and handed back with the
+   match — the slip list uses it for the slip number and boat. */
+function hhBuildIndex_(rows, extra) {
   const idx = { e: {}, p: {}, n: {}, names: [], count: 0 };
+  if (extra) idx.x = [];
   (rows || []).forEach(function (r) {
     const e = hhNormEmail_(r[1]), p = hhNormPhone_(r[3]), ks = hhListNameKeys_(r[2]);
     if (!e && !p && !ks.length) return;
     const i = idx.names.length;
     idx.names.push(String(r[2] || '').trim() || String(r[0] || '').trim());
+    if (extra) idx.x.push(extra(r));
     if (e && !hhHas_(idx.e, e)) idx.e[e] = i;
     if (p && !hhHas_(idx.p, p)) idx.p[p] = i;
     ks.forEach(function (k) { if (!hhHas_(idx.n, k)) idx.n[k] = i; });
@@ -5363,7 +5367,7 @@ function hhBuildIndex_(rows) {
   idx.count = idx.names.length;
   return idx;
 }
-/* {on: ['email','phone','name'], name: <the list's name>} or null. */
+/* {on: ['email','phone','name'], name: <the list's name>, x: <extra>} or null. */
 function hhMatch_(idx, email, phone, first, last) {
   if (!idx || !idx.count) return null;
   const on = [];
@@ -5377,7 +5381,7 @@ function hhMatch_(idx, email, phone, first, last) {
     on.push('name'); if (at < 0) at = idx.n[k];
     return true;
   });
-  return on.length ? { on: on, name: String(idx.names[at] || '') } : null;
+  return on.length ? { on: on, name: String(idx.names[at] || ''), x: idx.x ? idx.x[at] : null } : null;
 }
 function hhIndex_() {
   const c = cacheGetBig_('hhIndex');
@@ -5388,20 +5392,83 @@ function hhIndex_() {
   cachePutBig_('hhIndex', JSON.stringify(idx), HH_INDEX_TTL_);
   return idx;
 }
-/* The flag for one quote, or null when the customer is not on the list.
-     state 'open' — on the list, nobody has answered: the console flags it
-           'slip' — a slip number is on the quote, which settles it
-           'yes' / 'no' — staff answered (d.hhList)
-   `r` is the quote's sheet row (contact fallback for payloads without one);
-   `slip` the effective slip when the caller already has it. */
-function hhFlagOf_(d, idx, r, slip) {
-  if (!d || !idx || !idx.count) return null;
+
+/* THE SLIP LIST — who actually has a slip.
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026, with the Dockwa assignments: "Here is the list of actual
+   slipholders. Parking passes and ramp pass holders do not count." So the
+   contacts export says who is a Heritage Harbor customer; this says which
+   of them hold a slip, and which one.
+
+   - A QUOTE ON THE SLIP LIST is settled as a slipholder ('dockwa') and the
+     card shows the slip and boat, with one tap to put that slip into Keys &
+     slip. It is NOT written onto the quote by itself: the slip feeds the
+     haul-out sheets and the HHO discount line, and a name match is not proof
+     enough to change those unattended.
+   - ON THE CONTACTS LIST BUT NOT THE SLIP LIST, once a slip list is loaded,
+     is settled as not a slipholder ('notslip') — they have a fuel, food,
+     parking or ramp account. Staff can still answer Yes, which wins.
+   - PARKING, RAMP PASSES AND IN & OUT never count. They are dropped on the
+     way in by the space label (hhIsSlipSpace_), whatever file they arrive in,
+     so a full Dockwa export can be loaded as it is.
+   - Matched exactly like the contacts: email, phone or first + last name.
+     Dockwa's assignment view carries names only; an export with emails and
+     phones matches better and is read the same way. */
+const HH_SLIP_TAB = 'Heritage Harbor Slips';
+const HH_SLIP_HEAD_ = ['Slip', 'Boat', 'Name', 'Email', 'Phone'];
+function hhIsSlipSpace_(space) {
+  const s = String(space || '').trim();
+  if (!s) return false;
+  return !/parking|ramp|^(LL|UL)\s*-|^I\s*&\s*O\b|in\s*&\s*out/i.test(s);
+}
+/* Dockwa writes "B-22 Lift *" and "PWC: C-1"; the slip is the space code. */
+function hhSlipLabel_(space) {
+  return String(space || '').replace(/\s*\*+\s*/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function hhSlipIndex_() {
+  const c = cacheGetBig_('hhSlipIndex');
+  if (c) { try { return JSON.parse(c); } catch (e) {} }
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HH_SLIP_TAB);
+  const last = sh ? sh.getLastRow() : 0;
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, HH_SLIP_HEAD_.length).getValues() : [];
+  /* Into the contacts shape [id, email, name, phone], slip and boat as extra. */
+  const idx = hhBuildIndex_(rows.map(function (r) { return [r[0], r[3], r[2], r[4], r[1]]; }),
+    function (r) { return { slip: String(r[0] || ''), boat: String(r[4] || '') }; });
+  cachePutBig_('hhSlipIndex', JSON.stringify(idx), HH_INDEX_TTL_);
+  return idx;
+}
+/* Both lists, for hhFlagOf_. Either may be empty. */
+function hhIndexes_() {
+  let s = null;
+  try { s = hhSlipIndex_(); } catch (e) { s = null; }
+  return { c: hhIndex_(), s: s };
+}
+
+/* The flag for one quote, or null when the customer is on neither list.
+     state 'open'    — on the contacts list, no slip list loaded, nobody has
+                       answered: the console flags it
+           'slip'    — a slip number is on the quote, which settles it
+           'yes'/'no'— staff answered (d.hhList); wins over either list
+           'dockwa'  — on the slip list: a slipholder (dockwa: slip, boat)
+           'notslip' — on the contacts list, a slip list is loaded, and they
+                       are not on it: not a slipholder
+   `ix` is hhIndexes_() (a bare contacts index is accepted too); `r` the
+   quote's sheet row (contact fallback); `slip` the effective slip when the
+   caller already has it. */
+function hhFlagOf_(d, ix, r, slip) {
+  if (!d || !ix) return null;
+  if (ix.e) ix = { c: ix, s: null };
+  const cIdx = ix.c && ix.c.count ? ix.c : null;
+  const sIdx = ix.s && ix.s.count ? ix.s : null;
+  if (!cIdx && !sIdx) return null;
   const cell = function (col) { return r ? r[col - 1] : ''; };
   /* Through the house formatter like every other phone read here; matching
      only looks at the digits, which fmtPhone never changes. */
-  const m = hhMatch_(idx, d.email || cell(COL.EMAIL), fmtPhone(String(d.phone || cell(COL.PHONE) || '')),
-                     d.firstName || cell(COL.FIRST), d.lastName || cell(COL.LAST));
-  if (!m) return null;
+  const who = [d.email || cell(COL.EMAIL), fmtPhone(String(d.phone || cell(COL.PHONE) || '')),
+               d.firstName || cell(COL.FIRST), d.lastName || cell(COL.LAST)];
+  const m = cIdx ? hhMatch_(cIdx, who[0], who[1], who[2], who[3]) : null;
+  const sm = sIdx ? hhMatch_(sIdx, who[0], who[1], who[2], who[3]) : null;
+  if (!m && !sm) return null;
   if (slip === undefined) {
     const st = effectiveState_(d) || d.state || {};
     slip = String((st.slipNo !== undefined ? st.slipNo : d.slipNo) || '');
@@ -5409,7 +5476,11 @@ function hhFlagOf_(d, idx, r, slip) {
   slip = String(slip || '').trim();
   const dec = d.hhList || null;
   const ans = dec && (dec.answer === 'yes' || dec.answer === 'no') ? dec.answer : '';
-  return { state: slip ? 'slip' : (ans || 'open'), on: m.on, listName: m.name, slip: slip,
+  const state = slip ? 'slip' : ans ? ans : sm ? 'dockwa' : sIdx ? 'notslip' : 'open';
+  return { state: state, on: m ? m.on : [], listName: m ? m.name : '', slip: slip,
+           dockwa: sm ? { slip: String((sm.x && sm.x.slip) || ''), boat: String((sm.x && sm.x.boat) || ''),
+                          name: sm.name, on: sm.on } : null,
+           slipList: !!sIdx,
            answer: ans, by: String((dec && dec.by) || ''), at: String((dec && dec.at) || ''),
            land: isLandUnit_(d) };
 }
@@ -5431,18 +5502,18 @@ function adminHhConfirm(token, qn, answer) {
   auditLog_(who.name, 'Heritage Harbor list on ' + d.quoteNo + ': ' +
     (a === 'yes' ? 'confirmed slipholder' : a === 'no' ? 'confirmed NOT a slipholder' : 'answer cleared, flagged again'));
   let flag = null;
-  try { flag = hhFlagOf_(d, hhIndex_(), ctx.row || null); } catch (e) { flag = null; }
+  try { flag = hhFlagOf_(d, hhIndexes_(), ctx.row || null); } catch (e) { flag = null; }
   return { ok: 1, msg: a === 'yes' ? 'Marked as a slipholder.' : a === 'no' ? 'Marked as not a slipholder.' : 'Answer cleared.',
            hhList: flag };
 }
 
-function hhListMeta_() {
-  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('HH_LIST_META') || 'null'); }
+function hhListMeta_(key) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(key || 'HH_LIST_META') || 'null'); }
   catch (e) { return null; }
 }
 function adminHhListInfo(token) {
   requireAuth_(token, 'view');
-  return { ok: 1, meta: hhListMeta_() };
+  return { ok: 1, meta: hhListMeta_('HH_LIST_META'), slipMeta: hhListMeta_('HH_SLIP_META') };
 }
 
 /* Find the heading row and the four columns in whatever the export gives us.
@@ -5472,14 +5543,48 @@ function hhParseExport_(grid) {
   return { rows: rows };
 }
 
-/* Admins only: replaces the list. The upload goes through Drive's converter
-   (uploadAsSheet_, the same road the backup restore takes), is read, and the
-   temporary copy is trashed whatever happens. */
-function adminHhListUpload(token, fileName, base64Data) {
+/* The slip list: a Slip (or Space) column, and a name, email or phone.
+   Rows on parking, ramp-pass or In & Out spaces — or with no space — are
+   dropped and counted, never kept. Returns rows in HH_SLIP_HEAD_ order. */
+function hhParseSlips_(grid) {
+  const norm = function (v) { return String(v === null || v === undefined ? '' : v).trim().toLowerCase(); };
+  let hr = -1, col = null;
+  for (let i = 0; i < Math.min((grid || []).length, 20) && hr < 0; i++) {
+    const h = (grid[i] || []).map(norm);
+    const find = function (re) { for (let c = 0; c < h.length; c++) if (re.test(h[c])) return c; return -1; };
+    const c = { slip: find(/^(slip|space|spaces|slip\s*(#|no\.?|number)|space\s*name|assignment)$/),
+                boat: find(/^(boat|vessel|boat\s*name|vessel\s*name)$/), email: find(/^e-?mail/),
+                name: find(/^(customer\s*|full\s*|contact\s*|owner\s*|captain\s*)?name$|^owner$|^captain$/),
+                first: find(/^first\s*name$/), last: find(/^last\s*name$/), phone: find(/phone|mobile|cell/) };
+    if (c.slip >= 0 && (c.name >= 0 || c.email >= 0 || c.phone >= 0 || (c.first >= 0 && c.last >= 0))) { hr = i; col = c; }
+  }
+  if (hr < 0) return { error: 'Could not find the column headings — a slip list needs a Slip (or Space) column and a Name, Email or Phone column.' };
+  const get = function (r, c) { return c >= 0 ? String(r[c] === null || r[c] === undefined ? '' : r[c]).trim() : ''; };
+  const rows = [];
+  let skipped = 0;
+  grid.slice(hr + 1).forEach(function (r) {
+    const name = col.name >= 0 ? get(r, col.name) : [get(r, col.first), get(r, col.last)].filter(Boolean).join(' ');
+    const row = [hhSlipLabel_(get(r, col.slip)), get(r, col.boat), name, get(r, col.email), get(r, col.phone)];
+    if (!row[2] && !row[3] && !row[4]) return;
+    if (!hhIsSlipSpace_(row[0])) { skipped++; return; }
+    rows.push(row);
+  });
+  if (!rows.length) return { error: 'Found the headings, but no slipholders under them' +
+    (skipped ? ' (' + skipped + ' parking, ramp-pass or In & Out rows were left out).' : '.') };
+  return { rows: rows, skipped: skipped };
+}
+
+/* Admins only: replaces one list. kind 'contacts' (the default — the marina
+   contacts export) or 'slips' (the slip list). The upload goes through
+   Drive's converter (uploadAsSheet_, the same road the backup restore
+   takes), is read, and the temporary copy is trashed whatever happens. */
+function adminHhListUpload(token, fileName, base64Data, kind) {
   const who = requireAuth_(token, 'view');
   if (!who.admin) return { ok: 0, error: 'Admins only.' };
   if (!base64Data) return { ok: 0, error: 'No file received.' };
-  const name = String(fileName || 'contacts.xlsx');
+  const slips = kind === 'slips';
+  const name = String(fileName || (slips ? 'slips.csv' : 'contacts.xlsx'));
+  if (/\.pdf$/i.test(name)) return { ok: 0, error: 'That is a PDF. Upload the list as .xlsx or .csv.' };
   const csv = /\.csv$/i.test(name);
   let fileId;
   try {
@@ -5487,7 +5592,7 @@ function adminHhListUpload(token, fileName, base64Data) {
       csv ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name);
     fileId = uploadAsSheet_(blob, 'Heritage Harbor list upload ' + new Date().toISOString());
   } catch (err) {
-    return { ok: 0, error: 'Drive could not read that file. Upload the contacts export as .xlsx or .csv. (' +
+    return { ok: 0, error: 'Drive could not read that file. Upload it as .xlsx or .csv. (' +
              String(err.message || err).slice(0, 120) + ')' };
   }
   let grid;
@@ -5495,38 +5600,46 @@ function adminHhListUpload(token, fileName, base64Data) {
   catch (err) { grid = null; }
   try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {}
   if (!grid) return { ok: 0, error: 'Could not read that file.' };
-  const parsed = hhParseExport_(grid);
+  const parsed = slips ? hhParseSlips_(grid) : hhParseExport_(grid);
   if (parsed.error) return { ok: 0, error: parsed.error };
   const rows = parsed.rows;
+  const tab = slips ? HH_SLIP_TAB : HH_LIST_TAB;
+  const head = slips ? HH_SLIP_HEAD_ : HH_LIST_HEAD_;
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName(HH_LIST_TAB);
-  if (!sh) sh = ss.insertSheet(HH_LIST_TAB);
+  let sh = ss.getSheetByName(tab);
+  if (!sh) sh = ss.insertSheet(tab);
   sh.clearContents();
   /* Text, so a phone number or a numeric customer id is not turned into a
      number Sheets then prints as 1.81555E+10. */
-  sh.getRange(1, 1, rows.length + 1, HH_LIST_HEAD_.length).setNumberFormat('@');
-  sh.getRange(1, 1, 1, HH_LIST_HEAD_.length).setValues([HH_LIST_HEAD_]).setFontWeight('bold');
-  sh.getRange(2, 1, rows.length, HH_LIST_HEAD_.length).setValues(rows);
+  sh.getRange(1, 1, rows.length + 1, head.length).setNumberFormat('@');
+  sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+  sh.getRange(2, 1, rows.length, head.length).setValues(rows);
   sh.setFrozenRows(1);
-  const meta = { count: rows.length, at: new Date().toISOString(), by: who.name, file: name };
-  PropertiesService.getScriptProperties().setProperty('HH_LIST_META', JSON.stringify(meta));
-  cacheDropBig_('hhIndex');
+  const meta = { count: rows.length, at: new Date().toISOString(), by: who.name, file: name,
+                 skipped: parsed.skipped || 0 };
+  PropertiesService.getScriptProperties().setProperty(slips ? 'HH_SLIP_META' : 'HH_LIST_META', JSON.stringify(meta));
+  cacheDropBig_(slips ? 'hhSlipIndex' : 'hhIndex');
 
-  /* How many quotes it touches, from the same view the console will show. */
-  let open = 0, matched = 0;
+  /* What it did to the quotes, from the same view the console will show. */
+  const n = { open: 0, matched: 0, dockwa: 0, notslip: 0 };
   try {
     const v = storageViewBuild_({ fresh: true });
     (v.groups || []).forEach(function (g) {
-      (g.rows || []).forEach(function (x) { if (x.hh) matched++; if (x.hh === 'open') open++; });
+      (g.rows || []).forEach(function (x) {
+        if (x.hh) n.matched++;
+        if (n[x.hh] !== undefined && x.hh !== 'matched') n[x.hh]++;
+      });
     });
   } catch (e) {}
-  auditLog_(who.name, 'Heritage Harbor customer list loaded from ' + name + ': ' + rows.length +
-    ' contacts; ' + matched + ' quote(s) match, ' + open + ' to confirm');
-  return { ok: 1, meta: meta, matched: matched, open: open,
-           msg: rows.length + ' contacts loaded. ' + matched + ' quote' + (matched === 1 ? '' : 's') +
-                ' on the storage list match' + (matched === 1 ? 'es' : '') + '; ' + open +
-                ' still need a yes or no (the rest already have a slip number or an answer).' };
+  const what = slips
+    ? rows.length + ' slipholders loaded' + (meta.skipped ? ' (' + meta.skipped + ' parking, ramp-pass or In & Out rows left out)' : '') +
+      '. On the storage list: ' + n.dockwa + ' matched to a slip, ' + n.notslip +
+      ' Heritage Harbor customers not on it (settled as not a slipholder), ' + n.open + ' still to answer.'
+    : rows.length + ' contacts loaded. ' + n.matched + ' quote' + (n.matched === 1 ? '' : 's') +
+      ' on the storage list match; ' + n.open + ' still need a yes or no.';
+  auditLog_(who.name, 'Heritage Harbor ' + (slips ? 'slip list' : 'customer list') + ' loaded from ' + name + ': ' + what);
+  return { ok: 1, kind: slips ? 'slips' : 'contacts', meta: meta, counts: n, msg: what };
 }
 
 /* THE CUSTOMER'S NOTE, edited by staff.
@@ -5710,7 +5823,7 @@ function adminLookup(token, qn) {
     /* On the Heritage Harbor customer list? null when not (or no list loaded).
        Never the reason a quote fails to open. */
     hhList: (function () {
-      try { return hhFlagOf_(d, hhIndex_(), ctx.row || null); } catch (e) { return null; }
+      try { return hhFlagOf_(d, hhIndexes_(), ctx.row || null); } catch (e) { return null; }
     })(),
     /* The services card: SERVICE_MENU for this unit, pre-filled with what is
        in force and marked where it is Quest's doing rather than the customer's. */
@@ -8063,7 +8176,7 @@ function storageViewBuild_(opt) {
      this is one cache read, not a sheet read. Never the reason the view
      fails to open. */
   let hhIdx = null;
-  try { hhIdx = hhIndex_(); } catch (e) { hhIdx = null; }
+  try { hhIdx = hhIndexes_(); } catch (e) { hhIdx = null; }
   sheets.forEach(function (sh, si) {
     if (grids) {
       if (!grids[si]) return;
@@ -8177,8 +8290,8 @@ function storageViewBuild_(opt) {
           /* Season label of the rates on this quote; '' if it predates the
              stamp. The console compares it to currentSeason (below). */
           season: season,
-          /* Heritage Harbor list: '' (not on it), 'open' (confirm), 'slip',
-             'yes' or 'no'. See hhFlagOf_. */
+          /* Heritage Harbor list: '' (on neither list), 'open' (confirm),
+             'slip', 'yes', 'no', 'dockwa' or 'notslip'. See hhFlagOf_. */
           hh: hh,
           balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : bal > 0.005 ? usd_(bal) : 'Paid' });
       });
@@ -8494,7 +8607,7 @@ function adminDraftList(token) {
   const pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
   const rows = [];
   let hhIdx = null;
-  try { hhIdx = hhIndex_(); } catch (e) { hhIdx = null; }
+  try { hhIdx = hhIndexes_(); } catch (e) { hhIdx = null; }
   head.forEach(function (r, i) {
     const qn = String(r[COL.QN - 1] || '').trim();
     if (!qn) return;

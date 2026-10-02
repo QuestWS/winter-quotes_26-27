@@ -154,6 +154,64 @@ const getFns = GS.slice(GS.indexOf('const CONSOLE_GET_FNS_'), GS.indexOf('};', G
 if (/hhListUpload|hhConfirm/.test(getFns)) fail('a Heritage Harbor write is GET-able');
 else ok('the upload and the answer are POST-only writes');
 
+/* ---------------- the slip list ---------------- */
+console.log('=== the slip list: parking, ramp passes and In & Out never count ===');
+const SLIPS = [
+  ['Slip', 'Boat', 'Name'],
+  ['B-22 Lift *', 'Test Boat', 'Pat Example'],
+  ['PWC: C-1', 'Ski', 'Robin Sample'],
+  ['LL-01 (Parking Space)', 'Truck', 'Kim Parker'],
+  ['UL-03 (Parking Space)', 'Truck', 'Kim Parker'],
+  ['Ramp Pass Members', 'Jon Boat', 'Ray Ramp'],
+  ['I&O-3', 'Dry stack', 'Ivy Inout'],
+  ['', 'No space', 'Nora Nospace'],
+  ['C-9', '', '']
+];
+const ps = ctx.hhParseSlips_(SLIPS);
+if (ps.error) fail('the slip list is refused: ' + ps.error);
+else {
+  const names = ps.rows.map((r) => r[2]);
+  if (names.join('|') !== 'Pat Example|Robin Sample') fail('kept the wrong rows: ' + names.join(', '));
+  else ok('only real slips kept — parking, ramp pass, In & Out and space-less rows dropped');
+  if (ps.skipped !== 5) fail('skipped ' + ps.skipped + ' rows, expected 5 (two parking, ramp, I&O, no space)');
+  else ok('the dropped rows are counted for the upload message');
+  if (ps.rows[0][0] !== 'B-22 Lift') fail('slip label not cleaned of Dockwa\'s asterisks: ' + JSON.stringify(ps.rows[0][0]));
+  else ok('"B-22 Lift *" is kept as "B-22 Lift"');
+}
+if (!ctx.hhParseSlips_([['Name', 'Email'], ['Pat Example', 'p@example.com']]).error) fail('a slip list with no Slip column was accepted');
+else ok('a list with no Slip column is refused');
+const sIdx = JSON.parse(JSON.stringify(ctx.hhBuildIndex_(ps.rows.map((r) => [r[0], r[3], r[2], r[4], r[1]]),
+  (r) => ({ slip: r[0], boat: r[4] }))));
+const IX = { c: idx, s: sIdx };
+const G = (d) => ctx.hhFlagOf_(d, IX, null);
+const robin = q({ firstName: 'Robin', lastName: 'Sample', email: '' });
+const lee = q({ firstName: 'Lee', lastName: 'Sample', email: '' });
+if (state(G(q())) !== 'dockwa' || G(q()).dockwa.slip !== 'B-22 Lift' || G(q()).dockwa.boat !== 'Test Boat')
+  fail('a contact on the slip list is not settled with its slip: ' + JSON.stringify(G(q())));
+else ok('on the slip list → slipholder, with the slip and boat');
+if (state(G(robin)) !== 'dockwa') fail('half of a couple on the slip list is not matched');
+else ok('a couple\'s second name matches the slip list too');
+if (state(G(lee)) !== 'notslip') fail('a contact NOT on the slip list is ' + state(G(lee)) + ', not notslip');
+else ok('a Heritage Harbor customer not on the slip list → not a slipholder, once a slip list is loaded');
+if (state(ctx.hhFlagOf_(lee, { c: idx, s: { e: {}, p: {}, n: {}, names: [], count: 0 } }, null)) !== 'open')
+  fail('with no slip list loaded, a contact is not left open');
+else ok('no slip list loaded → still open, never assumed not a slipholder');
+if (state(G(Object.assign(lee, { hhList: { answer: 'yes', by: 'T' } }))) !== 'yes') fail('staff "yes" does not beat the slip list');
+else ok('staff answering Yes wins over "not on the slip list"');
+if (state(G(q({ hhList: { answer: 'no' } }))) !== 'no') fail('staff "no" does not beat the slip list');
+else ok('staff answering No wins over a slip-list match');
+const slipped = G(q({ state: { unit: 'boat', slipNo: 'Z-9' } }));
+if (state(slipped) !== 'slip' || slipped.dockwa.slip !== 'B-22 Lift') fail('a slip on the quote does not win, or the list\'s slip is lost');
+else ok('a slip on the quote still wins, and the list\'s slip rides along to compare');
+const stranger = q({ firstName: 'Ray', lastName: 'Ramp', email: '' });
+if (G(stranger)) fail('a ramp-pass holder not on the contacts list got a flag');
+else ok('a ramp-pass-only name gets nothing');
+const upl = GS.slice(GS.indexOf('function adminHhListUpload'), GS.indexOf('function adminHhListUpload') + 6000);
+if (!/kind === 'slips'/.test(upl) || !/HH_SLIP_TAB/.test(upl)) fail('the upload no longer takes the slip list');
+if (!/hhListUpload:function \(a\) \{ return adminHhListUpload\(p\.token, a\[0\], a\[1\], a\[2\]\)/.test(GS))
+  fail('the console dispatch drops the list kind');
+else ok('the upload takes the slip list as its own kind');
+
 /* ---------------- the storage view row ---------------- */
 console.log('=== the storage view carries it ===');
 const HEAD = ['Last Name', 'First Name', 'Quote #'];
@@ -227,6 +285,10 @@ else ok('drafts stay out of storageGroups_, so they never print');
 for (const id of ['hhListCard', 'hhListUpCard', 'hhListFile', 'hhListOpen', 'hhListTile']) {
   if (HTML.indexOf('id="' + id + '"') < 0) fail('the console lost #' + id);
 }
+for (const id of ['hhSlipFile', 'hhSlipPickBtn', 'hhUseSlip']) {
+  if (HTML.indexOf('id="' + id + '"') < 0) fail('the console lost #' + id);
+}
+if (!/state==='dockwa'/.test(HTML) || !/state==='notslip'/.test(HTML)) fail('the card does not draw the slip-list states');
 if (!/renderHhList\(r\.hhList/.test(HTML)) fail('renderQuote no longer draws the Heritage Harbor card');
 else ok('the quote card, the upload card and the menu entry are all there');
 

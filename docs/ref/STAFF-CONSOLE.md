@@ -382,9 +382,29 @@ they are a slipholder (Chris, Oct 2026).
   drafts under their own heading, since drafts never reach a storage sheet.
   Storage rows carry only the state (`hh`: `open` / `slip` / `yes` / `no` /
   ''); the matched name and how it matched are on `adminLookup` (`hhList`).
+- **The slip list settles it from the other side** (Chris, Oct 2026: "the
+  list of actual slipholders. Parking passes and ramp pass holders do not
+  count"). Second upload on the same card, kind `slips`: a `.xlsx`/`.csv` with a
+  **Slip** (or Space) column and a Name, Email or Phone column, kept on the
+  `Heritage Harbor Slips` tab (`hhParseSlips_`, `hhSlipIndex_`). Rows whose
+  space is parking (`LL-`/`UL-`, "Parking"), a ramp pass or In & Out are
+  dropped on the way in (`hhIsSlipSpace_`) and counted in the upload message.
+  Once it is loaded, `hhFlagOf_` adds two settled states: **`dockwa`** — on
+  the slip list, a slipholder; the card shows the slip and boat and a button
+  that *fills* (never saves) the Keys & slip box; and **`notslip`** — on the
+  contacts list but not the slip list, not a slipholder. Order: a slip on the
+  quote, then staff's answer, then the slip list, then open. With no slip list
+  loaded nobody is assumed not to be a slipholder.
+- **Dockwa's assignment view is a PDF calendar, not a list.** The console
+  takes a spreadsheet, so the first one (Oct 2026) was converted outside the
+  repo into `Slip, Boat, Name`. Dockwa truncates long names in that view
+  ("River Time, 39' Po…"), so those slips carried no owner and cannot match
+  anybody; those customers read as `notslip` until a slip number or a Yes is
+  recorded. An export with emails and phones matches far better and needs no
+  conversion.
 - `tools/check-hh-list.js` executes the export parsing, every matching rule,
-  each flag state, the save carry-over and the console's tag and filter, on
-  invented names only.
+  each flag state (including the slip-list ones and what beats what), the save
+  carry-over and the console's tag and filter, on invented names only.
 
 ## Adding or removing services (console)
 

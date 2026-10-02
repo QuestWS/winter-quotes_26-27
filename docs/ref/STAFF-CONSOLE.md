@@ -175,6 +175,20 @@ put the calls over the edge Google gives up at.
   `lookup 2.1s · 0.4s on the server`. The gap is start-up, the redirect and the
   signal — the part no sheet tidying reaches, and the number that decides
   whether any further speed work belongs in this file at all.
+  `serverMs` is only the attempt that answered, so when the call took any
+  route but one clean POST the footer names it:
+  `lookup 12.6s (POST timed out after 12.0s → GET) · 0.5s on the server`.
+  Before that was shown, `lookup 48.8s · 0.5s on the server` (2 Oct 2026)
+  could not say where the other 48 seconds went.
+- **A quick read's POST gets 12 seconds** (`API_POST_TIMEOUT_MS`, the calls in
+  `API_QUICK_READ`), then the console abandons it and asks over GET. A POST
+  stalled on the redirect leg used to wait as long as the browser cared to.
+  Abandoning a read is free — the GET asks the same question, and the run left
+  behind only read. **Writes never get a limit**: a write the console stopped
+  waiting for may still be running, and `rid` / `jobStatus` is how that is
+  found out. Heavy reads (the storage view, the previews) are left out too,
+  since a GET would only start the same long run again.
+  `tools/check-console-recovery.js` runs it against a POST that never answers.
 - **`ping` does nothing, on purpose.** The console and Harbor Haul Out call it on
   the sign-in screen so Apps Script has a warm container by the time the PIN
   is entered. It is on the GET allow-list and needs no session.

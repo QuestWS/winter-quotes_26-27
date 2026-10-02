@@ -1078,11 +1078,33 @@ async function apiRead_(res){
   try{ return await res.json(); }
   catch(e){ throw transportErr_('The server\'s reply could not be read.',res.status); }
 }
-async function apiPost_(body){
-  let res;
+/* A READ's POST gets this long before the console stops waiting for it and
+   asks over GET instead. Without a limit, a POST stalled on the redirect leg
+   waited as long as the browser cared to — a lookup that took 48.8s on
+   2 Oct 2026 had spent 0.5s on the server. Giving up on a read is free: the GET
+   asks the same question, and the abandoned run only ever read. Twelve
+   seconds is several times a cold start plus a lookup, so a call that is
+   merely slow is not cut off. Writes get no limit, ever — a write the console
+   stopped waiting for may still be running, and the rid / jobStatus route is
+   what finds that out. Heavy reads (previews that rebuild every quote, the
+   storage view) are left out too: a GET would only start the same long run
+   over again. */
+const API_POST_TIMEOUT_MS=12000;
+const API_QUICK_READ={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,photoInfo:1,hhListInfo:1,
+  listStaff:1,autoPause:1,draftList:1,jobStatus:1,bulkImpState:1};
+async function apiPost_(body,timeoutMs){
+  let res,timer=null,ctl=null;
+  if(timeoutMs&&typeof AbortController==='function'){
+    ctl=new AbortController();
+    timer=setTimeout(function(){ ctl.abort(); },timeoutMs);
+  }
   try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(body)}); }
-  catch(e){ throw transportErr_('Could not reach the server.',0); }
+    body:JSON.stringify(body),signal:ctl?ctl.signal:undefined}); }
+  catch(e){
+    if(ctl&&ctl.signal.aborted){ const t=transportErr_('The server took too long to answer.',0); t.timedOut=true; throw t; }
+    throw transportErr_('Could not reach the server.',0);
+  }
+  finally{ if(timer!==null) clearTimeout(timer); }
   return apiRead_(res);
 }
 async function apiGet_(body){
@@ -1124,16 +1146,26 @@ async function settleWrite_(rid){
 }
 /* How long each call took, because "it feels slow" cannot be fixed and a number
    can. `ms` is the whole round trip as this browser saw it; `serverMs` is what
-   Apps Script spent answering. The gap is start-up, the redirect and the
-   signal — which no amount of tidying spreadsheet reads will touch. The last
-   one is shown in the footer. */
+   Apps Script spent answering — on the attempt that answered, and nothing
+   before it. The gap is start-up, the redirect and the signal — which no
+   amount of tidying spreadsheet reads will touch.
+
+   `route` is what the call went through to get its answer, and it is shown
+   whenever that was anything but one clean POST: a footer reading
+   `lookup 48.8s · 0.5s on the server` could not say whether the 48 seconds
+   was Google starting up or a POST that stalled before the GET answered, and
+   `lookup 12.6s (POST timed out at 12.0s → GET) · 0.5s on the server` can.
+   The last call is shown in the footer. */
 const API_TIMINGS=[];
-function apiTiming_(fn,t0,j){
-  const t={fn:fn,ms:Date.now()-t0,serverMs:(j&&typeof j.serverMs==='number')?j.serverMs:null};
+function apiLeg_(tr,what,t0){ tr.push(what+' after '+((Date.now()-t0)/1000).toFixed(1)+'s'); }
+function apiTiming_(fn,t0,j,tr){
+  const t={fn:fn,ms:Date.now()-t0,serverMs:(j&&typeof j.serverMs==='number')?j.serverMs:null,
+    route:(tr||[]).join(' → ')};
   API_TIMINGS.push(t); if(API_TIMINGS.length>12) API_TIMINGS.shift();
   try{
     const el=document.getElementById('apiTiming');
     if(el) el.textContent='Last call: '+fn+' '+(t.ms/1000).toFixed(1)+'s'+
+      (t.route&&t.route!=='POST'?' ('+t.route+')':'')+
       (t.serverMs!==null?' · '+(t.serverMs/1000).toFixed(1)+'s on the server':'');
   }catch(e){ /* a diagnostic must never break the call it measured */ }
 }
@@ -1142,33 +1174,41 @@ function apiTiming_(fn,t0,j){
    on, instead of the save and then a lookup. Absent on a replayed answer, so
    afterWrite_ falls back to asking. */
 async function api(fn,args,opts){
-  const t0=Date.now();
-  try{ const j=await apiCall_(fn,args,opts); apiTiming_(fn,t0,j); return j; }
-  catch(e){ apiTiming_(fn,t0,null); throw e; }
+  const t0=Date.now(), tr=[];
+  try{ const j=await apiCall_(fn,args,opts,tr); apiTiming_(fn,t0,j,tr); return j; }
+  catch(e){ apiTiming_(fn,t0,null,tr); throw e; }
 }
-async function apiCall_(fn,args,opts){
+async function apiCall_(fn,args,opts,tr){
+  tr=tr||[];
   const isRead=!!API_GET_OK[fn];
   const body={api:'console',fn,token:T,args:args||[]};
   if(!isRead) body.rid=apiRid_();
   if(!isRead&&opts&&opts.withQuote) body.withQuote=opts.withQuote;
   let dropped=null;
   if(!API_USE_GET||!isRead){
+    const tp=Date.now();
     try{
-      const j=await apiPost_(body);
-      if(!apiLostReply_(j)) return apiDone_(j);
+      const j=await apiPost_(body,(isRead&&API_QUICK_READ[fn])?API_POST_TIMEOUT_MS:0);
+      if(!apiLostReply_(j)){ tr.push('POST'); return apiDone_(j); }
+      apiLeg_(tr,'POST lost',tp);
     }catch(e){
       if(!isTransportErr_(e)) throw e;
+      apiLeg_(tr,e.timedOut?'POST timed out':
+        ('POST failed'+(e.transport?' ('+e.transport+')':'')),tp);
       dropped=e;
     }
   }
   if(isRead){
     for(let i=0;i<3;i++){
+      const tg=Date.now();
       try{
         const g=await apiGet_(body);
-        if(!apiLostReply_(g)){ API_USE_GET=true; return apiDone_(g); }
+        if(!apiLostReply_(g)){ API_USE_GET=true; tr.push(i?'GET (try '+(i+1)+')':'GET'); return apiDone_(g); }
+        apiLeg_(tr,'GET lost',tg);
         break;  /* a genuine lost-POST fingerprint on the GET route too */
       }catch(e){
         if(!isTransportErr_(e)) throw e;
+        apiLeg_(tr,'GET failed'+(e.transport?' ('+e.transport+')':''),tg);
         dropped=e;
         if(i<2) await apiWait_(900*(i+1));
       }
@@ -1176,7 +1216,9 @@ async function apiCall_(fn,args,opts){
     if(dropped) throw new Error(dropped.message+' The console could not reach the backend — '+
       'check the signal and try again.');
   }else if(dropped){
+    const ts=Date.now();
     const s=await settleWrite_(body.rid);
+    apiLeg_(tr,s.reply?'answer recovered by status check':'status check',ts);
     if(s.reply) return apiDone_(s.reply);
     if(s.never) throw new Error('The server never received that. Nothing was changed — try again.');
     throw new Error('The connection dropped before the server answered, and it may still be '+

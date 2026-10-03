@@ -2075,9 +2075,12 @@ async function copyQuoteLink(){
   }catch(e){ el.focus(); el.select(); toast('Press and hold the link to copy it'); }
 }
 function openQuoteLink(){ if(window._quoteUrl) window.open(window._quoteUrl,'_blank'); }
-function closeQuote(){$('quoteArea').classList.add('hide');QN='';setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
+function closeQuote(){$('quoteArea').classList.add('hide');QN='';clearPayForm_();setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
 async function doLookup(qn){
+  const prevQN=QN;
   QN=qn||$('qn').value.trim().toUpperCase();if(!QN)return;
+  /* A payment typed for the last customer must never ride along to the next. */
+  if(QN!==prevQN) clearPayForm_();
   setMsg('lookupMsg','Looking up '+QN+'…');
   try{const r=await api('lookup',[QN]);
     if(!r.ok){setMsg('lookupMsg',r.error,false);$('quoteArea').classList.add('hide');return;}
@@ -2633,14 +2636,30 @@ async function pvConfirm(){
 }
 async function act(btnId,msgId,fn,args){
   const b=$(btnId);b.disabled=true;setMsg(msgId,'Working…');
+  /* true once the server has confirmed the write — even if the refresh after
+     it then fails, the write itself happened. */
+  let done=false;
   try{const r=await api(fn,args,{withQuote:QN});
-    if(!r.ok){setMsg(msgId,r.error,false);b.disabled=false;return;}
+    if(!r.ok){setMsg(msgId,r.error,false);b.disabled=false;return false;}
+    done=true;
     setMsg(msgId,r.msg||'Done.',true);toast(r.msg||'Done');
     await afterWrite_(r);
   }catch(e){setMsg(msgId,e.message,false);}
-  b.disabled=false;
+  b.disabled=false;return done;
 }
-const doPay=()=>act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod').value,$('payReceipt').checked]);
+/* The payment form empties itself once the server confirms the write, and on
+   any change of quote. Leftover amount/method from the last transaction is how
+   a clerical mistake gets made. A refusal or a lost reply keeps what was typed,
+   so staff can correct it or check before re-entering. The receipt box goes
+   back to its default (checked). */
+function clearPayForm_(keepMsg){
+  $('payAmt').value='';$('payMethod').value='';$('payReceipt').checked=true;
+  if(!keepMsg) setMsg('payMsg','');
+}
+async function doPay(){
+  const ok=await act('payBtn','payMsg','pay',[QN,$('payAmt').value,$('payMethod').value,$('payReceipt').checked]);
+  if(ok) clearPayForm_(true);   // keep the "Recorded…" confirmation showing
+}
 const doAdjust=()=>act('adjBtn','adjMsg','adjust',[QN,$('adjAmt').value,$('adjDesc').value,$('adjEmail').checked]);
 const sendKind=k=>previewSend(k,'');
 const doFee=()=>act('feeBtn','feeMsg','lateFee',[QN,$('feeAmt').value,$('feeLabel').value,$('feeEmail').checked]);

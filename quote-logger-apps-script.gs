@@ -9523,6 +9523,39 @@ function adminResetPin(token, name) {
 }
 
 /* ============ LIFECYCLE: photos + seasonal notices ============ */
+/* What an open balance on a notice actually asks for. A bare "Open balance"
+   on a "we have your boat" email read as a payment demand to customers whose
+   balance is not due until the pay-by date. So the box splits it:
+     - the part of the deposit not yet paid  -> due now (holds the spot)
+     - everything else                        -> due by the pay-by date
+     - no storage bought                      -> due when the work is done
+   and, when nothing is due yet, says so in plain words. Once the pay-by date
+   has passed the balance row says it was due then -- no "nothing due" line. */
+function noticeDueRows_(d, paid, balance) {
+  const noStorage = !!(d.state && d.state.storage === 'none');
+  const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
+  const payByLong = (d.season && d.season.payBy) || SEASON.payByDate;
+  const cutoff = new Date(payByLong);
+  // Due through the whole of the pay-by day, Central.
+  const pastDue = !isNaN(cutoff.getTime()) && Date.now() > cutoff.getTime() + 36 * 3600 * 1000;
+  if (noStorage) {
+    return { rows: moneyRow_('Balance due when the work is completed', usd_(balance), true), note: '' };
+  }
+  const dep = Math.min(Number(d.deposit || 0), Number(d.total || 0));
+  const depOwed = Math.min(balance, Math.max(0, dep - paid));
+  const rest = balance - depOwed;
+  let rows = '';
+  if (depOwed > 0.005) rows += moneyRow_(rest > 0.005 ? 'Deposit due now' : 'Due now', usd_(depOwed), true);
+  if (rest > 0.005) {
+    rows += moneyRow_(pastDue ? 'Balance (was due ' + payByShort + ')'
+      : (depOwed > 0.005 ? 'Remaining balance' : 'Balance') + ' due by ' + payByShort,
+      usd_(rest), depOwed <= 0.005);
+  }
+  const note = (depOwed <= 0.005 && !pastDue)
+    ? 'Nothing is due today — pay the balance any time up to ' + payByShort + '.' : '';
+  return { rows: rows, note: note };
+}
+
 function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
   const paid = paymentsTotal_(d);
   const balance = Number(d.total || 0) - paid;
@@ -9536,9 +9569,10 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
       '<tr><td style="padding:4px 0;font-weight:bold;color:#1E6B3A">Credit on your account — we\'ll settle up with you</td>' +
       '<td align="right" style="padding:4px 0;font-weight:bold;color:#1E6B3A">' + usd_(-balance) + '</td></tr></table></div>';
   } else if (includeMoney && balance > 0.005) {
+    const due = noticeDueRows_(d, paid, balance);
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
-      '<table width="100%" cellpadding="0" cellspacing="0">' +
-      moneyRow_('Open balance on this invoice', usd_(balance), true) + '</table>' +
+      '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
+      (due.note ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
       '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div></div>';
   }
   /* A figure quoted at provisional rates is an estimate wherever it appears,

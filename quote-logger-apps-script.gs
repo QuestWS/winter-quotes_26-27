@@ -1228,6 +1228,9 @@ function doPost(e) {
       if (oldD.staffNote) d.staffNote = oldD.staffNote;
       if (oldD.staffNoteBy) d.staffNoteBy = oldD.staffNoteBy;
       if (oldD.staffNoteAt) d.staffNoteAt = oldD.staffNoteAt;
+      /* Same for the not-storing mark: staff-only, so a customer re-save would
+         otherwise put them straight back on the 9am reminder. */
+      if (oldD.notStoring) d.notStoring = oldD.notStoring;
       /* The Harbor Haul Out log lives only on this side too, and it is
          append-only — so a customer save that dropped it would destroy
          observations nobody can reconstruct, silently, at the worst possible
@@ -1477,6 +1480,7 @@ function consoleFns_(p) {
     servicesApply:   function (a) { return adminServicesApply(p.token, a[0], a[1]); },
     hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2], a[3]); },
     staffNote:   function (a) { return adminSetStaffNote(p.token, a[0], a[1]); },
+    notStoring:  function (a) { return adminSetNotStoring(p.token, a[0], a[1], a[2]); },
     hhConfirm:   function (a) { return adminHhConfirm(p.token, a[0], a[1]); },
     hhListInfo:  function (a) { return adminHhListInfo(p.token); },
     /* Replaces the whole Heritage Harbor list tab — a write, so POST only. */
@@ -3578,7 +3582,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 9;
+const STORAGE_VIEW_V_ = 10;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -5250,6 +5254,69 @@ function adminSetPlacementAlert(token, qn, text) {
            alert: t ? { text: t, at: d.placementAlert.at, by: who.name } : null };
 }
 
+/* NOT STORING THIS SEASON — "they're skipping a year; leave them be."
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: some customers are not storing with us this year but
+   probably will next year. They must stop getting follow-ups, but the quote
+   has to stay so they can be re-quoted. (A customer who sold the boat is
+   deleted instead — adminDeleteQuote — which already takes them off every
+   list: the archive tab fails the 'Quote #' probe.)
+
+   d.notStoring = { season, note, by, at }. It holds ONLY for the season it was
+   set in: next season the same quote is exactly who we want to re-quote, so
+   the mark goes quiet on its own at the rollover rather than relying on
+   somebody to remember to clear it. notStoringActive_ is the one question,
+   and every place that would otherwise contact or count them asks it:
+
+     dailyReminderCheck   the 9am automatic reminder
+     leadFollowUpCheck    the automatic "finish your quote" nudge
+     bulkTargets_         every send-to-all, firm quote included — reported
+                          as held back with the reason, never dropped silently
+     balanceReportCheck   the 1st/15th unpaid-balance (late fee) report
+     storageViewBuild_    the storage view, Harbor Haul Out and the printed
+                          sheets — listed apart, not as a unit to pull
+
+   A staff-clicked single email still goes: that is a person deciding to
+   contact them, and the console shows the mark right above the button.
+   Payload only, like the staff note: no status, no price, no PDF. */
+function notStoringActive_(d) {
+  return !!(d && d.notStoring && String(d.notStoring.season || '') === String(SEASON.seasonLabel));
+}
+const NOT_STORING_NOTE_MAX_ = 200;
+
+function adminSetNotStoring(token, qn, on, note) {
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = !!Number(on);
+  const was = notStoringActive_(d);
+  const txt = String(note === null || note === undefined ? '' : note).replace(/\s+/g, ' ').trim()
+    .slice(0, NOT_STORING_NOTE_MAX_);
+  if (!want && !was) return { ok: 0, error: 'Nothing changed — this quote is not marked.' };
+  if (want && was && txt === String(d.notStoring.note || '')) return { ok: 0, error: 'Nothing changed.' };
+  if (want) {
+    d.notStoring = { season: SEASON.seasonLabel, note: txt, by: who.name, at: new Date().toISOString() };
+  } else {
+    delete d.notStoring;
+  }
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, want
+    ? 'Marked ' + d.quoteNo + ' NOT STORING for ' + SEASON.seasonLabel + (txt ? ' — "' + txt + '"' : '') +
+      ' (no automatic reminders, send-to-all or balance report)'
+    : 'Cleared the not-storing mark on ' + d.quoteNo + ' — back on the reminder and send-to-all lists');
+  return { ok: 1, msg: want ? 'Marked not storing for ' + SEASON.seasonLabel + '.' : 'Mark cleared.',
+           notStoring: notStoringOut_(d) };
+}
+/* What the console is shown. `active` false with a season set is last year's
+   mark — shown so nobody wonders, but inert. */
+function notStoringOut_(d) {
+  const n = d && d.notStoring;
+  if (!n) return null;
+  return { active: notStoringActive_(d), season: String(n.season || ''), note: String(n.note || ''),
+           by: String(n.by || ''), at: String(n.at || '') };
+}
+
 function adminSetStaffNote(token, qn, note) {
   const who = requireAuth_(token, 'keys');
   const ctx = findQuoteCtx_(qn);
@@ -6083,6 +6150,8 @@ function adminLookup(token, qn) {
       /* Never the reason a quote fails to open. */
       try { return firmQuoteBlocker_(d); } catch (e) { return 'Could not check (' + (e.message || e) + ').'; }
     })(),
+    /* Not storing this season — see notStoringActive_. null when never set. */
+    notStoring: notStoringOut_(d),
     /* Staff-only. Console reads it; no customer-facing path ever does. */
     staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''),
                  at: String(d.staffNoteAt || '') },
@@ -6681,6 +6750,14 @@ function bulkTargets_(kind) {
       try { d2 = JSON.parse(r[COL.PAYLOAD - 1] || ''); } catch (e) {}
       if (!d2) { noEmail.push(qn); return; }
       d2.email = d2.email || email;
+      /* Not storing this season: held back from every kind, and listed with
+         the reason so "why isn't Smith on the list" answers itself. */
+      if (notStoringActive_(d2)) {
+        notReady.push({ qn: qn, tab: tab, why: 'Marked not storing this season' +
+            (d2.notStoring.note ? ' — ' + d2.notStoring.note : '') + '.',
+          name: [d2.lastName, d2.firstName].filter(Boolean).join(', ') || String(d2.owner || '') });
+        return;
+      }
       /* A kind with its own bar (the firm quote) reports who fails it and why,
          rather than dropping them silently: "why isn't Smith on the list" has
          to be answerable from the screen. */
@@ -8366,6 +8443,7 @@ function storageViewBuild_(opt) {
   const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
   const tRead = Date.now() - tRead0;
   const where = [];                      // every (quote, tab, row) read, for the row cache
+  const notStoring = [];                 // marked not storing this season — kept off every group
   /* The Heritage Harbor list, matched against every row below. Cached, so
      this is one cache read, not a sheet read. Never the reason the view
      fails to open. */
@@ -8401,7 +8479,7 @@ function storageViewBuild_(opt) {
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
-            winter = null, season = '', hh = '';
+            winter = null, season = '', hh = '', ns = false, nsNote = '';
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -8453,7 +8531,17 @@ function storageViewBuild_(opt) {
              matched are the quote card's business. */
           const hf = hhFlagOf_(pd, hhIdx, r, slip);
           hh = hf ? hf.state : '';
+          ns = notStoringActive_(pd);
+          nsNote = ns ? String(pd.notStoring.note || '') : '';
         } catch (e) {}
+        /* Not storing this season: never a unit to store or pull, never in a
+           count — listed apart so the console can still open it. */
+        if (ns) {
+          notStoring.push({ qn: r[COL.QN - 1], tab: sh.getName(), note: nsNote,
+            name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
+            unit: r[COL.UNIT - 1] || '', ymm: r[COL.YMM - 1] || '' });
+          return;
+        }
         rows.push({ qn: r[COL.QN - 1],
           name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
           unit: r[COL.UNIT - 1] || '', ymm: r[COL.YMM - 1] || '', dims: r[COL.DIMS - 1] || '',
@@ -8501,7 +8589,9 @@ function storageViewBuild_(opt) {
     const w = function (t) { return t === 'No Storage' ? 2 : 1; };
     return w(a.tab) - w(b.tab) || a.tab.localeCompare(b.tab);
   });
-  const out = { ok: 1, v: STORAGE_VIEW_V_, currentSeason: SEASON.seasonLabel, groups: groups };
+  notStoring.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  const out = { ok: 1, v: STORAGE_VIEW_V_, currentSeason: SEASON.seasonLabel, groups: groups,
+                notStoring: notStoring };
   cachePutBig_('storageView', JSON.stringify(out), STORAGE_VIEW_TTL_);
   /* The tap that follows this list is "open one of these": prime the row cache
      for every unit so that lookup is one verified trip, not a scan. Not part
@@ -10939,6 +11029,10 @@ function balanceReportCheck() {
       const paid = Number(r[COL.PAID - 1] || 0);
       const total = Number(r[COL.TOTAL - 1] || 0);
       if (total <= 0 || bal <= 0) return;
+      /* Not storing this season: they owe nothing for a season they are
+         skipping, and must not turn up on the late-fee list. A row whose
+         payload will not parse stays IN — over-reporting is the safe side. */
+      try { if (notStoringActive_(JSON.parse(r[COL.PAYLOAD - 1] || '{}'))) return; } catch (e) {}
       rows.push({ last: r[COL.LAST-1], first: r[COL.FIRST-1], qn: r[COL.QN-1], unit: r[COL.UNIT-1],
                   phone: r[COL.PHONE-1], email: r[COL.EMAIL-1], total: total, paid: paid, bal: bal,
                   status: r[COL.STATUS-1] });
@@ -11042,6 +11136,7 @@ function dailyReminderCheck() {
       if (status.indexOf('Signed & paying') === 0) return;    // already moving forward
       if (status.indexOf('Adjusted after signing') === 0) return; // signed, then tweaked
       if (Number(r[COL.PAID-1] || 0) > 0) return;              // has paid something — no nagging
+      if (notStoringActive_(pdRow)) return;                    // not storing this season — see notStoringActive_
       if (!(ts instanceof Date) || ts.getTime() > cutoff) return; // too recent
       try {
         const dueToday = Number(total) > 0 && Number(deposit) >= Number(total);
@@ -11122,6 +11217,7 @@ function leadFollowUpCheck() {
     try {
       let d = {};
       try { d = JSON.parse(r[COL.PAYLOAD - 1] || '{}'); } catch (e2) {}
+      if (notStoringActive_(d)) return;                           // not storing this season
       d.quoteNo = quoteNo; d.email = email;
       d.firstName = d.firstName || String(r[COL.FIRST - 1] || '');
       d.lastName = d.lastName || lastName;

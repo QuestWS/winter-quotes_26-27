@@ -91,6 +91,8 @@ try {
        Import tab. Both have to be in the sandbox or the function throws and
        this guard reports a broken rule where there is only a missing stub. */
     "const IMPORT_TAB='Import';", fn('isImportTab_'), fn('isOffstageTab_'),
+    /* Not storing this season is executed for real in check-not-storing.js. */
+    "const SEASON={seasonLabel:'2026–2027'};", fn('notStoringActive_'),
     decl('HEADERS'),
     decl('COL'),
     decl('BULK_KINDS_'),

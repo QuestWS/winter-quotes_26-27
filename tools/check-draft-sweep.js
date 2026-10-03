@@ -124,6 +124,8 @@ const B = new Function('SpreadsheetApp', 'GmailApp', 'RECORDED', [
   decl('COL'), decl('HEADERS'), decl('REPLY_TO'), decl('NOTIFY_EMAIL'), decl('FROM_ALIAS'),
   "const STARTED_TAB='Quote Started'; const IMPORT_TAB='Import';",
   fn('isStartedTab_'), fn('isImportTab_'), fn('isOffstageTab_'),
+  /* bulkTargets_ holds back a quote marked not storing this season. */
+  "const SEASON={seasonLabel:'2026–2027'};", fn('notStoringActive_'),
   decl('DRAFT_SEARCH_DAYS_'), decl('DRAFT_MISSING_GRACE_MS_'),
   fn('openDraftFor_'), fn('draftOpts_'), fn('draftWasSent_'), fn('draftSweep_'), fn('adminDraftSweep'),
   fn('adminBulkDraft'), fn('bulkTargets_'), fn('bulkFilterTargets_'),

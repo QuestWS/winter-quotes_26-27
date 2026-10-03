@@ -753,6 +753,17 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: send-to-all recipient rules broken"; sed 's/^/       /' "$TMP/bulk.txt"; FAIL=1
   fi
+  # Not storing this season: every sweep that could email, count or list the
+  # customer is RUN against a fake sheet with a marked quote on it.
+  if node tools/check-not-storing.js > "$TMP/ns.txt" 2>&1; then
+    echo "  OK   gate: not-storing mark holds in every sweep"
+  else
+    echo "  FAIL gate: not-storing mark broken"; sed 's/^/       /' "$TMP/ns.txt"; FAIL=1
+  fi
+  # Staff-only, like the staff note: the customer page never hears of it.
+  if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'notStoring'; then
+    echo "  FAIL trap: the load endpoint returns the not-storing mark to the customer page"; FAIL=1
+  else echo "  OK   trap: not-storing mark never reaches the customer page"; fi
   # Only genuine announcements can be blasted; BULK_KINDS_ is the whole allow-list.
   if awk '/^function adminBulkSend/,/^}/' quote-logger-apps-script.gs | grep -q 'BULK_KINDS_'; then
     echo "  OK   trap: send-to-all restricted to the announcement kinds"

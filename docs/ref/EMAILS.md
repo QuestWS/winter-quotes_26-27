@@ -141,6 +141,15 @@ people who never built a quote.
 - `tools/check-season-stamp.js` runs the real sweep over all of these,
   including that an ordinary old quote is still reminded exactly as before.
 
+## A quote marked not storing this season is never chased
+
+Staff can mark a quote **Not storing this season** (`docs/ref/STAFF-CONSOLE.md`).
+`dailyReminderCheck`, `leadFollowUpCheck` and every `bulkTargets_` kind skip it
+via `notStoringActive_`; the bulk preview lists it as held back with the
+reason. The mark lapses on its own when `SEASON.seasonLabel` moves on, so next
+season's firm quote reaches them again. A deleted quote needs none of this —
+its archive tab fails the `'Quote #'` probe every sweep starts with.
+
 ## The automatic-email pause
 
 `AUTO_EMAIL_PAUSED` in Script Properties, flipped from the console (admin only,

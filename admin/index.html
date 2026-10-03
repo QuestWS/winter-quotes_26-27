@@ -333,6 +333,10 @@ color:var(--navy);border:1.5px solid var(--frost)}
 .cnotebox{grid-column:1/-1;margin:4px 0 0;padding:6px 10px;border-left:4px solid var(--frost);
 background:var(--ice);border-radius:6px;font-size:13px;color:var(--ink);line-height:1.4}
 .cnotebox b{color:var(--navy)}
+.nsbox{margin-top:10px;padding:10px 12px;border-left:4px solid var(--gold);background:var(--gold-soft);
+border-radius:8px;font-size:14px;line-height:1.45;color:var(--ink)}
+.nsbox b{color:var(--navy)}
+.nsbox .hm{color:var(--muted);font-size:12px}
 .custnote{margin-top:10px;padding:10px 12px;border-left:4px solid var(--frost);background:var(--ice);
 border-radius:8px;font-size:14px;line-height:1.45;white-space:pre-wrap;color:var(--ink)}
 .custnote .lab{display:block;font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--frost);
@@ -472,6 +476,9 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
                  staff with the keys permission, because an imported quote's
                  note is last year's ("deposit received") and prints on the
                  PDF the firm quote attaches. -->
+            <!-- Not storing this season: shown to everyone who opens the
+                 quote, so nobody chases a customer who already said no. -->
+            <div class="nsbox hide" id="qNotStoring"></div>
             <div class="custnote hide" id="qCustNote"></div>
             <div class="hide" id="custNoteEdit" style="margin-top:10px">
               <label class="fld">Customer note — prints on the quote PDF and shows on their quote page</label>
@@ -664,6 +671,24 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
               placeholder="e.g. gelcoat crack starboard bow, photographed"></textarea>
             <button class="btn navy" id="placementNoteBtn" onclick="addPlacementNote()">Add to the log</button>
             <div class="msg" id="placementNoteMsg"></div>
+          </div>
+
+          <!-- Customer is skipping this season but keeps the quote for next
+               year. A customer who sold the unit is deleted instead. -->
+          <div class="card hide" id="nsCard">
+            <h2>Not storing this season</h2>
+            <div class="msg" style="margin:0 0 6px">For a customer who is <b>skipping this season</b> but
+              may store with us again. Marking them stops the automatic reminder and follow-up, keeps them
+              off every send-to-all, the late-fee report and the storage &amp; haul-out lists — and keeps
+              the quote, so they can be re-quoted next year. It lapses on its own when the season rolls
+              over. <b>Sold the boat?</b> Delete the quote instead (last card).</div>
+            <div id="nsNow"></div>
+            <input class="txt" id="nsNote" maxlength="200" placeholder="Why (optional) — e.g. boat stays at the lake house this winter">
+            <div class="row2" style="margin-top:8px">
+              <button class="btn navy" id="nsBtn" onclick="saveNotStoring(1)">Mark not storing</button>
+              <button class="btn ghost hide" id="nsClearBtn" onclick="saveNotStoring(0)">They're storing after all — clear it</button>
+            </div>
+            <div class="msg" id="nsMsg"></div>
           </div>
 
           <div class="card hide" id="noteCard">
@@ -1767,6 +1792,38 @@ async function saveCustomerNote(mode){
   }catch(e){ setMsg('custNoteMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent=was; }
 }
+/* ---------- Not storing this season ----------
+   The server decides whether the mark is in force (notStoringActive_ — it
+   holds for the season it was set in only); this draws what it says. */
+function renderNotStoring(n){
+  const on=!!(n&&n.active);
+  const when=n&&n.at?new Date(n.at).toLocaleDateString():'';
+  $('qNotStoring').innerHTML=on?'<b>Not storing this season ('+esc(n.season)+')</b>'+
+    (n.note?' — '+esc(n.note):'')+'<br><span class="hm">Marked by '+esc(n.by)+(when?' on '+esc(when):'')+
+    '. No automatic reminders, send-to-all or late-fee report.</span>':'';
+  $('qNotStoring').classList.toggle('hide',!on);
+  $('nsNow').innerHTML=(n&&!on)?'<div class="msg" style="margin:0 0 6px">Was marked not storing for '+
+    esc(n.season)+' — that has lapsed, so this season they get the usual emails.</div>':'';
+  $('nsNote').value=on?(n.note||''):'';
+  $('nsBtn').textContent=on?'Update the reason':'Mark not storing';
+  $('nsClearBtn').classList.toggle('hide',!on);
+  setMsg('nsMsg','');
+}
+async function saveNotStoring(on){
+  if(!QN) return;
+  if(!on&&!confirm('Clear the mark?\n\nThey go back on the automatic reminder and the send-to-all lists.')) return;
+  const b=$(on?'nsBtn':'nsClearBtn'); b.disabled=true; const was=b.textContent; b.textContent='Saving…';
+  setMsg('nsMsg','');
+  try{
+    const r=await api('notStoring',[QN,on?1:0,$('nsNote').value]);
+    if(!r||!r.ok){ setMsg('nsMsg',(r&&r.error)||'Could not save that.',false); return; }
+    renderNotStoring(r.notStoring||null);
+    setMsg('nsMsg',r.msg,true);
+    toast(on?'Marked not storing':'Mark cleared');
+    window._sg=null;
+  }catch(e){ setMsg('nsMsg',e.message,false); }
+  finally{ b.disabled=false; if(b.textContent==='Saving…') b.textContent=was; }
+}
 async function saveStaffNote(){
   if(!QN) return;
   const b=$('noteBtn'); b.disabled=true; b.textContent='Saving…';
@@ -2098,6 +2155,10 @@ function renderQuote(r){
      keys and slip. */
   $('noteCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderStaffNote(r.staffNote);
+  /* Same trusted-staff bar as the note: whoever hears "not this year" first
+     records it. The banner shows to everyone. */
+  renderNotStoring(r.notStoring||null);
+  $('nsCard').classList.toggle('hide',!P.keys);
   /* Same bar as the staff note and the keys card: physical work, not money. */
   $('placementLogCard').classList.toggle('hide',!P.keys);
   if(P.keys) renderPlacementLog(r.placementNotes);
@@ -2738,6 +2799,7 @@ async function loadStorage(){
     if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
     window._sg=r.groups;
     window._curSeason=r.currentSeason||'';
+    window._ns=r.notStoring||[];
     renderStorage();
   }catch(e){$('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';}
 }
@@ -2938,8 +3000,16 @@ function renderStorage(){
   const hhDr=SFILTER==='hh'?(window._drafts||[]).filter(x=>x.hh==='open'):[];
   const drafts=hhDr.length?`<div class="sgH"><b>Imported (not yet sent)</b><span>${hhDr.length}</span></div>`+
     hhDr.map(draftRow_).join(''):'';
+  /* Not storing this season: never in a group or a count (the server keeps
+     them out), listed under Everyone so they can still be opened. */
+  const ns=SFILTER==='all'?(window._ns||[]):[];
+  const nsList=ns.length?`<div class="sgH"><b>Not storing this season</b><span>${ns.length}</span></div>`+
+    ns.map(x=>`<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+      <span class="nm">${esc(x.name)}</span>
+      <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.note?' · '+esc(x.note):''}</span>
+      <span class="bl">${esc(x.qn)}</span></div>`).join(''):'';
   $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
-    ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>');
+    ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>')+nsList;
 }
 function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
 async function printStorage(){

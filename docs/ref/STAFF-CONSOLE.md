@@ -288,6 +288,37 @@ having to guess at his own logic a year later.
 - Saving a note touches nothing else: no status, no re-price, no new PDF.
 
 
+## Not storing this season (console)
+
+`d.notStoring = { season, note, by, at }`, own card, gated on `keys` (the
+staff-note bar — whoever hears "not this year" first records it); the banner
+under the quote's name shows to everyone. Chris, Oct 2026: some customers skip
+a season but will likely be back, so they must stop getting follow-ups
+**without** losing the quote. A customer who **sold the unit** is deleted
+instead (*Deleting a quote* below) — that already takes them off every list.
+
+- **One question, `notStoringActive_`, asked everywhere that would contact or
+  count them:** the 9am reminder (`dailyReminderCheck`), the lead follow-up
+  (`leadFollowUpCheck`), every send-to-all kind (`bulkTargets_` — firm quote
+  included), the 1st/15th late-fee report (`balanceReportCheck`), and the
+  storage view / Harbor Haul Out / printed sheets (`storageViewBuild_`).
+- **Held back, never dropped silently.** Send-to-all lists them under *held
+  back* with the reason; the storage view keeps them out of every group and
+  count but returns them as `notStoring`, drawn under **Everyone** as their own
+  heading so the quote can still be opened.
+- **It lapses at the rollover.** The mark holds only while `season` equals
+  `SEASON.seasonLabel`. Next season the same customer is exactly who we want to
+  re-quote, so nobody has to remember to clear it; the card says when an old
+  mark has lapsed.
+- **A staff-clicked single email still sends.** That is a person deciding to
+  contact them, and the banner sits above the button.
+- **Carried across a customer save**, like the staff note — the browser has
+  never heard of it, and dropping it would put them straight back on the 9am
+  reminder. Never returned by `?action=load` (`verify.sh` checks).
+- Payload only: no status, no re-price, no PDF. Every set/clear is in the
+  Activity Log. `tools/check-not-storing.js` runs every sweep above against a
+  fake sheet with a marked, a lapsed and an unmarked quote.
+
 ## Heritage Harbor slipholder discount (console)
 
 Own card, shown once the customer has said they are a slipholder (and kept

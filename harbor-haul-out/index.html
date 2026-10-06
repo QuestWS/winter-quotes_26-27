@@ -165,6 +165,21 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .btn.wide{width:100%}
 .btn[disabled]{opacity:.55}
 .btn.rec{background:var(--warn);border-color:var(--warn)}
+.btn.stop{background:var(--warn);border-color:var(--warn)}
+/* PULL ANYWAY. A pop-up over the opened unit, not an inline box: it has to be
+   in the way, because what it records is an exception to the liability rule.
+   Above the detail sheet (z 60) and below the toast. */
+.dlg{position:fixed;inset:0;z-index:80;background:rgba(20,41,62,.6);display:flex;
+  align-items:center;justify-content:center;padding:14px}
+.dlg.hide{display:none}
+.dlg .box{background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:92vh;overflow-y:auto}
+.dlg .hd{background:var(--warn);color:#fff;padding:13px 15px;font-weight:700;font-size:16px;
+  border-radius:14px 14px 0 0}
+.dlg .bd{padding:14px 15px}
+.dlg ul{margin:6px 0 10px;padding-left:20px;font-weight:700;color:var(--warn)}
+.dlg .bd p{font-size:14.5px;line-height:1.4;margin:0 0 8px}
+.pullstop{background:var(--warn-bg);border-left:4px solid var(--warn);border-radius:6px;padding:8px 10px;
+  margin-top:8px;font-size:13.5px;font-weight:700;color:#6B3A14}
 .row2{display:flex;gap:8px}.row2>*{flex:1}
 textarea.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:1.5px solid var(--line);
   border-radius:9px;background:#fff;color:var(--ink);resize:vertical}
@@ -319,6 +334,24 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
      progress lives out here. Close the unit, go back to the list, keep
      ticking boats off — the clip keeps going. -->
 <div class="upchip hide" id="upChip"></div>
+
+<!-- PULL ANYWAY — filled by pullAnyway(). Nothing is recorded until the
+     confirm button; Cancel and a tap outside record nothing. -->
+<div id="pullDlg" class="dlg hide" onclick="if(event.target===this)closePullDlg()">
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="pullHd">
+    <div class="hd" id="pullHd">Not cleared to pull</div>
+    <div class="bd">
+      <div id="pullWhat"></div>
+      <label class="fld" for="pullNote">Notes (optional)</label>
+      <textarea class="txt" id="pullNote" rows="3" maxlength="1500"
+        placeholder="Why it had to come out now, who OK'd it…"></textarea>
+      <div class="row2" style="margin-top:10px">
+        <button class="btn ghost" onclick="closePullDlg()">Cancel</button>
+        <button class="btn stop" id="pullGo" onclick="confirmPullAnyway()">Yes, pull it anyway</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -777,7 +810,11 @@ function badge_(x){
   const a=auth_(x);
   if(a.state==='cleared') return '';
   const cls=a.why==='signature'?'stop':a.why==='payment'?'money':'none';
-  return '<span class="badge '+cls+'">'+esc(a.stamp||a.label)+'</span>';
+  /* A unit that is already here (pulled anyway, dropped off, stored) still
+     carries what is missing — that chase is not over — but "DO NOT PULL" on a
+     boat sitting in the building is an instruction nobody can follow. */
+  const here=state_(x)!=='';
+  return '<span class="badge '+cls+'">'+esc(here?(a.label||a.stamp):(a.stamp||a.label))+'</span>';
 }
 /* On the row, not just behind a tap. The whole point is that somebody loading
    the app sees which boats need reading about before they walk over to one. */
@@ -922,7 +959,41 @@ function rowRight_(x){
    it updates whichever of the two is on screen and never re-fetches the whole
    list for one tick — the crew is working down a list and a full reload would
    scroll them back to the top. */
-async function markState(qn,to){
+/* PULL ANYWAY. Chris, Oct 2026: some boats have to come out before the
+   contract or the deposit is in. The verdict is still the server's — this
+   only reads `why` off the stamped row to say WHAT was not collected — and the
+   server re-checks it and refuses a pull past a hold that does not carry
+   {confirm:true}. What was missing, who confirmed, and the note go on the
+   unit, in the Harbor Haul Out log and in the audit log. */
+let PULLQN='';
+const PULL_MISSING={signature:['A signed contract'],payment:['A deposit'],
+  both:['A signed contract','A deposit']};
+function pullAnyway(qn){
+  const row=ROWS.filter(x=>x.qn===qn)[0];
+  const a=auth_(row);
+  if(a.state==='cleared'){ markState(qn,'pulled'); return; }
+  PULLQN=qn;
+  const miss=PULL_MISSING[a.why]||PULL_MISSING.both;
+  const what=miss.length>1?'Contract and deposit':miss[0]==='A deposit'?'Deposit':'Contract';
+  $('pullHd').textContent=what+' not collected';
+  $('pullWhat').innerHTML='<p>'+esc((row&&row.name)||qn)+' is <b>not cleared to pull</b>. Not collected:</p>'+
+    '<ul>'+miss.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul>'+
+    '<p>Confirm you are pulling this boat anyway. It is recorded under your name, '+
+    'with your note, in the Harbor Haul Out log — and it stays on hold until '+
+    (miss.length>1?'both are':'it is')+' in.</p>';
+  $('pullNote').value='';
+  $('pullGo').disabled=false;
+  $('pullDlg').classList.remove('hide');
+}
+function closePullDlg(){ $('pullDlg').classList.add('hide'); PULLQN=''; }
+function confirmPullAnyway(){
+  const qn=PULLQN; if(!qn) return;
+  const note=($('pullNote').value||'').trim();
+  $('pullGo').disabled=true;
+  closePullDlg();
+  markState(qn,'pulled',{confirm:true,note:note});
+}
+async function markState(qn,to,ov){
   const row=ROWS.filter(x=>x.qn===qn)[0];
   const before=row?state_(row):'';
   if(row) row.placementState=to;                  // optimistic: the list moves now
@@ -930,16 +1001,32 @@ async function markState(qn,to){
   render();
   if(TAB!=='pull'&&CUR&&CUR.quoteNo===qn) renderState();
   try{
-    const r=await api('placementState',[qn,to]);
+    const r=await api('placementState',ov?[qn,to,ov]:[qn,to]);
     if(!r||!r.ok){
       if(row) row.placementState=before;            // put it back where it was
       if(CUR&&CUR.quoteNo===qn) CUR.placement={state:before};
       render(); if(CUR&&CUR.quoteNo===qn) renderState();
+      /* The server's verdict was newer than this phone's list (a contract
+         withdrawn, a payment reversed): take it, and ask for the confirmation
+         rather than just refusing. */
+      if(r&&r.needsConfirm&&r.auth&&!ov){
+        if(row) row.auth=r.auth;
+        render(); if(CUR&&CUR.quoteNo===qn){ renderSheet(CUR); }
+        pullAnyway(qn);
+        return;
+      }
       toast((r&&r.error)||'Could not record that.');
       return;
     }
     if(row){ row.placementState=to; row.placementAt=(r.placement&&r.placement.at)||''; }
     if(CUR&&CUR.quoteNo===qn) CUR.placement=r.placement||{state:to};
+    /* A pull past a hold writes its own log line; show it without a re-fetch. */
+    if(r.note){
+      if(row) row.notes=(row.notes||0)+1;
+      if(CUR&&CUR.quoteNo===qn&&CUR.placementNotes){
+        CUR.placementNotes=CUR.placementNotes.concat([r.note]); renderLog(CUR.placementNotes);
+      }
+    }
     render(); if(CUR&&CUR.quoteNo===qn) renderState();
     listSave_();                                  // the phone's copy moves with it
     if(CUR&&CUR.quoteNo===qn) qSave_(CUR);
@@ -1139,13 +1226,23 @@ function renderState(){
   let h='<div class="kv"><span>Right now</span><b>'+esc(STATE_LABEL[st]||st)+'</b></div>';
   if(whenTxt) h+='<div class="kv"><span>Recorded</span><b>'+esc(whenTxt)+
     ((CUR.placement&&CUR.placement.by)?' · '+esc(CUR.placement.by):'')+'</b></div>';
+  const any=CUR.placement&&CUR.placement.anyway;
+  if(any&&(st==='pulled'||st==='stored')){
+    h+='<div class="pullstop">\u26A0 Pulled anyway \u2014 '+esc(any.missing||'not cleared')+' at the time.'+
+      (any.note?'<br><span style="font-weight:400">'+esc(any.note)+'</span>':'')+'</div>';
+  }
   if(canWrite()){
     const btn=(to,label,cls)=>'<button class="btn '+(cls||'')+' wide" style="margin-top:8px" '+
       'onclick="markState('+jsArg_(CUR.quoteNo)+','+jsArg_(to)+')">'+label+'</button>';
+    /* Not cleared: the stamp says why, and the button under it is the
+       pull-anyway pop-up — never a direct markState, so nobody records a pull
+       past a hold without reading what is missing and confirming it. */
     if(st!=='pulled'&&st!=='stored'){
       h+=a.state==='cleared'
         ? btn('pulled','Mark pulled')
-        : '<button class="btn wide" style="margin-top:8px" disabled>'+esc(a.stamp)+'</button>';
+        : '<div class="pullstop">'+esc(a.stamp)+'</div>'+
+          '<button class="btn stop wide" style="margin-top:8px" onclick="pullAnyway('+
+          jsArg_(CUR.quoteNo)+')">Pull anyway\u2026</button>';
     }
     /* Nothing recorded yet: the other way a unit arrives. Not gated — see
        act_ — and offered from the opened unit as well as from the Awaiting

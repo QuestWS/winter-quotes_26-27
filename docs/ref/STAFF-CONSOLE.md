@@ -1350,6 +1350,14 @@ storage rows alike:
 | Signature, no deposit | `hold` | `payment` | Same treatment, stamped `NO DEPOSIT — DO NOT PULL` |
 | Neither | `blocked` | `both` | Off the working list entirely, on a `DO NOT TOUCH — NOT AUTHORISED` page at the back |
 
+- **A hold can be pulled anyway — on purpose, never by accident.** Some boats
+  have to come out before the paperwork does (Chris, Oct 2026). Harbor Haul Out
+  and the console's status card offer **Pull anyway…** on a held or blocked
+  unit: a pop-up naming what was not collected, a confirmation, an optional
+  note. The server records who, what was missing and the note on the unit, in
+  the Harbor Haul Out log and in the audit log, and the hold stays until the
+  contract / deposit arrive. The printed sheet is unchanged — a held row still
+  gets no tick box. Detail: `docs/ref/HARBOR-HAUL-OUT.md` § *Pull anyway*.
 - **The two holds are never allowed to read the same.** One is a liability
   chase and the other a money chase — two different phone calls, often to two
   different people in the shop — so `why` drives the stamp (`haulHoldText_`),

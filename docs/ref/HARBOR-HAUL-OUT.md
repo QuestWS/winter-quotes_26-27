@@ -98,7 +98,7 @@ the only person who can record the pull is the one whose phone just failed.
 
 | Transition | In the app | On the console | Gated? |
 |---|---|---|---|
-| **Pulled** | button on the **opened unit** only | Harbor Haul Out status card | yes, identically |
+| **Pulled** | button on the **opened unit** only | Harbor Haul Out status card | yes, identically — past a hold only through **Pull anyway** |
 | **Dropped off** | one tap on the Awaiting row, or the opened unit | Harbor Haul Out status card | no |
 | **Stored** | one tap on the To store row, or the opened unit | Harbor Haul Out status card | no |
 | **Undo** | opened unit, any state | Harbor Haul Out status card | no |
@@ -141,6 +141,34 @@ the water, so it is refused for anything not `cleared` — in the app the opened
 unit shows the stamp where the button would be, and `adminSetPlacementState`
 re-checks `haulAuth_` server-side, because a client is not a permission.
 Otherwise the app becomes the place a rule violation gets written down.
+
+### Pull anyway — the confirmed exception
+
+Chris, Oct 2026: *"there are circumstances where we will have to pull a boat
+before deposits or contracts are received. Guys should be able to mark boats as
+pulled with a pop-up warning noting that contract/deposit/both were not
+collected and asking them to confirm that they are pulling anyway with an
+optional notes section."*
+
+So on a unit that is not `cleared`, the opened unit shows the stamp and, under
+it, **Pull anyway…** — never a direct `markState('pulled')`. It opens a pop-up
+that names what was not collected (contract, deposit, or both — read from the
+server's `why`, not worked out on the phone), asks the person to confirm, and
+takes an optional note. Cancel, or a tap outside it, records nothing. The
+console's status card offers the identical pop-up (§9: the gate is on the boat,
+not the desk).
+
+The server is still the gate: `adminSetPlacementState` refuses a pull past a
+hold with `needsConfirm` unless the request carries `{confirm:true, note}`.
+A confirmed one is recorded three ways so it is never silent —
+`d.placement.anyway = {why, missing, note}` (kept when the unit is then
+stored; dropped by Undo), a `PULLED ANYWAY — …` line in the Harbor Haul Out log
+under the confirmer's name, and the audit log. It does **not** clear the unit:
+the hold stays on the row (as the label — `NO CONTRACT`, `NO DEPOSIT` — since
+"DO NOT PULL" on a boat already in the building is an instruction nobody can
+follow) until the contract or deposit actually arrives. If the phone's copy
+said cleared but the server's verdict is newer, the refusal brings up the same
+pop-up rather than a bare error. `check-harbor-haul-out.js` pins all of it.
 
 `dropped` is deliberately **not** gated: the customer drove it here themselves,
 we touched nothing, and refusing to record a boat that is visibly sitting in

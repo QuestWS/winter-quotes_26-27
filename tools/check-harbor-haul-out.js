@@ -266,9 +266,43 @@ Y.ev('ROWS = ' + JSON.stringify([
     fail('the opened unit offers Mark pulled on a boat nobody may touch — the app would be ' +
          'where the rule violation gets written down');
   else ok('an opened unit that is not cleared offers no Mark pulled');
-  if (/disabled/.test(held) && /DO NOT PULL/.test(held))
+  if (/DO NOT PULL/.test(held))
     ok('it shows the server\'s stamp in place of the button, so the crew knows why');
   else fail('the blocked unit does not say why it cannot be pulled: ' + held);
+  /* PULL ANYWAY (Chris, Oct 2026): some boats have to come out before the
+     contract or deposit is in. The held unit offers it — but only as the
+     confirmation pop-up, which names what was not collected, never as a
+     direct markState (asserted just above). */
+  if (/pullAnyway\(/.test(held)) ok('a held unit offers "Pull anyway", behind a confirmation');
+  else fail('a held unit cannot be pulled at all — the crew has no way to record a boat that ' +
+            'had to come out before its contract or deposit');
+  {
+    /* Its own realm: the probe below replaces markState, and the rest of this
+       block still needs the real one. */
+    const P = load();
+    P.ev('ME = {name:"Rex",admin:true,perms:{keys:1}}; ROWS = []');
+    const what = (qn, why) => {
+      P.ev('ROWS.push(' + JSON.stringify({ qn: qn, name: qn, slip: 'B-9', unit: 'Boat',
+        auth: { state: why === 'both' ? 'blocked' : 'hold', why: why, stamp: 'X' } }) + ')');
+      P.ev('pullAnyway(' + JSON.stringify(qn) + ')');
+      return P.ev('document.getElementById("pullWhat").innerHTML');
+    };
+    const sig = what('PS', 'signature'), pay = what('PP', 'payment'), both = what('PB', 'both');
+    if (/signed contract/.test(sig) && !/deposit/i.test(sig)) ok('the warning names a missing contract');
+    else fail('the pull-anyway warning does not name the missing contract: ' + sig);
+    if (/deposit/i.test(pay) && !/contract/.test(pay)) ok('the warning names a missing deposit');
+    else fail('the pull-anyway warning does not name the missing deposit: ' + pay);
+    if (/contract/.test(both) && /deposit/i.test(both)) ok('and both, when both are missing');
+    else fail('the pull-anyway warning does not name both missing items: ' + both);
+    /* Confirming is what sends {confirm:true} and the optional note. */
+    P.ev('var GOT=null; markState=function(q,t,o){ GOT=[q,t,o]; }');
+    P.ev('PULLQN="PB"; document.getElementById("pullNote").value=" storm coming "; confirmPullAnyway()');
+    const got = P.ev('JSON.stringify(GOT)');
+    eq(got, JSON.stringify(['PB', 'pulled', { confirm: true, note: 'storm coming' }]),
+       'confirming sends the pull with confirm:true and the note');
+    P.ev('GOT=null; closePullDlg(); confirmPullAnyway()');
+    eq(P.ev('GOT'), null, 'cancelling records nothing');
+  }
   const clear = stateOf('C');
   if (/markState\([^)]*pulled/.test(clear)) ok('a cleared unit can be marked pulled once opened');
   else fail('a cleared unit cannot be marked pulled from anywhere in the app');
@@ -328,6 +362,12 @@ Y.ev('ROWS = ' + JSON.stringify([
       ok('the server re-checks the pull gate rather than trusting the app');
     else fail('adminSetPlacementState does not gate "pulled" on haulAuth_ — a crafted request could ' +
               'record a pull nobody was cleared for');
+    if (/ov\.confirm !== true/.test(fn) && /needsConfirm/.test(fn))
+      ok('a pull past a hold needs an explicit confirm:true — a plain tap is still refused');
+    else fail('adminSetPlacementState records a pull past a hold without an explicit confirmation');
+    if (/anyway/.test(fn) && /placementNotes\.push/.test(fn) && /PULLED ANYWAY/.test(fn))
+      ok('a pull-anyway is written to the unit, the Harbor Haul Out log and the audit line');
+    else fail('a pull past a hold is not recorded as one — the exception would be silent');
     if (/requireAuth_\(token, 'keys'\)/.test(fn)) ok('and it is gated on the harbor permission');
     else fail('adminSetPlacementState is not gated on the keys permission');
     if (/savePdf_|recomputeTotals_|rebuildLinesFromState_/.test(fn))
@@ -352,6 +392,10 @@ Y.ev('ROWS = ' + JSON.stringify([
   if (/_pullAuth[\s\S]{0,400}?state==='cleared'/.test(adminHtml))
     ok('and the console gates that button on the same cleared/not-cleared answer');
   else fail('the console offers "Mark pulled" without checking whether the unit is cleared');
+  if (/openPullModal\(/.test(adminHtml) && /\{confirm:true,note:note\}/.test(adminHtml))
+    ok('the console offers the same pull-anyway confirmation as the app');
+  else fail('the console cannot record a pull past a hold — the app can, and the counter and the ' +
+            'shop are the same people');
   /* Which means the server has to send it that answer. */
   if (/pullAuth: haulAuth_\(/.test(gas)) ok('adminLookup ships the pull verdict to the console');
   else fail('adminLookup does not return pullAuth, so the console is gating on undefined — ' +

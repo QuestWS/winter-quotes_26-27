@@ -1491,7 +1491,7 @@ function consoleFns_(p) {
     hhSlipFillApply:   function (a) { return adminHhSlipFillApply(p.token, a[0]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
-    placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1]); },
+    placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1], a[2]); },
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
@@ -5159,7 +5159,16 @@ function placementStateOf_(d) {
   return PLACEMENT_STATES_[st] ? st : '';
 }
 
-function adminSetPlacementState(token, qn, state) {
+/* What a hold is missing, in the words the pull-anyway warning, the log entry
+   and the audit line all use — one wording, so the three cannot disagree about
+   what was not collected. Keyed on haulAuth_'s `why`. */
+function pullMissingText_(why) {
+  return why === 'signature' ? 'no signed contract'
+       : why === 'payment'   ? 'no deposit'
+       : 'no signed contract and no deposit';
+}
+
+function adminSetPlacementState(token, qn, state, override) {
   /* Physical work, so the same permission — the crew who move the boat are the
      crew who record that they moved it. */
   const who = requireAuth_(token, 'keys');
@@ -5170,11 +5179,21 @@ function adminSetPlacementState(token, qn, state) {
   if (!PLACEMENT_STATES_.hasOwnProperty(want)) return { ok: 0, error: 'Unknown state.' };
   const had = placementStateOf_(d);
   if (had === want) return { ok: 0, error: 'Already ' + (PLACEMENT_STATES_[want].label.toLowerCase()) + '.' };
+  let anyway = null;
 
   /* THE LIABILITY GATE, and the only state it applies to. "Pulled" is a claim
-     that we put hands on the unit and took it out of the water, so it cannot
-     be recorded for a unit that was never cleared to be touched — that would
-     turn the app into the place a rule violation gets written down.
+     that we put hands on the unit and took it out of the water, so it is not
+     recorded for a unit that was never cleared to be touched on a plain tap.
+
+     PULL ANYWAY. Chris, Oct 2026: there are circumstances where a boat has to
+     come out before the contract or the deposit is in, and the crew must be
+     able to record it. So the gate is a CONFIRMATION, not a wall: a request
+     without `override.confirm === true` is refused with `needsConfirm`, and the
+     clients answer that with a warning naming what was not collected. A
+     confirmed pull is recorded with what was missing, who confirmed it and
+     their note — on the placement, in the Harbor Haul Out log and in the audit
+     log — so the exception is never silent. It does not clear the unit: the
+     hold stamp stays until the contract / deposit actually arrive.
 
      'dropped' is deliberately NOT gated: the customer drove it here
      themselves, we touched nothing, and refusing to record a boat that is
@@ -5182,22 +5201,52 @@ function adminSetPlacementState(token, qn, state) {
   if (want === 'pulled') {
     const auth = haulAuth_(paymentsTotal_(d) > 0.005, !!d.contractUrl);
     if (auth.state !== 'cleared') {
-      return { ok: 0, error: 'This unit is not cleared to pull — ' + auth.stamp +
-        '. Sort that out first; nothing is pulled until it is both signed and paid.' };
+      const ov = override || {};
+      if (ov.confirm !== true) {
+        return { ok: 0, needsConfirm: 1, auth: auth,
+          error: 'This unit is not cleared to pull — ' + auth.stamp +
+            '. Confirm you are pulling it anyway, or sort that out first.' };
+      }
+      const why = String(ov.note === null || ov.note === undefined ? '' : ov.note).replace(/\s+/g, ' ').trim();
+      if (why.length > PLACEMENT_NOTE_MAX_) {
+        return { ok: 0, error: 'That note is ' + why.length + ' characters; keep it under ' +
+                 PLACEMENT_NOTE_MAX_ + '.' };
+      }
+      anyway = { why: auth.why, missing: pullMissingText_(auth.why), note: why };
     }
   }
 
   const prev = placementOf_(d);
-  d.placement = { state: want, at: new Date().toISOString(), by: who.name,
+  const now = new Date().toISOString();
+  d.placement = { state: want, at: now, by: who.name,
                   prev: had, prevAt: String((prev && prev.at) || '') };
+  if (anyway) d.placement.anyway = anyway;
+  /* Putting a pulled-anyway boat into its spot keeps the record of how it got
+     there; Undo and "dropped off" start the story over. */
+  else if (want === 'stored' && prev && prev.anyway) d.placement.anyway = prev.anyway;
   delete d.yard;   // fully migrated onto d.placement the moment anything writes it
+  /* The log entry is what makes the exception findable later by whoever is
+     wondering why a boat with no contract is in the building. */
+  let logged = null;
+  if (anyway) {
+    d.placementNotes = d.placementNotes || d.yardNotes || [];
+    delete d.yardNotes;
+    logged = { id: Utilities.getUuid(), ts: now, by: who.name,
+      text: 'PULLED ANYWAY \u2014 ' + anyway.missing + ' on file. Confirmed by ' + who.name + '.' +
+            (anyway.note ? ' Note: ' + anyway.note : '') };
+    d.placementNotes.push(logged);
+  }
   /* Payload only. Moving a boat is not a change to what it costs: no status,
      no re-price, no new PDF. */
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
   auditLog_(who.name, 'Harbor Haul Out state on ' + d.quoteNo + ': ' +
-    (PLACEMENT_STATES_[had].label) + ' → ' + PLACEMENT_STATES_[want].label);
-  return { ok: 1, msg: PLACEMENT_STATES_[want].label + ' — recorded.',
-           placement: { state: want, at: d.placement.at, by: who.name } };
+    (PLACEMENT_STATES_[had].label) + ' → ' + PLACEMENT_STATES_[want].label +
+    (anyway ? ' (PULLED ANYWAY \u2014 ' + anyway.missing +
+      (anyway.note ? '; note: "' + (anyway.note.length > 80 ? anyway.note.slice(0, 80) + '\u2026' : anyway.note) + '"' : '') + ')' : ''));
+  return { ok: 1, msg: anyway ? 'Pulled anyway \u2014 recorded with ' + anyway.missing + '.'
+                              : PLACEMENT_STATES_[want].label + ' — recorded.',
+           placement: { state: want, at: d.placement.at, by: who.name, anyway: d.placement.anyway || null },
+           note: logged };
 }
 
 
@@ -6126,7 +6175,10 @@ function adminLookup(token, qn) {
        Harbor Ottawa (hhoAddr, just above) and reusing it for Harbor Haul Out
        would collide. */
     placement: { state: placementStateOf_(d), at: String((placementOf_(d) && placementOf_(d).at) || ''),
-            by: String((placementOf_(d) && placementOf_(d).by) || '') },
+            by: String((placementOf_(d) && placementOf_(d).by) || ''),
+            /* Set only when the unit was pulled past the hold — see
+               adminSetPlacementState. Undo replaces the placement and drops it. */
+            anyway: (placementOf_(d) && placementOf_(d).anyway) || null },
     /* Whether this unit is cleared to pull — the SAME answer Harbor Haul Out
        and the printed sheets get, from the same function, so the console can
        offer "Mark pulled" with the gate on it rather than working the gate

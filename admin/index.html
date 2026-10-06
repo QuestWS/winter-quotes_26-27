@@ -1041,6 +1041,23 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     </div>
   </div>
 </div>
+<!-- PULL ANYWAY — the same confirmation Harbor Haul Out shows. Nothing is
+     recorded until the red button. -->
+<div class="modal hide" id="pullModal" onclick="if(event.target===this)closePullModal()">
+  <div class="mbox" style="max-width:480px" role="dialog" aria-modal="true" aria-labelledby="pullModalHd">
+    <div class="mhead" style="background:var(--red);color:#fff"><b id="pullModalHd" style="color:#fff">Not cleared to pull</b></div>
+    <div style="padding:14px 18px">
+      <div id="pullModalWhat"></div>
+      <label class="msg" for="pullModalNote" style="display:block;font-weight:700;margin:6px 0 4px">Notes (optional)</label>
+      <textarea class="txt" id="pullModalNote" rows="3" maxlength="1500"
+        placeholder="Why it had to come out now, who OK'd it…"></textarea>
+    </div>
+    <div class="mfoot">
+      <button class="btn ghost" onclick="closePullModal()">Cancel</button>
+      <button class="btn red" id="pullModalGo" onclick="confirmPullModal()">Yes, pull it anyway</button>
+    </div>
+  </div>
+</div>
 <div id="printArea"></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -2336,28 +2353,69 @@ function renderPlacementState(){
      out" is an ordinary Tuesday, not an exception: a phone that glitched in
      at the harbor must not mean the only person who can record the pull is the one
      whose phone just failed.
-     What does NOT relax is the gate. A unit that is not cleared cannot be
-     marked pulled from here either — the button shows why instead, and
-     adminSetPlacementState re-checks it server-side regardless of which surface
-     asked. The gate is about the boat, never about who is holding the phone. */
+     What does NOT relax is the gate. A unit that is not cleared is not marked
+     pulled on a plain tap from here either — the stamp shows why, and the
+     button beside it is the same PULL ANYWAY confirmation Harbor Haul Out
+     shows (what was not collected, an optional note). adminSetPlacementState
+     re-checks it server-side regardless of which surface asked. The gate is
+     about the boat, never about who is holding the phone. */
   const a=window._pullAuth;
+  const any=y.anyway;
+  if(any&&(st==='pulled'||st==='stored')){
+    h+='<div class="msg err" style="margin:0 0 8px">\u26A0 Pulled anyway \u2014 '+esc(any.missing||'not cleared')+
+      ' at the time'+(any.note?': '+esc(any.note):'.')+'</div>';
+  }
   if(st!=='pulled'&&st!=='stored'){
     h+=(a&&a.state==='cleared')
       ? btn('pulled','Mark pulled','navy')
-      : '<button class="btn sm" style="margin:0 6px 6px 0" disabled>'+
-        esc((a&&a.stamp)||'Not confirmed — cannot mark pulled')+'</button>';
+      : '<span class="pill red" style="margin:0 6px 6px 0">'+
+        esc((a&&a.stamp)||'NOT CONFIRMED — DO NOT PULL')+'</span>'+
+        '<button class="btn red sm" style="margin:0 6px 6px 0" onclick="openPullModal()">Pull anyway…</button>';
   }
   if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
   if(st!=='stored') h+=btn('stored','Mark in storage');
   if(st) h+=btn('','Undo — back to not started');
   $('placementStateBtns').innerHTML=h;
 }
-async function setPlacementState(to){
+/* PULL ANYWAY — see adminSetPlacementState. The verdict and what it is missing
+   are the server's (`_pullAuth.why`); this only words it. */
+const PULL_MISSING={signature:['A signed contract'],payment:['A deposit'],
+  both:['A signed contract','A deposit']};
+function openPullModal(){
+  const a=window._pullAuth||{why:'both'};
+  const miss=PULL_MISSING[a.why]||PULL_MISSING.both;
+  $('pullModalHd').textContent=(miss.length>1?'Contract and deposit':miss[0]==='A deposit'?'Deposit':'Contract')+
+    ' not collected';
+  $('pullModalWhat').innerHTML='<p style="margin:0 0 6px">'+esc(QN)+' is <b>not cleared to pull</b>. Not collected:</p>'+
+    '<ul style="margin:0 0 8px;color:var(--red);font-weight:700">'+miss.map(t=>'<li>'+esc(t)+'</li>').join('')+'</ul>'+
+    '<p style="margin:0">Confirm it is being pulled anyway. It is recorded under your name, with your note, '+
+    'in the Harbor Haul Out log — and stays on hold until '+(miss.length>1?'both are':'it is')+' in.</p>';
+  $('pullModalNote').value='';
+  $('pullModalGo').disabled=false;
+  $('pullModal').classList.remove('hide');
+}
+function closePullModal(){ $('pullModal').classList.add('hide'); }
+function confirmPullModal(){
+  const note=($('pullModalNote').value||'').trim();
+  $('pullModalGo').disabled=true;
+  closePullModal();
+  setPlacementState('pulled',{confirm:true,note:note});
+}
+async function setPlacementState(to,ov){
   setMsg('placementStateMsg','Saving…');
   try{
-    const r=await api('placementState',[QN,to]);
-    if(!r||!r.ok){ setMsg('placementStateMsg',(r&&r.error)||'Could not record that.',false); return; }
+    const r=await api('placementState',ov?[QN,to,ov]:[QN,to]);
+    if(!r||!r.ok){
+      /* The verdict changed since this quote was opened: take the server's and
+         ask for the confirmation rather than just refusing. */
+      if(r&&r.needsConfirm&&r.auth&&!ov){
+        window._pullAuth=r.auth; renderPlacementState(); setMsg('placementStateMsg','');
+        openPullModal(); return;
+      }
+      setMsg('placementStateMsg',(r&&r.error)||'Could not record that.',false); return;
+    }
     window._placementState=r.placement||{state:to};
+    if(r.note) renderPlacementLog((window._placementLog||[]).concat([r.note]));
     renderPlacementState();
     setMsg('placementStateMsg',r.msg,true); toast(r.msg);
   }catch(e){ setMsg('placementStateMsg',e.message,false); }

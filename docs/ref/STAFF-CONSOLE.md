@@ -197,6 +197,37 @@ put the calls over the edge Google gives up at.
   script can be deployed in either order.
 
 
+## Receivables (console)
+
+**Receivables** in the menu (and a home tile): the newest payments and refunds
+across the season, and every customer by payment status. Read-only — it
+records nothing; a payment or refund is still recorded on the quote.
+
+- **One call, `receivables`, and every tab re-renders it.** The sub-tabs
+  (Recent transactions, Unpaid, Partly paid, Paid in full, Credit due, Not
+  storing) and the 7 / 30 day / All range never go back to the server.
+- **The server decides the bucket and the balance** (`receivablesBuild_`):
+  payload total − `paymentsTotal_`, signed, the same figure the Balance column
+  holds. The screen must not compute its own, or it will one day disagree with
+  the sheet about who owes what.
+- **Same read as the storage view** (`quoteTabGrids_`, columns 1..`COL.TOTAL`
+  plus the payload), the same ten-minute cache, and dropped by the same writes
+  — `invalidateStorageView_` drops both. The sheet-menu **Record payment**
+  drops it too, since it is not a console call. **Refresh** asks past the
+  cache.
+- **Left out:** the Import and lead tabs (a draft owes nothing — the same rule
+  as the 1st/15th balance report) and a quote with no total and no payment
+  (counted as unpriced in the Unpaid heading, not listed).
+- **Not storing this season** is its own bucket and is kept out of
+  Outstanding, but money already taken on one stays in Collected and in the
+  transaction list.
+- **Collected** is the net of every ledger entry, refunds included.
+- **The transaction list is capped at the newest 400** (`RECEIVABLES_TX_MAX_`)
+  and says so under *All* when there are more.
+- Payments recorded before Oct 2026 have no time or staff name (only the day);
+  they show the day and sort by it. `tools/check-receivables.js` runs the
+  builder over a fake sheet covering every bucket and both read routes.
+
 ## Customer link
 
 Every loaded quote shows a **Customer link** block under the print button: the

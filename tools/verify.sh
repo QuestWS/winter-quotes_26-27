@@ -760,6 +760,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: not-storing mark broken"; sed 's/^/       /' "$TMP/ns.txt"; FAIL=1
   fi
+  # Receivables: the console's money list is RUN over a fake sheet covering
+  # every bucket, both read routes, and the Import tab it must leave out.
+  if node tools/check-receivables.js > "$TMP/recv.txt" 2>&1; then
+    echo "  OK   gate: receivables buckets, totals and transaction order hold"
+  else
+    echo "  FAIL gate: receivables broken"; sed 's/^/       /' "$TMP/recv.txt"; FAIL=1
+  fi
   # Staff-only, like the staff note: the customer page never hears of it.
   if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'notStoring'; then
     echo "  FAIL trap: the load endpoint returns the not-storing mark to the customer page"; FAIL=1

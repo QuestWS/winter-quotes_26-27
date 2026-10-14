@@ -1446,7 +1446,7 @@ const CONSOLE_GET_FNS_ = {
   auth: 1,
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
-  listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1,
+  listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
      arrives, and it is the cleanest reading of what an empty call costs. */
@@ -1499,6 +1499,7 @@ function consoleFns_(p) {
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
     storageView: function (a) { return adminStorageView(p.token, a[0]); },
+    receivables: function (a) { return adminReceivables(p.token, a[0]); },
     draftList:   function (a) { return adminDraftList(p.token); },
     jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
@@ -3627,7 +3628,10 @@ function cacheDropBig_(key) {
     cache.removeAll(keys);
   } catch (e) {}
 }
-function invalidateStorageView_() { cacheDropBig_('storageView'); }
+/* The receivables view is built from the same rows and dropped by the same
+   writes — a payment that is not on the list a moment after it was recorded
+   is a payment somebody records twice. */
+function invalidateStorageView_() { cacheDropBig_('storageView'); cacheDropBig_('receivables'); }
 
 function qrowKey_(qn) { return 'QROW_' + String(qn || '').trim().toUpperCase(); }
 function rememberQuoteRow_(qn, tabName, rowNum) {
@@ -6313,7 +6317,11 @@ function adminRecordPayment(token, qn, amt, method, sendReceipt) {
   const a = Number(String(amt).replace(/[$,\s]/g, ''));
   if (!isFinite(a) || a === 0) return { ok: 0, error: 'Enter a non-zero amount (negative = refund/settle-up).' };
   d.payments = d.payments || [];
-  d.payments.push({ amt: a, method: String(method || 'Payment').trim(), date: new Date().toLocaleDateString() });
+  /* `at` and `by` (Oct 2026) are what the Receivables list orders and labels
+     by. `date` stays exactly as it was — the PDF ledger and the emails print
+     it — so a payment recorded before this simply has no time or name. */
+  d.payments.push({ amt: a, method: String(method || 'Payment').trim(), date: new Date().toLocaleDateString(),
+                    at: new Date().toISOString(), by: who.name });
   const paid = paymentsTotal_(d);
   const bal = Number(d.total || 0) - paid;
   d.status = bal < -0.005 ? 'CREDIT DUE ' + usd_(-bal) : bal <= 0.005 ? 'Paid in full' : 'Payment received — balance ' + usd_(bal);
@@ -8654,6 +8662,144 @@ function storageViewBuild_(opt) {
   return out;
 }
 
+/* RECEIVABLES — the money side of the season, on one screen.
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: "a receivables tab on the admin page so that I can look at
+   the most recent transactions recorded and also see customers by payment
+   status."
+
+   Two lists out of ONE read, the same read the storage view makes (every
+   quote tab in one batch, columns 1..TOTAL plus the payload):
+
+   - `tx`: every payment and refund in every quote's ledger, newest first.
+     The ledger is d.payments — append-only, refunds are negative entries
+     (docs/ref/DATA-AND-MONEY.md § Signed balances) — so this list is simply
+     those entries laid end to end. Payments recorded since Oct 2026 carry
+     `at` (when) and `by` (who); older ones have only the `date` string the
+     PDF prints, so they sort by that day and show no time or name.
+   - `customers`: one row per quote with its bucket — unpaid, partial, paid,
+     credit, or notstoring. The balance is the payload's total − paid, the
+     same signed figure writeMoneyCols_ puts in the Balance column, never
+     clamped: a credit is a credit.
+
+   What is deliberately NOT here, and why:
+   - The Import and lead tabs (isOffstageTab_). A draft owes nothing and a lead
+     has no quote — the same rule the 1st/15th balance report follows.
+   - A quote with no total and no payment. There is nothing to receive on it;
+     it is counted (`unpriced`) so the numbers still add up, not listed.
+   - Not-storing quotes are listed in their own bucket and kept out of the
+     outstanding total, because they owe nothing for a season they are
+     skipping — but money already taken on one is still money taken, so its
+     payments stay in `tx` and in `collected`.
+
+   Read-only, on CONSOLE_GET_FNS_, cached like the storage view and dropped by
+   the same writes (invalidateStorageView_). `opt.fresh` skips the cache. */
+const RECEIVABLES_V_ = 1;
+const RECEIVABLES_TX_MAX_ = 400;   // newest first; the count says how many more exist
+
+function adminReceivables(token, opt) {
+  requireAuth_(token, 'view');
+  return receivablesBuild_(opt);
+}
+
+/* When a ledger entry happened, as a number to sort by. `at` is exact; the
+   older `date` is the script's toLocaleDateString() (M/D/YYYY), which V8
+   parses as that day's midnight. Unreadable → 0, so it sorts last rather
+   than throwing. */
+function paymentWhen_(p) {
+  const t1 = p && p.at ? Date.parse(p.at) : NaN;
+  if (isFinite(t1)) return t1;
+  const t2 = p && p.date ? Date.parse(String(p.date)) : NaN;
+  return isFinite(t2) ? t2 : 0;
+}
+
+function receivablesBuild_(opt) {
+  const T0 = Date.now();
+  const cached = (opt && opt.fresh) ? null : cacheGetBig_('receivables');
+  if (cached) {
+    try {
+      const r = JSON.parse(cached);
+      if (r && r.customers && r.v === RECEIVABLES_V_) { r.cached = 1; r.reads = 'cache'; return r; }
+    } catch (e) {}
+  }
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets().filter(function (sh) { return !isOffstageTab_(sh.getName()); });
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.TOTAL], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const customers = [], tx = [];
+  let unpriced = 0;
+  sheets.forEach(function (sh, si) {
+    let head = [], pays = [];
+    if (grids) {
+      if (!grids[si]) return;
+      head = grids[si][0].slice(1);
+      pays = grids[si][1].slice(1);
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      head = sh.getRange(2, 1, last - 1, COL.TOTAL).getValues();
+      pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    }
+    head.forEach(function (r, i) {
+      const qn = r[COL.QN - 1];
+      if (!qn) return;
+      let pd = null;
+      try { pd = JSON.parse(pays[i][0] || 'null'); } catch (e) { pd = null; }
+      const name = [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', ');
+      const unit = String(r[COL.UNIT - 1] || '');
+      /* The payload is the truth; the columns are the fallback for a row
+         whose payload will not parse, so it is still listed, not lost. */
+      const ledger = (pd && pd.payments) || [];
+      const total = pd ? Number(pd.total || 0) : Number(r[COL.TOTAL - 1] || 0);
+      const paid = pd ? paymentsTotal_(pd) : Number(r[COL.TOTAL - 1] || 0) - Number(r[COL.BAL - 1] || 0);
+      const bal = total - paid;
+      let lastWhen = 0, lastPay = null;
+      ledger.forEach(function (p, k) {
+        const when = paymentWhen_(p);
+        if (!lastPay || when >= lastWhen) { lastWhen = when; lastPay = p; }
+        tx.push({ qn: qn, name: name, unit: unit, amt: Number(p.amt || 0),
+                  method: String(p.method || ''), date: String(p.date || ''),
+                  at: String(p.at || ''), by: String(p.by || ''), when: when, k: k });
+      });
+      const ns = !!(pd && notStoringActive_(pd));
+      if (!ns && Math.abs(total) <= 0.005 && !ledger.length) { unpriced++; return; }
+      const bucket = ns ? 'notstoring'
+                   : bal < -0.005 ? 'credit'
+                   : bal <= 0.005 ? 'paid'
+                   : paid > 0.005 ? 'partial' : 'unpaid';
+      customers.push({ qn: qn, name: name, unit: unit, ymm: String(r[COL.YMM - 1] || ''),
+        tab: sh.getName(), status: String(r[COL.STATUS - 1] || ''),
+        phone: fmtPhone(String(r[COL.PHONE - 1] || '')), email: String(r[COL.EMAIL - 1] || ''),
+        total: total, paid: paid, bal: bal, bucket: bucket,
+        contract: !!(pd && pd.contractUrl), payCount: ledger.length,
+        lastDate: lastPay ? String(lastPay.date || '') : '', lastAt: lastPay ? String(lastPay.at || '') : '',
+        lastWhen: lastWhen });
+    });
+  });
+  /* Newest first. Two entries on the same day with no time (the older ones)
+     fall back to ledger order, so a quote's same-day refund sorts above the
+     payment it refunds, as it would with times on both. */
+  tx.sort(function (a, b) { return b.when - a.when || b.k - a.k; });
+  customers.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  const sum = function (list, f) { return list.reduce(function (n, x) { return n + f(x); }, 0); };
+  const owing = customers.filter(function (c) { return c.bucket === 'unpaid' || c.bucket === 'partial'; });
+  const credits = customers.filter(function (c) { return c.bucket === 'credit'; });
+  const out = { ok: 1, v: RECEIVABLES_V_, builtAt: new Date().toISOString(),
+    totals: {
+      billed: sum(customers.filter(function (c) { return c.bucket !== 'notstoring'; }), function (c) { return c.total; }),
+      collected: sum(tx, function (t) { return t.amt; }),
+      outstanding: sum(owing, function (c) { return c.bal; }),
+      credit: sum(credits, function (c) { return -c.bal; })
+    },
+    unpriced: unpriced, txCount: tx.length,
+    tx: tx.slice(0, RECEIVABLES_TX_MAX_).map(function (t) { delete t.k; return t; }),
+    customers: customers };
+  cachePutBig_('receivables', JSON.stringify(out), STORAGE_VIEW_TTL_);
+  out.reads = grids ? _gridsRoute_ : 'scan';
+  out._t = { total: Date.now() - T0 };
+  return out;
+}
+
 /* THE CUSTOMER'S NOTE — "Notes / special requests" on the quote page.
    ---------------------------------------------------------------------------
    d.notes, typed by the customer (or carried over from an old sheet by the
@@ -10487,7 +10633,8 @@ function recordPayment() {
   const method = String(mResp.getResponseText()).trim() || 'Payment';
 
   d.payments = d.payments || [];
-  d.payments.push({ amt: amt, method: method, date: new Date().toLocaleDateString() });
+  d.payments.push({ amt: amt, method: method, date: new Date().toLocaleDateString(),
+                    at: new Date().toISOString(), by: 'Sheet menu' });
   const paid = paymentsTotal_(d);
   const bal = Number(d.total || 0) - paid;
   d.status = bal < -0.005 ? 'CREDIT DUE ' + usd_(-bal) : bal <= 0.005 ? 'Paid in full' : 'Payment received — balance ' + usd_(bal);
@@ -10499,6 +10646,7 @@ function recordPayment() {
   sh.getRange(rowNum, COL.PDF).setValue(pdfUrl);
   sh.getRange(rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
   writeMoneyCols_(sh, rowNum, d);
+  invalidateStorageView_();   // not a console call, so nothing else drops the cached lists
 
   let sentMsg = 'No receipt sent';
   if (d.email) {

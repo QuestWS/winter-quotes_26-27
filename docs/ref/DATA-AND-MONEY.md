@@ -88,6 +88,13 @@ customer, and it must render as such in the sheet, PDF ledger, emails, and
 page ticket. Refunds are recorded as **negative payments** — payments are an
 append-only ledger, never deleted.
 
+A ledger entry is `{ amt, method, date }`, and since Oct 2026 also `at` (ISO
+time) and `by` (staff name, or `Sheet menu`). `date` is unchanged because the
+PDF ledger and the emails print it; `at`/`by` exist for the console's
+**Receivables** list, which orders by `at` and falls back to `date` for older
+entries (`paymentWhen_`). Never backfill them — an old payment's time is not
+known, and inventing midnight would put it in the wrong order.
+
 
 ## Provisional pricing — a deposit holds a space, not a price
 `PRICES` in the Annual Update Zone holds the **2026–2027** card (loaded Oct

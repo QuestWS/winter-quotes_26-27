@@ -324,6 +324,10 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 .srow .un{color:var(--muted)}
 .srow .bl{font-family:var(--mono);text-align:right;white-space:nowrap}
 .srow .bl.paid{color:var(--green)}.srow .bl.owe{color:var(--gold)}
+.srow .bl.ref{color:var(--red)}
+/* Receivables: three money figures must fit a phone without pushing the card. */
+#recvCard .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:640px){#recvCard .stat{padding:8px 4px}#recvCard .stat .v{font-size:14px}}
 @media(max-width:640px){.srow{grid-template-columns:1fr auto}.srow .un{grid-column:1/-1;font-size:12px}}
 /* The customer's own note. Frost, not red or gold: it is something they asked
    for, not a hold and not money, so it must not read like either. */
@@ -406,6 +410,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     <button class="hamb" id="hamb" onclick="toggleNav()" aria-label="Menu">☰ <span class="hlab">Menu</span></button>
     <nav class="navlinks" id="navlinks">
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
+      <button class="linkbtn" onclick="navGo(toggleReceivables)">Receivables</button>
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
@@ -443,6 +448,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     <div id="homeTiles" class="tiles hide">
       <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
         <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
+      <button class="tile" onclick="navGo(toggleReceivables)"><b>Receivables</b>
+        <span>The latest payments and refunds, and every customer by payment status — unpaid, part paid, paid, credit due.</span></button>
       <button class="tile hide" id="bulkTile" onclick="navGo(toggleBulk)"><b>Send to all</b>
         <span>The spring relaunch alert or the end-of-season note, to every customer at once. Preview first — it sends nothing.</span></button>
       <button class="tile hide" id="importTile" onclick="navGo(toggleImport)"><b>Load from an old sheet</b>
@@ -1022,6 +1029,24 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
+    <!-- Receivables: read-only. Every tab and range re-renders one fetch. -->
+    <div class="card hide" id="recvCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">Receivables</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn navy sm" onclick="loadReceivables(true)">Refresh</button>
+          <button class="btn ghost sm" onclick="$('recvCard').classList.add('hide')">✕ Close</button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v" id="rvOut">—</div><div class="k">Outstanding</div></div>
+        <div class="stat"><div class="v" id="rvIn">—</div><div class="k">Collected</div></div>
+        <div class="stat"><div class="v" id="rvCr">—</div><div class="k">Credits due</div></div>
+      </div>
+      <div id="recvTabs" class="stabs hide"></div>
+      <div id="recvBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
+    </div>
+
     <p class="foot">Quest Watersports · Ottawa, IL · every console action is recorded in the Activity Log<br><span id="apiTiming"></span></p>
   </div>
 </div>
@@ -1092,7 +1117,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,draftList:1,photoInfo:1,hhListInfo:1,
+const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1370,7 +1395,7 @@ function boot(){
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
 const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','importCard',
-  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard'];
+  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard'];
 function syncHome(){
   const el=$('homeTiles'); if(!el||!T||!ME) return;
   const busy=HOME_PANELS.some(id=>{const e=$(id); return e&&!e.classList.contains('hide');});
@@ -2865,6 +2890,7 @@ function toggleStorage(){
 }
 async function loadStorage(){
   $('storageCard').classList.remove('hide');
+  $('recvCard').classList.add('hide');
   $('adminCard').classList.add('hide');
   $('storageTabs').classList.add('hide');
   $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
@@ -3089,6 +3115,124 @@ function renderStorage(){
     ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>')+nsList;
 }
 function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
+/* ---------------------------------------------------------------------------
+   RECEIVABLES
+   ---------------------------------------------------------------------------
+   The newest payments and refunds across every quote, and every customer by
+   where their money stands. ONE call (receivables), and every tab and range
+   below re-renders what is already in window._rv — flipping between "Unpaid"
+   and "Paid in full" must not be another trip to the server.
+
+   The server decides the bucket and the balance (receivablesBuild_), the same
+   signed total − paid the Balance column holds, so this screen cannot
+   disagree with the sheet or the storage view about who owes what. */
+let RTAB='tx', RRANGE=30;
+const RTAB_LABEL={tx:'Recent transactions',unpaid:'Unpaid',partial:'Partly paid',paid:'Paid in full',
+  credit:'Credit due',notstoring:'Not storing'};
+function sfmt$(n){n=Number(n||0);return (n<-0.005?'−':'')+fmt$(Math.abs(n));}
+function toggleReceivables(){
+  const c=$('recvCard');
+  if(c.classList.contains('hide')){loadReceivables();}else{c.classList.add('hide');}
+}
+async function loadReceivables(fresh){
+  $('recvCard').classList.remove('hide');
+  $('storageCard').classList.add('hide');
+  $('adminCard').classList.add('hide');
+  $('recvTabs').classList.add('hide');
+  $('recvBody').innerHTML='<span class="msg">Loading receivables…</span>';
+  try{
+    const r=await api('receivables',[fresh?{fresh:1}:{}]);
+    if(!r.ok){$('recvBody').innerHTML='<span class="msg err">'+esc(r.error)+'</span>';return;}
+    window._rv=r;
+    renderReceivables();
+  }catch(e){$('recvBody').innerHTML='<span class="msg err">'+esc(e.message)+'</span>';}
+}
+function setRecvTab(t){ if(!RTAB_LABEL[t])return; RTAB=t; renderReceivables(); }
+function setRecvRange(d){ RRANGE=d; renderReceivables(); }
+function fromRecv(qn){$('recvCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
+/* A payment recorded since Oct 2026 carries its exact time; an older one only
+   the day the PDF prints. Show what there is — never a made-up midnight. */
+function recvWhen_(t){
+  if(t.at){const d=new Date(t.at); if(!isNaN(d)) return d.toLocaleDateString()+' '+
+    d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});}
+  return t.date||'—';
+}
+function recvTx_(){
+  const all=window._rv.tx||[];
+  if(!RRANGE) return all;
+  const since=Date.now()-RRANGE*86400000;
+  return all.filter(t=>t.when>=since);
+}
+function renderReceivables(){
+  const r=window._rv; if(!r) return;
+  const cs=r.customers||[];
+  const n={tx:r.txCount||0}; Object.keys(RTAB_LABEL).forEach(k=>{if(k!=='tx')n[k]=0;});
+  cs.forEach(c=>{if(n[c.bucket]!==undefined)n[c.bucket]++;});
+  $('rvOut').textContent=fmt$(r.totals.outstanding);
+  $('rvIn').textContent=sfmt$(r.totals.collected);
+  $('rvCr').textContent=fmt$(r.totals.credit);
+  const t=$('recvTabs');
+  t.innerHTML=Object.keys(RTAB_LABEL).map(k=>`<button class="${RTAB===k?'on':''}" onclick="setRecvTab('${k}')">`+
+    `${RTAB_LABEL[k]}<span class="n">${n[k]}</span></button>`).join('');
+  t.classList.remove('hide');
+  const asOf=r.builtAt?' Figures as of '+esc(new Date(r.builtAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))+
+    (r.cached?' (saved copy — Refresh for the sheet as it is now)':'')+'.':'';
+  if(RTAB==='tx'){ $('recvBody').innerHTML=renderRecvTx_()+`<div class="msg" style="margin-top:8px">${asOf}</div>`; return; }
+  const list=cs.filter(c=>c.bucket===RTAB);
+  /* Whoever owes the most, or is owed the most, first — that is the call to
+     make next. Paid in full and not storing read best alphabetically. */
+  if(RTAB==='unpaid'||RTAB==='partial') list.sort((a,b)=>b.bal-a.bal);
+  else if(RTAB==='credit') list.sort((a,b)=>a.bal-b.bal);
+  const sum=list.reduce((s,c)=>s+c.bal,0);
+  const head={
+    unpaid:`<b>${list.length}</b> quote${list.length===1?'':'s'} with nothing paid yet — <b>${fmt$(sum)}</b> outstanding.`+
+      (r.unpriced?` ${r.unpriced} unpriced quote${r.unpriced===1?' is':'s are'} left out (no total, nothing to collect).`:''),
+    partial:`<b>${list.length}</b> quote${list.length===1?'':'s'} with a deposit or part payment — <b>${fmt$(sum)}</b> still to collect.`,
+    paid:`<b>${list.length}</b> quote${list.length===1?'':'s'} paid in full.`,
+    credit:`<b>${list.length}</b> customer${list.length===1?' is':'s are'} owed money back — <b>${fmt$(-sum)}</b> in credits. `+
+      'Record a refund as a negative payment on the quote.',
+    notstoring:`<b>${list.length}</b> marked not storing this season. They owe nothing for it, so none of this is in the outstanding total.`
+  }[RTAB];
+  const rows=list.map(function(c){
+    const owe=c.bal>0.005, cr=c.bal<-0.005;
+    const bl=cr?'CREDIT '+fmt$(-c.bal):owe?fmt$(c.bal):'Paid';
+    const last=c.lastAt?new Date(c.lastAt).toLocaleDateString():c.lastDate;
+    const nc=(RTAB==='partial'||RTAB==='paid')&&!c.contract?'<span class="tagmute">no contract</span>':'';
+    return `<div class="srow" onclick="fromRecv('${esc(c.qn)}')">
+      <span class="nm">${esc(c.name||'(no name)')}${nc}</span>
+      <span class="un">${esc(c.qn)} · ${esc(c.unit)}${c.ymm?' · '+esc(c.ymm):''} · paid ${fmt$(c.paid)} of ${fmt$(c.total)}`+
+      `${last?' · last payment '+esc(last):''}${c.phone?' · '+esc(c.phone):''}</span>
+      <span class="bl ${cr||!owe?'paid':'owe'}">${esc(bl)}</span></div>`;
+  }).join('');
+  $('recvBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
+    (rows||'<div class="msg" style="padding:6px">— nobody in this list —</div>')+
+    `<div class="msg" style="margin-top:8px">Tap a row to open the quote.${asOf}</div>`;
+}
+function renderRecvTx_(){
+  const r=window._rv, list=recvTx_();
+  const rng=[[7,'Last 7 days'],[30,'Last 30 days'],[0,'All']].map(([d,l])=>
+    `<button class="btn ${RRANGE===d?'navy':'ghost'} sm" onclick="setRecvRange(${d})">${l}</button>`).join(' ');
+  const net=list.reduce((s,t)=>s+t.amt,0);
+  const refunds=list.filter(t=>t.amt<0).length;
+  /* The server sends the newest RECEIVABLES_TX_MAX_; say so rather than let
+     "All" quietly mean "all of the newest few hundred". */
+  const capped=(r.tx||[]).length<(r.txCount||0)&&!RRANGE
+    ? ` Showing the newest ${(r.tx||[]).length} of ${r.txCount}.`:'';
+  const head=`<b>${list.length}</b> transaction${list.length===1?'':'s'}`+
+    (RRANGE?` in the last ${RRANGE} days`:'')+` · <b>${sfmt$(net)}</b> net`+
+    (refunds?` (includes ${refunds} refund${refunds===1?'':'s'})`:'')+'.'+capped;
+  const rows=list.map(function(t){
+    const ref=t.amt<0;
+    return `<div class="srow" onclick="fromRecv('${esc(t.qn)}')">
+      <span class="nm">${esc(t.name||'(no name)')}<span class="un" style="font-weight:400"> · ${esc(t.qn)}</span></span>
+      <span class="un">${esc(recvWhen_(t))} · ${esc(t.method||'Payment')}${ref&&!/refund/i.test(t.method||'')?' (refund)':''}`+
+      `${t.by?' · recorded by '+esc(t.by):''}${t.unit?' · '+esc(t.unit):''}</span>
+      <span class="bl ${ref?'ref':'paid'}">${sfmt$(t.amt)}</span></div>`;
+  }).join('');
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">${rng}</div>`+
+    `<div class="msg" style="margin:0 0 4px">${head}</div>`+
+    (rows||'<div class="msg" style="padding:6px">— no payments recorded in this window —</div>');
+}
 async function printStorage(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}

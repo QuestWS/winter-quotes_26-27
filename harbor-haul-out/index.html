@@ -231,7 +231,9 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
 <div id="login" class="login">
   <h1>Harbor Haul Out</h1>
   <p>Haul-out list. Same PIN as the staff console.</p>
-  <input class="pin" id="pin" type="tel" inputmode="numeric" autocomplete="off"
+  <!-- type="password", not "tel": tel showed the PIN on screen as it was typed.
+       inputmode keeps the number pad. -->
+  <input class="pin" id="pin" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
          maxlength="8" placeholder="••••" aria-label="Staff PIN">
   <button class="btn wide" id="loginBtn" style="margin-top:12px" onclick="doLogin()">Sign in</button>
   <div class="msg" id="loginMsg"></div>
@@ -256,6 +258,10 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
     </div>
   </div>
   <div class="wrap">
+    <!-- At the top, not under the list: it is the first thing tapped, before
+         heading out, and under a long list nobody scrolls to it. -->
+    <button class="btn ghost wide" id="warmBtn" onclick="getReady()">Get ready</button>
+    <div class="msg" id="warmMsg">Tap before you head out — opening a unit is fast for the next 2 hours.</div>
     <div class="filter hide" id="filterBar">
       <input id="q" type="search" placeholder="Search name, quote # or slip"
              autocomplete="off" autocapitalize="none" oninput="render()" aria-label="Search">
@@ -265,8 +271,6 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
     <div class="msg" id="listMsg">Loading…</div>
     <div id="list"></div>
     <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
-    <div style="margin-top:10px"><button class="btn ghost wide" id="warmBtn" onclick="getReady()">Get ready</button></div>
-    <div class="msg" id="warmMsg">Tap before you head out: wakes the server and pre-loads every unit, so opening one is fast. Stays ready for 2 hours while the app is open.</div>
   </div>
 </div>
 

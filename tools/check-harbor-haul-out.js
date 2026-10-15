@@ -1156,6 +1156,11 @@ async function loadChecks() {
     if (hedgeAt > -1 && ridAt > hedgeAt && /if\(isRead\) return readHedged_\(body\);/.test(src)) ok('a write is never hedged — it is sent once, with its rid');
     else fail('a write could be sent twice');
   }
+  /* The PIN is masked as it is typed. It was type="tel", which put every
+     digit on screen for anyone looking over a shoulder at the harbor. */
+  if (/<input[^>]*id="pin"[^>]*type="password"/.test(HTML) && /<input[^>]*id="pin"[^>]*inputmode="numeric"/.test(HTML))
+    ok('the PIN field hides what is typed and keeps the number pad');
+  else fail('the PIN field shows the digits as they are typed (it must be type="password", inputmode="numeric")');
   /* The fonts stylesheet must not block the first paint. */
   if (/<link[^>]*fonts\.googleapis\.com\/css2[^>]*media="print"[^>]*onload=/.test(HTML))
     ok('the Google Fonts stylesheet is off the critical path');

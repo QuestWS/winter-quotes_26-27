@@ -1451,6 +1451,9 @@ const CONSOLE_GET_FNS_ = {
      open so Apps Script has a warm container by the time the first real call
      arrives, and it is the cleanest reading of what an empty call costs. */
   ping: 1,
+  /* "Get ready": fills the read caches ahead of the first real tap. Reads
+     only — see adminWarmup. */
+  warmup: 1,
   /* "What became of the write I sent?" — see the idempotency section below.
      It is on this list because it is the one question staff must still be able
      to ask when the POST route is the thing that is broken. It reads a cached
@@ -1470,6 +1473,7 @@ function consoleFns_(p) {
   return {
     auth:        function (a) { return adminAuth(a[0]); },
     ping:        function (a) { return adminPing(); },
+    warmup:      function (a) { return adminWarmup(p.token); },
     lookup:      function (a) { return adminLookup(p.token, a[0]); },
     quoteHtml:   function (a) { return adminQuoteHtml(p.token, a[0]); },
     dimsPreview: function (a) { return adminDimsPreview(p.token, a[0], a[1]); },
@@ -1753,6 +1757,44 @@ function withQuote_(p, out) {
 }
 
 function adminPing() { return { ok: 1 }; }
+
+/* GET READY — the console's and Harbor Haul Out's "Get ready" button (Oct 2026).
+   `ping` wakes Apps Script and nothing else; the first real tap of the day was
+   still slow because everything BEHIND the container was cold too: the
+   storage view and receivables caches (ten minutes), and the quote → row index
+   (six hours) that lets a lookup skip the full scan. Chris's report: "it's the
+   first time using the app in a while that's the slowest".
+
+   This does exactly the reads the first taps would do, ahead of them, and
+   keeps their answers in the same caches those taps read — so it can make an
+   answer faster but never different. A cache that is already warm is a hit
+   here too, so pressing it twice, or the page re-warming every few minutes
+   while it is open, costs next to nothing. Writes nothing to the sheet, sends
+   nothing; on the GET allow-list like every other read. Each step is timed
+   and a step that fails is reported, not thrown — the point is the steps that
+   did work. */
+function adminWarmup(token) {
+  const T0 = Date.now();
+  const steps = [];
+  const step = function (what, fn) {
+    const t = Date.now();
+    try { const note = fn(); steps.push({ what: what, ms: Date.now() - t, note: note || '' }); }
+    catch (e) { steps.push({ what: what, ms: Date.now() - t, error: String(e.message || e) }); }
+  };
+  requireAuth_(token, 'view');
+  steps.push({ what: 'sign-in check', ms: Date.now() - T0 });
+  let units = 0;
+  step('storage list + quote index', function () {
+    const sv = storageViewBuild_();
+    (sv.groups || []).forEach(function (g) { if (!g.lead) units += (g.rows || []).length; });
+    return sv.reads === 'cache' ? 'already warm' : 'loaded (' + sv.reads + ' read)';
+  });
+  step('receivables', function () {
+    const r = receivablesBuild_();
+    return r && r.cached ? 'already warm' : 'loaded';
+  });
+  return { ok: 1, units: units, steps: steps, ms: Date.now() - T0 };
+}
 
 function doGet(e) {
   const p = (e && e.parameter) || {};

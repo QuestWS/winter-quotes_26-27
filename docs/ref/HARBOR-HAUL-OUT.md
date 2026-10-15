@@ -360,6 +360,11 @@ the POST to give up before trying GET, which is the wait in the recording. So:
   stalled POST is answered over GET, and that `api()` hedges nothing that
   carries a `rid`. The second execution costs nothing that matters: every read
   is idempotent and the storage view is cached on the server.
+- **Get ready** (Oct 2026), the button under Refresh: the same `warmup` call
+  as the console's tile, kept warm for two hours while the app is open —
+  `docs/ref/STAFF-CONSOLE.md` § *Why the console got slow*. Opening the app
+  already loads the list; the press is for before heading out, so the server
+  and the quote index are warm when the first unit is opened.
 - **Expired sessions are swept on sign-in** (`sweepSessions_`). Nothing had
   ever removed a `SESS_` property whose phone simply stopped opening the app,
   and Project Settings had become a wall of them. Not on any read path.

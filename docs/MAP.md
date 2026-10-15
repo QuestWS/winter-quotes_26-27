@@ -93,6 +93,7 @@ symptom.
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
 | Speed: one trip per click, timing, warm-up | `withQuote_`, `adminPing` | `afterWrite_`, `apiTiming_` |
+| Get ready (pre-warm before use) | `adminWarmup` | `getReady`, `keepWarm_`, `warmQuiet_` (console and Harbor Haul Out) |
 | Speed: every tab in one read | `quoteTabGrids_` (used by `adminStorageView`, `adminSearch`, `findQuoteCtx_`) | — |
 | Home tiles and the menu | — | `navGate`, `syncHome` |
 | Dimensions, motors, storage move | `adminDimsPreview`, `adminDimsApply`, `sanitizeEngines_` | `renderDims`, `previewDims` |

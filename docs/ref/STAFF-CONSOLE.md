@@ -192,6 +192,23 @@ put the calls over the edge Google gives up at.
 - **`ping` does nothing, on purpose.** The console and Harbor Haul Out call it on
   the sign-in screen so Apps Script has a warm container by the time the PIN
   is entered. It is on the GET allow-list and needs no session.
+- **Get ready** (Oct 2026) — a home tile in the console and a button under
+  Refresh in Harbor Haul Out, both calling `warmup` (`adminWarmup`). The ping
+  above wakes Apps Script, but the first use after a while was still the slow
+  one because the caches behind it had aged out: the storage view and
+  receivables (ten minutes) and the quote → row index (six hours). `warmup`
+  does those same reads into those same caches, so it can make an answer
+  faster but never different; it writes nothing to the sheet and is on the GET
+  allow-list. A warm cache is a hit, so a second press costs next to nothing.
+  - **It stays ready for two hours.** The caches only last ten minutes, so the
+    page re-warms every five while it is on screen, and again the moment it
+    comes back to the front — a phone stops timers with the screen off. The
+    window is remembered across a reload (`qwready`) and dropped on sign-out.
+  - **The background re-warm is quiet**: no footer timing, and an expired
+    session stops it instead of reloading the console out from under somebody
+    typing (`apiDone_`'s `quiet`).
+  - **What it cannot warm**: the phone's own signal, and Drive/Gmail, whose
+    start-up is paid per execution. A photo or an email is no faster for it.
 - **A reply with no stamp at all is still accepted** when it isn't the customer
   loader's — an older backend answers exactly that way, so the page and the
   script can be deployed in either order.

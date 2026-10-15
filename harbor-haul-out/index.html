@@ -265,6 +265,8 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
     <div class="msg" id="listMsg">Loading…</div>
     <div id="list"></div>
     <div style="margin-top:14px"><button class="btn ghost wide" onclick="loadList(1)">Refresh</button></div>
+    <div style="margin-top:10px"><button class="btn ghost wide" id="warmBtn" onclick="getReady()">Get ready</button></div>
+    <div class="msg" id="warmMsg">Tap before you head out: wakes the server and pre-loads every unit, so opening one is fast. Stays ready for 2 hours while the app is open.</div>
   </div>
 </div>
 
@@ -443,7 +445,7 @@ function setMsg(id,t,ok){ const m=$(id); if(!m)return; m.textContent=t;
    API_GET_OK must stay a SUBSET of the server's CONSOLE_GET_FNS_ — the server
    refuses a GET naming a write, so a wrong entry here is a retry that can only
    ever fail. tools/check-harbor-haul-out.js asserts the subset by reading both. */
-const API_GET_OK={auth:1,ping:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
+const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,storageView:1,photoInfo:1,jobStatus:1,dimsPreview:1};
 function terr_(m,c){ const e=new Error(m); e.transport=(c===undefined?0:c); return e; }
 function isTerr_(e){ return !!(e&&e.transport!==undefined); }
 function wait_(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -580,7 +582,8 @@ async function doLogin(){
    the list cache exists to remove. The Sign out button clears it. */
 function signOut(keep){
   T=''; ME=null;
-  try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); }catch(e){}
+  try{ localStorage.removeItem('qwtok'); localStorage.removeItem('qwme'); localStorage.removeItem('qwready'); }catch(e){}
+  READY_UNTIL=0; clearTimeout(WARM_TIMER);
   if(!keep){ listDrop_(); qDropAll_(); ROWS=[]; LIST_AT=0; }
   $('app').classList.add('hide'); $('sheet').classList.add('hide');
   $('login').classList.remove('hide'); $('pin').value='';
@@ -614,6 +617,62 @@ function canMeasure(){
   return !!p.measure;
 }
 
+/* GET READY — the same button as the console's, same server call (adminWarmup
+   in the .gs), which writes nothing. The list already loads on open; what was
+   still cold the first time in a while was the server behind it and the
+   index that finds one unit without scanning the sheet. For READY_HOURS after
+   the tap it re-warms every KEEP_WARM_MS while the app is on screen, and the
+   moment it comes back to the front — a phone stops timers with the screen off. */
+const READY_HOURS=2, KEEP_WARM_MS=5*60*1000;
+let READY_UNTIL=0, LAST_WARM=0, WARM_BUSY=false, WARM_TIMER=null;
+try{ READY_UNTIL=Number(localStorage.getItem('qwready')||0)||0; }catch(e){}
+function readyLeft_(){
+  const m=Math.round((READY_UNTIL-Date.now())/60000);
+  return m>=60?Math.floor(m/60)+' hr '+(m%60)+' min':m+' min';
+}
+async function getReady(){
+  if(WARM_BUSY||!T) return;
+  WARM_BUSY=true;
+  const b=$('warmBtn'), t0=Date.now();
+  b.disabled=true; b.textContent='Getting ready…';
+  setMsg('warmMsg','Waking the server and loading the lists. The first one of the day can take 20–40 seconds.');
+  try{
+    const r=await api('warmup',[]);
+    if(!r||!r.ok){ setMsg('warmMsg','Could not get ready: '+((r&&r.error)||'no answer')+' — try again.',false); return; }
+    LAST_WARM=Date.now();
+    READY_UNTIL=Date.now()+READY_HOURS*3600000;
+    try{ localStorage.setItem('qwready',String(READY_UNTIL)); }catch(e){}
+    const bad=(r.steps||[]).filter(function(x){ return x.error; });
+    setMsg('warmMsg','Ready \u2713 '+((Date.now()-t0)/1000).toFixed(1)+'s'+
+      (r.units?' \u00b7 '+r.units+' units indexed':'')+
+      (bad.length?' \u00b7 '+bad.map(function(x){ return x.what+' failed'; }).join(', '):'')+
+      ' \u00b7 staying warm for '+readyLeft_()+'.',!bad.length);
+    keepWarm_();
+  }catch(e){ setMsg('warmMsg','Could not get ready: '+e.message+' — try again.',false); }
+  finally{ WARM_BUSY=false; b.disabled=false; b.textContent='Get ready'; }
+}
+function keepWarm_(){
+  clearTimeout(WARM_TIMER); WARM_TIMER=null;
+  if(!T||Date.now()>=READY_UNTIL) return;
+  WARM_TIMER=setTimeout(warmQuiet_,Math.max(1000,KEEP_WARM_MS-(Date.now()-LAST_WARM)));
+}
+async function warmQuiet_(){
+  if(WARM_BUSY||!T||Date.now()>=READY_UNTIL) return;
+  if(document.visibilityState==='hidden'){ keepWarm_(); return; }
+  WARM_BUSY=true;
+  try{
+    const r=await api('warmup',[]);
+    if(r&&/sign in|session|token/i.test(String(r.error||''))){ READY_UNTIL=0; return; }
+    LAST_WARM=Date.now();
+  }catch(e){ LAST_WARM=Date.now(); /* the next pass tries again */ }
+  finally{ WARM_BUSY=false; keepWarm_(); }
+}
+try{
+  if(document.addEventListener) document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&T&&Date.now()<READY_UNTIL&&Date.now()-LAST_WARM>KEEP_WARM_MS) warmQuiet_();
+  });
+}catch(e){}
+
 function showApp(){
   $('login').classList.add('hide');
   $('app').classList.remove('hide');
@@ -621,6 +680,9 @@ function showApp(){
   loadList();
   /* Anything still waiting from the last time the app was open. */
   upResume_();
+  /* Reopened inside a ready window: carry on keeping it warm. The open's own
+     list load has just warmed it, so this only schedules the next pass. */
+  if(Date.now()<READY_UNTIL){ LAST_WARM=Date.now(); keepWarm_(); }
 }
 
 /* ---------------------------------------------------------------------------

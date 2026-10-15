@@ -446,6 +446,10 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
          calls, and carries the same permission gate, so the two can never
          offer different things. -->
     <div id="homeTiles" class="tiles hide">
+      <!-- Not a destination: it stays on the home page and reports on itself.
+           See getReady(). -->
+      <button class="tile" id="warmTile" onclick="getReady()"><b>Get ready</b>
+        <span id="warmMsg">Tap a few minutes before you need the console. Wakes the server and pre-loads the storage list, receivables and the quote index, so the first taps are fast. Stays ready for 2 hours while this page is open.</span></button>
       <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
         <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile" onclick="navGo(toggleReceivables)"><b>Receivables</b>
@@ -1117,7 +1121,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
+const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1279,7 +1283,7 @@ async function apiCall_(fn,args,opts,tr){
     const tp=Date.now();
     try{
       const j=await apiPost_(body,(isRead&&API_QUICK_READ[fn])?API_POST_TIMEOUT_MS:0);
-      if(!apiLostReply_(j)){ tr.push('POST'); return apiDone_(j); }
+      if(!apiLostReply_(j)){ tr.push('POST'); return apiDone_(j,opts); }
       apiLeg_(tr,'POST lost',tp);
     }catch(e){
       if(!isTransportErr_(e)) throw e;
@@ -1293,7 +1297,7 @@ async function apiCall_(fn,args,opts,tr){
       const tg=Date.now();
       try{
         const g=await apiGet_(body);
-        if(!apiLostReply_(g)){ API_USE_GET=true; tr.push(i?'GET (try '+(i+1)+')':'GET'); return apiDone_(g); }
+        if(!apiLostReply_(g)){ API_USE_GET=true; tr.push(i?'GET (try '+(i+1)+')':'GET'); return apiDone_(g,opts); }
         apiLeg_(tr,'GET lost',tg);
         break;  /* a genuine lost-POST fingerprint on the GET route too */
       }catch(e){
@@ -1309,7 +1313,7 @@ async function apiCall_(fn,args,opts,tr){
     const ts=Date.now();
     const s=await settleWrite_(body.rid);
     apiLeg_(tr,s.reply?'answer recovered by status check':'status check',ts);
-    if(s.reply) return apiDone_(s.reply);
+    if(s.reply) return apiDone_(s.reply,opts);
     if(s.never) throw new Error('The server never received that. Nothing was changed — try again.');
     throw new Error('The connection dropped before the server answered, and it may still be '+
       'finishing. Do NOT send it again — reload the page and check the quote first.');
@@ -1328,8 +1332,10 @@ async function afterWrite_(r){
   }
   const q=await api('lookup',[QN]); if(q.ok) renderQuote(q);
 }
-function apiDone_(j){
-  if(j&&j.error&&String(j.error).includes('expired')){localStorage.clear();location.reload();}
+function apiDone_(j,opts){
+  /* `quiet`: the background re-warm (keepWarm_) must not reload the page out
+     from under somebody typing; it stops itself instead. */
+  if(j&&j.error&&String(j.error).includes('expired')&&!(opts&&opts.quiet)){localStorage.clear();location.reload();}
   return j;
 }
 /* Escape before interpolating anything into innerHTML. Dimensions, notes and
@@ -1387,6 +1393,8 @@ function boot(){
     navGate('import', ME.admin||P.adjust);
     refreshPause();
     syncHome();
+    /* A reload inside the ready window carries on keeping things warm. */
+    if(Date.now()<READY_UNTIL) warmQuiet_();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
 
@@ -1403,6 +1411,64 @@ function syncHome(){
      too, and an unconditional toggle would wake it on every pass. */
   if(el.classList.contains('hide')!==busy) el.classList.toggle('hide',busy);
 }
+/* GET READY (Oct 2026). The first use after a while was the slow one: the
+   boot-time ping wakes Apps Script, but the caches behind it — the storage
+   list, receivables, the quote → row index — had aged out, so the first real
+   tap paid for all of it. `warmup` does those same reads ahead of time into
+   the same caches (adminWarmup in the .gs); it writes nothing.
+
+   The caches only last ten minutes, so one tap at 8am would be cold again by
+   9. For READY_HOURS after the tap, while this page is visible, it re-warms
+   every KEEP_WARM_MS — a hit on a warm cache costs the server next to nothing
+   — and again the moment the page comes back to the front (a phone stops
+   timers while the screen is off). Quiet: no footer timing, no reload on an
+   expired session, nothing on screen unless the tile is showing. */
+const READY_HOURS=2, KEEP_WARM_MS=5*60*1000;
+let READY_UNTIL=0, LAST_WARM=0, WARM_BUSY=false, WARM_TIMER=null;
+try{ READY_UNTIL=Number(localStorage.getItem('qwready')||0)||0; }catch(e){}
+function readyLeft_(){
+  const m=Math.round((READY_UNTIL-Date.now())/60000);
+  return m>=60?Math.floor(m/60)+' hr '+(m%60)+' min':m+' min';
+}
+async function getReady(){
+  if(WARM_BUSY||!T) return;
+  WARM_BUSY=true;
+  const el=$('warmMsg'), t0=Date.now();
+  el.textContent='Getting ready… waking the server and loading the lists. The first one of the day can take 20–40 seconds.';
+  try{
+    const r=await api('warmup',[]);
+    if(!r||!r.ok){ el.textContent='Could not get ready: '+((r&&r.error)||'no answer')+' — tap to try again.'; return; }
+    LAST_WARM=Date.now();
+    READY_UNTIL=Date.now()+READY_HOURS*3600000;
+    try{ localStorage.setItem('qwready',String(READY_UNTIL)); }catch(e){}
+    const bad=(r.steps||[]).filter(x=>x.error);
+    el.textContent='Ready ✓ '+((Date.now()-t0)/1000).toFixed(1)+'s'+
+      (r.units?' · '+r.units+' units indexed':'')+
+      (bad.length?' · '+bad.map(x=>x.what+' failed').join(', '):'')+
+      ' · staying warm for '+readyLeft_()+'. Tap again any time.';
+    keepWarm_();
+  }catch(e){ el.textContent='Could not get ready: '+e.message+' — tap to try again.'; }
+  finally{ WARM_BUSY=false; }
+}
+function keepWarm_(){
+  clearTimeout(WARM_TIMER); WARM_TIMER=null;
+  if(!T||Date.now()>=READY_UNTIL) return;
+  WARM_TIMER=setTimeout(warmQuiet_,Math.max(1000,KEEP_WARM_MS-(Date.now()-LAST_WARM)));
+}
+async function warmQuiet_(){
+  if(WARM_BUSY||!T||Date.now()>=READY_UNTIL) return;
+  if(document.visibilityState==='hidden'){ keepWarm_(); return; }
+  WARM_BUSY=true;
+  try{
+    const r=await apiCall_('warmup',[],{quiet:1},[]);
+    if(r&&String(r.error||'').includes('expired')){ READY_UNTIL=0; return; }
+    LAST_WARM=Date.now();
+  }catch(e){ LAST_WARM=Date.now(); /* the next pass tries again */ }
+  finally{ WARM_BUSY=false; keepWarm_(); }
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&T&&Date.now()<READY_UNTIL&&Date.now()-LAST_WARM>KEEP_WARM_MS) warmQuiet_();
+});
 async function doLogin(){
   setMsg('loginMsg','Checking…');
   try{const r=await api('auth',[$('pin').value]);

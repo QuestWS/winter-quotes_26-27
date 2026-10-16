@@ -10479,7 +10479,7 @@ function adminEmailPreview(token, qn, kind, extra) {
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
-      quoteUrl: quoteLinkFor_(d),
+      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
     return { ok: 1, to: d.email, subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
   }
@@ -10954,7 +10954,11 @@ function customerEmailHtml_(o) {
       : moneyRow_('Balance due', usd_(o.balance), true);
   }
   let buttons = '';
-  if (o.signUrl) buttons += buttonHtml_(o.signUrl, 'Review &amp; sign your agreement', '#14293E') + signConfirmHtml_();
+  /* A signed contract already on file (o.signed, from d.contractUrl -- the same
+     test the firm quote uses) means there is nothing left to sign: no sign
+     button, and no "confirm your email" box telling them signing isn't done. */
+  const signUrl = o.signed ? '' : o.signUrl;
+  if (signUrl) buttons += buttonHtml_(signUrl, 'Review &amp; sign your agreement', '#14293E') + signConfirmHtml_();
   if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
   /* Their own quote, already filled in — no quote number to find, no last name
      to type. Secondary to signing and paying on purpose: those are what this
@@ -10986,7 +10990,9 @@ function customerEmailHtml_(o) {
   buttons += survey ? '' : '';
   const steps = o.paidInFull
     ? '<b>You\'re all set.</b> Keep this email for your records — see you in the spring!'
-    : o.signUrl
+    : o.signed
+    ? '<b>1.</b> Review the attached quote &nbsp;·&nbsp; <b>2.</b> Pay online with quote # ' + o.quoteNo + ' in the memo &nbsp;·&nbsp; Your signed agreement is on file'
+    : signUrl
     ? '<b>1.</b> Review the attached quote &nbsp;·&nbsp; <b>2.</b> Sign the agreement &nbsp;·&nbsp; <b>3.</b> Pay online with quote # ' + o.quoteNo + ' in the memo'
     : '<b>1.</b> Review the attached quote &nbsp;·&nbsp; <b>2.</b> Pay online with quote # ' + o.quoteNo + ' in the memo &nbsp;·&nbsp; We\'ll have your agreement ready to sign';
   return '' +
@@ -11181,7 +11187,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
-      quoteUrl: quoteLinkFor_(d),
+      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
@@ -11385,7 +11391,7 @@ function dailyReminderCheck() {
         const html = customerEmailHtml_({
           firstName: first, quoteNo: quoteNo, unit: unit,
           total: total, deposit: deposit, dueToday: dueToday, noStorage: noStorage,
-          payBy: payByShort, signUrl: signLink || signUrl || '',
+          payBy: payByShort, signUrl: signLink || signUrl || '', signed: !!(pdRow && pdRow.contractUrl),
           /* The whole point of this email is "come back and finish" — it is the
              one that most needs the one-tap way back in. Built from the row's
              own last name, the same halves quoteLinkFor_ takes off a payload. */

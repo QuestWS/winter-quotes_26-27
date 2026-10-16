@@ -1499,7 +1499,7 @@ function consoleFns_(p) {
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
-    sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2]); },
+    sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2], a[3]); },
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
     storageView: function (a) { return adminStorageView(p.token, a[0]); },
@@ -1516,7 +1516,7 @@ function consoleFns_(p) {
     uploadCheck: function (a) { return adminUploadCheck(p.token, a[0], a[1], a[2], a[3], a[4]); },
     uploadContract: function (a) { return adminUploadContract(p.token, a[0], a[1], a[2], a[3]); },
     editLine:    function (a) { return adminEditLine(p.token, a[0], a[1], a[2], a[3], a[4]); },
-    emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2]); },
+    emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2], a[3]); },
     priceRequest:function (a) { return adminPriceRequest(p.token, a[0], a[1], a[2], a[3]); },
     setSeasonDone:function (a) { return adminSetSeasonDone(p.token, a[0], a[1], a[2], a[3]); },
     listStaff:   function (a) { return adminListStaff(p.token); },
@@ -6465,8 +6465,10 @@ function leaveImportTab_(sh, rowNum, d) {
   }
 }
 
-function adminSendEmail(token, qn, kind, extra) {
+function adminSendEmail(token, qn, kind, extra, staff) {
   const who = requireAuth_(token, 'email');
+  const sx = staffExtras_(staff);
+  const ccTxt = sx.cc ? ' (cc ' + sx.cc + ')' : '';
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
@@ -6476,7 +6478,8 @@ function adminSendEmail(token, qn, kind, extra) {
   if (kind !== 'updated') {
     const built = buildEmailFor_(d, kind, extra, photos);
     if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
-    const opts = { htmlBody: built.html, name: 'Quest Watersports', replyTo: REPLY_TO };
+    const opts = { htmlBody: withStaffNote_(built.html, sx.note), name: 'Quest Watersports', replyTo: REPLY_TO };
+    if (sx.cc) opts.cc = sx.cc;
     const logo = getLogoBlob_();
     if (logo) opts.inlineImages = { questlogo: logo };
     /* Some notices carry the rebuilt quote/invoice — a re-measure is not much
@@ -6493,18 +6496,18 @@ function adminSendEmail(token, qn, kind, extra) {
        overwrite it. The send is still recorded in Email History below. */
     if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
     recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
-    auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email);
-    return { ok: 1, msg: 'Sent to ' + d.email + '.' };
+    auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email + ccTxt + (sx.note ? ' with a staff note' : ''));
+    return { ok: 1, msg: 'Sent to ' + d.email + ccTxt + '.' };
   }
   let statusVal = '';
   if (kind === 'updated') {
-    sendCustomerEmail_(d, String(extra || ''), true);
+    sendCustomerEmail_(d, String(extra || ''), true, null, sx);
     statusVal = 'Adjusted & emailed';
   } else return { ok: 0, error: 'Unknown email type.' };
   if (statusVal) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(statusVal);
   recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
-  auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email);
-  return { ok: 1, msg: 'Sent to ' + d.email + '.' };
+  auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email + ccTxt + (sx.note ? ' with a staff note' : ''));
+  return { ok: 1, msg: 'Sent to ' + d.email + ccTxt + '.' };
 }
 
 function ensurePhotoFolders_(ctx) {
@@ -10463,8 +10466,9 @@ function buildEmailFor_(d, kind, extra, photos) {
   return null;
 }
 
-function adminEmailPreview(token, qn, kind, extra) {
+function adminEmailPreview(token, qn, kind, extra, staff) {
   requireAuth_(token, 'email');
+  const sx = staffExtras_(staff);
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
@@ -10481,11 +10485,43 @@ function adminEmailPreview(token, qn, kind, extra) {
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
-    return { ok: 1, to: d.email, subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
+    return { ok: 1, to: d.email, cc: sx.cc, html: withStaffNote_(html, sx.note), subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
   }
   const built = buildEmailFor_(d, kind, extra, photos);
   if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
-  return { ok: 1, to: d.email, subject: built.subject, html: built.html };
+  return { ok: 1, to: d.email, cc: sx.cc, subject: built.subject, html: withStaffNote_(built.html, sx.note) };
+}
+
+/* What staff added in the preview window: a CC to the office and a note of
+   their own. Both arrive as the 5th argument of adminEmailPreview and
+   adminSendEmail, and both go through here, so the preview and the send
+   apply them identically -- the preview stays byte-identical to what sends.
+   The CC is a checkbox, never an address typed in the console: it can only
+   ever add NOTIFY_EMAIL (service@). */
+function staffExtras_(staff) {
+  const o = (staff && typeof staff === 'object') ? staff : {};
+  return {
+    cc: o.cc ? NOTIFY_EMAIL : '',
+    note: String(o.note || '').replace(/\r\n?/g, '\n').trim().slice(0, 4000)
+  };
+}
+
+/* The staff note sits right under "Hi <name>," -- a personal line reads as
+   one there, ahead of the system's own wording. Both email shells
+   (customerEmailHtml_ and noticeHtml_) open with that greeting; anything
+   that does not falls back to the top of the body. Escaped, so a note can
+   never inject markup into a customer email. */
+function withStaffNote_(html, note) {
+  const n = String(note || '').trim();
+  if (!n) return html;
+  const block = '<div style="background:#EBF1F6;border-left:4px solid #4A81A6;border-radius:6px;' +
+    'padding:12px 14px;margin:10px 0 16px;font-size:15px;color:#1D2B38;line-height:1.5">' +
+    esc_(n).replace(/\n/g, '<br>') + '</div>';
+  const greet = /(<p style="font-size:16px;color:#1D2B38;margin:0 0 6px">Hi [^<]*<\/p>)/;
+  if (greet.test(html)) return html.replace(greet, function (m) { return m + block; });
+  const body = '<div style="padding:26px 28px">';
+  if (html.indexOf(body) >= 0) return html.replace(body, function (m) { return m + block; });
+  return block + html;
 }
 
 function photoFolder() {
@@ -11175,7 +11211,7 @@ function signLookup_(quoteNo) {
   return { ok: 0 };
 }
 
-function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
+function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
   try {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
     const noStorage = !!(d.state && d.state.storage === 'none');
@@ -11192,7 +11228,9 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt) {
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
     const pdf = getPdfBlob_(d.quoteNo, d);
-    const opts = { htmlBody: html, name: 'Quest Watersports', replyTo: REPLY_TO };
+    /* sx: the console preview's CC box and staff note (staffExtras_). */
+    const opts = { htmlBody: withStaffNote_(html, sx && sx.note), name: 'Quest Watersports', replyTo: REPLY_TO };
+    if (sx && sx.cc) opts.cc = sx.cc;
     if (pdf) opts.attachments = [pdf];
     const logo = getLogoBlob_();
     if (logo) opts.inlineImages = { questlogo: logo };

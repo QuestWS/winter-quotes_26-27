@@ -322,6 +322,17 @@ tap target on a phone.
   importer's input is visible and takes a dropped workbook today.
 
 
+### A paper contract (Print blank contract)
+
+For the customer who will only sign on paper: the **Print blank contract**
+home tile (and menu link) opens `storage-agreement-blank.pdf` from the repo
+root in a new tab — this season's Storage Terms, blank, one page. Staff print
+it from the browser's PDF viewer, the customer signs, and the scan goes back
+in through **Upload signed copy** above, which is what every downstream check
+(`!!d.contractUrl`) reads. Served from GitHub Pages rather than Drive so it
+opens on any phone without a sign-in or a share setting. **New season:**
+replace the file and keep the name; nothing else references its contents.
+
 ## Staff notes
 
 `d.staffNote`, own card, gated on `keys`. Why a quote is the way it is —

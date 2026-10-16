@@ -21,6 +21,18 @@ that builder — not to the send path directly.
 Email History.
 
 
+## CC and a staff note from the preview window
+
+The console's preview window has a **CC service@** box and a free-text
+**note to the customer**. Both travel as one object — the 4th argument of
+`emailPreview` and `sendEmail` (5th of `adminEmailPreview` /
+`adminSendEmail`) — and both go through `staffExtras_`, so the preview stays
+byte-identical to the send. The note is escaped and placed by `withStaffNote_`
+directly under "Hi <name>," in either shell; typing re-renders the preview
+and **Send** waits until it has. The CC can only ever be `NOTIFY_EMAIL` — a
+checkbox, never a typed address. The bulk sample hides both: send-to-all
+builds its own mail and takes neither.
+
 ## The "pick up your quote" link
 
 **`quoteLink_(quoteNo, lastName)` is the only place this URL is built**, and

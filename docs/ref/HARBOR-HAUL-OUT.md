@@ -181,8 +181,10 @@ and sort by **location** or **name**. Sorted by location they are *grouped* by
 it — a heading you find by eye beats a column you read on every row — and the
 per-row location is dropped, since the heading already says it.
 
-The pull list has neither, on purpose: **its order is the information.** It is
-the order the customers asked for, and re-sorting it would throw that away.
+The pull list takes the search but not the sort, on purpose: **its order is
+the information.** It is the order the customers asked for, and re-sorting it
+would throw that away. A search only narrows it — the rows left are still in
+that order — so finding one boat by name or slip costs nothing.
 Because the order is the information, each pull row also *says* it: a
 **Requested:** line under the unit — *Ready now*, the date given, *Will call*,
 or *Not answered* (muted) — from the same `order_()` that sorts the list, so

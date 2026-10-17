@@ -411,6 +411,23 @@ verdict out from `contract` and `deposit` itself.
 
 ---
 
+## Pulled and dropped off email service@
+
+Chris, Oct 2026: every time a unit is marked **Pulled** or **Dropped off** —
+from Harbor Haul Out or the console, both of which land in
+`adminSetPlacementState` — `placementNotify_` emails `NOTIFY_EMAIL`
+(service@) with the quote number, owner, unit, storage tab, who tapped it and
+when, plus the PULLED ANYWAY detail and the unit's alert when there is one.
+
+- **Staff only.** It goes to `NOTIFY_EMAIL` and nowhere else, so the
+  automatic-email pause (which is about customers) does not hold it.
+- **It cannot fail the write.** It is sent after the payload is saved, inside
+  its own try/catch: a mail quota or Gmail hiccup must never make the crew
+  think the pull was not recorded.
+- **Stored and Undo send nothing** — `PLACEMENT_NOTIFY_STATES_` is the list.
+  The ask was the arrival; a notice per shuffle would be ignored.
+- `check-harbor-haul-out.js` holds all three.
+
 ## The alert
 
 One short, current, loud line per unit — *"no keys, do not tow"*, *"owner says

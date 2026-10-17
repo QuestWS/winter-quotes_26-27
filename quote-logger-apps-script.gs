@@ -5289,10 +5289,54 @@ function adminSetPlacementState(token, qn, state, override) {
     (PLACEMENT_STATES_[had].label) + ' → ' + PLACEMENT_STATES_[want].label +
     (anyway ? ' (PULLED ANYWAY \u2014 ' + anyway.missing +
       (anyway.note ? '; note: "' + (anyway.note.length > 80 ? anyway.note.slice(0, 80) + '\u2026' : anyway.note) + '"' : '') + ')' : ''));
+  if (PLACEMENT_NOTIFY_STATES_[want]) placementNotify_(d, ctx.sh.getName(), want, who.name, anyway);
   return { ok: 1, msg: anyway ? 'Pulled anyway \u2014 recorded with ' + anyway.missing + '.'
                               : PLACEMENT_STATES_[want].label + ' — recorded.',
            placement: { state: want, at: d.placement.at, by: who.name, anyway: d.placement.anyway || null },
            note: logged };
+}
+
+
+/* THE PULLED / DROPPED-OFF NOTICE. Chris, Oct 2026: "a notification (email
+   to service@questwatersports.com) every time a boat is marked as pulled or
+   dropped off." So the office hears the moment a unit arrives, whoever tapped
+   it and from whichever surface — Harbor Haul Out and the console both land in
+   adminSetPlacementState, so this is the one place it is sent from.
+
+   Internal only: NOTIFY_EMAIL, never a customer address, so the automatic-
+   email pause (which is about customers) does not apply. It goes out AFTER the
+   write and cannot fail it — a mail quota or a Gmail hiccup must never make
+   the crew think the pull was not recorded. 'stored' and Undo send nothing:
+   the ask was the arrival, and a notice per shuffle would be ignored. */
+const PLACEMENT_NOTIFY_STATES_ = { 'pulled': 1, 'dropped': 1 };
+
+function placementNotify_(d, tabName, state, by, anyway) {
+  try {
+    const label = PLACEMENT_STATES_[state].label;
+    const name = (d.lastName || d.firstName)
+      ? [d.lastName, d.firstName].filter(Boolean).join(', ') : (d.owner || '');
+    const subject = label + ': ' + (d.quoteNo || '') + ' \u2014 ' + (name || 'unknown owner') +
+      ' \u2014 ' + (d.unit || 'unit') + (anyway ? ' (PULLED ANYWAY)' : '');
+    const lines = [
+      label + ' \u2014 recorded by ' + by + ', ' +
+        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE MMM d, h:mm a') + '.',
+      '',
+      'Quote #:     ' + (d.quoteNo || ''),
+      'Owner:       ' + (name || '\u2014'),
+      'Unit:        ' + (d.unit || '\u2014') + (d.ymm ? '  (' + d.ymm + ')' : ''),
+      'Storage tab: ' + (tabName || '\u2014')
+    ];
+    if (anyway) lines.push('', 'PULLED ANYWAY \u2014 ' + anyway.missing + ' on file.' +
+      (anyway.note ? ' Note: ' + anyway.note : ''));
+    const alert = placementAlertOf_(d);
+    if (alert && alert.text) lines.push('', 'Alert on this unit: ' + alert.text);
+    const body = lines.join('\n');
+    if (FROM_ALIAS) {
+      GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, { from: FROM_ALIAS, name: 'Quest Harbor Haul Out' });
+    } else {
+      MailApp.sendEmail(NOTIFY_EMAIL, subject, body, { name: 'Quest Harbor Haul Out' });
+    }
+  } catch (e) { console.error('Placement notice failed for ' + (d && d.quoteNo) + ': ' + e); }
 }
 
 
@@ -9313,7 +9357,7 @@ function adminSetAutoPause(token, on, reason) {
      at all, and the person who needs to know is not always the person who did
      it. Internal only — never near a customer address. */
   try {
-    MailApp.sendEmail(NOTIFY,
+    MailApp.sendEmail(NOTIFY_EMAIL,
       'Winter quotes: automatic customer emails ' + (state.on ? 'PAUSED' : 'resumed'),
       (state.on
         ? 'The 10-day quote reminder and the 24h lead follow-up are now PAUSED.\n\n'

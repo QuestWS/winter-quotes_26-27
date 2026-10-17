@@ -157,7 +157,7 @@ check('and resumedAt still round-trips', B.autoPauseState_().resumedAt!=='');
 console.log('\n=== 6. only a real pause -> running restarts the clocks ===');
 {
   const notices=[];
-  const S=new Function('PropertiesService','requireAuth_','auditLog_','MailApp','NOTIFY',
+  const S=new Function('PropertiesService','requireAuth_','auditLog_','MailApp','NOTIFY_EMAIL',
     'REMINDER_AFTER_DAYS','LEAD_FOLLOWUP_AFTER_HOURS','console',[
       "const AUTO_PAUSE_KEY_='AUTO_EMAIL_PAUSED';",
       fn('autoPauseState_'), fn('autoPauseCooldown_'), fn('adminSetAutoPause'),

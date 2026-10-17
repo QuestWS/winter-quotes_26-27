@@ -374,6 +374,18 @@ Y.ev('ROWS = ' + JSON.stringify([
       fail('moving a boat re-prices it or rebuilds its PDF — it is a fact about a day\'s work, ' +
            'not a change to what the customer owes');
     else ok('moving a boat touches no money and no paperwork');
+    /* The pulled / dropped-off notice to service@ (Chris, Oct 2026). Only
+       NOTIFY_EMAIL, only those two states, never able to fail the write. */
+    const nf = (gas.match(/function placementNotify_\b[\s\S]*?\n}/m) || [''])[0];
+    const states = (gas.match(/const PLACEMENT_NOTIFY_STATES_ = (\{[^}]*\})/) || [])[1] || '';
+    if (/if \(PLACEMENT_NOTIFY_STATES_\[want\]\) placementNotify_\(/.test(fn) &&
+        /'pulled'/.test(states) && /'dropped'/.test(states) && !/'stored'/.test(states))
+      ok('pulled and dropped off email service@; stored and Undo do not');
+    else fail('the pulled / dropped-off notice is not wired to exactly those two states');
+    if (nf && /^function placementNotify_[^{]*\{\s*try \{/.test(nf) &&
+        !/sendEmail\((?!NOTIFY_EMAIL\b)/.test(nf) && !/sendCustomerEmail_|d\.email/.test(nf))
+      ok('the notice goes only to NOTIFY_EMAIL and cannot fail the pull');
+    else fail('placementNotify_ can reach a non-staff address, or a mail error can fail the write');
   }
   /* EVERY transition works from either surface. The counter and the shop are
      the same people (CLAUDE.md §9) — a phone that glitched at the harbor must not

@@ -100,6 +100,9 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .card .sub{color:var(--muted);font-size:13px;margin-top:2px}
 .card .ln{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .slip{font-family:var(--mono);font-weight:600;color:var(--navy);white-space:nowrap}
+/* Requested pull timing, on the pull list. Carried by the words, not colour. */
+.card .when{font-size:13.5px;font-weight:600;color:var(--navy);margin-top:3px}
+.card .when.na{color:var(--muted);font-weight:500}
 .badge{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;
   margin-top:6px;letter-spacing:.03em}
 .badge.stop{background:var(--warn);color:#fff}
@@ -905,7 +908,9 @@ function notes_(x){
 /* A div rather than a <button>, because the row carries its own action button
    and a button inside a button is invalid and behaves differently in every
    browser. Keyboard access is kept explicitly. */
-function row_(x,right,action){
+/* `when`, if given, is the customer's requested timing — the pull list passes
+   it so the reason for the order is on the row, not just implied by it. */
+function row_(x,right,action,when){
   const qn=jsArg_(x.qn);
   return '<div class="card" role="button" tabindex="0" onclick="openQuote('+qn+')" '+
     'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openQuote('+qn+');}">'+
@@ -913,6 +918,7 @@ function row_(x,right,action){
     '<span class="slip">'+esc(right||'')+'</span></div>'+
     '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
+    (when?'<div class="when'+(when.rank===3?' na':'')+'">Requested: '+esc(when.label)+'</div>':'')+
     alert_(x)+winterize_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
 }
 /* The one-tap move along the line, used by the Awaiting and To store lists.
@@ -952,7 +958,7 @@ function render(){
     setMsg('listMsg',pull.length
       ? pull.length+' still in the water, in the order they asked for. Open one to mark it pulled.'
       : 'Nothing left in the water — every boat with a slip has been pulled.');
-    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip))).join('');
+    $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip),'',order_(x))).join('');
     return;
   }
 

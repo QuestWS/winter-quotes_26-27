@@ -238,6 +238,10 @@ once it is marked **Stored** it drops off their list.
 - **Lead and Import tabs are left out of the read**, same as the storage
   view: a draft nobody agreed to is not a boat anybody is working on.
 
+A printed winter quote can open a unit there directly: the console's
+**Print winter quotes** puts a QR of the tracker's `m/?w=<quote #>` on each
+one — `docs/ref/STAFF-CONSOLE.md` § *Winter quotes with a service tracker QR*.
+
 `check-tracker-feed.js` runs all of it: which states make the list, which
 lines count as work, that nothing monetary or contact-shaped is on a unit,
 and that the key is checked first and in full.

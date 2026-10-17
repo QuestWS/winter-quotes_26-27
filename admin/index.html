@@ -507,7 +507,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
               </div>
               <div class="msg" id="custNoteMsg"></div>
             </div>
-            <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">Print quote</button></div>
+            <div style="margin-top:10px"><button class="btn ghost sm" id="btnPrint" onclick="printQuote()">Print quote</button>
+              <button class="btn ghost sm" id="btnPrintQr" onclick="printShopCopy()" title="The quote with a QR the service tracker scans to open this boat's winter work">Shop copy + QR</button></div>
             <div class="lnkbox hide" id="linkBox">
               <div class="lab" id="linkLab">Customer link — opens this quote already filled in</div>
               <input id="linkUrl" readonly onclick="this.select()">
@@ -1033,7 +1034,24 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <div style="display:flex;gap:8px">
           <button class="btn navy sm" onclick="printStorage()">Print storage sheets</button>
           <button class="btn gold sm" onclick="printHaulOut()">Print haul-out list</button>
+          <button class="btn navy sm" onclick="toggleWinterQuotes()">Print winter quotes</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
+        </div>
+      </div>
+      <div id="wqPanel" class="hide" style="margin-top:10px;padding:10px 12px;border:1.5px dashed var(--navy);border-radius:10px">
+        <b>Print winter quotes with a service tracker QR</b>
+        <div class="msg" style="margin-top:4px">Each quote prints on its own page with a shop-copy strip at the top.
+          Scanning its QR in the Quest Shop app (<i>Scan work order</i>, or the phone's camera) opens that boat's
+          <b>Winter work</b> — what is to be done before it is put away, ticked off as it is done. Not for the
+          customer: the QR opens the mechanics' app.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <select class="txt" id="wqWhich" style="flex:1 1 220px" onchange="renderWqPanel_()"></select>
+          <select class="txt" id="wqTab" style="flex:1 1 160px" onchange="renderWqPanel_()"></select>
+        </div>
+        <div class="msg" id="wqMsg"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn gold sm" id="wqGo" onclick="printWinterQuotes()">Print</button>
+          <button class="btn ghost sm" onclick="$('wqPanel').classList.add('hide')">Cancel</button>
         </div>
       </div>
       <div id="storageTabs" class="stabs hide" style="margin-top:10px"></div>
@@ -3385,6 +3403,171 @@ async function printStorage(){
       <div class="pgFoot">Check off each unit as it is verified / moved. Notes on back. Quest Watersports · (815) 433-2200</div>
     </div>`).join('');
   window.print();
+}
+/* ---------------------------------------------------------------------------
+   PRINT WINTER QUOTES (Oct 2026)
+   ---------------------------------------------------------------------------
+   Chris: "print winter quotes from the winter storage admin page with a QR code
+   the service tracker can scan to pull up the corresponding winter work job."
+
+   Each quote is the SAME quoteHtml the Print button and the filed PDF use, with
+   a shop-copy strip on top carrying a QR of
+     https://questws.github.io/servicetracker/m/?w=<quote #>
+   The tracker's scanner reads that (winterQnFromScan in its tracking.js), and so
+   does a phone's own camera, which opens the mechanic app on that boat's Winter
+   work. The tracker owns that URL — it is printed on paper now, so its SITE_URL
+   and m/ path are pinned on that side too.
+
+   A boat is on the tracker's Winter work list only once Harbor Haul Out has it
+   pulled or dropped off (or stored with winterization still pending —
+   trackerUnitOf_). A QR printed earlier still works: scanned before then, the
+   app says the boat has not come in yet. That is why "on the Winter work list"
+   is the default choice here, not the only one.
+
+   No new server call: one quoteHtml per quote, three at a time like the photo
+   uploads, so this is a console-only change and needs no Apps Script deploy.
+   The QR is drawn here as SVG from the same qrcode build the tracker vendors
+   (admin/qrcode.min.mjs) — vector, so it scans off any printer. */
+const TRACKER_SITE='https://questws.github.io/servicetracker';
+function trackerQrUrl_(qn){ return TRACKER_SITE+'/m/?w='+encodeURIComponent(String(qn||'').trim().toUpperCase()); }
+function onWinterList_(x){
+  const st=x.placementState||'';
+  return st==='pulled'||st==='dropped'||
+    (st==='stored'&&!!(x.winter&&x.winter.pending&&x.winter.pending.length));
+}
+let QRLIB=null;
+async function qrLib_(){
+  if(!QRLIB) QRLIB=(await import('./qrcode.min.mjs')).default;
+  return QRLIB;
+}
+/* One path, runs of dark modules merged, two modules of quiet zone. */
+function qrSvg_(lib,text){
+  const qr=lib.create(text,{errorCorrectionLevel:'M'});
+  const n=qr.modules.size, data=qr.modules.data, q=2;
+  let d='';
+  for(let y=0;y<n;y++){
+    let run=0;
+    for(let x=0;x<=n;x++){
+      const dark=x<n&&data[y*n+x];
+      if(dark){ run++; continue; }
+      if(run){ d+='M'+(x-run+q)+' '+(y+q)+'h'+run+'v1h-'+run+'z'; run=0; }
+    }
+  }
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+(n+2*q)+' '+(n+2*q)+
+    '" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="'+d+'" fill="#000"/></svg>';
+}
+/* The rows the panel can print: every storage row but leads (a lead has no
+   quote to hand anybody), narrowed by the choice and the area. */
+function wqRows_(){
+  const which=($('wqWhich')&&$('wqWhich').value)||'winter';
+  const tab=($('wqTab')&&$('wqTab').value)||'';
+  const out=[];
+  (window._sg||[]).forEach(function(g){
+    if(g.lead||(tab&&g.tab!==tab)) return;
+    (g.rows||[]).forEach(function(x){
+      const keep=which==='winter'?onWinterList_(x):which==='view'?storageKeeps_(g,x):true;
+      if(keep) out.push({qn:String(x.qn), name:x.name||'', unit:[x.unit,x.ymm].filter(Boolean).join(' · '), tab:g.tab});
+    });
+  });
+  return out;
+}
+function toggleWinterQuotes(){
+  const p=$('wqPanel');
+  if(!p.classList.contains('hide')){ p.classList.add('hide'); return; }
+  if(!window._sg){ toast('The storage overview is still loading.'); return; }
+  const prevWhich=$('wqWhich').value, prevTab=$('wqTab').value;
+  const opts=[['winter','On the Winter work list (pulled / dropped off)'],['all','Every storage quote']];
+  if(SFILTER!=='all'&&SFILTER!=='drafts') opts.splice(1,0,['view','This view: '+SFILTER_LABEL[SFILTER]]);
+  $('wqWhich').innerHTML=opts.map(o=>`<option value="${o[0]}">${esc(o[1])}</option>`).join('');
+  if(opts.some(o=>o[0]===prevWhich)) $('wqWhich').value=prevWhich;
+  const tabs=(window._sg||[]).filter(g=>!g.lead).map(g=>g.tab);
+  $('wqTab').innerHTML='<option value="">All storage areas</option>'+tabs.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  if(tabs.indexOf(prevTab)>=0) $('wqTab').value=prevTab;
+  p.classList.remove('hide');
+  renderWqPanel_();
+}
+function renderWqPanel_(){
+  const n=wqRows_().length;
+  $('wqGo').textContent=n?'Print '+n+' quote'+(n===1?'':'s'):'Print';
+  $('wqGo').disabled=!n;
+  setMsg('wqMsg', n ? (n>40?'That is a lot of paper — about '+Math.ceil(n/3*1.5)+' seconds to prepare. Narrow it by storage area if you only need some.':'')
+                    : 'Nothing matches — no unit here is pulled or dropped off yet.');
+}
+async function printWinterQuotes(){
+  const list=wqRows_();
+  if(!list.length){ toast('Nothing to print.'); return; }
+  await printQuotesWithQr_(list, $('wqGo'));
+}
+function printShopCopy(){
+  if(!QN) return;
+  const nm=String($('qName').textContent||'').replace(/^[^—]*—\s*/,'');
+  printQuotesWithQr_([{qn:QN,name:nm,unit:'',tab:''}], $('btnPrintQr'));
+}
+async function printQuotesWithQr_(list, btn){
+  /* Opened inside the click, as printQuote does — after an await it is an
+     unrequested popup and a phone blocks it. */
+  const w=window.open('','_blank');
+  if(!w){ toast('Allow pop-ups for this site to print.'); return; }
+  const say=function(t){ try{ w.document.body.textContent=t; }catch(e){} };
+  w.document.write('<!doctype html><title>Preparing…</title><body style="font:15px system-ui;padding:24px;color:#5C7185"></body>');
+  say('Preparing '+list.length+' quote'+(list.length===1?'':'s')+'…');
+  const label=btn?btn.textContent:''; if(btn) btn.disabled=true;
+  try{
+    const lib=await qrLib_();
+    const got=new Array(list.length), failed=[];
+    let next=0, done=0;
+    const worker=async function(){
+      while(next<list.length){
+        const i=next++, it=list[i];
+        try{
+          const r=await api('quoteHtml',[it.qn]);
+          if(r&&r.ok) got[i]=r; else failed.push(it.qn+' ('+((r&&r.error)||'no copy')+')');
+        }catch(e){ failed.push(it.qn+' ('+(e&&e.message?e.message:e)+')'); }
+        done++;
+        if(btn) btn.textContent='Preparing '+done+'/'+list.length+'…';
+        say('Preparing '+done+' of '+list.length+'…');
+      }
+    };
+    await Promise.all([worker(),worker(),worker()]);
+    let css='';
+    const today=new Date().toLocaleDateString();
+    const pages=list.map(function(it,i){
+      const r=got[i]; if(!r) return '';
+      const doc=new DOMParser().parseFromString(r.html,'text/html');
+      if(!css){ const st=doc.querySelector('style'); css=st?st.textContent:''; }
+      const qn=r.quoteNo||it.qn;
+      return '<section class="wq"><div class="shop">'+qrSvg_(lib,trackerQrUrl_(qn))+
+        '<div class="t"><b>Shop copy · '+esc(qn)+'</b>'+
+        esc([it.name,it.unit,it.tab].filter(Boolean).join(' · '))+
+        '<br>Scan in the Quest Shop app to open this boat\'s <b style="display:inline;font-size:inherit;text-transform:none;letter-spacing:0">Winter work</b>.'+
+        '<br><span class="pd">Printed '+esc(today)+' · not for the customer</span></div></div>'+
+        doc.body.innerHTML+'</section>';
+    }).join('');
+    if(!pages){ w.close(); toast('Could not build any of them: '+failed.join('; ')); return; }
+    const warn=failed.length
+      ? '<div class="noprint">Left out — could not build: '+esc(failed.join('; '))+'</div>' : '';
+    w.document.open();
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Winter quotes · '+list.length+'</title><style>'+css+
+      '.wq{break-after:page;page-break-after:always}.wq:last-child{break-after:auto;page-break-after:auto}'+
+      '.shop{display:flex;align-items:center;gap:12px;border:1.5px dashed #14293E;padding:8px 10px;margin:0 0 14px}'+
+      '.shop svg{width:1.1in;height:1.1in;flex:0 0 auto}'+
+      '.shop .t{font-size:11px;line-height:1.45;color:#1D2B38}'+
+      '.shop .t b{display:block;font-size:14px;letter-spacing:.5px;text-transform:uppercase;color:#14293E}'+
+      '.shop .pd{color:#5C7185;font-size:9.5px}'+
+      '.noprint{margin:12px 28px;padding:10px 12px;background:#F4E8CF;border:1px solid #C08A22;font:13px Arial,sans-serif}'+
+      '@media print{.noprint{display:none}}'+
+      '</style></head><body>'+warn+pages+'</body></html>');
+    w.document.close();
+    if(failed.length) toast(failed.length+' could not be built — listed at the top of the print tab.');
+    const go=function(){ try{ w.focus(); w.print(); }catch(e){} };
+    if(w.document.readyState==='complete') setTimeout(go,400);
+    else w.addEventListener('load',function(){ setTimeout(go,400); });
+  }catch(e){
+    try{ w.close(); }catch(_){}
+    toast('Print failed: '+(e&&e.message?e.message:e));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+  }
 }
 /* Names are typed by admins now, so they can contain quotes and angle
    brackets. Rows are addressed by INDEX into STAFF rather than by pasting the

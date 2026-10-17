@@ -83,6 +83,7 @@ if [ -f admin/index.html ]; then
   sweep admin/index.html "console" \
     "API_URL" "previewSend" "renderLines" "editLine" "qHist" "uploadContract" \
     "storageView" "printStorage" "toggleNav" "cameraInput" "qclose" \
+    "printWinterQuotes" "printShopCopy" "trackerQrUrl_" "TRACKER_SITE='https://questws.github.io/servicetracker'" "TRACKER_SITE+'/m/?w='" "./qrcode.min.mjs" \
     "renderSeasonDone" "saveSeasonDate" "renderRequests" "feewarn" \
     "renderDims" "previewDims" "applyDims" "printQuote" "dimsCard" \
     "addStaff" "removeStaff" "readBackupFile" "doRestore" "backupCard" \

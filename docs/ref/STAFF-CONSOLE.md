@@ -1444,6 +1444,39 @@ storage rows alike:
   above, and `docs/ref/EMAILS.md`.
 
 
+## Winter quotes with a service tracker QR
+
+Chris, Oct 2026: *"make a way for me to print winter quotes from the winter
+storage admin page with a QR code the service tracker can scan to pull up the
+corresponding winter work job."*
+
+**Print winter quotes** on the storage card opens a small panel: which quotes
+(**On the Winter work list** — pulled, dropped off, or stored with
+winterization pending, the same rule as `trackerUnitOf_`; **This view**, when
+a deposit/notes tab is showing; or **Every storage quote**) and which storage
+area. Leads are never included. On an opened quote, **Shop copy + QR** does the
+same for that one quote; the plain **Print quote** button is unchanged and
+stays the customer's copy.
+
+- **Same quote, one strip added.** Each page is the `quoteHtml` the Print
+  button and the filed PDF use, with a dashed *Shop copy · not for the
+  customer* strip on top: the QR, the quote number, customer, unit and storage
+  area.
+- **The QR is `https://questws.github.io/servicetracker/m/?w=<quote #>`**
+  (`trackerQrUrl_`). The tracker's scanner reads it (*Scan work order*), and
+  a phone's own camera opens the mechanic app straight on that boat's
+  **Winter work**. That address belongs to the tracker and is on paper now —
+  its `SITE_URL` and `m/` path must not move. A boat not yet pulled or dropped
+  off is not on the tracker's list; scanned early, the app says so, and the
+  same paper works once it comes in.
+- **No new server call, no Apps Script deploy.** One `quoteHtml` per quote,
+  three at a time, with progress in the print tab. A quote that fails is
+  listed at the top of the tab (screen only) and the rest still print.
+- **The QR is drawn in the browser as SVG** by `qrSvg_`, from
+  `admin/qrcode.min.mjs` — the same qrcode build the tracker vendors, copied
+  rather than fetched from a CDN so the console has no outside dependency.
+  Vector, so it scans off any printer.
+
 ## Haul-out list
 
 `printHaulOut()` on the storage card — one sheet across every storage area, not

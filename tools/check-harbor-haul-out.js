@@ -437,6 +437,22 @@ Y.ev('ROWS = ' + JSON.stringify([
   else fail('the alert and the pull stamp are not distinguishable on a row that has both');
 }
 {
+  /* The pull list's order IS the requested timing, so the timing is on the row
+     — otherwise the crew sees an order with no reason for it. */
+  const ready = Y.row_({ qn: 'D', name: 'Dunn', slip: 'B-3', seasonDone: { choice: 'now' },
+                         auth: { state: 'cleared' } }, 'Slip B-3', '',
+                       Y.order_({ seasonDone: { choice: 'now' } }));
+  if (/class="when"[^>]*>Requested: Ready now</.test(ready)) ok('a pull row shows the requested timing');
+  else fail('the pull row does not show the requested timing');
+  const none = Y.row_({ qn: 'E', name: 'Eads', slip: 'B-4', auth: { state: 'cleared' } }, 'Slip B-4', '',
+                      Y.order_({}));
+  if (/Requested: Not answered/.test(none)) ok('an unanswered survey reads "Not answered", not blank');
+  else fail('an unanswered survey leaves the timing blank on the pull row');
+  if (/row_\(x,'Slip '\+String\(x\.slip\),'',order_\(x\)\)/.test(HTML))
+    ok('the pull list passes the timing to every row');
+  else fail('the pull list no longer passes the requested timing to its rows');
+}
+{
   /* Short by construction, or it stops being scannable. */
   const g = GAS;
   const fn = (g.match(/function adminSetPlacementAlert\b[\s\S]*?\n}/m) || [''])[0];

@@ -265,10 +265,10 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
          heading out, and under a long list nobody scrolls to it. -->
     <button class="btn ghost wide" id="warmBtn" onclick="getReady()">Get ready</button>
     <div class="msg" id="warmMsg">Tap before you head out — opening a unit is fast for the next 2 hours.</div>
-    <div class="filter hide" id="filterBar">
+    <div class="filter" id="filterBar">
       <input id="q" type="search" placeholder="Search name, quote # or slip"
              autocomplete="off" autocapitalize="none" oninput="render()" aria-label="Search">
-      <button id="sortBtn" onclick="toggleSort()">Location</button>
+      <button id="sortBtn" class="hide" onclick="toggleSort()">Location</button>
     </div>
     <div class="fresh hide" id="fresh"></div>
     <div class="msg" id="listMsg">Loading…</div>
@@ -389,10 +389,10 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
    no slip and nothing recorded was on NONE of them — 30 of 35 quotes, invisible
    on the phone.
 
-   Searchable: Awaiting, To store and Stored. Sorted: the storage lists by
-   location or name, Awaiting by the timing the customer asked for. The pull
-   list has neither, because its order IS the information — it is the order the
-   customers asked for and re-sorting it would lose that.
+   Searchable: all four. Sorted: the storage lists by location or name;
+   To pull and Awaiting only ever by the timing the customer asked for, because
+   their order IS the information and re-sorting would lose it. A search there
+   only narrows — whatever is left stays in that order.
 
    It is a separate page rather than another console card because it is used
    with one hand, outdoors, in November: big targets, no horizontal scrolling,
@@ -829,9 +829,11 @@ function listOf_(x){
      being on the wrong list is how anybody finds out. */
   return String(x.slip||'').trim() ? 'pull' : 'await';
 }
-function pullList_(){ return ROWS.filter(x=>listOf_(x)==='pull').sort(sort_); }
+/* Searched like the rest: a filter only removes rows, so what is left is
+   still in the order the customers asked for. */
+function pullList_(){ return search_(ROWS.filter(x=>listOf_(x)==='pull')).sort(sort_); }
 /* Name, quote number, slip, unit, storage area — whatever the person happens
-   to know. Shared by the three lists that are long enough to need finding. */
+   to know. Shared by all four lists. */
 function search_(rows){
   const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
   if(!q) return rows;
@@ -862,12 +864,11 @@ function setTab(t){
   $('tabAwait').classList.toggle('on',t==='await');
   $('tabStore').classList.toggle('on',t==='store');
   $('tabStored').classList.toggle('on',t==='stored');
-  /* The pull list's order is the information, so it gets neither search nor
-     sort. Awaiting gets the search — thirty boats is too many to scan for one
-     name — but not the sort, for the same reason the pull list has none: it is
-     in the order the customers said they would be ready. */
-  $('filterBar').classList.toggle('hide',t==='pull');
-  $('sortBtn').classList.toggle('hide',t==='await');
+  /* Every list gets the search — finding one name by eye on a phone is not a
+     plan, on any of them. To pull and Awaiting get no sort: their order is the
+     information, the order the customers said they would be ready. */
+  $('filterBar').classList.remove('hide');
+  $('sortBtn').classList.toggle('hide',t==='pull'||t==='await');
   render();
 }
 function toggleSort(){
@@ -955,8 +956,11 @@ function render(){
 
   if(TAB==='pull'){
     const pull=pullList_();
+    const qp=String(($('q')&&$('q').value)||'').trim();
     setMsg('listMsg',pull.length
-      ? pull.length+' still in the water, in the order they asked for. Open one to mark it pulled.'
+      ? pull.length+' still in the water'+(qp?' matching \u201C'+qp+'\u201D':'')+
+        ', in the order they asked for. Open one to mark it pulled.'
+      : qp?'Nothing matches \u201C'+qp+'\u201D.'
       : 'Nothing left in the water — every boat with a slip has been pulled.');
     $('list').innerHTML=pull.map(x=>row_(x,'Slip '+String(x.slip),'',order_(x))).join('');
     return;

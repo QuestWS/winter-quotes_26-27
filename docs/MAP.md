@@ -113,6 +113,7 @@ symptom.
 | Which imports went missing | `importAudit` | `.gs` (editor) |
 | Backup restore | `adminBackupPreview`, `adminBackupRestore`, `snapshotBeforeRestore_` | `readBackupFile`, `doRestore` |
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
+| Winter quotes with a service tracker QR (storage card, and *Shop copy + QR* on a quote) | `adminQuoteHtml` (unchanged — one per quote) | `toggleWinterQuotes`, `renderWqPanel_`, `wqRows_`, `onWinterList_`, `printWinterQuotes`, `printShopCopy`, `printQuotesWithQr_`, `qrSvg_`, `trackerQrUrl_`; `admin/qrcode.min.mjs` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet`; customer page `trailerLocApplies` |
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |

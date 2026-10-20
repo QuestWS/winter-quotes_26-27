@@ -34,6 +34,22 @@ trailers are therefore two quotes, and the old-sheet importer asks which it is
 looking at rather than guessing (`docs/ref/STAFF-CONSOLE.md`).
 
 
+## Dimension boxes are empty, and storage waits for them
+The ft/in boxes carry **no placeholder**. They once showed sample numbers
+(22 ft, 8 ft 6 in, 5 ft 6 in), and customers read the grey text as filled in:
+QW-26-6579 chose inside storage with no stored width, and because the engine
+prices a missing dimension as nothing yet still adds "Retrieve, set &
+relaunch — included", the saved quote had no storage line at all.
+
+The dimensions are typed on the first step; storage is chosen later. So
+`storageDimsMissing_()` mirrors the engine's conditions (jetski inside →
+stored length & width; boat outside → LOA; boat inside → LOA, beam, and the
+trailer overhang when on a trailer; Quest retrieval → LOA), and while anything
+is missing the storage step shows a warning with an **Add it now** button
+back to the empty box (outlined), and `go()` will not move past the storage
+step — no quote, print, email or sign. A paid (locked) quote is never held.
+Do not put example numbers back in those boxes.
+
 ## Detail options are NOT mutually exclusive
 Exterior detail / wash & wax, interior detail / wipe-down, and bottom-paint
 touch-up / strip & reapply can all be requested together, deliberately: Quest

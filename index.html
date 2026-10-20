@@ -378,15 +378,20 @@ aside.ticket{position:sticky;top:18px}
       </div>
     </fieldset>
 
+    <!-- No placeholder in any ft/in box. They used to carry sample numbers
+         (22 ft, 8 ft 6 in, 5 ft 6 in…), and customers read the grey text as
+         already filled in: QW-26-6579 picked inside storage with no width,
+         saw "Retrieve, set & relaunch — included" and a quote with no storage
+         line. An empty box has to look empty. -->
     <fieldset id="dimsBoat">
       <legend>Dimensions</legend>
       <div class="grid3">
         <div><label class="f">Boat length — LOA <small>incl. platform, drives, etc.</small></label>
-          <div class="ftin" data-ftin="loa"><input type="number" min="0" step="1" inputmode="numeric" placeholder="22" aria-label="LOA feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="LOA inches"><span>in</span></div></div>
+          <div class="ftin" data-ftin="loa"><input type="number" min="0" step="1" inputmode="numeric" aria-label="LOA feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" aria-label="LOA inches"><span>in</span></div></div>
         <div><label class="f">Beam — B</label>
-          <div class="ftin" data-ftin="beam"><input type="number" min="0" step="1" inputmode="numeric" placeholder="8" aria-label="Beam feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="6" aria-label="Beam inches"><span>in</span></div></div>
+          <div class="ftin" data-ftin="beam"><input type="number" min="0" step="1" inputmode="numeric" aria-label="Beam feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" aria-label="Beam inches"><span>in</span></div></div>
         <div id="trailerOverhangField"><label class="f">Trailer overhang <small>how far it sticks out past the boat</small></label>
-          <div class="ftin" data-ftin="trailerOverhang"><input type="number" min="0" step="1" inputmode="numeric" placeholder="3" aria-label="Trailer overhang feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="Trailer overhang inches"><span>in</span></div></div>
+          <div class="ftin" data-ftin="trailerOverhang"><input type="number" min="0" step="1" inputmode="numeric" aria-label="Trailer overhang feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" aria-label="Trailer overhang inches"><span>in</span></div></div>
       </div>
       <p class="note"><b>LOA includes swim platform, drives, outboards, etc.</b> Most boat manufacturers do not include these in their listed LOA. We reserve the right to remeasure and adjust the bill accordingly.</p>
     </fieldset>
@@ -396,9 +401,9 @@ aside.ticket{position:sticky;top:18px}
       <p class="note" style="margin:-4px 0 12px">Jetskis are stored on their trailers, so we price the space the whole rig occupies — including tandem trailers carrying a single ski.</p>
       <div class="grid2">
         <div><label class="f">Stored length <small>tip of the trailer tongue to the rearmost point — jetski or trailer, whichever extends further</small></label>
-          <div class="ftin" data-ftin="skiLen"><input type="number" min="0" step="1" inputmode="numeric" placeholder="14" aria-label="Stored length feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="0" aria-label="Stored length inches"><span>in</span></div></div>
+          <div class="ftin" data-ftin="skiLen"><input type="number" min="0" step="1" inputmode="numeric" aria-label="Stored length feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" aria-label="Stored length inches"><span>in</span></div></div>
         <div><label class="f">Stored width <small>full width of the trailer at its widest point</small></label>
-          <div class="ftin" data-ftin="skiWid"><input type="number" min="0" step="1" inputmode="numeric" placeholder="5" aria-label="Stored width feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" placeholder="6" aria-label="Stored width inches"><span>in</span></div></div>
+          <div class="ftin" data-ftin="skiWid"><input type="number" min="0" step="1" inputmode="numeric" aria-label="Stored width feet"><span>ft</span><input type="number" min="0" max="11" step="1" inputmode="numeric" aria-label="Stored width inches"><span>in</span></div></div>
       </div>
       <p class="note">We reserve the right to remeasure and adjust the bill accordingly.</p>
     </fieldset>
@@ -472,6 +477,7 @@ aside.ticket{position:sticky;top:18px}
       <div id="storageOpts"></div>
       <p class="note" id="storageNote"></p>
     </fieldset>
+    <div class="gatemsg dimsMsg"></div>
 
     <fieldset id="retrievalFs" style="display:none">
       <legend>Retrieval, set &amp; relaunch</legend>
@@ -551,6 +557,7 @@ aside.ticket{position:sticky;top:18px}
       <div id="skiStorageOpts"></div>
       <p class="note" id="skiStorageNote"></p>
     </fieldset>
+    <div class="gatemsg dimsMsg"></div>
     <div class="panel-nav"><button class="btn ghost" onclick="goPrev()">← Back</button><button class="btn gold" onclick="goNext()">Review my quote →</button></div>
   </section>
 
@@ -1540,7 +1547,49 @@ function refresh(){
   const stP=$('#stP'); if(stP) stP.textContent=inSq?fmt((S.hasTrailer?PRICES.insidePremT:PRICES.insidePremNT)*inSq):inNeed;
   syncWrapUI();
   if(S.unit==='jetski') buildSkiStorage();
+  syncDimsWarn_();
   $$('.opt').forEach(o=>{const i=o.querySelector('input');o.classList.toggle('sel',i&&i.checked&&!i.disabled);});
+}
+
+/* ============ STORAGE NEEDS ITS DIMENSIONS ============
+   The engine prices a storage choice it has no dimensions for as nothing —
+   and still adds "Retrieve, set & relaunch — included" — so a quote could be
+   saved, printed and signed with inside storage chosen and no storage line on
+   it (QW-26-6579). The dimension boxes are on the first step and the storage
+   choice comes later, so the storage step says what is missing, outlines the
+   empty boxes, and the customer can't move past it until they are filled.
+   Mirrors the engine's own conditions in computeQuote(). A paid quote is
+   locked and Quest's to fix, so it is never held here. */
+const DIM_LABELS={loa:'boat length (LOA)',beam:'beam',trailerOverhang:'trailer overhang',skiLen:'stored length',skiWid:'stored width'};
+function storageDimsMissing_(){
+  if(LOCKED) return [];
+  const blank=k=>!(Number(S[k])>0), keys=[];
+  if(S.unit==='jetski' && S.storage==='inside') keys.push('skiLen','skiWid');
+  if(S.unit==='boat'){
+    const inside=S.storage==='inside'||S.storage==='insidePrem';
+    const outsideOrNone=S.storage==='outside'||S.storage==='none';
+    if(inside||S.storage==='outside'||(outsideOrNone&&S.retrieval==='quest'&&!S.hasTrailer)) keys.push('loa');
+    if(inside) keys.push('beam');
+    if(inside&&S.hasTrailer) keys.push('trailerOverhang');
+  }
+  return keys.filter(blank);
+}
+function storageStep_(){ const f=flow(); return f.includes('storage')?'storage':f.includes('skistore')?'skistore':null; }
+function syncDimsWarn_(){
+  const miss=storageDimsMissing_();
+  $$('[data-ftin]').forEach(w=>{ const bad=miss.includes(w.dataset.ftin);
+    w.querySelectorAll('input').forEach((el,i)=>el.classList.toggle('fieldbad',bad&&i===0)); });
+  const what=S.unit==='jetski'?'Inside storage':S.storage==='outside'?'Outside storage':(S.storage==='none'?'Retrieval':'Inside storage');
+  $$('.dimsMsg').forEach(m=>{
+    m.classList.toggle('show',miss.length>0);
+    m.innerHTML=miss.length?`<b>${what} isn't on your quote yet.</b> We still need your ${miss.map(k=>DIM_LABELS[k]).join(' and ')} to price it. <button type="button" class="btn ghost" style="margin-top:8px" onclick="goToDims_()">Add ${miss.length>1?'them':'it'} now</button>`:'';
+  });
+}
+function goToDims_(){
+  go('start');
+  const miss=storageDimsMissing_();
+  const w=miss.length&&document.querySelector(`[data-ftin="${miss[0]}"]`);
+  if(w){ const el=w.querySelector('input'); el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus({preventScroll:true}); }
 }
 
 /* ================= FLOW NAVIGATION ================= */
@@ -1565,6 +1614,11 @@ function go(name){
     const need=contactMissing_();
     if(need.length){ showGate_(need); return; }
   }
+  /* Nothing past the storage step (the quote, print, email, sign & pay) while
+     the storage chosen there still has no dimensions to price it with. */
+  const sStep=storageStep_(), f=flow();
+  const heldAtStorage = sStep && f.indexOf(name)>f.indexOf(sStep) && storageDimsMissing_().length>0;
+  if(heldAtStorage) name=sStep;
   cur=name;
   /* Drives the full-width signing layout above. Set here rather than in
      renderSignPay so that LEAVING the step takes it off again. */
@@ -1574,6 +1628,7 @@ function go(name){
   if(name==='skistore') buildSkiStorage();
   if(name==='signpay') renderSignPay();
   paintNav(); refresh();
+  if(heldAtStorage){ const m=$(`.panel[data-step="${sStep}"] .dimsMsg`); if(m){ m.scrollIntoView({behavior:'smooth',block:'center'}); return; } }
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function goNext(){ const f=flow(), i=f.indexOf(cur); if(i<f.length-1) go(f[i+1]); }

@@ -1261,6 +1261,11 @@ function doPost(e) {
       /* Where a slip number came from when it was filled in from the slip
          list (adminHhSlipFillApply). The slip itself is in the journal. */
       if (oldD.slipFill) d.slipFill = oldD.slipFill;
+      /* The price history (notePriceChange_). Staff-side and append-only like
+         the Harbor Haul Out log: a save that dropped it would erase the record
+         of what this customer was quoted before, which is the question it
+         exists to answer. */
+      if (oldD.priceLog && oldD.priceLog.length) d.priceLog = oldD.priceLog;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1311,6 +1316,9 @@ function doPost(e) {
     //    skip it, and make sure no customer copy can be sent for a lead row.
     const startedRow = isStartedQuote_(d);
     if (startedRow) d.emailCustomer = 0;
+    /* After pricing, before the payload is serialised into the row. A locked
+       save keeps the official total, so nothing moves and nothing is noted. */
+    if (!startedRow) notePriceChange_(d, oldPayloadJson ? oldD.total : null, 'Customer saved the quote');
     const pdfUrl = startedRow ? '' : savePdf_(d);
 
     // 5) Row in the new column order
@@ -1446,6 +1454,8 @@ const CONSOLE_GET_FNS_ = {
   auth: 1,
   /* Pure reads. */
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
+  /* Reads the Activity Log and Sent mail for one quote; writes nothing. */
+  quoteHistory: 1,
   listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
@@ -1475,6 +1485,7 @@ function consoleFns_(p) {
     ping:        function (a) { return adminPing(); },
     warmup:      function (a) { return adminWarmup(p.token); },
     lookup:      function (a) { return adminLookup(p.token, a[0]); },
+    quoteHistory:function (a) { return adminQuoteHistory(p.token, a[0]); },
     quoteHtml:   function (a) { return adminQuoteHtml(p.token, a[0]); },
     dimsPreview: function (a) { return adminDimsPreview(p.token, a[0], a[1]); },
     dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
@@ -1957,6 +1968,7 @@ function doGet(e) {
         try {
           const d2 = JSON.parse(sh2.getRange(r2, COL.PAYLOAD).getValue() || '{}');
           surcharge = applySeasonDone_(d2, choice, p.d || '', p.note || '');
+          notePriceChange_(d2, sh2.getRange(r2, COL.TOTAL).getValue(), 'Customer answered the season-done survey');
           sh2.getRange(r2, COL.PAYLOAD).setValue(JSON.stringify(d2));
           sh2.getRange(r2, COL.TOTAL).setValue(Number(d2.total || 0));
           writeMoneyCols_(sh2, r2, d2);
@@ -3259,6 +3271,7 @@ function applyAdjustment_(ctx) {
                     String(sh_status_(ctx)).indexOf('Adjusted after signing') === 0;
   d.status = wasSigned ? 'Adjusted after signing — review' : 'Adjusted — not yet sent';
   d.ts = new Date().toISOString();
+  notePriceChange_(d, ctx.sh.getRange(ctx.rowNum, COL.TOTAL).getValue(), d.status + ' (sheet menu)');
 
   const pdfUrl = savePdf_(d);
   const sh = ctx.sh, rowNum = ctx.rowNum;
@@ -3323,6 +3336,7 @@ function saveQuoteRow_(ctx, statusOverride) {
   const signed = prev.indexOf('Signed & paying') === 0 || prev.indexOf('Adjusted after signing') === 0;
   d.status = statusOverride || (signed ? 'Adjusted after signing — review' : 'Adjusted — not yet sent');
   d.ts = new Date().toISOString();
+  notePriceChange_(d, sh.getRange(rowNum, COL.TOTAL).getValue(), d.status);
   const pdfUrl = savePdf_(d);
   sh.getRange(rowNum, COL.STATUS).setValue(d.status);
   sh.getRange(rowNum, COL.TOTAL).setValue(Number(d.total));
@@ -6462,6 +6476,176 @@ function unbuildableMsg_(kind, d) {
   return 'Unknown email type.';
 }
 
+/* ===========================================================================
+   QUOTE HISTORY — "does this payment line up with something we sent him?"
+   ---------------------------------------------------------------------------
+   A customer pays a figure nobody recognises. Usually it IS a figure we gave
+   them — last month's balance, the total before the re-price, a deposit from
+   an older PDF — and the question is which one. The sheet only holds the
+   quote as it is now, so the answer has to be assembled:
+
+   1. d.priceLog — every time the total moved, from Oct 2026 on
+      (notePriceChange_). The only source that sees a staff change nobody
+      emailed about.
+   2. d.payments — the ledger, the one authority on money received.
+   3. The Activity Log rows naming the quote — re-prices with before → after,
+      adjustments, line edits, who did each.
+   4. Sent mail naming the quote — exactly what the customer (and service@)
+      was shown, with the money lines read out of each body. This is what
+      reaches back before the price log existed, and it is the record of what
+      the customer actually saw, which is usually what they paid from.
+
+   Read-only, on demand from the console (it searches Gmail, so it is not
+   folded into adminLookup — opening a quote stays fast). Each source fails
+   on its own: a Gmail hiccup still returns the rest, with a note saying so.
+   ======================================================================== */
+const PRICE_LOG_MAX_ = 80;
+const HISTORY_MAIL_MAX_ = 40;
+const HISTORY_MONEY_WORDS_ = /total|balance|deposit|paid|payment|due|credit|refund|owing|amount/i;
+
+/* Append {at, total, was, paid, why} when the total moved — or on the first
+   priced save, when there is nothing to compare with. Never rewrites an entry. */
+function notePriceChange_(d, wasTotal, why) {
+  if (!d) return;
+  const now = Math.round(Number(d.total || 0) * 100) / 100;
+  const hasWas = wasTotal !== null && wasTotal !== undefined && String(wasTotal) !== '' && isFinite(Number(wasTotal));
+  const was = hasWas ? Math.round(Number(wasTotal) * 100) / 100 : null;
+  const log = Array.isArray(d.priceLog) ? d.priceLog : [];
+  if (was !== null && Math.abs(was - now) < 0.005) return;      // nothing moved
+  if (was === null && log.length && Math.abs(Number(log[log.length - 1].total) - now) < 0.005) return;
+  log.push({ at: new Date().toISOString(), total: now, was: was,
+             paid: Math.round(paymentsTotal_(d) * 100) / 100, why: String(why || '').slice(0, 120) });
+  d.priceLog = log.slice(-PRICE_LOG_MAX_);
+}
+
+/* The quote number as a whole token: QW-26-217 must not match QW-26-2172. */
+function quoteNoRe_(qn) {
+  return new RegExp(String(qn).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?!\\d)');
+}
+
+/* Money lines out of an email body: a dollar figure whose label (the text
+   before it on the line, or the line above when the amount sits alone, as a
+   table cell does) talks about totals, balances, deposits or payments. Line
+   items are left out on purpose — "Powerwash hull $132.96" is not a figure a
+   customer pays, and every one of them would be a false match. */
+function historyFigures_(text) {
+  const out = [], seen = {};
+  let prev = '';
+  String(text || '').split(/\r?\n/).slice(0, 160).forEach(function (raw) {
+    const line = String(raw).replace(/[*_]/g, '').trim();
+    if (!line) return;
+    const re = /([−-]?)\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+    let m, from = 0;
+    while ((m = re.exec(line))) {
+      let label = line.slice(from, m.index).replace(/[:·|]+/g, ' ').replace(/\s+/g, ' ').trim();
+      from = re.lastIndex;
+      if (!label) label = prev;
+      if (!HISTORY_MONEY_WORDS_.test(label)) continue;
+      const v = Number(m[2].replace(/,/g, '')) * (m[1] ? -1 : 1);
+      if (!isFinite(v)) continue;
+      label = label.length > 60 ? '…' + label.slice(-59) : label;
+      const key = label + '|' + v;
+      if (seen[key]) continue;
+      seen[key] = 1;
+      out.push({ k: label, v: Math.round(v * 100) / 100 });
+    }
+    prev = line.replace(/[:·|]+/g, ' ').trim();
+  });
+  return out.slice(0, 14);
+}
+
+function historyAmounts_(text) {
+  const out = [];
+  const re = /([−-]?)\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const v = Number(m[2].replace(/,/g, '')) * (m[1] ? -1 : 1);
+    if (isFinite(v)) out.push({ k: '', v: Math.round(v * 100) / 100 });
+  }
+  return out;
+}
+
+function adminQuoteHistory(token, qn) {
+  requireAuth_(token, 'view');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = String(d.quoteNo || qn);
+  const isMine = quoteNoRe_(want);
+  const events = [], notes = [];
+  const custEmail = String(d.email || '').toLowerCase();
+
+  (Array.isArray(d.priceLog) ? d.priceLog : []).forEach(function (p) {
+    const t = Date.parse(p.at) || 0;
+    const figs = [{ k: 'Total', v: Number(p.total) }];
+    if (p.was !== null && p.was !== undefined) figs.push({ k: 'Total before', v: Number(p.was) });
+    if (Number(p.paid)) figs.push({ k: 'Balance', v: Math.round((Number(p.total) - Number(p.paid)) * 100) / 100 });
+    events.push({ t: t, src: 'price', title: (p.was === null || p.was === undefined)
+        ? 'Priced at ' + usd_(p.total)
+        : 'Total ' + usd_(p.was) + ' → ' + usd_(p.total),
+      sub: String(p.why || ''), by: '', figs: figs });
+  });
+
+  (d.payments || []).forEach(function (p) {
+    const a = Number(p.amt || 0);
+    events.push({ t: paymentWhen_(p), src: 'payment',
+      title: (a < 0 ? 'Refund ' : 'Payment ') + usd_(Math.abs(a)) + (p.method ? ' (' + p.method + ')' : ''),
+      sub: p.at ? '' : String(p.date || ''), by: String(p.by || ''), figs: [{ k: a < 0 ? 'Refund' : 'Payment', v: a }] });
+  });
+
+  /* Activity Log. Payments come from the ledger above and emails from Sent
+     mail below, so their log rows would only repeat them. */
+  let mailOk = false;
+  const logRows = [];
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Activity Log');
+    const last = sh ? sh.getLastRow() : 0;
+    if (last >= 2) {
+      sh.getRange(2, 1, last - 1, 3).getValues().forEach(function (r) {
+        const act = String(r[2] || '');
+        if (act.indexOf(want) === -1 || !isMine.test(act)) return;
+        logRows.push(r);
+      });
+    }
+  } catch (e) { notes.push('The Activity Log could not be read (' + (e.message || e) + ').'); }
+
+  try {
+    const threads = GmailApp.search('in:sent "' + want + '" -subject:"Daily backup"', 0, HISTORY_MAIL_MAX_);
+    threads.forEach(function (th) {
+      th.getMessages().forEach(function (m) {
+        const subj = String(m.getSubject() || '');
+        let body = '';
+        try { body = String(m.getPlainBody() || ''); } catch (e) {}
+        if (!isMine.test(subj) && !isMine.test(body)) return;
+        const to = String(m.getTo() || '');
+        const toCustomer = !!custEmail && to.toLowerCase().indexOf(custEmail) > -1;
+        events.push({ t: m.getDate() ? m.getDate().getTime() : 0, src: 'email',
+          title: subj, sub: toCustomer ? 'Emailed to the customer' : 'Emailed to ' + (to.split(',')[0] || 'Quest'),
+          by: '', toCustomer: toCustomer, figs: historyFigures_(body) });
+      });
+    });
+    mailOk = true;
+  } catch (e) { notes.push('Sent mail could not be searched (' + (e.message || e) + '), so emails are missing below.'); }
+
+  logRows.forEach(function (r) {
+    const act = String(r[2] || '');
+    if (/^Payment /.test(act)) return;
+    if (mailOk && /^Email "|emailed for /.test(act)) return;
+    const t = r[0] instanceof Date ? r[0].getTime() : (Date.parse(r[0]) || 0);
+    events.push({ t: t, src: 'log', title: act, sub: '', by: String(r[1] || ''), figs: historyAmounts_(act) });
+  });
+
+  if (!(d.priceLog && d.priceLog.length)) {
+    notes.push('Price changes are recorded on the quote from Oct 2026 on — before that, the emails and the Activity Log are the record.');
+  }
+
+  events.sort(function (a, b) { return a.t - b.t; });
+  events.forEach(function (e) { e.when = e.t ? Utilities.formatDate(new Date(e.t), Session.getScriptTimeZone(), 'MMM d, yyyy h:mm a') : ''; });
+  const paid = paymentsTotal_(d);
+  return { ok: 1, quoteNo: want, events: events, notes: notes,
+    now: { total: Number(d.total || 0), paid: paid, balance: Math.round((Number(d.total || 0) - paid) * 100) / 100 } };
+}
+
 function recordEmail_(sh, rowNum, d, kind, by) {
   d.emailLog = d.emailLog || [];
   d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: d.email || '', by: by || '' });
@@ -8061,6 +8245,8 @@ function importApplyCore_(who, state, meta, tabOverride) {
   const cross = rebuildLinesFromState_(d);
   if (!cross.rebuilt) return { ok: 0, error: 'Could not price the imported quote: ' + cross.reason };
   recomputeTotals_(d);
+  notePriceChange_(d, null, 'Imported from ' + (meta.file || 'a previous sheet') +
+    (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   /* d.storageTab is left as the engine computed it, so the quote knows where it
@@ -10838,6 +11024,7 @@ function addLateFee() {
   recomputeTotals_(d);
   d.status = 'Late fee added — balance ' + usd_(Math.max(0, Number(d.total) - paid));
   d.ts = new Date().toISOString();
+  notePriceChange_(d, ctx.sh.getRange(ctx.rowNum, COL.TOTAL).getValue(), d.status + ' (sheet menu)');
 
   const pdfUrl = savePdf_(d);
   const sh = ctx.sh, rowNum = ctx.rowNum;

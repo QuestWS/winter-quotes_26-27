@@ -245,6 +245,44 @@ records nothing; a payment or refund is still recorded on the quote.
   they show the day and sort by it. `tools/check-receivables.js` runs the
   builder over a fake sheet covering every bucket and both read routes.
 
+## Quote history (console)
+
+The **Quote history** card under every open quote answers one question: *a
+customer paid an amount that matches nothing on today's balance — did we ever
+show them that figure?* **Show history** lists, oldest first, every total the
+quote has had, every payment, every staff change and every email it went out
+in, with the money figures each email showed. Typing an amount into **Check an
+amount** lights it up wherever it appears and says how it compares with the
+balance it was paid towards. Read-only — it records nothing.
+
+- **The server assembles it** (`adminQuoteHistory`) from four places, because
+  the sheet only holds the quote as it is now: the quote's own price log
+  (`d.priceLog`), the payment ledger, the **Activity Log** rows naming the
+  quote, and **Sent mail** naming it. Sent mail is what reaches back before
+  the price log existed, and it is the record of what the customer was
+  actually shown — which is usually what they paid from.
+- **Loaded on a tap, not with the quote.** It searches Gmail, which costs
+  seconds; folding it into `adminLookup` would slow every quote open, and the
+  console's speed is a correctness problem (CLAUDE.md §7). It is a pure read,
+  so it is on `CONSOLE_GET_FNS_` and retries over GET.
+- **Each source fails on its own.** A Gmail error still returns the ledger,
+  the log and the price log, with a note saying the emails are missing.
+- **Only money lines are read out of an email** (`historyFigures_`): a dollar
+  figure whose label talks about a total, balance, deposit, payment or amount
+  due. Line items are left out on purpose — every one would be a false match.
+- **A payment never explains itself.** Figures that *are* payments ("Payments
+  received", "your payment of") and the ledger entries are never counted as a
+  match, or the payment being checked would find its own receipt. Once the
+  payment is recorded, the comparison is against the balance *before* it.
+- **The quote number is matched as a whole token** (`quoteNoRe_`), so
+  QW-26-217 never picks up QW-26-2172's mail.
+- **`d.priceLog` starts in Oct 2026** (`notePriceChange_`): one entry each
+  time the total moves, written by every path that changes a total —
+  `saveQuoteRow_` (every console change and the season re-price), the
+  customer save, the import, the season-done survey and the sheet-menu
+  adjustment and late fee. A customer save carries it across like the Harbor
+  Haul Out log. Older quotes have none, and the card says so.
+
 ## Customer link
 
 Every loaded quote shows a **Customer link** block under the print button: the

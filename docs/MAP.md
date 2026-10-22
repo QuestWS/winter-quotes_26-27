@@ -115,6 +115,7 @@ symptom.
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Winter quotes with a service tracker QR (storage card, and *Shop copy + QR* on a quote) | `adminQuoteHtml` (unchanged — one per quote) | `toggleWinterQuotes`, `renderWqPanel_`, `wqRows_`, `onWinterList_`, `printWinterQuotes`, `printShopCopy`, `printQuotesWithQr_`, `qrSvg_`, `trackerQrUrl_`; `admin/qrcode.min.mjs` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet`; customer page `trailerLocApplies` |
+| Quote history: every total, payment and email on one quote, and "where did this amount come from" | `adminQuoteHistory`, `notePriceChange_`, `historyFigures_`, `quoteNoRe_` | `loadHistory`, `renderHistory_`, `histMatchable_`, `resetHistory_` |
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | The customer's own note (list tag, Customer notes tab, quote card, staff edit) | `customerNoteOf_`, `adminSetCustomerNote` (`cnote` on the storage rows, `customerNote` on `adminLookup`) | `renderStorage`, `renderCustomerNote`, `saveCustomerNote` |

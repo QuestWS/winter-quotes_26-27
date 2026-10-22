@@ -88,6 +88,13 @@ customer, and it must render as such in the sheet, PDF ledger, emails, and
 page ticket. Refunds are recorded as **negative payments** — payments are an
 append-only ledger, never deleted.
 
+**`d.priceLog`** is the quote's price history: `{ at, total, was, paid, why }`
+appended by `notePriceChange_` whenever the total moves (capped at the newest
+80). Append-only, staff-side, and carried across a customer save like the
+Harbor Haul Out log — it is what the console's **Quote history** card reads
+first (`docs/ref/STAFF-CONSOLE.md` § *Quote history*). It records; it never
+prices, and nothing renders from it for a customer.
+
 A ledger entry is `{ amt, method, date }`, and since Oct 2026 also `at` (ISO
 time) and `by` (staff name, or `Sheet menu`). `date` is unchanged because the
 PDF ledger and the emails print it; `at`/`by` exist for the console's

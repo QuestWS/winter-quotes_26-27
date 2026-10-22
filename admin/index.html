@@ -3179,6 +3179,27 @@ function setStorageFilter(f){
   if(f==='drafts'&&!window._drafts) loadDrafts_();
   renderStorage();
 }
+/* ---------------------------------------------------------------------------
+   GROUP BY STORAGE AREA OR BY UNIT TYPE
+   ---------------------------------------------------------------------------
+   The storage areas mix boats and jet skis (Outside / Inside / Premium Inside
+   are decided by the storage chosen, not the unit), so "which jet skis do we
+   pull first" was a scroll through every building. By unit type regroups the
+   SAME fetch — jet skis first, then boats, golf carts, e-bikes — and puts the
+   storage area on each row, since the heading no longer says it.
+   Screen only: the printed storage sheets stay one page per area, and the
+   haul-out list keeps its own order (haulOrder_). The deposit filter applies
+   either way. */
+let SGROUP='tab';
+const UNIT_ORDER_=[['jetski','Jet skis'],['boat','Boats'],['golf','Golf carts'],['ebike','E-bikes']];
+function unitKind_(u){
+  u=String(u||'').toLowerCase();
+  if(/jet\s*-?ski|pwc|waverunner/.test(u)) return 'jetski';
+  if(u.indexOf('golf')>-1) return 'golf';
+  if(u.indexOf('bike')>-1) return 'ebike';
+  return 'boat';
+}
+function setStorageGroup(k){ if(k!=='tab'&&k!=='unit')return; SGROUP=k; renderStorage(); }
 function storageKeeps_(g,x){
   if(SFILTER==='all') return true;
   /* Drafts are not in _sg at all — they come from their own call and render
@@ -3233,11 +3254,25 @@ function draftRow_(x){
 /* Groups with their rows narrowed to the current view. Under "Everyone" an
    empty building still prints, because knowing a building is empty is worth a
    line; under a filter an empty group is just noise. */
-function storageGroups_(){
-  return (window._sg||[]).map(function(g){
+function storageGroups_(by){
+  const byTab=(window._sg||[]).map(function(g){
     const rows=(g.rows||[]).filter(x=>storageKeeps_(g,x));
     return {tab:g.tab,lead:g.lead,rows:rows,count:rows.length};
   }).filter(g=>SFILTER==='all'||g.count>0);
+  if((by||SGROUP)!=='unit') return byTab;
+  /* Each row remembers its area (and whether it is a lead) so the row can
+     still say where the unit sits and the season tag still skips leads. Within
+     a type, saved quotes come before leads, then the server's area order. */
+  const buckets={};
+  byTab.forEach(g=>g.rows.forEach(function(x){
+    const k=unitKind_(x.unit);
+    (buckets[k]=buckets[k]||[]).push(Object.assign({_area:g.tab,_lead:!!g.lead},x));
+  }));
+  return UNIT_ORDER_.map(function(u){
+    const rows=(buckets[u[0]]||[]).map((x,i)=>[x,i])
+      .sort((a,b)=>(a[0]._lead-b[0]._lead)||(a[1]-b[1])).map(p=>p[0]);
+    return {tab:u[1],lead:false,rows:rows,count:rows.length};
+  }).filter(g=>g.count>0);
 }
 function storageCounts_(){
   const c={all:0,dep:0,nodep:0,unsigned:0,unpaid:0,blocked:0,held:0,notes:0,oldRates:0,hh:0,hhDrafts:0};
@@ -3285,6 +3320,9 @@ function renderStorage(){
     tab('drafts',window._drafts?window._drafts.length:'…');
   t.classList.remove('hide');
   if(SFILTER==='drafts'){ $('storageBody').innerHTML=renderDrafts_(); return; }
+  const grp=(k,l)=>`<button class="${SGROUP===k?'on':''}" onclick="setStorageGroup('${k}')">${l}</button>`;
+  const grpBar=`<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px"><span class="msg" style="margin:0">Group by</span>`+
+    `<div class="stabs" style="flex:0 1 auto">${grp('tab','Storage area')}${grp('unit','Unit type (jet skis first)')}</div></div>`;
   const gs=storageGroups_();
   const shown=gs.reduce((n,g)=>n+g.count,0);
   const body=gs.map(function(g){
@@ -3316,11 +3354,13 @@ function renderStorage(){
       const cn=String(x.cnote||'').trim();
       const ntag=cn?'<span class="tagnote">\u{1F4AC} NOTE</span>':'';
       const nbox=cn?'<div class="cnotebox"><b>Customer note:</b> '+esc(cn)+'</div>':'';
-      const stag=g.lead?'':seasonTag_(x).html;
+      const lead=SGROUP==='unit'?x._lead:g.lead;
+      const stag=lead?'':seasonTag_(x).html;
+      const area=SGROUP==='unit'&&x._area?' · '+esc(x._area):'';
       const htag=x.hh==='open'?HH_TAG:'';
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
         <span class="nm">${esc(x.name)}${tag}${htag}${ntag}${stag}</span>
-        <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''} · ${esc(x.status)}${took}</span>
+        <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${area} · ${esc(x.status)}${took}</span>
         <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';
     return `<div class="sgH"><b>${esc(g.tab)}</b><span>${g.count} unit${g.count===1?'':'s'}</span></div>${rows}`;
@@ -3362,7 +3402,7 @@ function renderStorage(){
       <span class="nm">${esc(x.name)}</span>
       <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.note?' · '+esc(x.note):''}</span>
       <span class="bl">${esc(x.qn)}</span></div>`).join(''):'';
-  $('storageBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
+  $('storageBody').innerHTML=grpBar+`<div class="msg" style="margin:0 0 4px">${head}</div>`+
     ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>')+nsList;
 }
 function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
@@ -3493,7 +3533,9 @@ async function printStorage(){
      gets missed; naming the filter on the paper is what stops that.
      The haul-out list is deliberately not filtered — see printHaulOut. */
   if(SFILTER==='drafts'){ toast('Imported drafts are not on the storage sheets until they are sent.'); return; }
-  const gs=storageGroups_().filter(g=>g.count>0);
+  /* Always by area: a storage sheet is one page per building, whichever
+     grouping the screen is showing. */
+  const gs=storageGroups_('tab').filter(g=>g.count>0);
   if(!gs.length){ toast('Nothing to print in this view.'); return; }
   const scope=SFILTER==='all'?'winter services':'winter services · '+SFILTER_LABEL[SFILTER]+' only';
   $('printArea').innerHTML=gs.map(g=>`

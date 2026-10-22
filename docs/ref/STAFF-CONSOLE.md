@@ -1382,6 +1382,21 @@ but never signed", asked from a phone.
   changes.
 
 
+## Grouping the storage overview by unit type
+
+The storage areas mix boats and jet skis — Outside / Inside / Premium Inside
+follow the storage chosen, not the unit — so pulling jet skis first meant
+scrolling every building. **Group by → Unit type** regroups the same fetch
+(no second trip) into Jet skis, Boats, Golf carts, E-bikes, in that order,
+and adds the storage area to each row since the heading no longer says it.
+Within a type, saved quotes come before leads. The deposit filter applies
+either way. Unit type is read from the Unit column (`unitKind_`); anything
+not recognisably a jet ski, golf cart or e-bike counts as a boat.
+
+**Screen only.** *Print storage sheets* always asks `storageGroups_('tab')`,
+so the paper stays one page per area whatever the screen shows, and the
+haul-out list keeps its own order (`haulOrder_`).
+
 ## The season tag on the storage overview
 
 Every storage row carries a small tag saying **which season's card the quote

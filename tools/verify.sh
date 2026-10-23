@@ -761,6 +761,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: not-storing mark broken"; sed 's/^/       /' "$TMP/ns.txt"; FAIL=1
   fi
+  # Customer details: adminSetContact is RUN against a fake row — four copies
+  # change together, and a corrected last name still opens emailed links.
+  if node tools/check-contact-edit.js > "$TMP/contact.txt" 2>&1; then
+    echo "  OK   gate: customer details edit writes every copy; old last name still opens"
+  else
+    echo "  FAIL gate: customer details edit broken"; sed 's/^/       /' "$TMP/contact.txt"; FAIL=1
+  fi
   # Receivables: the console's money list is RUN over a fake sheet covering
   # every bucket, both read routes, and the Import tab it must leave out.
   if node tools/check-receivables.js > "$TMP/recv.txt" 2>&1; then

@@ -119,6 +119,7 @@ symptom.
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
 | Storage overview grouped by unit type (jet skis first) | — | `setStorageGroup`, `SGROUP`, `unitKind_`, `UNIT_ORDER_`, `storageGroups_` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
+| Customer details: fix a name, phone or email (and keep the old last name opening emailed links) | `adminSetContact`, `contactOf_`, `lastNameMatches_` (`contact` on `adminLookup`) | `renderContact`, `openContactEdit`, `saveContact` |
 | The customer's own note (list tag, Customer notes tab, quote card, staff edit) | `customerNoteOf_`, `adminSetCustomerNote` (`cnote` on the storage rows, `customerNote` on `adminLookup`) | `renderStorage`, `renderCustomerNote`, `saveCustomerNote` |
 | Imported drafts as a scrollable list | `adminDraftList` | `loadDrafts_`, `renderDrafts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |

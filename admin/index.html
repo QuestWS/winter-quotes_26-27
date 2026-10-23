@@ -86,6 +86,17 @@ background:#fff;color:var(--muted);font-size:15px;cursor:pointer;line-height:1}
 .ctr{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;
 padding-top:10px;border-top:1px solid var(--ice);font-size:13.5px}
 .ctr .lab{color:var(--muted);letter-spacing:.05em;text-transform:uppercase;font-size:11.5px}
+/* The signed-contract row has to answer "is it on file?" at a glance. A ghost
+   View button against a grey "not on file" note read the same from arm's
+   length, so the row itself now carries the state: a green band with a tick
+   when the contract is filed, a red-outlined warning when it is not. Red is
+   outlined, never solid — solid red stays reserved for DO-NOT-PULL. */
+.ctr.cfile{border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;flex-wrap:wrap}
+.ctr.cfile.on{background:#E2F1E7;border-color:var(--green);border-left-width:5px}
+.ctr.cfile.on .lab{color:var(--green);font-weight:800;font-size:12.5px}
+.ctr.cfile.off{background:#FBEEE2;border-color:var(--red);border-left-width:5px}
+.ctr.cfile.off .lab{color:var(--red);font-weight:800;font-size:12.5px}
+.btn.cview{background:var(--green);border-color:var(--green);color:#fff}
 .lnrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 4px;
 border-bottom:1px solid var(--ice);font-size:13px}
 .lnrow .ll{flex:1;min-width:0}.lnrow .ll .sec{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
@@ -555,8 +566,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             </div>
             <div id="rqBlock" style="margin-top:8px"></div>
             <div id="seasonBlock" style="margin-top:8px"></div>
-            <div class="ctr" id="contractRow">
-              <span class="lab">Signed contract</span>
+            <div class="ctr cfile" id="contractRow">
+              <span class="lab" id="contractLab">Signed contract</span>
               <span id="contractCtl"></span>
             </div>
             <div class="drop slim hide" id="contractDrop"></div>
@@ -2777,7 +2788,12 @@ function renderContract(P){
   const c=$('contractCtl');
   const canUp=!!P.pay;
   let h='';
-  if(window._contract) h+=`<a href="${window._contract}" target="_blank" class="btn ghost sm" style="text-decoration:none;display:inline-block">View</a> `;
+  const has=!!window._contract;
+  const row=$('contractRow');
+  if(row){row.classList.toggle('on',has);row.classList.toggle('off',!has);}
+  const lab=$('contractLab');
+  if(lab) lab.textContent=has?'✓ Signed contract on file':'✗ No signed contract';
+  if(has) h+=`<a href="${window._contract}" target="_blank" class="btn cview sm" style="text-decoration:none;display:inline-block">View contract</a> `;
   if(canUp) h+=`<button class="btn navy sm" onclick="$('contractFile').click()">${window._contract?'Replace':'Upload signed copy'}</button>`;
   /* Nothing on file and something to send them: offer the nudge right here,
      next to the gap it fills. It is the same previewed send as the button in
@@ -2785,8 +2801,6 @@ function renderContract(P){
      are looking at when they open a red-tagged quote off the storage view. */
   if(!window._contract&&signAskAllowed_(P))
     h+=` <button class="btn gold sm" onclick="sendKind('signreminder')">Ask them to sign</button>`;
-  if(!h) h='<span class="msg" style="margin:0">— not on file —</span>';
-  else if(!window._contract) h='<span class="msg" style="margin:0 8px 0 0">— not on file —</span>'+h;
   c.innerHTML=h;
   /* Drag-and-drop is a desktop convenience, but the same box is the tap
      target in the yard, so it shows on a phone too and says both. */

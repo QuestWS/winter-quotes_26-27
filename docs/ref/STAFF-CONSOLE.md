@@ -344,6 +344,11 @@ any prior copy for that quote number before writing the new one. The row shows
 **View** / **Replace**; under it a dashed zone takes a dropped file, and is the
 tap target on a phone.
 
+- **The row carries the state, not just the button.** Filed: a green band
+  reading *✓ Signed contract on file* with a solid green **View contract**.
+  Missing: a red-outlined band reading *✗ No signed contract*. A ghost View
+  button beside a grey "not on file" note looked the same at a glance, which is
+  how staff read a quote. Red stays outlined — solid red is DO-NOT-PULL only.
 - **The drop path has to re-check what `accept=` checks.** The file picker is
   filtered to PDFs and images; a drop is not, so `contractFiles` tests the type
   by hand. Without it a dropped `.docx` lands in `Signed Contracts/` and reads
@@ -1458,7 +1463,7 @@ Season re-price has not reached yet; the *Everyone* header counts them.
 ## Asking a customer to sign (console)
 
 A quote with no signed agreement on file gets an **Ask them to sign** button,
-in two places that share one handler: next to *Signed contract — not on file*
+in two places that share one handler: in the red *✗ No signed contract* row
 on the quote card, and in the **Customer emails** card. It previews like every
 other email and sends nothing until the preview is confirmed.
 

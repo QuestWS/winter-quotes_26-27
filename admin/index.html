@@ -189,6 +189,10 @@ input.txt,select.txt,textarea.txt{width:100%;padding:11px 13px;font-size:15px;bo
 input.txt:focus,select.txt:focus,textarea.txt:focus{outline:2px solid var(--frost)}
 textarea.txt{display:block;line-height:1.5;resize:vertical}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* Customer details editor: two across on a desk, one per line on a phone —
+   an email address does not fit half a phone screen. */
+.ctgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+@media (max-width:560px){.ctgrid{grid-template-columns:1fr}}
 .chk{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0}
 .msg{font-size:13.5px;margin-top:8px;min-height:18px}.msg.ok{color:var(--green);font-weight:700}.msg.err{color:var(--red);font-weight:700}
 .emailbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -501,6 +505,27 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
               <div class="stat bal" id="stBalBox"><div class="v" id="stBal">—</div><div class="k" id="stBalK">Balance</div></div>
             </div>
             <div id="qInfo"></div>
+            <!-- Customer details: a typo'd name, a new phone, a new email.
+                 Same keys bar as the customer note — not money. The server
+                 keeps the old last name working for links already emailed
+                 (adminSetContact / lastNameMatches_). -->
+            <div class="hide" id="contactWrap" style="margin-top:8px">
+              <button class="btn ghost sm" id="contactOpenBtn" onclick="openContactEdit(true)">Edit name, phone or email</button>
+              <div class="hide" id="contactEdit">
+                <div class="ctgrid">
+                  <div><label class="fld" for="ctFirst">First name</label><input class="txt" id="ctFirst" maxlength="60" autocomplete="off"></div>
+                  <div><label class="fld" for="ctLast">Last name</label><input class="txt" id="ctLast" maxlength="60" autocomplete="off"></div>
+                  <div><label class="fld" for="ctPhone">Phone</label><input class="txt" id="ctPhone" type="tel" inputmode="tel" maxlength="40" autocomplete="off"></div>
+                  <div><label class="fld" for="ctEmail">Email</label><input class="txt" id="ctEmail" type="email" inputmode="email" maxlength="120" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+                </div>
+                <div class="msg" style="margin:6px 0 0">Updates the sheet, the quote PDF and their quote page. <b>Nothing is emailed.</b></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+                  <button class="btn navy sm" id="contactSaveBtn" onclick="saveContact()">Save details</button>
+                  <button class="btn ghost sm" onclick="openContactEdit(false)">Cancel</button>
+                </div>
+              </div>
+              <div class="msg" id="contactMsg"></div>
+            </div>
             <!-- The customer's own note. Read-only for everyone; editable for
                  staff with the keys permission, because an imported quote's
                  note is last year's ("deposit received") and prints on the
@@ -1976,6 +2001,50 @@ async function saveCustomerNote(mode){
   }catch(e){ setMsg('custNoteMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent=was; }
 }
+/* ---------- Customer details ----------
+   Name, phone and email, corrected by staff. The server cleans, formats and
+   decides what actually changed (adminSetContact); this fills the form and
+   redraws the quote from the answer, so the header, the customer link and the
+   email card all pick the change up at once. An older backend sends no
+   `contact`, and the button stays hidden rather than offering a save it
+   cannot take. */
+let CONTACT=null;
+function renderContact(c,P){
+  CONTACT=c;
+  const can=!!(c&&P&&P.keys);
+  $('contactWrap').classList.toggle('hide',!can);
+  if(can&&$('contactEdit').classList.contains('hide')) setMsg('contactMsg','');
+  openContactEdit(false,true);
+}
+function openContactEdit(on,keepMsg){
+  $('contactEdit').classList.toggle('hide',!on);
+  $('contactOpenBtn').classList.toggle('hide',!!on);
+  if(!keepMsg) setMsg('contactMsg','');
+  if(on&&CONTACT){
+    $('ctFirst').value=CONTACT.firstName||''; $('ctLast').value=CONTACT.lastName||'';
+    $('ctPhone').value=CONTACT.phone||''; $('ctEmail').value=CONTACT.email||'';
+    $('ctFirst').focus();
+  }
+}
+async function saveContact(){
+  if(!QN||!CONTACT) return;
+  const f={firstName:$('ctFirst').value,lastName:$('ctLast').value,phone:$('ctPhone').value,email:$('ctEmail').value};
+  if(!f.lastName.trim()){ setMsg('contactMsg','Last name can\'t be blank — it is what the customer types to open their quote.',false); return; }
+  if(CONTACT.email&&!f.email.trim()&&!confirm('Remove the email address?\n\nNo emails can be sent to this customer until one is added back.')) return;
+  const b=$('contactSaveBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('contactMsg','');
+  try{
+    const r=await api('contact',[QN,f],{withQuote:QN});
+    if(!r||!r.ok){ setMsg('contactMsg',(r&&r.error)||'Could not save that.',false); return; }
+    $('contactEdit').classList.add('hide');
+    await afterWrite_(r);
+    setMsg('contactMsg',r.msg,true);
+    toast('Customer details saved');
+    /* The storage list and search show the name too. */
+    window._sg=null;
+  }catch(e){ setMsg('contactMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save details'; }
+}
 /* ---------- Not storing this season ----------
    The server decides whether the mark is in force (notStoringActive_ — it
    holds for the season it was set in only); this draws what it says. */
@@ -2295,6 +2364,7 @@ function renderQuote(r){
      esc() keeps it text. */
   const cn=String(r.customerNote||'').trim();
   renderCustomerNote(cn,myPerms_());
+  renderContact(r.contact||null,myPerms_());
   window._lines=r.linesRaw||[];
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;

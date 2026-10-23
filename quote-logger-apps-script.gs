@@ -1266,6 +1266,10 @@ function doPost(e) {
          of what this customer was quoted before, which is the question it
          exists to answer. */
       if (oldD.priceLog && oldD.priceLog.length) d.priceLog = oldD.priceLog;
+      /* Last names staff corrected away from (adminSetContact). The browser
+         has never heard of them, and dropping them would break every link
+         emailed before the correction the moment the customer re-saved. */
+      if (oldD.formerLastNames && oldD.formerLastNames.length) d.formerLastNames = oldD.formerLastNames;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
       /* Price it ourselves from the customer's selections, then replay the
@@ -1505,6 +1509,8 @@ function consoleFns_(p) {
     /* Writes slip numbers onto many quotes: a write, POST only, carries a rid. */
     hhSlipFillApply:   function (a) { return adminHhSlipFillApply(p.token, a[0]); },
     customerNote:function (a) { return adminSetCustomerNote(p.token, a[0], a[1], a[2]); },
+    /* Name, phone, email. A write: POST only, carries a rid. */
+    contact:     function (a) { return adminSetContact(p.token, a[0], a[1]); },
     placementNote:    function (a) { return adminAddPlacementNote(p.token, a[0], a[1], a[2]); },
     placementState:   function (a) { return adminSetPlacementState(p.token, a[0], a[1], a[2]); },
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
@@ -1964,9 +1970,11 @@ function doGet(e) {
         if (isImportTab_(sh2.getName())) return;      // a draft was never emailed — IMPORT_TAB
         const r2 = findQuoteRow_(sh2, qn2);
         if (r2 <= 0) return;
-        if (String(sh2.getRange(r2, COL.LAST).getValue() || '').trim().toLowerCase() !== ln2) return;
+        let d2 = null;
+        try { d2 = JSON.parse(sh2.getRange(r2, COL.PAYLOAD).getValue() || '{}'); } catch (e1) { d2 = null; }
+        if (!lastNameMatches_(sh2.getRange(r2, COL.LAST).getValue(), ln2, d2)) return;
         try {
-          const d2 = JSON.parse(sh2.getRange(r2, COL.PAYLOAD).getValue() || '{}');
+          if (!d2) throw new Error('unreadable payload');
           surcharge = applySeasonDone_(d2, choice, p.d || '', p.note || '');
           notePriceChange_(d2, sh2.getRange(r2, COL.TOTAL).getValue(), 'Customer answered the season-done survey');
           sh2.getRange(r2, COL.PAYLOAD).setValue(JSON.stringify(d2));
@@ -2001,9 +2009,11 @@ function doGet(e) {
         if (done || sh2.getRange(1, 3).getValue() !== 'Quote #') return;
         const r2 = findQuoteRow_(sh2, qn2);
         if (r2 <= 0) return;
-        if (String(sh2.getRange(r2, COL.LAST).getValue() || '').trim().toLowerCase() !== ln2) return;
+        let d2 = null;
+        try { d2 = JSON.parse(sh2.getRange(r2, COL.PAYLOAD).getValue() || '{}'); } catch (e1) { d2 = null; }
+        if (!lastNameMatches_(sh2.getRange(r2, COL.LAST).getValue(), ln2, d2)) return;
         try {
-          const d2 = JSON.parse(sh2.getRange(r2, COL.PAYLOAD).getValue() || '{}');
+          if (!d2) throw new Error('unreadable payload');
           d2.launchPref = pref;
           sh2.getRange(r2, COL.PAYLOAD).setValue(JSON.stringify(d2));
         } catch (e2) {}
@@ -2067,8 +2077,14 @@ function doGet(e) {
         if (rowNum <= 0) continue;
         rowLn = String(sh.getRange(rowNum, COL.LAST).getValue() || '').trim().toLowerCase();
       }
-      if (rowLn !== ln) return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
       const payloadJson = sh.getRange(rowNum, COL.PAYLOAD).getValue();
+      /* A last name staff corrected away from still opens it — the customer's
+         emailed link carries the old spelling (lastNameMatches_). */
+      if (rowLn !== ln) {
+        let dOld = null;
+        try { dOld = payloadJson ? JSON.parse(payloadJson) : null; } catch (e) { dOld = null; }
+        if (!lastNameMatches_(rowLn, ln, dOld)) return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
+      }
       if (!payloadJson) return out({ ok: 0, error: 'This quote was saved before loading existed — call (815) 433-2200 and we\'ll pull it up.' });
       const d = JSON.parse(payloadJson);
       if (!d.state) return out({ ok: 0, error: 'This quote can\'t be reloaded — call (815) 433-2200 and we\'ll pull it up.' });
@@ -6107,6 +6123,141 @@ function adminSetCustomerNote(token, qn, note, mode) {
            staffNote: { text: String(d.staffNote || ''), by: String(d.staffNoteBy || ''), at: String(d.staffNoteAt || '') } };
 }
 
+/* CUSTOMER DETAILS — a typo'd name, a new phone number, a new email.
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: staff need to correct these without asking the customer to
+   reopen their quote. Four copies have to agree, the same way the customer
+   note's three do:
+
+   - the payload's top level (d.firstName/lastName/owner/phone/email) — what
+     every email, the PDF and the console read;
+   - d.state — what the quote page hydrates from on reload, so leaving it
+     alone would put the typo straight back the next time they save;
+   - the sheet's Last/First/Phone/Email columns — what search, the storage
+     view and the customer's own last-name check read;
+   - the PDF, rebuilt here because it prints the name, phone and email, and
+     its FILE NAME carries d.owner.
+
+   THE LAST NAME IS A KEY, not just a label: ?action=load, the season-done
+   survey and the spring launch buttons all match on it, and emails already
+   sent carry the old spelling in their links (CLAUDE.md §7 — emails are
+   frozen at send time). So the old spelling is kept in d.formerLastNames and
+   lastNameMatches_ accepts it. It already opened this quote; it is not a
+   wider door.
+
+   Same permission as the customer note: not money, not a price change. A
+   locked (paid) quote takes the edit too — the lock stops the CUSTOMER's
+   page from rewriting it, not staff. */
+const CONTACT_FIELDS_ = { firstName: 'First name', lastName: 'Last name', phone: 'Phone', email: 'Email' };
+const CONTACT_NAME_MAX_ = 60;
+const CONTACT_EMAIL_MAX_ = 120;
+const FORMER_LAST_NAMES_MAX_ = 10;
+
+function adminSetContact(token, qn, fields) {
+  const who = requireAuth_(token, 'keys');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const f = (fields && typeof fields === 'object') ? fields : {};
+  const clean = function (v, max) {
+    return String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
+  };
+  /* A field the console did not send is left as it is, so an older tab cannot
+     blank something it never showed. */
+  const want = {};
+  if (f.firstName !== undefined) want.firstName = clean(f.firstName, CONTACT_NAME_MAX_);
+  if (f.lastName !== undefined) want.lastName = clean(f.lastName, CONTACT_NAME_MAX_);
+  if (f.phone !== undefined) want.phone = fmtPhone(clean(f.phone, 40));
+  if (f.email !== undefined) want.email = clean(f.email, CONTACT_EMAIL_MAX_).toLowerCase();
+
+  if (want.lastName !== undefined && !want.lastName) {
+    return { ok: 0, error: 'Last name can\'t be blank — it is what the customer types to open their quote.' };
+  }
+  if (want.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(want.email)) {
+    return { ok: 0, error: '"' + want.email + '" doesn\'t look like an email address.' };
+  }
+
+  const was = { firstName: String(d.firstName || ''), lastName: String(d.lastName || ''),
+                phone: fmtPhone(d.phone || ''), email: String(d.email || '') };
+  /* Compared as the console showed them (contactOf_): a phone stored
+     unformatted, or a name with a stray space, is not an edit until somebody
+     changes it. Email without case — retyping it in lower case is not one. */
+  const shown = contactOf_(d);
+  const changed = Object.keys(want).filter(function (k) {
+    const before = k === 'email' ? clean(shown.email, CONTACT_EMAIL_MAX_).toLowerCase()
+      : k === 'phone' ? shown.phone : clean(shown[k], CONTACT_NAME_MAX_);
+    return want[k] !== before;
+  });
+  if (!changed.length) return { ok: 0, error: 'Nothing changed.' };
+
+  if (changed.indexOf('lastName') > -1 && was.lastName) {
+    const old = was.lastName.trim().toLowerCase();
+    const list = (d.formerLastNames || []).filter(function (x) {
+      return x && x !== old && x !== want.lastName.toLowerCase();
+    });
+    list.push(old);
+    d.formerLastNames = list.slice(-FORMER_LAST_NAMES_MAX_);
+  }
+  changed.forEach(function (k) {
+    d[k] = want[k];
+    if (d.state && typeof d.state === 'object') d.state[k] = want[k];
+  });
+  if (d.formerLastNames && d.lastName) {
+    d.formerLastNames = d.formerLastNames.filter(function (x) { return x !== d.lastName.toLowerCase(); });
+    if (!d.formerLastNames.length) delete d.formerLastNames;
+  }
+  d.owner = [d.firstName, d.lastName].filter(Boolean).join(' ') || d.owner || '';
+  /* Customer-facing content changed — a Gmail draft built before this edit is
+     addressed or greeted wrongly, and the draft sweep reads this to call it
+     stale (see adminSetCustomerNote). */
+  d.notesAt = new Date().toISOString();
+
+  /* A lead row has no selections and no PDF to rebuild. */
+  if (!isStartedQuote_(d)) {
+    const pdfUrl = savePdf_(d);
+    if (pdfUrl) ctx.sh.getRange(ctx.rowNum, COL.PDF).setValue(pdfUrl);
+  }
+  ctx.sh.getRange(ctx.rowNum, COL.LAST).setValue(d.lastName || '');
+  ctx.sh.getRange(ctx.rowNum, COL.FIRST).setValue(d.firstName || '');
+  ctx.sh.getRange(ctx.rowNum, COL.PHONE).setValue(fmtPhone(d.phone || ''));
+  ctx.sh.getRange(ctx.rowNum, COL.EMAIL).setValue(d.email || '');
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+
+  auditLog_(who.name, 'Customer details edited on ' + d.quoteNo + ': ' + changed.map(function (k) {
+    return CONTACT_FIELDS_[k] + ' "' + was[k] + '" → "' + d[k] + '"';
+  }).join(' · ') + (isStartedQuote_(d) ? '' : ' — PDF rebuilt'));
+
+  const notes = [];
+  if (changed.indexOf('lastName') > -1) {
+    notes.push('Their quote link now uses the new last name; links in emails already sent still work.');
+  }
+  if (changed.indexOf('email') > -1) {
+    notes.push(d.email ? 'Emails go to the new address from now on — nothing was re-sent.'
+                       : 'No email on file now, so no emails can be sent to them.');
+  }
+  if (changed.indexOf('phone') > -1 && want.phone && want.phone.replace(/\D/g, '').length < 10) {
+    notes.push('That phone number has fewer than 10 digits — saved as typed.');
+  }
+  return { ok: 1, msg: 'Saved: ' + changed.map(function (k) { return CONTACT_FIELDS_[k].toLowerCase(); }).join(', ') +
+           '.' + (notes.length ? ' ' + notes.join(' ') : ''),
+           contact: contactOf_(d) };
+}
+/* What the console's Customer details card is filled from. */
+function contactOf_(d) {
+  return { firstName: String((d && d.firstName) || ''), lastName: String((d && d.lastName) || ''),
+           phone: fmtPhone((d && d.phone) || ''), email: String((d && d.email) || '') };
+}
+/* Does the last name a customer typed (or a link carried) open this quote?
+   The sheet's current spelling, or one staff corrected away from
+   (adminSetContact) — an email sent before the correction still carries it.
+   Both sides lower-cased and trimmed, as every caller already compares. */
+function lastNameMatches_(rowLn, ln, d) {
+  const want = String(ln || '').trim().toLowerCase();
+  if (!want) return false;
+  if (String(rowLn || '').trim().toLowerCase() === want) return true;
+  return !!(d && Array.isArray(d.formerLastNames) && d.formerLastNames.indexOf(want) > -1);
+}
+
 function adminDimsApply(token, qn, changes, note) {
   const who = requireAuth_(token, 'measure');
   const ctx = findQuoteCtx_(qn);
@@ -6225,6 +6376,8 @@ function adminLookup(token, qn) {
     feeSuggest2: bal > 0 ? Math.max(5, Math.round(bal * 2) / 100) : 0,
     payByShort: (d.season && d.season.payByShort) || 'Nov 15',
     hasEmail: !!d.email, email: d.email || '', phone: fmtPhone(d.phone || ''),
+    /* The Customer details card's fields, split (name above is joined). */
+    contact: contactOf_(d),
     penalties: (function () {
       const pen = (d.manual && d.manual.penalties) || {};
       const st = effectiveState_(d) || {};

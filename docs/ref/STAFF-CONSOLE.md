@@ -385,6 +385,40 @@ having to guess at his own logic a year later.
 - Saving a note touches nothing else: no status, no re-price, no new PDF.
 
 
+## Customer details (console)
+
+**Edit name, phone or email** under the quote's details, gated on `keys` —
+the customer-note bar: not money, not a price change. Chris, Oct 2026: a
+typo'd name or a new phone number should not need the customer to reopen
+their quote. `adminSetContact` does the work; nothing is emailed.
+
+- **Four copies change together:** the payload's top level (`firstName`,
+  `lastName`, `owner`, `phone`, `email` — what every email and the PDF read),
+  `d.state` (what the quote page hydrates from, so the customer's next save
+  keeps the fix instead of putting the typo back), the sheet's Last / First /
+  Phone / Email columns (search, the storage view, the last-name check), and
+  the PDF, rebuilt because it prints them and its file name carries `owner`.
+- **The last name is a key, not a label.** `?action=load`, the season-done
+  survey and the spring launch buttons all match on it, and emails already
+  sent carry the old spelling (emails are frozen at send time). So the old
+  spelling goes on `d.formerLastNames` and `lastNameMatches_` accepts it at
+  all three doors. It already opened this quote — not a wider door. Carried
+  across a customer save like the staff note, because the browser has never
+  heard of it.
+- **Only what changed is written.** Fields are compared as the card showed
+  them (`contactOf_`), so a phone stored unformatted or an email in another
+  case is not an edit until somebody changes it. Phone goes through
+  `fmtPhone`; email is trimmed and lower-cased and must look like one; last
+  name cannot be blank. Clearing the email asks first — nothing can be sent
+  to them after that.
+- **Paid quotes take it too.** The payment lock stops the *customer's* page
+  rewriting the quote, not staff correcting it.
+- `notesAt` is stamped so a Gmail draft built before the edit reads as stale
+  in the draft sweep. Every edit is in the Activity Log, old → new.
+- Not touched: the photo folder's name and a signed contract's file name
+  (both carry the name as it was), and the Adobe contract itself.
+  `tools/check-contact-edit.js` runs the real function against a fake row.
+
 ## Not storing this season (console)
 
 `d.notStoring = { season, note, by, at }`, own card, gated on `keys` (the

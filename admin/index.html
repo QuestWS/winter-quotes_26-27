@@ -2437,6 +2437,7 @@ function renderQuote(r){
   renderWinterCard(r.winter||null);
   $('placementStateCard').classList.toggle('hide',!P.keys);
   window._placementState=r.placement||{state:''};
+  window._noStorage=!!r.noStorage;
   window._pullAuth=r.pullAuth||null;
   if(P.keys) renderPlacementState();
   $('keysCard').classList.toggle('hide',!P.keys);
@@ -2667,7 +2668,8 @@ async function saveAlert(force){
   }catch(e){ setMsg('alertMsg',e.message,false); }
   finally{ b.disabled=false; }
 }
-const PLACEMENT_STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+const PLACEMENT_STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage',
+  'pickedup':'Picked up'};
 function renderPlacementState(){
   const y=window._placementState||{state:''};
   const st=String(y.state||'');
@@ -2693,19 +2695,22 @@ function renderPlacementState(){
      about the boat, never about who is holding the phone. */
   const a=window._pullAuth;
   const any=y.anyway;
-  if(any&&(st==='pulled'||st==='stored')){
+  if(any&&(st==='pulled'||st==='stored'||st==='pickedup')){
     h+='<div class="msg err" style="margin:0 0 8px">\u26A0 Pulled anyway \u2014 '+esc(any.missing||'not cleared')+
       ' at the time'+(any.note?': '+esc(any.note):'.')+'</div>';
   }
-  if(st!=='pulled'&&st!=='stored'){
+  if(st!=='pulled'&&st!=='stored'&&st!=='pickedup'){
     h+=(a&&a.state==='cleared')
       ? btn('pulled','Mark pulled','navy')
       : '<span class="pill red" style="margin:0 6px 6px 0">'+
         esc((a&&a.stamp)||'NOT CONFIRMED — DO NOT PULL')+'</span>'+
         '<button class="btn red sm" style="margin:0 6px 6px 0" onclick="openPullModal()">Pull anyway…</button>';
   }
-  if(st!=='dropped'&&st!=='stored') h+=btn('dropped','Mark dropped off','navy');
-  if(st!=='stored') h+=btn('stored','Mark in storage');
+  if(st!=='dropped'&&st!=='stored'&&st!=='pickedup') h+=btn('dropped','Mark dropped off','navy');
+  /* No storage bought: its season ends with the owner collecting it, never
+     "in storage". The server refuses the wrong one either way. */
+  if(window._noStorage){ if(st!=='pickedup') h+=btn('pickedup','Mark picked up'); }
+  else if(st!=='stored') h+=btn('stored','Mark in storage');
   if(st) h+=btn('','Undo — back to not started');
   $('placementStateBtns').innerHTML=h;
 }

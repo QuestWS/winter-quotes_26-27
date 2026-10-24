@@ -879,7 +879,10 @@ function toggleSort(){
 function badge_(x){
   const a=auth_(x);
   if(a.state==='cleared') return '';
-  const cls=a.why==='signature'?'stop':a.why==='payment'?'money':'none';
+  /* Solid orange for nothing on file at all (no deposit, no contract) — the
+     unit nobody has committed to is the loudest mark on the list; a missing
+     signature alone is the quieter outlined white. */
+  const cls=a.why==='signature'?'none':a.why==='payment'?'money':'stop';
   /* A unit that is already here (pulled anyway, dropped off, stored) still
      carries what is missing — that chase is not over — but "DO NOT PULL" on a
      boat sitting in the building is an instruction nobody can follow. */

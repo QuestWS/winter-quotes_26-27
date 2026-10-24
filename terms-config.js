@@ -19,11 +19,11 @@
 'use strict';
 (function (root) {
   const TERMS = {
-    version: '1.0',
-    updated: '8/6/26',
-    updatedLong: 'August 6, 2026',
+    version: '1.1',
+    updated: '10/24/26',
+    updatedLong: 'October 24, 2026',
     entity: 'Riverview Enterprises LLC, doing business as Quest Watersports',
-    address: '1851 Old Chicago Road, Ottawa, IL',
+    address: '1800 N 2871st Rd, Ottawa, IL 61350',
     phone: '(815) 433-2200',
     contactEmail: 'contact@questwatersports.com',
   };

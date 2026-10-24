@@ -444,7 +444,7 @@ Y.ev('ROWS = ' + JSON.stringify([
   const held = Y.row_({ qn: 'C', name: 'Clark', slip: 'B-2', alert: 'watch the canvas',
                         auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } },
                       'Slip B-2', '');
-  if (/class="alert"/.test(held) && /class="badge stop"/.test(held))
+  if (/class="alert"/.test(held) && /class="badge none"/.test(held))
     ok('an alert and a do-not-pull stamp are separate marks on the same row');
   else fail('the alert and the pull stamp are not distinguishable on a row that has both');
 }

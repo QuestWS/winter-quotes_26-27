@@ -137,7 +137,9 @@ Y.ev('ROWS = ' + JSON.stringify([
     ['dropped', '',     'store',  'dropped off reaches the store list without ever being in the water'],
     ['dropped', 'B-14', 'store',  'and a slip does not drag it back onto the pull list'],
     ['stored',  'B-14', 'stored', 'stored is stored, slip or no slip'],
-    ['stored',  '',     'stored', 'stored is stored for a trailered unit too']
+    ['stored',  '',     'stored', 'stored is stored for a trailered unit too'],
+    ['pickedup','B-14', 'stored', 'a no-storage unit picked up is done with, slip or no slip'],
+    ['pickedup','',     'stored', 'and so is a trailered one']
   ];
   cases.forEach(function (c) {
     eq(Y.listOf_({ placementState: c[0], slip: c[1] }), c[2], c[3]);
@@ -147,7 +149,7 @@ Y.ev('ROWS = ' + JSON.stringify([
      never none. */
   const lists = ['pull', 'await', 'store', 'stored'];
   let clean = true;
-  ['', 'pulled', 'dropped', 'stored'].forEach(function (st) {
+  ['', 'pulled', 'dropped', 'stored', 'pickedup'].forEach(function (st) {
     ['', '  ', 'B-14'].forEach(function (slip) {
       const row = { placementState: st, slip: slip };
       const on = lists.filter(function (L) { return Y.listOf_(row) === L; });
@@ -351,6 +353,27 @@ Y.ev('ROWS = ' + JSON.stringify([
      'a unit the console dropped off still reaches the To store list');
   eq(Y.ev('STATE_LABEL.dropped'), 'Dropped off',
      'and the app can still name that state when it opens one');
+}
+/* NO STORAGE ENDS "PICKED UP", NOT "STORED". Chris, Oct 2026: a unit with
+   no storage bought is collected by its owner, never put in a building — so
+   the To store row and the opened unit offer Picked up for it, and only for
+   it, and the server refuses the wrong one either way. */
+{
+  const ns = Y.ev('storeAct_({qn:"N",noStorage:true,auth:{state:"cleared"}})');
+  const ss = Y.ev('storeAct_({qn:"S",noStorage:false,auth:{state:"cleared"}})');
+  if (/markState\([^)]*pickedup/.test(ns) && !/markState\([^)]*'stored'|&quot;stored&quot;|"stored"/.test(ns))
+    ok('a no-storage row offers Picked up, not Stored');
+  else fail('a no-storage unit on To store is not offered "Picked up" in place of "Stored"');
+  if (/markState\([^)]*stored/.test(ss) && !/pickedup/.test(ss))
+    ok('a unit with storage still offers Stored, and never Picked up');
+  else fail('a unit with storage lost "Stored" or gained "Picked up"');
+  eq(Y.ev('STATE_LABEL.pickedup'), 'Picked up', 'the app can name the picked-up state');
+  const fn = (GAS.match(/function adminSetPlacementState\b[\s\S]*?\n}/m) || [''])[0];
+  if (/want === 'pickedup' && !noStorageOf_\(d\)/.test(fn) && /want === 'stored' && noStorageOf_\(d\)/.test(fn))
+    ok('the server refuses Picked up for a stored unit and Stored for a no-storage one');
+  else fail('adminSetPlacementState does not tie Picked up / Stored to whether storage was bought');
+  if (/'pickedup':\s*\{[^}]*list: 'stored'/.test(GAS)) ok('a picked-up unit lands on the done list');
+  else fail('PLACEMENT_STATES_ has no pickedup state on the stored list');
 }
 /* And the server refuses it too, because a client is not a permission. */
 {

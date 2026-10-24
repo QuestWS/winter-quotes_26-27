@@ -819,7 +819,7 @@ function auth_(x){
 function state_(x){ return String((x&&x.placementState)||''); }
 function listOf_(x){
   const st=state_(x);
-  if(st==='stored') return 'stored';
+  if(st==='stored'||st==='pickedup') return 'stored';
   if(st==='pulled'||st==='dropped') return 'store';
   /* Nothing recorded yet, so which of the two arrivals is this? A slip number
      is the only thing that says "in the water, we go and get it" — without one
@@ -1008,7 +1008,7 @@ function render(){
 
   if(SORT==='name'){
     $('list').innerHTML=rows.map(x=>row_(x,rowRight_(x),
-      TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
+      TAB==='store'?storeAct_(x):'')).join('');
     return;
   }
   /* By location means grouped by it — a heading you can find by eye beats a
@@ -1020,7 +1020,7 @@ function render(){
     return w(a)-w(b)||a.localeCompare(b);
   }).map(function(t){
     return '<div class="grp">'+esc(t)+'<span class="c">'+by[t].length+'</span></div>'+
-      by[t].map(x=>row_(x,rowRight_(x),TAB==='store'?act_(x,'stored','Stored ✓'):'')).join('');
+      by[t].map(x=>row_(x,rowRight_(x),TAB==='store'?storeAct_(x):'')).join('');
   }).join('');
 }
 /* What the right-hand column says depends on what you are looking for: on the
@@ -1029,11 +1029,20 @@ function rowRight_(x){
   /* Grouped by location the heading already says where it is, so repeating it
      on every row is noise. Sorted by name there are no headings, so it is the
      only way to know. */
-  if(TAB==='stored') return SORT==='location' ? '' : String(x.tab||'');
+  if(TAB==='stored'){
+    if(state_(x)==='pickedup') return 'Picked up';
+    return SORT==='location' ? '' : String(x.tab||'');
+  }
   const st=state_(x);
   return st==='pulled' ? 'Pulled' : st==='dropped' ? 'Dropped off' : '';
 }
 
+/* The end of a unit's season here. No storage bought means it is never
+   "stored" — the owner collects it — so the row offers Picked up instead. The
+   server refuses the wrong one either way. */
+function storeAct_(x){
+  return x&&x.noStorage ? act_(x,'pickedup','Picked up \u2713') : act_(x,'stored','Stored \u2713');
+}
 /* Move a unit along the line. Called from a row and from the detail sheet, so
    it updates whichever of the two is on screen and never re-fetches the whole
    list for one tick — the crew is working down a list and a full reload would
@@ -1292,7 +1301,8 @@ async function applyDims(){
   }
 }
 
-const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage'};
+const STATE_LABEL={'':'Not started yet','pulled':'Pulled','dropped':'Dropped off','stored':'In storage',
+  'pickedup':'Picked up'};
 function renderState(){
   const box=$('dState');
   if(!box||!CUR) return;
@@ -1306,7 +1316,7 @@ function renderState(){
   if(whenTxt) h+='<div class="kv"><span>Recorded</span><b>'+esc(whenTxt)+
     ((CUR.placement&&CUR.placement.by)?' · '+esc(CUR.placement.by):'')+'</b></div>';
   const any=CUR.placement&&CUR.placement.anyway;
-  if(any&&(st==='pulled'||st==='stored')){
+  if(any&&(st==='pulled'||st==='stored'||st==='pickedup')){
     h+='<div class="pullstop">\u26A0 Pulled anyway \u2014 '+esc(any.missing||'not cleared')+' at the time.'+
       (any.note?'<br><span style="font-weight:400">'+esc(any.note)+'</span>':'')+'</div>';
   }
@@ -1316,7 +1326,7 @@ function renderState(){
     /* Not cleared: the stamp says why, and the button under it is the
        pull-anyway pop-up — never a direct markState, so nobody records a pull
        past a hold without reading what is missing and confirming it. */
-    if(st!=='pulled'&&st!=='stored'){
+    if(st!=='pulled'&&st!=='stored'&&st!=='pickedup'){
       h+=a.state==='cleared'
         ? btn('pulled','Mark pulled')
         : '<div class="pullstop">'+esc(a.stamp)+'</div>'+
@@ -1328,7 +1338,10 @@ function renderState(){
        row, because whoever hears it first is the one who records it and they
        may well be standing here reading the notes. */
     if(st==='') h+=btn('dropped','Mark dropped off','ghost');
-    if(st!=='stored') h+=btn('stored','Mark in storage','gold');
+    /* No storage bought: the season ends with the owner collecting it. */
+    const noStore=CUR.noStorage!==undefined?!!CUR.noStorage:!!row.noStorage;
+    if(noStore){ if(st!=='pickedup') h+=btn('pickedup','Mark picked up','gold'); }
+    else if(st!=='stored') h+=btn('stored','Mark in storage','gold');
     /* Reversible on purpose: a mis-tap at the harbor is certain, and the fix
        must not be a phone call to somebody at a desk. */
     if(st) h+=btn('','Undo — back to not started','ghost');

@@ -62,8 +62,8 @@ combination — never two lists, and never none.
 
 ### The state, and why it is a plain field
 
-`d.placement = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'`
-or `'stored'` (`PLACEMENT_STATES_`). Named `placement`, not `hho`: `hho`
+`d.placement = { state, at, by }`, where state is `''`, `'pulled'`, `'dropped'`,
+`'stored'` or `'pickedup'` (`PLACEMENT_STATES_`). Named `placement`, not `hho`: `hho`
 already means Heritage Harbor Ottawa elsewhere in the pricing engine, and
 reusing it here would recreate the exact kind of collision this rename exists
 to remove. Reads fall back to the pre-rename `d.yard` field, so a quote saved
@@ -101,7 +101,18 @@ the only person who can record the pull is the one whose phone just failed.
 | **Pulled** | button on the **opened unit** only | Harbor Haul Out status card | yes, identically — past a hold only through **Pull anyway** |
 | **Dropped off** | one tap on the Awaiting row, or the opened unit | Harbor Haul Out status card | no |
 | **Stored** | one tap on the To store row, or the opened unit | Harbor Haul Out status card | no |
+| **Picked up** | same places as Stored, **in its place** for a No Storage unit | Harbor Haul Out status card | no |
 | **Undo** | opened unit, any state | Harbor Haul Out status card | no |
+
+**Picked up is Stored for a unit with no storage.** Chris, Oct 2026: a unit
+whose quote has storage `none` is never put in a building — its season here
+ends with the owner collecting it. So wherever Stored would be offered, a No
+Storage unit is offered **Picked up** instead, and it lands on the same Stored
+list (the crew is done with it), marked *Picked up* on the row. The two are
+exclusive and the server enforces it (`noStorageOf_`, read off the effective
+state so a staff storage change counts): `pickedup` is refused for a unit with
+storage and `stored` for one without. Like Stored, it sends no notice and is
+off the mechanic tracker's feed.
 
 Two of those placements are deliberate:
 

@@ -5199,6 +5199,12 @@ function bulkImportStep() {
                having been on the pull list — most trailered units arrive
                this way and were never in the water at all.
      'stored'  it is in its spot. Onto STORED, and off the crew's back.
+     'pickedup' a NO STORAGE unit went home with its owner. Chris, Oct 2026:
+               a unit with no storage bought is never "stored" — the end of
+               its season here is the customer collecting it. Same STORED
+               list (the crew is done with it), and the two are exclusive:
+               the server refuses 'pickedup' for a unit with storage and
+               'stored' for one without — see noStorageOf_.
 
    WHY A PLAIN TOP-LEVEL FIELD and not the manual-ops journal that keys, slip
    and trailer location use: those are corrections to what the customer told
@@ -5223,8 +5229,16 @@ const PLACEMENT_STATES_ = {
   '':        { label: 'Not started',     list: 'pull'  },
   'pulled':  { label: 'Pulled',          list: 'store' },
   'dropped': { label: 'Dropped off',     list: 'store' },
-  'stored':  { label: 'In storage',      list: 'stored' }
+  'stored':  { label: 'In storage',      list: 'stored' },
+  'pickedup':{ label: 'Picked up',       list: 'stored' }
 };
+
+/* No storage bought, read off the EFFECTIVE state so a staff storage change
+   counts. Decides whether a unit's season ends 'stored' or 'pickedup'. */
+function noStorageOf_(d) {
+  const st = effectiveState_(d) || (d && d.state) || null;
+  return !!(st && st.storage === 'none');
+}
 
 function placementOf_(d) {
   return (d && (d.placement || d.yard)) || null;
@@ -5256,6 +5270,12 @@ function adminSetPlacementState(token, qn, state, override) {
   const had = placementStateOf_(d);
   if (had === want) return { ok: 0, error: 'Already ' + (PLACEMENT_STATES_[want].label.toLowerCase()) + '.' };
   let anyway = null;
+  /* Where its season ends is a fact about the unit, not the tap: a unit we
+     are not storing is picked up, one we are is stored. */
+  if (want === 'pickedup' && !noStorageOf_(d))
+    return { ok: 0, error: 'This unit has storage with us — mark it in storage, not picked up.' };
+  if (want === 'stored' && noStorageOf_(d))
+    return { ok: 0, error: 'This unit has no storage with us — mark it picked up, not in storage.' };
 
   /* THE LIABILITY GATE, and the only state it applies to. "Pulled" is a claim
      that we put hands on the unit and took it out of the water, so it is not
@@ -5299,7 +5319,7 @@ function adminSetPlacementState(token, qn, state, override) {
   if (anyway) d.placement.anyway = anyway;
   /* Putting a pulled-anyway boat into its spot keeps the record of how it got
      there; Undo and "dropped off" start the story over. */
-  else if (want === 'stored' && prev && prev.anyway) d.placement.anyway = prev.anyway;
+  else if ((want === 'stored' || want === 'pickedup') && prev && prev.anyway) d.placement.anyway = prev.anyway;
   delete d.yard;   // fully migrated onto d.placement the moment anything writes it
   /* The log entry is what makes the exception findable later by whoever is
      wondering why a boat with no contract is in the building. */
@@ -5336,7 +5356,7 @@ function adminSetPlacementState(token, qn, state, override) {
    Internal only: NOTIFY_EMAIL, never a customer address, so the automatic-
    email pause (which is about customers) does not apply. It goes out AFTER the
    write and cannot fail it — a mail quota or a Gmail hiccup must never make
-   the crew think the pull was not recorded. 'stored' and Undo send nothing:
+   the crew think the pull was not recorded. 'stored', 'pickedup' and Undo send nothing:
    the ask was the arrival, and a notice per shuffle would be ignored. */
 const PLACEMENT_NOTIFY_STATES_ = { 'pulled': 1, 'dropped': 1 };
 
@@ -6441,6 +6461,8 @@ function adminLookup(token, qn) {
        offer "Mark pulled" with the gate on it rather than working the gate
        out for itself or going without. */
     pullAuth: haulAuth_(paid > 0.005, !!d.contractUrl),
+    /* No storage bought — the clients offer "picked up" instead of "stored". */
+    noStorage: noStorageOf_(d),
     placementAlert: placementAlertOf_(d)
       ? { text: String(placementAlertOf_(d).text || ''), at: String(placementAlertOf_(d).at || ''),
           by: String(placementAlertOf_(d).by || '') }
@@ -8967,7 +8989,7 @@ function storageViewBuild_(opt) {
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
-            winter = null, season = '', hh = '', ns = false, nsNote = '';
+            winter = null, season = '', hh = '', ns = false, nsNote = '', noStore = false;
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -8987,6 +9009,7 @@ function storageViewBuild_(opt) {
           slip = String((st && st.slipNo !== undefined ? st.slipNo : pd.slipNo) || '');
           trailerLoc = String((st && st.trailerLoc !== undefined ? st.trailerLoc : pd.trailerLoc) || '');
           placementState = placementStateOf_(pd);
+          noStore = st ? st.storage === 'none' : false;
           placementAt = String((placementOf_(pd) && placementOf_(pd).at) || '');
           /* Short by construction, so carrying it on every row costs nothing
              and saves the crew opening a unit to find out it was urgent. */
@@ -9048,6 +9071,8 @@ function storageViewBuild_(opt) {
           auth: haulAuth_(paid > 0.005, contract),
           /* Which of Harbor Haul Out's three lists this unit is on. */
           placementState: placementState, placementAt: placementAt,
+          /* No storage bought: its season ends "picked up", not "stored". */
+          noStorage: noStore,
           /* The one thing somebody must know before touching this boat. */
           alert: alert,
           /* Winterization still to be ticked off in the mechanic app, or null. */

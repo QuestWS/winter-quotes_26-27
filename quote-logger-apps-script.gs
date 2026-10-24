@@ -10335,7 +10335,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
         (extraButtonsHtml || '') + money +
         '<p style="font-size:13px;color:#5C7185;line-height:1.5;margin:12px 0 0">Questions? Call us at (815) 433-2200.</p>' +
       '</div>' +
-      '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1851 Old Chicago Road, Ottawa, IL · (815) 433-2200</div>' +
+      '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200</div>' +
     '</div>' +
   '</div>';
   return html;
@@ -10430,7 +10430,7 @@ function buildEmailFor_(d, kind, extra, photos) {
       'No problem at all — everything you entered is saved, so you can pick up right where you left off.' +
       '<br><br>' +
       '<b>If anything was confusing, or you\'d rather not do it online, just call us at ' +
-      '(815) 433-2200 or stop by the shop at 1851 Old Chicago Road.</b> We\'re glad to walk through ' +
+      '(815) 433-2200 or stop by the shop at 1800 N 2871st Rd.</b> We\'re glad to walk through ' +
       'it with you and build the quote together — measurements especially are often easier to sort ' +
       'out over the phone than on a form.' +
       '<br><br>' +
@@ -11466,7 +11466,7 @@ function customerEmailHtml_(o) {
         '<p style="font-size:13px;color:#5C7185;line-height:1.5;margin:0 0 6px">' + steps + '</p>' +
         '<p style="font-size:13px;color:#5C7185;line-height:1.5;margin:0">Questions or changes? Call us at (815) 433-2200 — have your quote number handy and we can adjust anything.</p>' +
       '</div>' +
-      '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1851 Old Chicago Road, Ottawa, IL · (815) 433-2200</div>' +
+      '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200</div>' +
     '</div>' +
   '</div>';
 }
@@ -12107,7 +12107,7 @@ function quoteHtml_(d) {
       return u ? '<img src="' + u + '" style="height:52px;width:auto;display:block;margin-bottom:4px" alt="Quest Watersports">'
                : '<h1>Quest Watersports</h1>'; })() +
     '<p class="sub">Winter Services ' + term + ' · ' + esc_(sn.label || '') +
-      ' · 1851 Old Chicago Rd, Ottawa, IL · (815) 433-2200</p>' +
+      ' · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200</p>' +
     '<table class="meta"><tr>' +
       '<td><b>' + term + ' #</b><br>' + esc_(d.quoteNo) + '</td>' +
       '<td><b>Date</b><br>' + new Date(d.ts || Date.now()).toLocaleDateString('en-US') + '</td>' +

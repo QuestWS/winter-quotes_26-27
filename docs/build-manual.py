@@ -879,7 +879,7 @@ def manual():
         ['Delete a duplicate quote', 'Delete this quote', perm('admin')],
         ['Undo a mistake in the sheet', 'Restore from backup', perm('admin')],
     ], [2.15 * inch, 3.25 * inch, 1.2 * inch])]
-    s += [gap(8), P('Quest Watersports · 1851 Old Chicago Rd, Ottawa, IL · (815) 433-2200', SMALL)]
+    s += [gap(8), P('Quest Watersports · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200', SMALL)]
 
     return g.build()
 

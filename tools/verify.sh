@@ -440,6 +440,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: service tracker feed broken"; sed 's/^/       /' "$TMP/tracker.txt"; FAIL=1
   fi
+  # The Inbox Review tab: matching, money, noise and the key -- both halves,
+  # the backend's inboxRowFor_ and the scanner's extract(), run together.
+  if node tools/check-inbox-scan.js > "$TMP/inbox.txt" 2>&1; then
+    echo "  OK   gate: Inbox Review matching and scanner hold"
+  else
+    echo "  FAIL gate: Inbox Review / inbox scanner broken"; sed 's/^/       /' "$TMP/inbox.txt"; FAIL=1
+  fi
   # The Adobe Sign hand-off. A field name that stops matching the Adobe form
   # fails silently -- blank contracts, no error -- so everything that can drift
   # on our side is executed rather than eyeballed.

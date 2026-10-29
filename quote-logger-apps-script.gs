@@ -1182,6 +1182,8 @@ function doPost(e) {
     if (d.api === 'console') return consoleServe_(d, 'POST');
     // ---- The service tracker's feed (server to server, shared key) ----
     if (d.api === 'tracker') return trackerServe_(d);
+    // ---- The nightly inbox scan (GitHub Action, shared key) ----
+    if (d.api === 'inbox') return inboxServe_(d);
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -9518,6 +9520,218 @@ function trackerServe_(p) {
   }
   out._api = 'tracker';
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* THE INBOX REVIEW TAB — what came in by email that may never have been logged.
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: "I feel like I'm falling behind on logging everything."
+   Customers answer quote emails, mail a check, say they sold the boat, ask to
+   be launched early — to chris@questwatersports.com, which is on our own mail
+   server, not Gmail. Apps Script cannot speak IMAP, so a nightly GitHub Action
+   (tools/inbox-scan.py, .github/workflows/scan-inbox.yml) reads that mailbox
+   and posts what it found here. This side decides what it means.
+
+   What decides each piece:
+
+   - IT ONLY ADDS ROWS TO ONE TAB. Nothing here touches a quote, records a
+     payment or sends anything. A row is a prompt for a person: "did you log
+     this?" Staff set Status to Logged or No action and move on.
+   - A SHARED KEY, NOT A STAFF PIN — same door as the tracker feed.
+     `INBOX_SCAN_KEY` lives in Script Properties and in the repo's Actions
+     secrets, never in a file (the repo is public). setupInboxScan() makes it.
+     No key set here answers nobody.
+   - MATCHING IS BY QUOTE NUMBER FIRST, THEN BY THE SENDER'S ADDRESS against
+     the Email column of every quote tab. Reads columns 1–Total only: the
+     payload column is kilobytes per quote and nothing here needs it.
+   - ONE ROW PER MESSAGE, EVER. Keyed by Message-ID, so a re-run, a backfill
+     over days already scanned, or two runs racing add nothing twice.
+   - NEWEST ON TOP, and a row a person has already marked is never rewritten. */
+const INBOX_TAB = 'Inbox Review';
+const INBOX_HEADERS_ = ['Status', 'Priority', 'Received', 'From', 'Email', 'Subject',
+  'Quote #', 'Customer', 'Tab', 'Balance', 'Amounts in email', 'Why it is here',
+  'Excerpt', 'Mailbox', 'Message-ID'];
+const INBOX_STATUSES_ = ['New', 'Logged', 'No action'];
+const INBOX_QN_RE_ = /\bQW-?\d{2}-?\d{3,5}\b/gi;
+
+function inboxKeyOk_(given) {
+  const want = String(PropertiesService.getScriptProperties().getProperty('INBOX_SCAN_KEY') || '');
+  const got = String(given || '');
+  if (want.length < 24 || got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return diff === 0;
+}
+
+function inboxServe_(p) {
+  let out;
+  try {
+    if (!inboxKeyOk_(p && p.key)) out = { ok: 0, error: 'Not authorised.' };
+    else if (String(p.fn || '') === 'ingest') out = inboxIngest_(p.items);
+    else out = { ok: 0, error: 'Unknown function.' };
+  } catch (err) {
+    out = { ok: 0, error: String(err.message || err) };
+  }
+  out._api = 'inbox';
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* "QW261255", "qw-26-1255" and "QW-26-1255" are the same quote. */
+function inboxNormQn_(s) {
+  const m = String(s || '').toUpperCase().match(/^QW-?(\d{2})-?(\d{3,5})$/);
+  return m ? 'QW-' + m[1] + '-' + m[2] : '';
+}
+
+/* Every quote row's head, by quote number and by email address. The Email
+   cell can hold two addresses ("a@x.com, b@y.com"); each one indexes. */
+function inboxQuoteIndex_(ss) {
+  const byQn = {}, byEmail = {};
+  ss.getSheets().forEach(function (sh) {
+    const name = sh.getName();
+    if (name === DELETED_TAB || name === INBOX_TAB) return;
+    if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+    sh.getRange(2, 1, last - 1, COL.TOTAL).getValues().forEach(function (r) {
+      const qn = String(r[COL.QN - 1] || '').trim();
+      if (!qn) return;
+      const q = { qn: qn, tab: name,
+        name: [r[COL.FIRST - 1], r[COL.LAST - 1]].filter(Boolean).join(' '),
+        bal: r[COL.BAL - 1], total: r[COL.TOTAL - 1], ts: r[COL.TS - 1] };
+      byQn[inboxNormQn_(qn) || qn.toUpperCase()] = q;
+      String(r[COL.EMAIL - 1] || '').toLowerCase().split(/[\s,;]+/).forEach(function (em) {
+        if (em.indexOf('@') < 1) return;
+        (byEmail[em] = byEmail[em] || []).push(q);
+      });
+    });
+  });
+  return { byQn: byQn, byEmail: byEmail };
+}
+
+/* One scanned message → one row, or null when there is nothing to review:
+   a sender no quote knows, naming no quote, saying nothing about money,
+   service or a change of plans is a vendor or a newsletter, not a customer. */
+function inboxRowFor_(it, idx) {
+  const cut = function (v, n) { return String(v == null ? '' : v).slice(0, n); };
+  const email = cut(it.fromEmail, 200).toLowerCase().trim();
+  const signals = (Array.isArray(it.signals) ? it.signals : []).map(function (s) { return cut(s, 40); });
+  const amounts = (Array.isArray(it.amounts) ? it.amounts : []).map(Number)
+    .filter(function (n) { return isFinite(n) && n > 0 && n < 1e6; });
+
+  const named = [], unknown = [];
+  (Array.isArray(it.quoteNos) ? it.quoteNos : []).forEach(function (raw) {
+    const qn = inboxNormQn_(raw);
+    if (!qn) return;
+    if (idx.byQn[qn]) { if (named.indexOf(idx.byQn[qn]) < 0) named.push(idx.byQn[qn]); }
+    else if (unknown.indexOf(qn) < 0) unknown.push(qn);
+  });
+  const bySender = idx.byEmail[email] || [];
+  const quotes = named.length ? named : bySender;
+  if (!quotes.length && !unknown.length && !signals.length && !amounts.length) return null;
+
+  const why = [];
+  const has = function (s) { return signals.indexOf(s) >= 0; };
+  let pri = 'Low';
+  if (named.length) why.push('Names ' + named.map(function (q) { return q.qn; }).join(', '));
+  else if (bySender.length) why.push('Sender is on ' + (bySender.length === 1 ? 'a quote' : bySender.length + ' quotes'));
+  else why.push('Sender is not on any quote');
+  if (unknown.length) why.push(unknown.join(', ') + ' not found on the sheet');
+  if (has('payment')) { why.push('Mentions a payment'); pri = 'High'; }
+  if (has('cancel')) { why.push('May not be storing / cancelling'); pri = 'High'; }
+  if (has('contact')) { why.push('Contact details may have changed'); if (pri === 'Low') pri = 'Medium'; }
+  if (has('schedule')) { why.push('Pickup / launch / drop-off timing'); if (pri === 'Low') pri = 'Medium'; }
+  if (has('service')) { why.push('Asks about service work'); if (pri === 'Low') pri = 'Medium'; }
+  if (has('signature')) { why.push('About signing the contract'); if (pri === 'Low') pri = 'Medium'; }
+  if (!quotes.length && (has('service') || has('schedule'))) why.push('Possible new customer');
+
+  const q = quotes.length === 1 ? quotes[0] : null;
+  if (q && amounts.length) {
+    const bal = Number(q.bal);
+    if (amounts.some(function (a) { return Math.abs(a - bal) < 0.01; })) {
+      why.push('An amount equals the balance due'); pri = 'High';
+    } else if (isFinite(bal) && bal > 0) {
+      why.push('Amount differs from the balance'); if (pri === 'Low') pri = 'Medium';
+    }
+  }
+  const got = new Date(it.date);
+  const saved = q && q.ts ? new Date(q.ts) : null;   // a Date from Sheets, or an ISO string on older rows
+  if (saved && !isNaN(saved) && got > saved) {
+    why.push('Arrived after the quote was last saved');
+    if (pri === 'Low') pri = 'Medium';
+  }
+
+  return ['New', pri, isNaN(got) ? '' : got,
+    cut(it.fromName, 120), email, cut(it.subject, 250),
+    quotes.map(function (x) { return x.qn; }).concat(unknown).join(', '),
+    quotes.map(function (x) { return x.name; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(' / '),
+    quotes.map(function (x) { return x.tab; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', '),
+    q && q.bal !== '' && q.bal != null ? Number(q.bal) : '',
+    amounts.map(fmtMoney_).join(', '),
+    why.join(' · '),
+    cut(it.snippet, 400), cut(it.mailbox, 80), cut(it.messageId, 300)];
+}
+
+function inboxSheet_(ss) {
+  let sh = ss.getSheetByName(INBOX_TAB);
+  if (sh) return sh;
+  sh = ss.insertSheet(INBOX_TAB);
+  sh.getRange(1, 1, 1, INBOX_HEADERS_.length).setValues([INBOX_HEADERS_]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(6, 260); sh.setColumnWidth(12, 300); sh.setColumnWidth(13, 360);
+  sh.hideColumns(INBOX_HEADERS_.length);   // Message-ID: for de-duplication, not for reading
+  return sh;
+}
+
+function inboxIngest_(items) {
+  if (!Array.isArray(items)) return { ok: 0, error: 'No items.' };
+  if (items.length > 200) return { ok: 0, error: 'Too many items in one call (max 200).' };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: 0, error: 'Busy — try again.' };
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = inboxSheet_(ss);
+    const midCol = INBOX_HEADERS_.length;
+    const seen = {};
+    const last = sh.getLastRow();
+    if (last >= 2) sh.getRange(2, midCol, last - 1, 1).getValues()
+      .forEach(function (r) { if (r[0]) seen[String(r[0])] = 1; });
+    const idx = inboxQuoteIndex_(ss);
+    const rows = [];
+    let dup = 0, skipped = 0;
+    items.forEach(function (it) {
+      const mid = String((it && it.messageId) || '').slice(0, 300);
+      if (!mid || seen[mid]) { dup++; return; }
+      seen[mid] = 1;
+      const row = inboxRowFor_(it, idx);
+      if (row) rows.push(row); else skipped++;
+    });
+    if (rows.length) {
+      rows.sort(function (a, b) { return (b[2] || 0) - (a[2] || 0); });
+      sh.insertRowsBefore(2, rows.length);
+      sh.getRange(2, 1, rows.length, midCol).setValues(rows);
+      sh.getRange(2, 1, rows.length, 1).setDataValidation(
+        SpreadsheetApp.newDataValidation().requireValueInList(INBOX_STATUSES_, true).build());
+      sh.getRange(2, 3, rows.length, 1).setNumberFormat('m/d/yyyy h:mm am/pm');
+      sh.getRange(2, 10, rows.length, 1).setNumberFormat('$#,##0.00;[Red]-$#,##0.00');
+    }
+    return { ok: 1, added: rows.length, duplicates: dup, skipped: skipped };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* Run once from the editor. Makes the shared key (if there is none), makes
+   the tab, and prints the key for the INBOX_SCAN_KEY Actions secret. Running
+   it again prints the same key — it never replaces one already in use. */
+function setupInboxScan() {
+  const props = PropertiesService.getScriptProperties();
+  let key = props.getProperty('INBOX_SCAN_KEY');
+  if (!key || key.length < 24) {
+    key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    props.setProperty('INBOX_SCAN_KEY', key);
+  }
+  inboxSheet_(SpreadsheetApp.getActiveSpreadsheet());
+  Logger.log('Inbox Review tab is ready.\n\nCopy this into GitHub → Settings → Secrets and ' +
+    'variables → Actions → New repository secret, named INBOX_SCAN_KEY:\n\n' + key);
 }
 
 /* THE IMPORTED DRAFTS, as a list you can scroll.

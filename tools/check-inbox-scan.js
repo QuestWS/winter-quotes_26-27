@@ -124,16 +124,24 @@ const adm = fs.readFileSync(path.join(ROOT, 'admin/index.html'), 'utf8');
 const apiGetOk = adm.match(/const API_GET_OK=\{[\s\S]*?\};/)[0];
 check('console: the state read is GET-able on both sides', /\binboxScanState: 1\b/.test(getFns) && /\binboxScanState:1\b/.test(apiGetOk));
 check('console: starting a scan is a write, never GET-able', !/inboxScanRun/.test(getFns) && !/inboxScanRun/.test(apiGetOk));
+check('console: only Chris sees the panel', /navGate\('inbox',\s*ME\.name==='Chris'\)/.test(adm));
+check('server: both console calls check the owner', /function adminInboxScanState\(token\) \{\s*inboxOwner_\(token\)/.test(gas)
+  && /function adminInboxScanRun\(token, days\) \{\s*const who = inboxOwner_\(token\)/.test(gas));
 check('console: both calls are routed', /inboxScanState:\s*function/.test(gas) && /inboxScanRun:\s*function/.test(gas));
 
 const props = {}; let fetched = []; let ghCode = 204; let audits = [];
 const R = new Function('PropertiesService', 'UrlFetchApp', 'requireAuth_', 'auditLog_', [
-  decl('INBOX_GH_REPO_'), decl('INBOX_GH_WORKFLOW_'), decl('INBOX_LAST_RUN_KEY_'),
-  fn('inboxGh_'), fn('adminInboxScanRun'), 'return {adminInboxScanRun};'
+  decl('INBOX_GH_REPO_'), decl('INBOX_GH_WORKFLOW_'), decl('INBOX_LAST_RUN_KEY_'), decl('INBOX_OWNER_'),
+  fn('inboxOwner_'), fn('inboxGh_'), fn('adminInboxScanRun'), 'return {adminInboxScanRun};'
 ].join('\n'))(
   { getScriptProperties: () => ({ getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
   { fetch: (url, o) => { fetched.push({ url, o }); return { getResponseCode: () => ghCode, getContentText: () => '' }; } },
-  () => ({ name: 'Tester' }), (who, what) => audits.push(what));
+  () => ({ name: WHO }), (who, what) => audits.push(what));
+let WHO = 'Jeff';
+let refused = '';
+try { R.adminInboxScanRun('t', 3); } catch (e) { refused = String(e.message); }
+check('anyone but Chris is refused, admins included', /Only Chris/.test(refused) && fetched.length === 0);
+WHO = 'Chris';
 
 let out = R.adminInboxScanRun('t', 90);
 check('Scan now with no token says so and calls nothing', out.ok === 0 && /not set up yet/.test(out.error) && fetched.length === 0);

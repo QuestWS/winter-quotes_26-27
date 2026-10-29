@@ -1,0 +1,58 @@
+name: Scan inbox
+
+# Reads chris@questwatersports.com over IMAP every morning and adds anything
+# that looks like an unlogged payment, change or request to the Inbox Review
+# tab of the spreadsheet. Read-only on the mailbox; adds rows to one tab and
+# touches no quote. Detail: docs/ref/EMAILS.md, "The Inbox Review tab".
+#
+# THIS REPO IS PUBLIC, AND SO ARE THESE LOGS. tools/inbox-scan.py prints
+# counts only. Never add a step that echoes a message, an address or a name.
+#
+# Needs three repository secrets: IMAP_USER, IMAP_PASSWORD, INBOX_SCAN_KEY.
+# Optional variables: IMAP_HOST, IMAP_PORT, IMAP_FOLDERS.
+
+on:
+  schedule:
+    # 6:20am Central (11:20 UTC during daylight time, 5:20am in winter).
+    - cron: '20 11 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'How many days back to scan (use 90 or so to catch up)'
+        required: true
+        default: '3'
+        type: string
+
+concurrency:
+  group: inbox-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required configuration
+        env:
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          INBOX_SCAN_KEY: ${{ secrets.INBOX_SCAN_KEY }}
+        run: |
+          missing=0
+          [ -n "$IMAP_USER" ]      || { echo "::error::Missing secret IMAP_USER (the mailbox login, e.g. chris@questwatersports.com)"; missing=1; }
+          [ -n "$IMAP_PASSWORD" ]  || { echo "::error::Missing secret IMAP_PASSWORD"; missing=1; }
+          [ -n "$INBOX_SCAN_KEY" ] || { echo "::error::Missing secret INBOX_SCAN_KEY — run setupInboxScan() in the Apps Script editor and copy the key it prints"; missing=1; }
+          exit $missing
+
+      - name: Scan and post to the Inbox Review tab
+        env:
+          IMAP_HOST: ${{ vars.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT }}
+          IMAP_FOLDERS: ${{ vars.IMAP_FOLDERS }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          INBOX_SCAN_KEY: ${{ secrets.INBOX_SCAN_KEY }}
+          SCAN_DAYS: ${{ inputs.days || '3' }}
+        run: python3 tools/inbox-scan.py

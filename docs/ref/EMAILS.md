@@ -431,3 +431,59 @@ about a haul-out, not about pricing. Deposit rows come from `lockinCopy()`.
 Nothing here writes that wording itself, and nothing should: the flag has to
 be able to take it away from every already-built body at once
 (`docs/ref/DATA-AND-MONEY.md`).
+
+## The Inbox Review tab — mail in, not mail out
+
+Everything else in this file is about what the system sends. This is the one
+place it reads. Customers answer quote emails, mail checks, say they sold the
+boat or want an early launch, and those land in **chris@questwatersports.com**
+(service@ and questwsottawa@ both forward there, so one mailbox sees all three).
+Nobody re-types all of that, so things go unlogged.
+
+**How it runs.** chris@ is on our own mail server (`mail.questwatersports.com`),
+not Gmail, and Apps Script cannot read IMAP. So a GitHub Action,
+`.github/workflows/scan-inbox.yml`, runs `tools/inbox-scan.py` every morning at
+about 6:20am Central. The script reads the last 3 days, pulls out the sender,
+any quote numbers, dollar amounts and what the message is about (payment,
+cancel / not storing, contact change, pickup / launch timing, service
+question, signing), and posts that to the backend. `inboxIngest_` matches it
+against the quote tabs, by quote number first and then by sender address, and
+adds a row to the **Inbox Review** tab, newest first, with a Priority and a
+"Why it is here". Staff set **Status** to *Logged* or *No action*.
+
+**Rules it keeps:**
+- **Read-only on the mailbox.** The folder is opened read-only and every fetch
+  is `BODY.PEEK`, so nothing is marked read, moved or deleted.
+- **Writes one tab, touches no quote.** It never records a payment or sends
+  anything. A row is a prompt for a person.
+- **One row per message, ever**, keyed by Message-ID (hidden last column), so
+  re-runs and back-scans add nothing twice, and a row a person has already
+  marked is never rewritten.
+- **The repo and its Actions logs are public.** The script prints counts only,
+  never an address, name or subject. Keep it that way.
+- **The key is a shared secret, the same pattern as the tracker feed:**
+  `INBOX_SCAN_KEY` is in Script Properties and in the Actions secrets, never in
+  a file. No key set means the backend answers nobody.
+- Amounts and topic words come only from the new part of a reply, above
+  "On … wrote:". Otherwise every reply to a quote email would "mention" our own
+  balance figure. Quote numbers come from the whole message.
+- Our own mail (questwatersports.com and questwsottawa@gmail.com) is skipped,
+  and so are newsletters and no-reply senders, **unless** they name a quote or
+  are about a payment or a signature. A card processor's "you received a
+  payment" is exactly what this is for.
+
+**Setup (once):**
+1. Apps Script editor → run `setupInboxScan()` → copy the key from the log.
+2. GitHub → repo Settings → Secrets and variables → Actions → add three
+   repository secrets: `INBOX_SCAN_KEY` (that key), `IMAP_USER`
+   (`chris@questwatersports.com`), `IMAP_PASSWORD` (its mail password).
+   Optional variables: `IMAP_HOST` (default `mail.questwatersports.com`),
+   `IMAP_PORT` (default 993), `IMAP_FOLDERS` (default `INBOX`, comma-separated).
+3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the
+   season so far. After that it runs by itself every morning.
+
+Testing: `tools/check-inbox-scan.js` (run by `verify.sh`) runs both halves,
+the scanner's `extract()` on built messages and the backend's `inboxRowFor_`
+on the result. Locally, `python3 tools/inbox-scan.py --dry-run` with the IMAP
+variables set prints counts without posting.
+

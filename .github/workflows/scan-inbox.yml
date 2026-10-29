@@ -13,8 +13,11 @@ name: Scan inbox
 
 on:
   schedule:
-    # 6:20am Central (11:20 UTC during daylight time, 5:20am in winter).
-    - cron: '20 11 * * *'
+    # GitHub schedules in UTC only. 12:10 UTC is 6:10am Central in winter
+    # (CST) and 7:10am in summer (CDT): either way the tab is filled before
+    # the 8am start. Off the hour on purpose -- GitHub delays runs queued at
+    # :00 at busy times. Any time, Actions -> Scan inbox -> Run workflow.
+    - cron: '10 12 * * *'
   workflow_dispatch:
     inputs:
       days:

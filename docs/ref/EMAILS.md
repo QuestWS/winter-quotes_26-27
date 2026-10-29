@@ -443,7 +443,10 @@ Nobody re-types all of that, so things go unlogged.
 **How it runs.** chris@ is on our own mail server (`mail.questwatersports.com`),
 not Gmail, and Apps Script cannot read IMAP. So a GitHub Action,
 `.github/workflows/scan-inbox.yml`, runs `tools/inbox-scan.py` every morning at
-about 6:20am Central. The script reads the last 3 days, pulls out the sender,
+6:10am Central in winter, 7:10am in summer (GitHub schedules in UTC, so the
+clock shifts with daylight time; both are before the 8am start). To run it any
+time, from a phone or a computer: GitHub → Actions → **Scan inbox** → **Run
+workflow** (the GitHub mobile app has the same button). The script reads the last 3 days, pulls out the sender,
 any quote numbers, dollar amounts and what the message is about (payment,
 cancel / not storing, contact change, pickup / launch timing, service
 question, signing), and posts that to the backend. `inboxIngest_` matches it

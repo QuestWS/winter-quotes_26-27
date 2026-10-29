@@ -1462,6 +1462,8 @@ const CONSOLE_GET_FNS_ = {
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
   /* Reads the Activity Log and Sent mail for one quote; writes nothing. */
   quoteHistory: 1,
+  /* Reads the Inbox Review tab and GitHub's last run; starts nothing. */
+  inboxScanState: 1,
   listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
@@ -1540,6 +1542,8 @@ function consoleFns_(p) {
     setSeasonDone:function (a) { return adminSetSeasonDone(p.token, a[0], a[1], a[2], a[3]); },
     listStaff:   function (a) { return adminListStaff(p.token); },
     autoPause:   function (a) { return adminAutoPause(p.token); },
+    inboxScanState: function (a) { return adminInboxScanState(p.token); },
+    inboxScanRun:   function (a) { return adminInboxScanRun(p.token, a[0]); },
     setAutoPause:function (a) { return adminSetAutoPause(p.token, a[0], a[1]); },
     setPerm:     function (a) { return adminSetPerm(p.token, a[0], a[1], a[2]); },
     resetPin:    function (a) { return adminResetPin(p.token, a[0]); },
@@ -9732,6 +9736,84 @@ function setupInboxScan() {
   inboxSheet_(SpreadsheetApp.getActiveSpreadsheet());
   Logger.log('Inbox Review tab is ready.\n\nCopy this into GitHub → Settings → Secrets and ' +
     'variables → Actions → New repository secret, named INBOX_SCAN_KEY:\n\n' + key);
+}
+
+/* "SCAN INBOX NOW" — the console's button for the same scan.
+   ---------------------------------------------------------------------------
+   The scan itself has to run on GitHub (Apps Script cannot read IMAP), so the
+   button asks GitHub to start the Scan inbox workflow early, exactly as the
+   Run workflow button on the Actions page does. That needs a GitHub token with
+   Actions read/write on this one repo, kept in Script Properties as
+   `GITHUB_ACTIONS_TOKEN` and never in a file. No token: the button says so and
+   the morning run carries on regardless.
+
+   Any signed-in staff member may press it: it touches no quote and only adds
+   rows for a person to review, and whoever reads the email first is the one
+   who needs the row (CLAUDE.md §9). Presses inside a minute of the last one
+   are refused rather than queued, so a double-tap on a slow phone starts one
+   scan, not two. */
+const INBOX_GH_REPO_ = 'QuestWS/winter-quotes_26-27';
+const INBOX_GH_WORKFLOW_ = 'scan-inbox.yml';
+const INBOX_LAST_RUN_KEY_ = 'INBOX_SCAN_LAST_DISPATCH';
+
+function inboxGh_(path, method, body) {
+  const tok = String(PropertiesService.getScriptProperties().getProperty('GITHUB_ACTIONS_TOKEN') || '');
+  if (!tok) return null;
+  const opt = { method: method || 'get', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json',
+               'X-GitHub-Api-Version': '2022-11-28' } };
+  if (body) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(body); }
+  const res = UrlFetchApp.fetch('https://api.github.com/repos/' + INBOX_GH_REPO_ + path, opt);
+  let json = null;
+  try { json = JSON.parse(res.getContentText() || 'null'); } catch (e) { json = null; }
+  return { code: res.getResponseCode(), json: json };
+}
+
+/* How many rows still say New, and a link straight to the tab. */
+function inboxReviewCount_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(INBOX_TAB);
+  if (!sh) return { pending: 0, url: '' };
+  const last = sh.getLastRow();
+  const pending = last < 2 ? 0 : sh.getRange(2, 1, last - 1, 1).getValues()
+    .filter(function (r) { return String(r[0]) === 'New'; }).length;
+  return { pending: pending, url: ss.getUrl() + '#gid=' + sh.getSheetId() };
+}
+
+function adminInboxScanState(token) {
+  requireAuth_(token, 'view');
+  const out = Object.assign({ ok: 1, configured: false, run: null }, inboxReviewCount_());
+  const r = inboxGh_('/actions/workflows/' + INBOX_GH_WORKFLOW_ + '/runs?per_page=1');
+  if (!r) return out;
+  out.configured = true;
+  if (r.code === 200 && r.json && r.json.workflow_runs && r.json.workflow_runs.length) {
+    const w = r.json.workflow_runs[0];
+    out.run = { status: w.status, conclusion: w.conclusion || '', at: w.created_at,
+                manual: w.event === 'workflow_dispatch', url: w.html_url };
+  } else if (r.code === 401 || r.code === 403 || r.code === 404) {
+    out.tokenProblem = 'GitHub refused the token (' + r.code + '). It may have expired, or it is missing Actions access to this repo.';
+  }
+  return out;
+}
+
+function adminInboxScanRun(token, days) {
+  const who = requireAuth_(token, 'view');
+  const n = Math.max(1, Math.min(400, Math.floor(Number(days) || 3)));
+  const props = PropertiesService.getScriptProperties();
+  const lastAt = Number(props.getProperty(INBOX_LAST_RUN_KEY_) || 0);
+  if (Date.now() - lastAt < 60 * 1000) {
+    return { ok: 0, error: 'A scan was started less than a minute ago. Give it a couple of minutes, then refresh.' };
+  }
+  const r = inboxGh_('/actions/workflows/' + INBOX_GH_WORKFLOW_ + '/dispatches', 'post',
+    { ref: 'main', inputs: { days: String(n) } });
+  if (!r) return { ok: 0, error: 'The Scan now button is not set up yet: GITHUB_ACTIONS_TOKEN is missing from Script Properties. The morning scan still runs.' };
+  if (r.code !== 204) {
+    return { ok: 0, error: 'GitHub would not start the scan (' + r.code + ')' +
+      (r.json && r.json.message ? ': ' + String(r.json.message).slice(0, 200) : '') + '.' };
+  }
+  props.setProperty(INBOX_LAST_RUN_KEY_, String(Date.now()));
+  auditLog_(who.name, 'INBOX SCAN started by hand (' + n + ' day' + (n === 1 ? '' : 's') + ')');
+  return { ok: 1, days: n };
 }
 
 /* THE IMPORTED DRAFTS, as a list you can scroll.

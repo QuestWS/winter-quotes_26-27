@@ -485,8 +485,10 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the
    season so far. After that it runs by itself every morning.
 
-**Scan now, from the console.** Menu → **Scan inbox** (also a home tile, open
-to every signed-in staff member) shows how many rows still say *New*, links
+**Scan now, from the console.** Menu → **Scan inbox** (also a home tile)
+is **Chris only**: it is his mailbox. The server refuses every other sign-in,
+admins included (`inboxOwner_`, matching the roster name `INBOX_OWNER_`), and
+the console hides the menu item and tile from them. The panel shows how many rows still say *New*, links
 straight to the tab, shows the last run, and has a **Scan now** button with a
 look-back choice (since yesterday through 90 days). The button asks GitHub to
 start the same workflow early (`adminInboxScanRun`). That needs a GitHub token

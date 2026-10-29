@@ -9747,14 +9747,21 @@ function setupInboxScan() {
    `GITHUB_ACTIONS_TOKEN` and never in a file. No token: the button says so and
    the morning run carries on regardless.
 
-   Any signed-in staff member may press it: it touches no quote and only adds
-   rows for a person to review, and whoever reads the email first is the one
-   who needs the row (CLAUDE.md §9). Presses inside a minute of the last one
+   CHRIS ONLY. It is his mailbox, so the panel, the count, the link to the tab
+   and the button answer only the roster entry named INBOX_OWNER_ — not every
+   admin. Checked here, on the server; the console hiding the menu item for
+   everyone else is a courtesy, not the lock. Presses inside a minute of the last one
    are refused rather than queued, so a double-tap on a slow phone starts one
    scan, not two. */
 const INBOX_GH_REPO_ = 'QuestWS/winter-quotes_26-27';
 const INBOX_GH_WORKFLOW_ = 'scan-inbox.yml';
 const INBOX_LAST_RUN_KEY_ = 'INBOX_SCAN_LAST_DISPATCH';
+const INBOX_OWNER_ = 'Chris';
+function inboxOwner_(token) {
+  const who = requireAuth_(token, 'view');
+  if (who.name !== INBOX_OWNER_) throw new Error('Only ' + INBOX_OWNER_ + ' can use the inbox scan — it reads his email.');
+  return who;
+}
 
 function inboxGh_(path, method, body) {
   const tok = String(PropertiesService.getScriptProperties().getProperty('GITHUB_ACTIONS_TOKEN') || '');
@@ -9781,7 +9788,7 @@ function inboxReviewCount_() {
 }
 
 function adminInboxScanState(token) {
-  requireAuth_(token, 'view');
+  inboxOwner_(token);
   const out = Object.assign({ ok: 1, configured: false, run: null }, inboxReviewCount_());
   const r = inboxGh_('/actions/workflows/' + INBOX_GH_WORKFLOW_ + '/runs?per_page=1');
   if (!r) return out;
@@ -9797,7 +9804,7 @@ function adminInboxScanState(token) {
 }
 
 function adminInboxScanRun(token, days) {
-  const who = requireAuth_(token, 'view');
+  const who = inboxOwner_(token);
   const n = Math.max(1, Math.min(400, Math.floor(Number(days) || 3)));
   const props = PropertiesService.getScriptProperties();
   const lastAt = Number(props.getProperty(INBOX_LAST_RUN_KEY_) || 0);

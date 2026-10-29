@@ -495,7 +495,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="tile hide" id="repriceTile" onclick="navGo(toggleReprice)"><b>Re-price at current rates</b>
         <span>Move the season onto this year's prices. Nothing is written until you apply it.</span></button>
       <button class="tile hide" id="inboxTile" onclick="navGo(toggleInbox)"><b>Scan inbox</b>
-        <span>Check chris@ for payments, changes and requests that may not be logged yet. Runs by itself every morning too.</span></button>
+        <span>Check your email for payments, changes and requests that may not be logged yet. Runs by itself every morning too. Only you see this.</span></button>
       <button class="tile hide" id="pauseTile" onclick="navGo(togglePause)"><b>Automatic emails</b>
         <span>Pause or resume the only two emails that send on their own — the 10-day reminder and the lead follow-up.</span></button>
       <button class="tile hide" id="adminTile" onclick="navGo(toggleStaff)"><b>Staff &amp; permissions</b>
@@ -1517,9 +1517,9 @@ function boot(){
        than by a card on the quote screen. Same permission as any other email. */
     navGate('bulk',   ME.admin||P.email);
     navGate('pause',  ME.admin);
-    /* Everyone: it changes no quote, and whoever reads the email first is the
-       one who needs the row (CLAUDE.md §9). */
-    navGate('inbox',  true);
+    /* Chris only: it reads his mailbox. The server refuses anyone else too
+       (inboxOwner_); this just keeps the button out of their way. */
+    navGate('inbox',  ME.name==='Chris');
     navGate('reprice',ME.admin||P.adjust);
     navGate('import', ME.admin||P.adjust);
     refreshPause();

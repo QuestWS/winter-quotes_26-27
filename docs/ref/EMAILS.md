@@ -485,6 +485,26 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the
    season so far. After that it runs by itself every morning.
 
+**Scan now, from the console.** Menu → **Scan inbox** (also a home tile, open
+to every signed-in staff member) shows how many rows still say *New*, links
+straight to the tab, shows the last run, and has a **Scan now** button with a
+look-back choice (since yesterday through 90 days). The button asks GitHub to
+start the same workflow early (`adminInboxScanRun`). That needs a GitHub token
+in Script Properties; without one the panel says so and the morning run is
+unaffected. A second press inside a minute is refused rather than queued, and
+every press is written to the Activity Log. Starting a scan is a write
+(never GET-able); `inboxScanState` is a read.
+
+Token setup (once):
+1. GitHub → your profile picture → **Settings** → **Developer settings** →
+   **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
+2. Name it `Quest console scan`, pick an expiry (a year is fine; the panel
+   says "GitHub refused the token" when it lapses), **Repository access: Only
+   select repositories** → `QuestWS/winter-quotes_26-27`, **Permissions →
+   Repository → Actions: Read and write**. Generate, copy it.
+3. Apps Script editor → **Project Settings** (gear) → **Script Properties** →
+   **Add script property**: name `GITHUB_ACTIONS_TOKEN`, value the token. Save.
+
 Testing: `tools/check-inbox-scan.js` (run by `verify.sh`) runs both halves,
 the scanner's `extract()` on built messages and the backend's `inboxRowFor_`
 on the result. Locally, `python3 tools/inbox-scan.py --dry-run` with the IMAP

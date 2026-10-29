@@ -446,6 +446,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn hide" id="hhListOpen" onclick="navGo(toggleHhList)">Heritage Harbor list</button>
+      <button class="linkbtn hide" id="inboxOpen" onclick="navGo(toggleInbox)">Scan inbox</button>
       <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
       <button class="linkbtn hide" id="repriceOpen" onclick="navGo(toggleReprice)">Re-price at current rates</button>
       <button class="linkbtn hide" id="importOpen" onclick="navGo(toggleImport)">Load from an old sheet</button>
@@ -493,6 +494,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <span>Turn one of last season's spreadsheets into a quote here, priced at today's rates.</span></button>
       <button class="tile hide" id="repriceTile" onclick="navGo(toggleReprice)"><b>Re-price at current rates</b>
         <span>Move the season onto this year's prices. Nothing is written until you apply it.</span></button>
+      <button class="tile hide" id="inboxTile" onclick="navGo(toggleInbox)"><b>Scan inbox</b>
+        <span>Check chris@ for payments, changes and requests that may not be logged yet. Runs by itself every morning too.</span></button>
       <button class="tile hide" id="pauseTile" onclick="navGo(togglePause)"><b>Automatic emails</b>
         <span>Pause or resume the only two emails that send on their own — the 10-day reminder and the lead follow-up.</span></button>
       <button class="tile hide" id="adminTile" onclick="navGo(toggleStaff)"><b>Staff &amp; permissions</b>
@@ -952,6 +955,31 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div class="msg" id="pauseMsg"></div>
     </div>
 
+    <div class="card hide" id="inboxCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Scan inbox</h2>
+        <button class="btn ghost sm" onclick="$('inboxCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">Reads <b>chris@</b> (service@ and questws@ forward there)
+        and adds anything that looks like an unlogged payment, change or request to the
+        <b>Inbox Review</b> tab of the spreadsheet. It runs by itself every morning before 8.
+        It never changes a quote and never emails anyone.</div>
+      <div class="msg" id="inboxState" style="margin:8px 0">Checking…</div>
+      <label class="fld">Look back</label>
+      <select class="txt" id="inboxDays">
+        <option value="1">Since yesterday</option>
+        <option value="3" selected>Last 3 days</option>
+        <option value="7">Last week</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days (catch-up)</option>
+      </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn navy" id="inboxBtn" onclick="runInboxScan()">Scan now</button>
+        <button class="btn ghost" onclick="refreshInbox()">Refresh</button>
+      </div>
+      <div class="msg" id="inboxMsg"></div>
+    </div>
+
     <div class="card hide" id="importCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Load from an old sheet</h2>
@@ -1222,7 +1250,7 @@ const $=id=>document.getElementById(id);
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
 const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
-  listStaff:1,autoPause:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
+  listStaff:1,autoPause:1,inboxScanState:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
 /* Once a POST has come back lost, every later READ goes straight to GET — no
@@ -1285,7 +1313,7 @@ async function apiRead_(res){
    over again. */
 const API_POST_TIMEOUT_MS=12000;
 const API_QUICK_READ={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,photoInfo:1,hhListInfo:1,
-  listStaff:1,autoPause:1,draftList:1,jobStatus:1,bulkImpState:1};
+  listStaff:1,autoPause:1,inboxScanState:1,draftList:1,jobStatus:1,bulkImpState:1};
 async function apiPost_(body,timeoutMs){
   let res,timer=null,ctl=null;
   if(timeoutMs&&typeof AbortController==='function'){
@@ -1489,6 +1517,9 @@ function boot(){
        than by a card on the quote screen. Same permission as any other email. */
     navGate('bulk',   ME.admin||P.email);
     navGate('pause',  ME.admin);
+    /* Everyone: it changes no quote, and whoever reads the email first is the
+       one who needs the row (CLAUDE.md §9). */
+    navGate('inbox',  true);
     navGate('reprice',ME.admin||P.adjust);
     navGate('import', ME.admin||P.adjust);
     refreshPause();
@@ -1502,7 +1533,7 @@ function boot(){
    than by a call at every close button: every panel here closes itself with
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
-const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','importCard',
+const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','inboxCard','importCard',
   'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard'];
 /* PRINT BLANK CONTRACT (Oct 2026). For the customer who insists on paper: the
    same Storage Terms the Adobe web form carries, as a one-page PDF in the repo
@@ -4161,6 +4192,64 @@ async function doReprice(){
     toast('Re-priced '+done);
   }catch(e){ setMsg('rpMsg',e.message,false); }
   finally{ setMsg('rpProgress',''); }
+}
+
+/* ---------- Scan inbox ----------
+   The scan runs on GitHub (Apps Script cannot read IMAP); this panel asks the
+   server to start it early and shows what the last one did. A scan takes a
+   minute or two, so after starting one the panel looks again on its own a few
+   times rather than leaving staff to guess when to refresh. */
+let INBOX_POLL=null;
+function toggleInbox(){
+  $('inboxCard').classList.toggle('hide');
+  if(!$('inboxCard').classList.contains('hide')){ setMsg('inboxMsg',''); refreshInbox(); }
+}
+function inboxWhen_(iso){
+  const d=new Date(iso); if(isNaN(d)) return '';
+  return d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+async function refreshInbox(){
+  const box=$('inboxState'); if(!box) return null;
+  let r;
+  try{ r=await api('inboxScanState',[]); }catch(e){ setMsg('inboxState',e.message,false); return null; }
+  if(!r||!r.ok){ setMsg('inboxState',(r&&r.error)||'Could not read the scan state.',false); return null; }
+  let h='';
+  h+=r.pending
+    ? '<b>'+r.pending+' email'+(r.pending===1?'':'s')+'</b> waiting for review on the Inbox Review tab.'
+    : 'Nothing waiting on the Inbox Review tab.';
+  if(r.url) h+=' <a href="'+esc(r.url)+'" target="_blank" rel="noopener">Open the tab</a>';
+  if(r.tokenProblem) h+='<br>'+esc(r.tokenProblem);
+  else if(!r.configured) h+='<br>The <b>Scan now</b> button is not set up yet (no GitHub token in Script Properties). The morning scan still runs.';
+  else if(r.run){
+    const st=r.run.status!=='completed' ? 'running now'
+      : r.run.conclusion==='success' ? 'finished OK' : 'did not finish ('+esc(r.run.conclusion||'unknown')+')';
+    h+='<br>Last scan: '+esc(inboxWhen_(r.run.at))+(r.run.manual?' (started by hand)':' (morning run)')+', '+st+
+      '. <a href="'+esc(r.run.url)+'" target="_blank" rel="noopener">Details</a>';
+  }
+  box.innerHTML=h; box.className='msg';
+  $('inboxBtn').disabled=!r.configured;
+  return r;
+}
+async function runInboxScan(){
+  const b=$('inboxBtn'); b.disabled=true;
+  setMsg('inboxMsg','Starting…');
+  try{
+    const r=await api('inboxScanRun',[Number($('inboxDays').value)||3]);
+    if(!r||!r.ok){ setMsg('inboxMsg',(r&&r.error)||'Could not start the scan.',false); b.disabled=false; return; }
+    setMsg('inboxMsg','Scan started — it takes a minute or two. This panel will update by itself.',true);
+    if(INBOX_POLL) clearInterval(INBOX_POLL);
+    let tries=0;
+    INBOX_POLL=setInterval(async function(){
+      tries++;
+      if($('inboxCard').classList.contains('hide')||tries>12){ clearInterval(INBOX_POLL); INBOX_POLL=null; return; }
+      const s=await refreshInbox();
+      if(tries>=2&&s&&s.run&&s.run.manual&&s.run.status==='completed'){
+        clearInterval(INBOX_POLL); INBOX_POLL=null;
+        setMsg('inboxMsg',s.run.conclusion==='success'?'Scan finished.':'The scan did not finish — see Details.',s.run.conclusion==='success');
+      }
+    },20000);
+  }catch(e){ setMsg('inboxMsg',e.message,false); }
+  finally{ setTimeout(function(){ b.disabled=false; },60000); }
 }
 
 /* ---------- The automatic-email pause ----------

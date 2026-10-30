@@ -19,7 +19,7 @@ Three rules this file keeps, and why:
   not become a sixth copy of the deployment URL to keep in sync.
 
 Environment (all from Actions secrets/variables):
-  IMAP_HOST       default mail.questwatersports.com
+  IMAP_HOST       default questwatersports.com (the host's published IMAP server)
   IMAP_PORT       default 993 (SSL)
   IMAP_USER       the mailbox login, usually chris@questwatersports.com
   IMAP_PASSWORD   its password
@@ -184,7 +184,10 @@ def extract(raw, mailbox):
 
 
 def scan(days):
-    host = env('IMAP_HOST', 'mail.questwatersports.com')
+    # The mail host's own setup sheet names questwatersports.com as the IMAP
+    # server. mail.questwatersports.com (the MX record) is the same machine,
+    # but its TLS certificate may not carry that name, so use theirs.
+    host = env('IMAP_HOST', 'questwatersports.com')
     user, password = env('IMAP_USER'), os.environ.get('IMAP_PASSWORD', '')
     if not user or not password:
         sys.exit('IMAP_USER and IMAP_PASSWORD must be set (Actions secrets).')

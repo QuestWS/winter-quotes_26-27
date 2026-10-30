@@ -595,6 +595,20 @@ the AI (stored as `AI · payment` in Reviewed by) or, for older rows, from the
 summary's wording (`inboxKindOf_`). A bare `AI` row from before the kind was
 stored is reviewed once more by the next scan.
 
+**Dockwa messages are Heritage Harbor's, except mechanical work or storage.**
+Dockwa is how Heritage Harbor's slip customers message the marina. Chris sees
+those messages only in case one lands in the wrong place, and the customers
+don't know he does. The scanner tags any Dockwa message ("dockwa" in the
+sender, name or subject). Both the screen and the review are told it is
+relevant **only** when the customer asks about mechanical or service work or
+winter storage, Quest's business sent to the wrong place. Slips,
+reservations, the dock, fuel and thank-yous are dropped. The suggested action
+is a Quest follow-up ("Quote winterization and indoor storage for…"), never a
+reply on Dockwa. Dockwa relays from a no-reply address, so it is exempt from
+the robot filter and always reaches the screen. A Dockwa row's Reviewed by
+ends `· Dockwa`. Rows reviewed before this rule (Oct 30 2026) and still *New*
+are reviewed once more, and removed if they fail it.
+
 **Adobe Sign's signed PDFs are read.** "Signed and filed" mail often names
 nobody in its body, so for Adobe senders only (`adobesign`, `echosign`,
 `adobe.com`) the scanner opens the attached PDF with pypdf. Any form fields

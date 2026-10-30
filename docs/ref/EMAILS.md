@@ -440,7 +440,7 @@ boat or want an early launch, and those land in **chris@questwatersports.com**
 (service@ and questwsottawa@ both forward there, so one mailbox sees all three).
 Nobody re-types all of that, so things go unlogged.
 
-**How it runs.** chris@ is on our own mail server (`mail.questwatersports.com`),
+**How it runs.** chris@ is on our own mail server (IMAP at `questwatersports.com`, port 993 — the host's published settings),
 not Gmail, and Apps Script cannot read IMAP. So a GitHub Action,
 `.github/workflows/scan-inbox.yml`, runs `tools/inbox-scan.py` every morning at
 6:10am Central in winter, 7:10am in summer (GitHub schedules in UTC, so the
@@ -480,7 +480,7 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 2. GitHub → repo Settings → Secrets and variables → Actions → add three
    repository secrets: `INBOX_SCAN_KEY` (that key), `IMAP_USER`
    (`chris@questwatersports.com`), `IMAP_PASSWORD` (its mail password).
-   Optional variables: `IMAP_HOST` (default `mail.questwatersports.com`),
+   Optional variables: `IMAP_HOST` (default `questwatersports.com`),
    `IMAP_PORT` (default 993), `IMAP_FOLDERS` (default `INBOX`, comma-separated).
 3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the
    season so far. After that it runs by itself every morning.

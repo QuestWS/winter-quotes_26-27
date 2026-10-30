@@ -1462,8 +1462,8 @@ const CONSOLE_GET_FNS_ = {
   lookup: 1, quoteHtml: 1, search: 1, storageView: 1, photoInfo: 1,
   /* Reads the Activity Log and Sent mail for one quote; writes nothing. */
   quoteHistory: 1,
-  /* Reads the Inbox Review tab and GitHub's last run; starts nothing. */
-  inboxScanState: 1,
+  /* Read the Inbox Review tab (and GitHub's last run); change nothing. */
+  inboxScanState: 1, inboxList: 1,
   listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
@@ -1544,6 +1544,8 @@ function consoleFns_(p) {
     autoPause:   function (a) { return adminAutoPause(p.token); },
     inboxScanState: function (a) { return adminInboxScanState(p.token); },
     inboxScanRun:   function (a) { return adminInboxScanRun(p.token, a[0]); },
+    inboxList:      function (a) { return adminInboxList(p.token, a[0]); },
+    inboxMark:      function (a) { return adminInboxMark(p.token, a[0], a[1]); },
     setAutoPause:function (a) { return adminSetAutoPause(p.token, a[0], a[1]); },
     setPerm:     function (a) { return adminSetPerm(p.token, a[0], a[1], a[2]); },
     resetPin:    function (a) { return adminResetPin(p.token, a[0]); },
@@ -9553,12 +9555,15 @@ function trackerServe_(p) {
 const INBOX_TAB = 'Inbox Review';
 /* Column 12 holds the AI's summary and suggested action when it read the
    message, the keyword reasons when it did not; column 16 says which. Message-ID
-   (15) and Reviewed by (16) are hidden: they are for the code, not for reading. */
+   (15) and Reviewed by (16) are hidden: they are for the code, not for reading.
+   Handled by / Handled at (17–18) are stamped by the console's Logged / No action. */
 const INBOX_HEADERS_ = ['Status', 'Priority', 'Received', 'From', 'Email', 'Subject',
   'Quote #', 'Customer', 'Tab', 'Balance', 'Amounts in email', 'What it says → what to do',
-  'Excerpt', 'Mailbox', 'Message-ID', 'Reviewed by'];
+  'Excerpt', 'Mailbox', 'Message-ID', 'Reviewed by', 'Handled by', 'Handled at'];
 const INBOX_MID_COL_ = 15;
 const INBOX_REV_COL_ = 16;
+/* What the scan writes. Handled by / Handled at (17–18) are the console's. */
+const INBOX_ROW_WIDTH_ = 16;
 const INBOX_STATUSES_ = ['New', 'Logged', 'No action'];
 const INBOX_QN_RE_ = /\bQW-?\d{2}-?\d{3,5}\b/gi;
 const INBOX_PRIORITIES_ = { High: 1, Medium: 1, Low: 1 };
@@ -9788,7 +9793,7 @@ function inboxIngest_(items) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sh = inboxSheet_(ss);
-    const width = INBOX_HEADERS_.length;
+    const width = INBOX_ROW_WIDTH_;
     const have = inboxRowsByMid_(sh);
     const idx = inboxQuoteIndex_(ss);
     const rows = [], drop = [];
@@ -9923,6 +9928,76 @@ function adminInboxScanRun(token, days) {
   props.setProperty(INBOX_LAST_RUN_KEY_, String(Date.now()));
   auditLog_(who.name, 'INBOX SCAN started by hand (' + n + ' day' + (n === 1 ? '' : 's') + ')');
   return { ok: 1, days: n };
+}
+
+/* THE INBOX REVIEW IN THE CONSOLE — Chris works the list there, not on the tab.
+   ---------------------------------------------------------------------------
+   adminInboxList hands the console the rows; adminInboxMark sets one row's
+   Status and stamps Handled by / Handled at. Both Chris only (inboxOwner_).
+
+   "Apply" is deliberately not done here. A row only says what an email
+   seemed to say; the console turns it into the existing action — the payment
+   form, the staff note — filled in and waiting for a person to check and press
+   the button. Those paths already journal, lock and send receipts correctly,
+   and every customer email in this system is a human click (CLAUDE.md §4b).
+   An AI-read amount posted straight to a customer's ledger would be neither. */
+const INBOX_LIST_MAX_ = 400;
+
+function inboxRowOut_(r) {
+  const s = function (v) { return v == null ? '' : String(v); };
+  const when = function (v) { return v instanceof Date ? v.toISOString() : s(v); };
+  return {
+    mid: s(r[INBOX_MID_COL_ - 1]), status: s(r[0]) || 'New', priority: s(r[1]), at: when(r[2]),
+    fromName: s(r[3]), email: s(r[4]), subject: s(r[5]),
+    qns: s(r[6]).split(/,\s*/).filter(Boolean), customer: s(r[7]), tab: s(r[8]),
+    balance: r[9] === '' || r[9] == null ? null : Number(r[9]), amounts: s(r[10]),
+    what: s(r[11]), excerpt: s(r[12]), rev: s(r[INBOX_REV_COL_ - 1]),
+    by: s(r[16]), handledAt: when(r[17])
+  };
+}
+
+function adminInboxList(token, includeDone) {
+  inboxOwner_(token);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INBOX_TAB);
+  if (!sh || sh.getLastRow() < 2) return { ok: 1, rows: [], pending: 0, done: 0 };
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, INBOX_HEADERS_.length).getValues();
+  const rank = { High: 0, Medium: 1, Low: 2 };
+  let pending = 0, done = 0;
+  const rows = [];
+  vals.forEach(function (r) {
+    if (!r[INBOX_MID_COL_ - 1]) return;
+    const o = inboxRowOut_(r);
+    if (o.status === 'New') pending++; else done++;
+    if (o.status === 'New' || includeDone) rows.push(o);
+  });
+  rows.sort(function (a, b) {
+    if ((a.status === 'New') !== (b.status === 'New')) return a.status === 'New' ? -1 : 1;
+    const p = (a.priority in rank ? rank[a.priority] : 3) - (b.priority in rank ? rank[b.priority] : 3);
+    return p || String(b.at).localeCompare(String(a.at));
+  });
+  return { ok: 1, rows: rows.slice(0, INBOX_LIST_MAX_), pending: pending, done: done,
+           truncated: rows.length > INBOX_LIST_MAX_ };
+}
+
+function adminInboxMark(token, mid, status) {
+  const who = inboxOwner_(token);
+  status = String(status || '');
+  if (INBOX_STATUSES_.indexOf(status) < 0) return { ok: 0, error: 'Unknown status.' };
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INBOX_TAB);
+  const at = sh ? inboxRowsByMid_(sh)[String(mid || '')] : null;
+  if (!at) return { ok: 0, error: 'That email is no longer on the Inbox Review tab.' };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return { ok: 0, error: 'Busy — try again.' };
+  try {
+    sh.getRange(at.row, 1).setValue(status);
+    sh.getRange(at.row, 17, 1, 2).setValues(status === 'New' ? [['', '']] : [[who.name, new Date()]]);
+  } finally {
+    lock.releaseLock();
+  }
+  const r = sh.getRange(at.row, 1, 1, INBOX_HEADERS_.length).getValues()[0];
+  auditLog_(who.name, 'INBOX REVIEW ' + status + ' — ' + String(r[4] || '') +
+    (r[6] ? ' (' + r[6] + ')' : ''));
+  return { ok: 1, row: inboxRowOut_(r) };
 }
 
 /* THE IMPORTED DRAFTS, as a list you can scroll.

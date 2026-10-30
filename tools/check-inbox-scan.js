@@ -89,7 +89,7 @@ r = B.inboxRowFor_(item({ staff: true, fromEmail: 'jeff@questwatersports.com',
   ai: ai({ kind: 'staff_direction', priority: 'High', summary: 'Jeff says pull the Whites first',
            action: 'Move QW-26-1255 to the top of the haul-out list', customer_names: ['the Whites'] }) }), idx);
 check('AI: staff direction matched to a quote by surname ("the Whites")', r && r[H.qn] === 'QW-26-1255' && r[H.pri] === 'High'
-  && /Jeff says pull the Whites first → Move QW-26-1255/.test(r[H.why]) && /From staff/.test(r[H.why]) && /Matched by name/.test(r[H.why]) && r[15] === 'AI');
+  && /Jeff says pull the Whites first → Move QW-26-1255/.test(r[H.why]) && /From staff/.test(r[H.why]) && /Matched by name/.test(r[H.why]) && r[15] === 'AI · staff_direction');
 r = B.inboxRowFor_(item({ fromEmail: 'stranger@example.com', ai: ai({ customer_names: ['Zed Nobody'], summary: 'New inquiry' }) }), idx);
 check('AI: a relevant stranger still gets a row, and an unknown name is said', r && /No quote found for Zed Nobody/.test(r[H.why]));
 r = B.inboxRowFor_(item({ fromEmail: 'john@questwatersports.com', amounts: [999], ai: ai({ priority: 'Low', amounts: [412.5] }) }), idx);
@@ -115,11 +115,11 @@ function fakeSheet(rows) {
 const HEAD = (gas.match(/^const INBOX_HEADERS_ = (\[[\s\S]*?\]);/m) || [])[1];
 const oldRow = (mid, status, rev) => ['' + status, 'Low', '', 'n', 'e', 's', '', '', '', '', '', 'keyword reason', '', 'm', mid, rev];
 const S = fakeSheet([eval(HEAD), oldRow('<keep-marked>', 'Logged', 'Keywords'), oldRow('<redo>', 'New', 'Keywords'),
-  oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI')]);
+  oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI · payment'), oldRow('<legacy-ai>', 'New', 'AI')]);
 const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
   decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_ROW_WIDTH_'),
   decl('INBOX_STATUSES_'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
-  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
+  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxAiDone_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
   fn('inboxIngest_'), fn('inboxKnown_'), 'return {inboxIngest_, inboxKnown_};'
 ].join('\n'))(
   { getActiveSpreadsheet: () => ({ getSheetByName: () => S.sheet }), newDataValidation: () => ({ requireValueInList: () => ({ build: () => 1 }) }) },
@@ -135,10 +135,11 @@ const res = I.inboxIngest_([
   item({ messageId: '<fresh>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Brand new' }) }),
 ]);
 const rowOf = (m) => S.rows.find(r => r[14] === m);
-check('ingest: a keyword row still New is rewritten with the AI reading', res.updated === 1 && /Mailed a check/.test(rowOf('<redo>')[11]) && rowOf('<redo>')[15] === 'AI');
+check('ingest: a keyword row still New is rewritten with the AI reading', res.updated === 1 && /Mailed a check/.test(rowOf('<redo>')[11]) && rowOf('<redo>')[15] === 'AI · payment');
 check('ingest: a keyword row the AI calls irrelevant is removed', res.removed === 1 && S.deleted.join() === '<drop>' && !rowOf('<drop>'));
 check('ingest: a row a person marked is never touched', rowOf('<keep-marked>')[0] === 'Logged' && rowOf('<keep-marked>')[11] === 'keyword reason');
 check('ingest: an AI-reviewed row is not reviewed twice', !/AGAIN/.test(rowOf('<ai-done>')[11]));
+check('known/ingest: a pre-kind AI row (bare "AI") still New is reviewed once more', kn.indexOf('<legacy-ai>') < 0);
 check('ingest: a new message goes in at the top', res.added === 1 && S.rows[1][14] === '<fresh>' && /Brand new/.test(S.rows[1][11]));
 
 /* ---- the console's list and Logged / No action ---- */
@@ -148,15 +149,19 @@ const S2 = fakeSheet([eval(HEAD),
   ['Logged', 'High', new Date('2026-10-22T10:00:00Z'), 'C', 'c@x', 's3', '', '', '', '', '', 'done one', '', 'm', '<done>', 'AI', 'Chris', new Date()],
   ['New', 'High', new Date('2026-10-21T10:00:00Z'), 'D', 'd@x', 's4', 'QW-26-1255, QW-26-9999', '', '', '', '', 'newer high', '', 'm', '<high2>', 'AI']]);
 let WHO2 = 'Chris'; const audit2 = [];
-const L = new Function('SpreadsheetApp', 'LockService', 'inboxOwner_', 'auditLog_', [
+const QUOTES = {};
+const L = new Function('SpreadsheetApp', 'LockService', 'inboxOwner_', 'auditLog_', 'findQuoteCtx_', 'Utilities', 'Session', [
   decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_STATUSES_'),
-  decl('INBOX_LIST_MAX_'), fn('inboxRowsByMid_'), fn('inboxRowOut_'), fn('adminInboxList'), fn('adminInboxMark'),
-  'return {adminInboxList, adminInboxMark};'
+  decl('INBOX_LIST_MAX_'), decl('INBOX_PAY_LOOKBACK_DAYS_'), fn('usd_'), fn('paymentsTotal_'), fn('inboxKindOf_'), fn('inboxAppliedOf_'),
+  fn('inboxRowsByMid_'), fn('inboxRowOut_'), fn('adminInboxList'), fn('adminInboxMark'),
+  'return {adminInboxList, adminInboxMark, inboxKindOf_, inboxAppliedOf_};'
 ].join('\n'))(
   { getActiveSpreadsheet: () => ({ getSheetByName: () => S2.sheet }) },
   { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   () => { if (WHO2 !== 'Chris') throw new Error('Only Chris can use the inbox scan — it reads his email.'); return { name: WHO2 }; },
-  (who, what) => audit2.push(what));
+  (who, what) => audit2.push(what),
+  (qn) => (QUOTES[qn] ? { d: QUOTES[qn] } : null),
+  { formatDate: (d) => d.toISOString().slice(5, 10) }, { getScriptTimeZone: () => 'America/Chicago' });
 let lst = L.adminInboxList('t', 0);
 check('list: New rows only, High first and newest first within it', lst.rows.map(r => r.mid).join() === '<high2>,<high>,<low>' && lst.pending === 3 && lst.done === 1,
   lst.rows.map(r => r.mid).join());
@@ -176,6 +181,43 @@ try { L.adminInboxList('t', 0); } catch (e) { threw = e.message; }
 let threw2 = '';
 try { L.adminInboxMark('t', '<low>', 'Logged'); } catch (e) { threw2 = e.message; }
 check('list and mark: Chris only', /Only Chris/.test(threw) && /Only Chris/.test(threw2) && lowRow()[0] === 'New');
+/* ---- already applied? payments and contracts against the quote ---- */
+const row = (o) => Object.assign({ status: 'New', qns: ['QW-26-1255'], at: '2026-10-20T15:00:00Z', amounts: '', what: '', rev: 'AI · payment' }, o);
+const pay = (amt, at, extra) => Object.assign({ amt: amt, at: at, by: 'Chris', method: 'Check' }, extra || {});
+check('kind: from the AI tag, else from the summary wording', L.inboxKindOf_(row({})) === 'payment'
+  && L.inboxKindOf_(row({ rev: 'AI', what: 'Says she signed the contract' })) === 'signature'
+  && L.inboxKindOf_(row({ rev: 'AI', what: 'Wants the pontoon pulled early' })) === '');
+let ap = L.inboxAppliedOf_(row({ amounts: '$412.50' }), { total: 900, payments: [pay(412.5, '2026-10-22T14:00:00Z')] });
+check('payment: the same amount recorded after the email → applied, with who and when', /Already on the quote: \$412\.50 recorded 10-22 by Chris \(Check\)/.test(ap || ''), ap);
+check('payment: recorded up to three weeks before the email still counts (counter first, email after)',
+  !!L.inboxAppliedOf_(row({ amounts: '$412.50' }), { total: 900, payments: [pay(412.5, '2026-10-05T14:00:00Z')] }));
+check('payment: the same amount from long before (an August deposit) does not',
+  L.inboxAppliedOf_(row({ amounts: '$500.00' }), { total: 900, payments: [pay(500, '2026-08-15T14:00:00Z')] }) === null);
+check('payment: a different amount does not', L.inboxAppliedOf_(row({ amounts: '$412.50' }), { total: 900, payments: [pay(400, '2026-10-22T14:00:00Z')] }) === null);
+check('payment: no amount in the email, quote paid in full with a recent payment → applied',
+  /paid in full/.test(L.inboxAppliedOf_(row({}), { total: 900, payments: [pay(900, '2026-10-21T14:00:00Z')] }) || ''));
+check('payment: no amount, still a balance → not applied', L.inboxAppliedOf_(row({}), { total: 900, payments: [pay(500, '2026-10-21T14:00:00Z')] }) === null);
+check('contract: signed contract on file → applied; none → stays on the list',
+  /Signed contract already on file/.test(L.inboxAppliedOf_(row({ rev: 'AI · signature' }), { contractUrl: 'https://drive/x' }) || '')
+  && L.inboxAppliedOf_(row({ rev: 'AI · signature' }), { payments: [] }) === null);
+check('other kinds are never auto-applied', L.inboxAppliedOf_(row({ rev: 'AI · schedule' }), { contractUrl: 'x', payments: [pay(1, '2026-10-21T00:00:00Z')] }) === null);
+WHO2 = 'Chris';
+const S3rows = [eval(HEAD),
+  ['New', 'High', new Date('2026-10-20T15:00:00Z'), 'Jo', 'jo@x', 'paid', 'QW-26-1255', '', '', 0, '$412.50', 'Mailed a check', '', 'm', '<paid>', 'AI · payment'],
+  ['New', 'High', new Date('2026-10-20T15:00:00Z'), 'Al', 'al@x', 'paid2', 'QW-26-2000', '', '', 0, '$300.00', 'Mailed a check', '', 'm', '<notyet>', 'AI · payment'],
+  ['New', 'Medium', new Date('2026-10-20T15:00:00Z'), 'Adobe', 'adobesign@x', 'Signed', 'QW-26-2000', '', '', 0, '', 'Signed the storage contract', '', 'm', '<sig>', 'AI · signature']];
+S2.rows = S3rows.map(r => r.slice());
+QUOTES['QW-26-1255'] = { total: 412.5, payments: [pay(412.5, '2026-10-23T14:00:00Z')] };
+QUOTES['QW-26-2000'] = { total: 300, payments: [], contractUrl: '' };
+lst = L.adminInboxList('t', 0);
+check('list: a payment already on the quote is hidden, one that is not stays, and a contract not on file stays',
+  lst.rows.map(r => r.mid).sort().join() === '<notyet>,<sig>' && lst.applied === 1 && lst.pending === 2, JSON.stringify([lst.rows.map(r => r.mid), lst.applied, lst.pending]));
+const shown = L.adminInboxList('t', 1).rows.find(r => r.mid === '<paid>');
+check('list: "show handled" shows the hidden one with its reason', shown && /Already on the quote/.test(shown.applied || ''));
+check('list: the row itself is not written — it stays New on the tab', S2.rows.find(r => r[14] === '<paid>')[0] === 'New');
+QUOTES['QW-26-2000'].contractUrl = 'https://drive/x';
+check('list: filing the contract later clears its card on the next look', !L.adminInboxList('t', 0).rows.some(r => r.mid === '<sig>'));
+
 KEY = '';
 check('no key configured refuses everyone', !B.inboxKeyOk_(''));
 KEY = 'short';
@@ -333,6 +375,36 @@ out['main'] = {'err': mainErr, 'log': mainlog.getvalue(),
   'posted': [{'from': i['fromEmail'], 'ai': (i.get('ai') or {}).get('relevant'), 'private': [k for k in i if k[0] == '_']} for p in ing for i in p['items']]}
 del out['reply']['_quoted']
 for k in ('IMAP_HOST', 'IMAP_PORT', 'IMAP_FOLDERS'): os.environ[k] = ''
+# ---- Adobe Sign: the signed PDF is read for the quote number ----
+def tiny_pdf(text):
+    objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+            None, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    stream = 'BT /F1 12 Tf 72 712 Td (%s) Tj ET' % text
+    objs[3] = '<< /Length %d >>\nstream\n%s\nendstream' % (len(stream), stream)
+    pdf, offs = '%PDF-1.4\n', []
+    for i, o in enumerate(objs):
+        offs.append(len(pdf)); pdf += '%d 0 obj\n%s\nendobj\n' % (i + 1, o)
+    x = len(pdf)
+    pdf += 'xref\n0 %d\n0000000000 65535 f \n' % (len(objs) + 1) + ''.join('%010d 00000 n \n' % o for o in offs)
+    pdf += 'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objs) + 1, x)
+    return pdf.encode('latin-1')
+from email.message import EmailMessage
+def adobe(frm):
+    m = EmailMessage(); m['From'] = frm; m['Subject'] = 'Agreement completed'; m['Date'] = 'Tue, 27 Oct 2026 10:00:00 -0500'
+    m['Message-ID'] = '<adobe@t>'; m.set_content('Your agreement has been signed and filed.')
+    m.add_attachment(tiny_pdf('Quote_Number QW-26-1255  Signed by Jo Tester'), maintype='application', subtype='pdf', filename='agreement.pdf')
+    return m.as_bytes()
+try:
+    import pypdf; havePdf = True
+except ImportError:
+    havePdf = False
+ad = s.extract(adobe('Adobe Sign <adobesign@adobesign.com>'), 'x')
+other = s.extract(adobe('Someone <someone@example.com>'), 'x')
+out['adobe'] = {'havePdf': havePdf, 'kept': ad is not None, 'qns': (ad or {}).get('quoteNos'),
+  'signals': (ad or {}).get('signals'), 'inFresh': 'Signed by Jo Tester' in (ad or {}).get('_fresh', ''),
+  'otherQns': (other or {}).get('quoteNos'), 'otherPdf': 'Signed by Jo Tester' in (other or {}).get('_fresh', ''),
+  'snippetClean': 'Attached PDF' not in (ad or {}).get('snippet', '')}
 out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
 print(json.dumps(out))
 `;
@@ -374,6 +446,15 @@ if (pyOut) {
   check('whole script: posts the flyer as screened out and the reply as reviewed, no private text',
     JSON.stringify(M.posted) === JSON.stringify([{ from: 'deals@menards.example', ai: false, private: [] }, { from: 'jo@example.com', ai: true, private: [] }]), JSON.stringify(M.posted));
   check('whole script: the log holds counts, never an address or a subject', M.log && !/menards|jo@|Weekly ad|QW-26/i.test(M.log) && /Inbox Review: /.test(M.log));
+  const AD = pyOut.adobe || {};
+  if (AD.havePdf) {
+    check('Adobe: the signed PDF gives the quote number and the signer, for the review', AD.kept && JSON.stringify(AD.qns) === '["QW-26-1255"]' && AD.inFresh
+      && AD.signals.indexOf('signature') >= 0, JSON.stringify(AD));
+    check('Adobe: PDFs from anyone else are not opened', AD.otherPdf === false && JSON.stringify(AD.otherQns) === '[]');
+    check('Adobe: the PDF text stays out of the excerpt on the sheet', AD.snippetClean === true);
+  } else {
+    check('Adobe: without pypdf the email is still handled from its body (no crash)', AD.kept === true && AD.inFresh === false);
+  }
   const C = pyOut.cli || {};
   check('subscription: chosen when the token is set, answer read from structured_output', C.mode === 'cli' && C.ans && C.ans.results[0].keep === false);
   check('subscription: print mode, the model asked for, no tools, schema enforced', C.print && C.model === 'claude-haiku-5-5' && C.tools === '' && C.schema && C.mcp);

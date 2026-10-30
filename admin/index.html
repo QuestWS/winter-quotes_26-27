@@ -4229,7 +4229,11 @@ function toggleInbox(){
    the staff note — for Chris to check and press. Those paths already journal,
    lock and send receipts, and every customer email stays a human click. Only
    Logged / No action write, and they write to the Inbox Review tab alone. */
-let IBX=[], IBX_CUR=null;
+let IBX=[], IBX_CUR=null, IBX_N={pending:0,applied:0};
+function ibxCountText_(){
+  $('ibxCount').textContent=(IBX_N.pending?(IBX_N.pending+' to review'):'Nothing to review')+
+    (IBX_N.applied?' · '+IBX_N.applied+' already applied on the quote (under Show handled)':'');
+}
 function ibxFind_(mid){ return IBX.find(r=>r.mid===mid)||null; }
 function ibxPill_(p){ return '<span class="pill '+(p==='High'?'red':p==='Medium'?'gold':'blue')+'">'+esc(p||'—')+'</span>'; }
 function ibxDate_(iso){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
@@ -4249,7 +4253,7 @@ async function loadInboxList(){
     const r=await api('inboxList',[$('ibxShowDone').checked?1:0]);
     if(!r||!r.ok){ box.innerHTML=''; setMsg('inboxMsg',(r&&r.error)||'Could not load the list.',false); return; }
     IBX=r.rows||[];
-    $('ibxCount').textContent=r.pending?(r.pending+' to review'):'Nothing to review';
+    IBX_N={pending:r.pending||0,applied:r.applied||0}; ibxCountText_();
     renderInboxList_();
   }catch(e){ box.innerHTML=''; setMsg('inboxMsg',e.message,false); }
 }
@@ -4257,10 +4261,16 @@ function renderInboxList_(){
   const box=$('ibxList');
   if(!IBX.length){ box.innerHTML='<div class="msg">All caught up.</div>'; return; }
   box.innerHTML=IBX.map(r=>{
-    const done=r.status!=='New';
+    const done=r.status!=='New'||!!r.applied;
     const one=r.qns.length===1?r.qns[0]:'';
     const acts=[];
-    if(!done){
+    if(r.applied&&r.status==='New'){
+      /* Hidden from the open list because the quote already covers it. Shown
+         here so a wrong match (two payments of the same amount) can be caught. */
+      acts.push(`<span class="meta">✓ ${esc(r.applied)}</span>`);
+      r.qns.forEach(q=>acts.push(`<button class="btn ghost sm" onclick="ibxApply('${esc(r.mid)}','open','${esc(q)}')">Open ${esc(q)}</button>`));
+      acts.push(`<button class="btn ghost sm" onclick="ibxMark('${esc(r.mid)}','Logged')">✓ Logged</button>`);
+    } else if(!done){
       if(one&&ibxIsPayment_(r)) acts.push(`<button class="btn gold sm" onclick="ibxApply('${esc(r.mid)}','pay')">Record payment…</button>`);
       r.qns.forEach(q=>acts.push(`<button class="btn navy sm" onclick="ibxApply('${esc(r.mid)}','open','${esc(q)}')">Open ${esc(q)}</button>`));
       if(one) acts.push(`<button class="btn ghost sm" onclick="ibxApply('${esc(r.mid)}','note')">Add to staff notes…</button>`);
@@ -4285,9 +4295,11 @@ async function ibxMark(mid,status){
     const r=await api('inboxMark',[mid,status]);
     if(!r||!r.ok){ toast((r&&r.error)||'Could not save.'); return false; }
     const i=IBX.findIndex(x=>x.mid===mid);
+    const prev=i>=0?IBX[i]:null;
+    if(prev&&prev.applied) IBX_N.applied=Math.max(0,IBX_N.applied-1);
+    else IBX_N.pending=Math.max(0,IBX_N.pending+(status==='New'?1:-1));
+    ibxCountText_();
     if(i>=0){ if(status!=='New'&&!$('ibxShowDone').checked) IBX.splice(i,1); else IBX[i]=r.row; }
-    const pend=Math.max(0,(parseInt($('ibxCount').textContent,10)||0)+(status==='New'?1:-1));
-    $('ibxCount').textContent=pend?pend+' to review':'Nothing to review';
     renderInboxList_();
     if(IBX_CUR&&IBX_CUR.mid===mid&&status!=='New'){ IBX_CUR=null; renderIbxStrip_(); }
     toast(status==='New'?'Back on the list':'Marked '+status.toLowerCase());
@@ -4343,10 +4355,7 @@ async function refreshInbox(){
   try{ r=await api('inboxScanState',[]); }catch(e){ setMsg('inboxState',e.message,false); return null; }
   if(!r||!r.ok){ setMsg('inboxState',(r&&r.error)||'Could not read the scan state.',false); return null; }
   let h='';
-  h+=r.pending
-    ? '<b>'+r.pending+' email'+(r.pending===1?'':'s')+'</b> waiting for review.'
-    : 'Nothing waiting for review.';
-  if(r.url) h+=' <a href="'+esc(r.url)+'" target="_blank" rel="noopener">The spreadsheet tab</a>';
+  if(r.url) h+='<a href="'+esc(r.url)+'" target="_blank" rel="noopener">The spreadsheet tab</a>';
   if(r.tokenProblem) h+='<br>'+esc(r.tokenProblem);
   else if(!r.configured) h+='<br>The <b>Scan now</b> button is not set up yet (no GitHub token in Script Properties). The morning scan still runs.';
   else if(r.run){

@@ -574,6 +574,38 @@ While a quote opened from a card is on screen, a strip above it repeats the
 email's summary with **Mark logged**, **No action** and **← Back to the list**.
 Opening a different quote by hand drops the strip.
 
+**Already applied cards are hidden.** The list is for what was missed. For
+a payment or signature row with one matched quote, `adminInboxList` reads that
+quote (`findQuoteCtx_`, one cached lookup per quote named) and hides the card
+when the quote already covers it (`inboxAppliedOf_`):
+- **Payment**: the quote holds a payment of an amount the email names,
+  recorded no more than three weeks (`INBOX_PAY_LOOKBACK_DAYS_`) before the
+  email, or any time after. A counter payment and the customer's "I paid today"
+  email can arrive either way round, but an August deposit is not this week's
+  check. If the email names no amount, the card hides only if the quote is
+  paid in full with a payment in that window.
+- **Signature**: a signed contract is on file (`d.contractUrl`).
+
+This is decided each time the list is read, so a payment recorded after the
+scan clears its card. Nothing is written: the row stays *New* on the tab, and
+**Show handled** lists it with the reason ("Already on the quote: $412.50
+recorded Oct 22 by Chris (Check)") and a **✓ Logged** button. That catches the
+rare wrong match, such as two payments of the same amount. The kind comes from
+the AI (stored as `AI · payment` in Reviewed by) or, for older rows, from the
+summary's wording (`inboxKindOf_`). A bare `AI` row from before the kind was
+stored is reviewed once more by the next scan.
+
+**Adobe Sign's signed PDFs are read.** "Signed and filed" mail often names
+nobody in its body, so for Adobe senders only (`adobesign`, `echosign`,
+`adobe.com`) the scanner opens the attached PDF with pypdf. Any form fields
+(`Quote_Number` above all) and the text of its first six pages are passed to
+the review, and a quote number found there matches the quote and skips the
+screen. The review is told an Adobe notice is a signed contract: the signer
+is the customer, and the action is "File the signed contract on QW-… (Upload
+signed copy)". Once it is filed, the card clears itself. PDFs from anyone else
+are not opened, and the PDF text never reaches the sheet's excerpt. Without
+pypdf, or with an unreadable PDF, the email is handled from its body alone.
+
 **Applying never writes on its own.** The buttons fill in the existing forms
 and stop. An AI-read amount is a suggestion. Posting it straight to a ledger,
 or sending its receipt, would skip the person who knows whether the check

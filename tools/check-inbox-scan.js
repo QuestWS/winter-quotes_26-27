@@ -99,6 +99,9 @@ out = {
   'robot': s.extract(msg('news@shop.example', 'Sale', 'Big sale', 'List-Unsubscribe: <x>\\r\\n'), 'x'),
   'card': s.extract(msg('no-reply@square.example', 'You received a payment', 'Payment of $1,250.00 received'), 'x'),
 }
+import os
+for k in ('IMAP_HOST', 'IMAP_PORT', 'IMAP_FOLDERS'): os.environ[k] = ''
+out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
 print(json.dumps(out))
 `;
 let pyOut = null;
@@ -110,6 +113,8 @@ if (pyOut) {
   check('scanner: quote number found, even in the quoted part', a && a.quoteNos.join() === 'QW-26-1255');
   check('scanner: amounts come from the reply, not the quoted original', a && a.amounts.join() === '412.5', a && a.amounts.join());
   check('scanner: a check is a payment', a && a.signals.indexOf('payment') >= 0);
+  check('scanner: an unset Actions variable (empty string) falls back to the default',
+    (pyOut.envDefaults || []).join('|') === 'questwatersports.com|993|INBOX', (pyOut.envDefaults || []).join('|'));
   check('scanner: our own mail is skipped', pyOut.own === null);
   check('scanner: newsletters are skipped', pyOut.robot === null);
   check('scanner: a card processor\'s payment notice is kept', pyOut.card && pyOut.card.amounts.join() === '1250');

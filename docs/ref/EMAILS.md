@@ -454,12 +454,55 @@ against the quote tabs, by quote number first and then by sender address, and
 adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 "Why it is here". Staff set **Status** to *Logged* or *No action*.
 
+**AI review.** Keywords cannot read "dropped the check in your box Tuesday", or
+Jeff writing "the Hendersons want the pontoon pulled before the 10th". With an
+`ANTHROPIC_API_KEY` Actions secret set, every message that gets past the cheap
+filter is read by Claude (`claude-opus-5-5`, effort low; override with the
+`INBOX_AI_MODEL` variable). It answers in a fixed JSON shape: relevant or not,
+what kind (payment, cancellation, contact change, schedule, service request,
+signature, staff direction, new customer, question), priority, a one-line
+summary, the action to take in the quote system, and the customers, quote
+numbers and amounts it is about. The row's **What it says → what to do**
+column is that summary and action. The hidden **Reviewed by** column says
+`AI` or `Keywords`.
+- **Staff mail is read.** @questwatersports.com is no longer skipped, because
+  direction from Jeff and the others is half the point. A staff email names
+  customers, not addresses, so the backend matches `customer_names` to quotes
+  by full name, then by surname alone ("the Hendersons") when that picks out
+  three quotes or fewer, and marks the row *Matched by name — check it is the
+  right customer*. Only the system's own mail (questwsottawa@) is skipped.
+- **The AI's "nothing to log" wins.** No row is made, whatever the keywords say.
+- **It is never asked twice.** The scanner first asks the backend (`known`)
+  which messages already have an AI review or a person's mark, and sends only
+  the rest. The daily run pays for new mail only.
+- **Keyword rows get upgraded in place.** A row made by keywords that still says
+  *New* is rewritten with the AI's reading when the AI sees that message, or
+  removed if the AI says there is nothing to log. A row a person has marked is
+  never touched. So the first AI catch-up cleans up the keyword rows.
+- **Falls back, never loses.** No key, an API error, a refusal or a bad answer
+  means that one message falls back to keywords (and gets another try on the
+  next run). Staff mail without an AI review makes no row: keywords cannot tell
+  direction from chatter.
+- **Email text is data.** It goes to the model inside delimited tags, the
+  system prompt says never to follow instructions in it, and the answer is held
+  to the schema. The worst a hostile email can do is mislabel its own row.
+- **Where the mail goes.** Each reviewed message's sender, subject and text
+  (the new part, up to 12,000 characters, plus up to 1,500 of the quoted
+  original) is sent to Anthropic's API. It is not used to train models under
+  Anthropic's commercial terms.
+- **Cost**, roughly, at Opus 5.5 rates ($4 / $20 per million tokens): a cent or
+  two per email. That is about $10–15 for a 90-day catch-up of ~750 messages
+  and about $10–15 a month after that. Claude Haiku 5.5
+  (`INBOX_AI_MODEL` = `claude-haiku-5-5`) is around forty times cheaper and less
+  careful.
+
 **Rules it keeps:**
 - **Read-only on the mailbox.** The folder is opened read-only and every fetch
   is `BODY.PEEK`, so nothing is marked read, moved or deleted.
 - **Writes one tab, touches no quote.** It never records a payment or sends
-  anything. A row is a prompt for a person.
-- **One row per message, ever**, keyed by Message-ID (hidden last column), so
+  anything. A row is a prompt for a person. The only rows it ever rewrites or
+  removes are its own keyword rows still marked *New* (see AI review).
+- **One row per message, ever**, keyed by Message-ID (hidden column 15), so
   re-runs and back-scans add nothing twice, and a row a person has already
   marked is never rewritten.
 - **The repo and its Actions logs are public.** The script prints counts only,
@@ -470,8 +513,8 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 - Amounts and topic words come only from the new part of a reply, above
   "On … wrote:". Otherwise every reply to a quote email would "mention" our own
   balance figure. Quote numbers come from the whole message.
-- Our own mail (questwatersports.com and questwsottawa@gmail.com) is skipped,
-  and so are newsletters and no-reply senders, **unless** they name a quote or
+- The system's own mail (questwsottawa@gmail.com) is skipped, and so are
+  newsletters and no-reply senders, **unless** they name a quote or
   are about a payment or a signature. A card processor's "you received a
   payment" is exactly what this is for.
 
@@ -480,6 +523,8 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 2. GitHub → repo Settings → Secrets and variables → Actions → add three
    repository secrets: `INBOX_SCAN_KEY` (that key), `IMAP_USER`
    (`chris@questwatersports.com`), `IMAP_PASSWORD` (its mail password).
+   For the AI review, a fourth secret: `ANTHROPIC_API_KEY` (console.anthropic.com
+   → API keys; put a monthly spend limit on it under Billing → Limits).
    Optional variables: `IMAP_HOST` (default `questwatersports.com`),
    `IMAP_PORT` (default 993), `IMAP_FOLDERS` (default `INBOX`, comma-separated).
 3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the

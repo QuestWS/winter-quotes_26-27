@@ -9,7 +9,8 @@ name: Scan inbox
 # counts only. Never add a step that echoes a message, an address or a name.
 #
 # Needs three repository secrets: IMAP_USER, IMAP_PASSWORD, INBOX_SCAN_KEY.
-# Optional variables: IMAP_HOST, IMAP_PORT, IMAP_FOLDERS.
+# A fourth, ANTHROPIC_API_KEY, turns on the AI review (without it: keywords).
+# Optional variables: IMAP_HOST, IMAP_PORT, IMAP_FOLDERS, INBOX_AI_MODEL.
 
 on:
   schedule:
@@ -33,7 +34,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45   # a 90-day catch-up with the AI review takes a while
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +50,13 @@ jobs:
           [ -n "$INBOX_SCAN_KEY" ] || { echo "::error::Missing secret INBOX_SCAN_KEY — run setupInboxScan() in the Apps Script editor and copy the key it prints"; missing=1; }
           exit $missing
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the Anthropic SDK
+        run: pip install --quiet anthropic
+
       - name: Scan and post to the Inbox Review tab
         env:
           IMAP_HOST: ${{ vars.IMAP_HOST }}
@@ -57,5 +65,7 @@ jobs:
           IMAP_USER: ${{ secrets.IMAP_USER }}
           IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
           INBOX_SCAN_KEY: ${{ secrets.INBOX_SCAN_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          INBOX_AI_MODEL: ${{ vars.INBOX_AI_MODEL }}
           SCAN_DAYS: ${{ inputs.days || '3' }}
         run: python3 tools/inbox-scan.py

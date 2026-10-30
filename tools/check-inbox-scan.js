@@ -32,7 +32,8 @@ const decl = (n) => {
 
 let KEY = '';
 const B = new Function('PropertiesService', [
-  decl('COL'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxRowFor_'), fn('inboxKeyOk_'),
+  decl('COL'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
+  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxKeyOk_'),
   'return {inboxNormQn_, inboxRowFor_, inboxKeyOk_};'
 ].join('\n'))({ getScriptProperties: () => ({ getProperty: () => KEY }) });
 
@@ -41,7 +42,8 @@ const check = (l, c, d) => { console.log('  ' + (c ? 'PASS' : 'FAIL') + '  ' + l
 
 const q1 = { qn: 'QW-26-1255', tab: 'Inside', name: 'John White', bal: 412.5, total: 912.5,
   ts: new Date('2026-10-01T12:00:00Z') };
-const idx = { byQn: { 'QW-26-1255': q1 }, byEmail: { 'john@questwatersports.com': [q1] } };
+const idx = { byQn: { 'QW-26-1255': q1 }, byEmail: { 'john@questwatersports.com': [q1] },
+  byName: { 'john white': [q1] }, byLast: { 'white': [q1] } };
 const item = (o) => Object.assign({ messageId: '<m1@x>', date: '2026-10-20T15:00:00Z',
   fromName: 'Sender', fromEmail: 'someone@example.com', subject: 'Hi', quoteNos: [],
   amounts: [], signals: [], snippet: '', mailbox: 'chris@/INBOX' }, o);
@@ -76,6 +78,68 @@ check('a stranger saying nothing relevant makes no row', r === null);
 r = B.inboxRowFor_(item({ signals: ['service'] }), idx);
 check('a stranger asking about service is a possible new customer', r && /Possible new customer/.test(r[H.why]));
 
+/* ---- the AI review's answer ---- */
+const ai = (o) => Object.assign({ relevant: true, kind: 'payment', priority: 'Medium', summary: 'S', action: '',
+  customer_names: [], quote_numbers: [], amounts: [] }, o);
+r = B.inboxRowFor_(item({ quoteNos: ['QW-26-1255'], signals: ['payment'], ai: ai({ relevant: false }) }), idx);
+check('AI: "nothing to log" beats the keywords — no row', r === null);
+r = B.inboxRowFor_(item({ staff: true, fromEmail: 'jeff@questwatersports.com', signals: ['schedule'] }), idx);
+check('staff mail without an AI review makes no row', r === null);
+r = B.inboxRowFor_(item({ staff: true, fromEmail: 'jeff@questwatersports.com',
+  ai: ai({ kind: 'staff_direction', priority: 'High', summary: 'Jeff says pull the Whites first',
+           action: 'Move QW-26-1255 to the top of the haul-out list', customer_names: ['the Whites'] }) }), idx);
+check('AI: staff direction matched to a quote by surname ("the Whites")', r && r[H.qn] === 'QW-26-1255' && r[H.pri] === 'High'
+  && /Jeff says pull the Whites first → Move QW-26-1255/.test(r[H.why]) && /From staff/.test(r[H.why]) && /Matched by name/.test(r[H.why]) && r[15] === 'AI');
+r = B.inboxRowFor_(item({ fromEmail: 'stranger@example.com', ai: ai({ customer_names: ['Zed Nobody'], summary: 'New inquiry' }) }), idx);
+check('AI: a relevant stranger still gets a row, and an unknown name is said', r && /No quote found for Zed Nobody/.test(r[H.why]));
+r = B.inboxRowFor_(item({ fromEmail: 'john@questwatersports.com', amounts: [999], ai: ai({ priority: 'Low', amounts: [412.5] }) }), idx);
+check('AI: its amounts replace the keyword ones, and the balance match still makes it High',
+  r && r[H.amts] === '$412.50' && r[H.pri] === 'High');
+r = B.inboxRowFor_(item({ quoteNos: ['QW261255'] }), idx);
+check('keyword rows say so in the hidden column', r && r[15] === 'Keywords');
+
+/* ---- ingest: re-review in place, never over a person's mark ---- */
+function fakeSheet(rows) {
+  const S = { rows: rows.map(r => r.slice()), deleted: [] };
+  const range = (r, c, nr, nc) => ({
+    getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((S.rows[r - 1 + i] || [])[c - 1 + j]) ?? '')),
+    setValues: (v) => v.forEach((row, i) => row.forEach((x, j) => { (S.rows[r - 1 + i] = S.rows[r - 1 + i] || [])[c - 1 + j] = x; })),
+    setDataValidation: () => {}, setNumberFormat: () => {}, setFontWeight: () => {},
+  });
+  S.sheet = { getLastRow: () => S.rows.length, getRange: range, hideColumns: () => {}, setFrozenRows: () => {}, setColumnWidth: () => {},
+    insertRowsBefore: (at, n) => S.rows.splice(at - 1, 0, ...Array.from({ length: n }, () => [])),
+    deleteRow: (r) => { S.deleted.push(S.rows[r - 1][14]); S.rows.splice(r - 1, 1); } };
+  return S;
+}
+const HEAD = (gas.match(/^const INBOX_HEADERS_ = (\[[\s\S]*?\]);/m) || [])[1];
+const oldRow = (mid, status, rev) => ['' + status, 'Low', '', 'n', 'e', 's', '', '', '', '', '', 'keyword reason', '', 'm', mid, rev];
+const S = fakeSheet([eval(HEAD), oldRow('<keep-marked>', 'Logged', 'Keywords'), oldRow('<redo>', 'New', 'Keywords'),
+  oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI')]);
+const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
+  decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'),
+  decl('INBOX_STATUSES_'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
+  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
+  fn('inboxIngest_'), fn('inboxKnown_'), 'return {inboxIngest_, inboxKnown_};'
+].join('\n'))(
+  { getActiveSpreadsheet: () => ({ getSheetByName: () => S.sheet }), newDataValidation: () => ({ requireValueInList: () => ({ build: () => 1 }) }) },
+  { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+  () => idx);
+const kn = I.inboxKnown_().settled.sort().join(',');
+check('known: AI-reviewed and person-marked rows are not sent to the AI again', kn === '<ai-done>,<keep-marked>', kn);
+const res = I.inboxIngest_([
+  item({ messageId: '<keep-marked>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'NEW TEXT' }) }),
+  item({ messageId: '<redo>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Mailed a check' }) }),
+  item({ messageId: '<drop>', ai: ai({ relevant: false }) }),
+  item({ messageId: '<ai-done>', ai: ai({ summary: 'AGAIN' }) }),
+  item({ messageId: '<fresh>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Brand new' }) }),
+]);
+const rowOf = (m) => S.rows.find(r => r[14] === m);
+check('ingest: a keyword row still New is rewritten with the AI reading', res.updated === 1 && /Mailed a check/.test(rowOf('<redo>')[11]) && rowOf('<redo>')[15] === 'AI');
+check('ingest: a keyword row the AI calls irrelevant is removed', res.removed === 1 && S.deleted.join() === '<drop>' && !rowOf('<drop>'));
+check('ingest: a row a person marked is never touched', rowOf('<keep-marked>')[0] === 'Logged' && rowOf('<keep-marked>')[11] === 'keyword reason');
+check('ingest: an AI-reviewed row is not reviewed twice', !/AGAIN/.test(rowOf('<ai-done>')[11]));
+check('ingest: a new message goes in at the top', res.added === 1 && S.rows[1][14] === '<fresh>' && /Brand new/.test(S.rows[1][11]));
+
 KEY = '';
 check('no key configured refuses everyone', !B.inboxKeyOk_(''));
 KEY = 'short';
@@ -95,11 +159,40 @@ def msg(frm, subj, body, extra=''):
 out = {
   'reply': s.extract(msg('Jo <jo@example.com>', 'Re: Your quote QW-26-1255',
       'I mailed a check for $412.50 today.\\r\\n\\r\\nOn Mon, Oct 19, 2026, Quest wrote:\\r\\n> Balance due $900.00\\r\\n'), 'x'),
-  'own': s.extract(msg('Quest <service@questwatersports.com>', 'Quote saved', 'QW-26-1255'), 'x'),
+  'own': s.extract(msg('Quest <questwsottawa@gmail.com>', 'Quote saved', 'QW-26-1255'), 'x'),
+  'staff': s.extract(msg('Jeff <jeff@questwatersports.com>', 'Hendersons', 'Pull the Henderson pontoon before the 10th.'), 'x'),
   'robot': s.extract(msg('news@shop.example', 'Sale', 'Big sale', 'List-Unsubscribe: <x>\\r\\n'), 'x'),
   'card': s.extract(msg('no-reply@square.example', 'You received a payment', 'Payment of $1,250.00 received'), 'x'),
 }
-import os
+import os, types
+out['posted'] = s.for_post(out['reply'])
+# A stand-in for the anthropic package, so this runs without it installed.
+class APIError(Exception): pass
+fake = types.ModuleType('anthropic'); fake.APIError = APIError
+sys.modules['anthropic'] = fake
+seen = {}
+class Msgs:
+    mode = 'ok'
+    def create(self, **kw):
+        seen['req'] = kw
+        if Msgs.mode == 'err': raise APIError('boom')
+        txt = types.SimpleNamespace(type='text', text='{"relevant": true, "kind": "staff_direction", "priority": "High", "summary": "x", "action": "y", "customer_names": ["Henderson"], "quote_numbers": [], "amounts": []}')
+        return types.SimpleNamespace(stop_reason='refusal' if Msgs.mode == 'refusal' else 'end_turn', content=[txt])
+client = types.SimpleNamespace(beta=types.SimpleNamespace(messages=Msgs()))
+os.environ['INBOX_AI_MODEL'] = ''
+st = out['staff']
+ans, err = s.ai_review_one(client, s.env('INBOX_AI_MODEL', 'claude-opus-5-5'), st)
+Msgs.mode = 'err'; errAns, errName = s.ai_review_one(client, 'm', st)
+Msgs.mode = 'refusal'; _, ref = s.ai_review_one(client, 'm', st)
+# ai_review with a settled id: nothing to send, one reused.
+os.environ['ANTHROPIC_API_KEY'] = 'k'
+done, failed, reused = s.ai_review([dict(st)], {st['messageId']})
+st2 = dict(st); Msgs.mode = 'ok'
+fake.Anthropic = lambda **kw: client
+s.ai_review([st2], set())
+out['ai'] = {'req': {k: seen['req'][k] for k in ('model', 'output_config', 'fallbacks', 'messages')},
+             'err': errName, 'errAns': errAns, 'refusal': ref, 'skipped': reused, 'attached': st2.get('ai')}
+del out['reply']['_quoted']
 for k in ('IMAP_HOST', 'IMAP_PORT', 'IMAP_FOLDERS'): os.environ[k] = ''
 out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
 print(json.dumps(out))
@@ -115,7 +208,19 @@ if (pyOut) {
   check('scanner: a check is a payment', a && a.signals.indexOf('payment') >= 0);
   check('scanner: an unset Actions variable (empty string) falls back to the default',
     (pyOut.envDefaults || []).join('|') === 'questwatersports.com|993|INBOX', (pyOut.envDefaults || []).join('|'));
-  check('scanner: our own mail is skipped', pyOut.own === null);
+  check('scanner: the system\'s own mail is skipped', pyOut.own === null);
+  check('scanner: staff mail is kept and marked as staff', pyOut.staff && pyOut.staff.staff === true);
+  check('scanner: the full text kept for the AI never reaches the post',
+    pyOut.posted && !Object.keys(pyOut.posted).some(k => k[0] === '_') && pyOut.reply && pyOut.reply._fresh.indexOf('I mailed a check') === 0);
+  const sa = pyOut.ai || {};
+  check('scanner AI: the request asks for the schema, low effort, default fallbacks', sa.req && sa.req.output_config.format.type === 'json_schema'
+    && sa.req.output_config.effort === 'low' && sa.req.fallbacks === 'default' && sa.req.model === 'claude-opus-5-5');
+  check('scanner AI: the email goes in as delimited data, staff marked', sa.req && /<email_new_text>[\s\S]*Pull the Henderson pontoon[\s\S]*<\/email_new_text>/.test(sa.req.messages[0].content)
+    && /\(Quest staff\)/.test(sa.req.messages[0].content));
+  check('scanner AI: a good answer is attached to the item', sa.attached && sa.attached.relevant === true);
+  check('scanner AI: an API error falls back to keywords, by class name only', sa.err === 'APIError' && sa.errAns === null);
+  check('scanner AI: a refusal falls back too', sa.refusal === 'refusal');
+  check('scanner AI: settled messages are not sent again', sa.skipped === 1);
   check('scanner: newsletters are skipped', pyOut.robot === null);
   check('scanner: a card processor\'s payment notice is kept', pyOut.card && pyOut.card.amounts.join() === '1250');
   /* And the two halves agree: the scanner's item makes the right row. */

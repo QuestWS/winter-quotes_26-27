@@ -33,7 +33,7 @@ const decl = (n) => {
 let KEY = '';
 const B = new Function('PropertiesService', [
   decl('COL'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
-  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxKeyOk_'),
+  fn('inboxQuotesByName_'), decl('INBOX_POS_AMOUNT_MAX_QUOTES_'), fn('inboxPosMatch_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxKeyOk_'),
   'return {inboxNormQn_, inboxRowFor_, inboxKeyOk_};'
 ].join('\n'))({ getScriptProperties: () => ({ getProperty: () => KEY }) });
 
@@ -97,6 +97,27 @@ check('AI: its amounts replace the keyword ones, and the balance match still mak
   r && r[H.amts] === '$412.50' && r[H.pri] === 'High');
 r = B.inboxRowFor_(item({ quoteNos: ['QW261255'] }), idx);
 check('keyword rows say so in the hidden column', r && r[15] === 'Keywords');
+
+/* ---- POS+ receipts: only a winter customer's name and/or an expected amount ---- */
+const posIdx = Object.assign({}, idx, { all: [q1,
+  { qn: 'QW-26-3001', name: 'Ann Other', bal: 250, dep: 200, total: 700 },
+  { qn: 'QW-26-3002', name: 'Bo Other', bal: 0, dep: 200, total: 900 },
+  { qn: 'QW-26-3003', name: 'Cy Other', bal: 0, dep: 200, total: 900 },
+  { qn: 'QW-26-3004', name: 'Di Other', bal: 0, dep: 200, total: 900 }] });
+q1.dep = 500;
+const posAi = (names, amts) => ai({ kind: 'payment', priority: 'Medium', summary: 'POS+ receipt', customer_names: names, amounts: amts });
+const posItem = (names, amts) => item({ pos: true, fromEmail: 'receipts@posplus.example', ai: posAi(names, amts) });
+r = B.inboxRowFor_(posItem(['John White'], [412.5]), posIdx);
+check('POS+: name and balance match → High on that quote', r && r[H.pri] === 'High' && r[H.qn] === 'QW-26-1255' && /name and amount match the balance/.test(r[H.why]) && r[15] === 'AI · payment · POS');
+r = B.inboxRowFor_(posItem(['John White'], [500]), posIdx);
+check('POS+: name and expected deposit match → High', r && r[H.pri] === 'High' && /match the deposit/.test(r[H.why]));
+r = B.inboxRowFor_(posItem(['John White'], [77.13]), posIdx);
+check('POS+: winter customer, other amount → Medium, "may be a service job"', r && r[H.pri] === 'Medium' && /may be a service job/.test(r[H.why]));
+r = B.inboxRowFor_(posItem(['Zed Walkin'], [250]), posIdx);
+check('POS+: no name match, amount equals one quote\'s balance → Low on that quote', r && r[H.pri] === 'Low' && r[H.qn] === 'QW-26-3001' && /name on the receipt does not match/.test(r[H.why]));
+check('POS+: an amount shared by more than three quotes (the standard deposit) alone → no row', B.inboxRowFor_(posItem(['Zed Walkin'], [200]), posIdx) === null);
+check('POS+: a stranger buying parts → no row', B.inboxRowFor_(posItem(['Zed Walkin'], [37.99]), posIdx) === null);
+check('POS+: a receipt with no name and an unmatched amount → no row', B.inboxRowFor_(posItem([], [12.5]), posIdx) === null);
 r = B.inboxRowFor_(item({ dockwa: true, fromEmail: 'noreply@dockwa.com', ai: ai({ kind: 'service_request', summary: 'Wants winter storage' }) }), idx);
 check('Dockwa: a relevant Dockwa row is marked as reviewed under the Dockwa rule', r && r[15] === 'AI · service_request · Dockwa');
 
@@ -115,22 +136,25 @@ function fakeSheet(rows) {
   return S;
 }
 const HEAD = (gas.match(/^const INBOX_HEADERS_ = (\[[\s\S]*?\]);/m) || [])[1];
+const posRow = (mid, rev) => ['New', 'Medium', '', 'POS+', 'receipts@posplus.example', 'Your receipt', '', '', '', '', '', 'x', '', 'm', mid, rev];
 const dockRow = (mid, rev) => ['New', 'Medium', '', 'Dockwa', 'noreply@dockwa.com', 'New message from a slip holder', '', '', '', '', '', 'x', '', 'm', mid, rev];
 const oldRow = (mid, status, rev) => ['' + status, 'Low', '', 'n', 'e', 's', '', '', '', '', '', 'keyword reason', '', 'm', mid, rev];
 const S = fakeSheet([eval(HEAD), oldRow('<keep-marked>', 'Logged', 'Keywords'), oldRow('<redo>', 'New', 'Keywords'),
   oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI · payment'), oldRow('<legacy-ai>', 'New', 'AI'),
-  dockRow('<dock-old>', 'AI · service_request'), dockRow('<dock-new>', 'AI · service_request · Dockwa')]);
+  dockRow('<dock-old>', 'AI · service_request'), dockRow('<dock-new>', 'AI · service_request · Dockwa'),
+  posRow('<pos-old>', 'AI · payment'), posRow('<pos-new>', 'AI · payment · POS')]);
 const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
   decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_ROW_WIDTH_'),
   decl('INBOX_STATUSES_'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
-  fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxAiDone_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
+  fn('inboxQuotesByName_'), decl('INBOX_POS_AMOUNT_MAX_QUOTES_'), fn('inboxPosMatch_'), fn('inboxAiOf_'), fn('inboxAiDone_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
   fn('inboxIngest_'), fn('inboxKnown_'), 'return {inboxIngest_, inboxKnown_};'
 ].join('\n'))(
   { getActiveSpreadsheet: () => ({ getSheetByName: () => S.sheet }), newDataValidation: () => ({ requireValueInList: () => ({ build: () => 1 }) }) },
   { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   () => idx);
 const kn = I.inboxKnown_().settled.sort().join(',');
-check('known: AI-reviewed and person-marked rows are not sent to the AI again', kn === '<ai-done>,<dock-new>,<keep-marked>', kn);
+check('known: AI-reviewed and person-marked rows are not sent to the AI again', kn === '<ai-done>,<dock-new>,<keep-marked>,<pos-new>', kn);
+check('POS+: a receipt row reviewed before the POS rule is looked at again', kn.indexOf('<pos-old>') < 0);
 const res = I.inboxIngest_([
   item({ messageId: '<keep-marked>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'NEW TEXT' }) }),
   item({ messageId: '<redo>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Mailed a check' }) }),
@@ -261,7 +285,7 @@ class FakeLlm:
     def ask(self, model, system, user, schema, effort):
         ids = [int(x) for x in re.findall(r'<email id="(\d+)">', user)]
         kind = 'screen' if schema is s.SCREEN_SCHEMA else 'review'
-        calls.append({'kind': kind, 'model': model, 'n': len(ids), 'user': user, 'effort': effort})
+        calls.append({'kind': kind, 'model': model, 'n': len(ids), 'user': user, 'effort': effort, 'system': system})
         if FakeLlm.fail == kind: raise s.LlmError('RateLimitError')
         blocks = re.split(r'<email id="\d+">', user)[1:]
         if kind == 'screen':
@@ -419,6 +443,11 @@ nd = s.extract(msg('Jo <jo@example.com>', 'Hi', 'Winterize please'), 'x')
 out['dockwa'] = {'flag': dk['dockwa'], 'plain': nd['dockwa'], 'tagScreen': '(Dockwa message to Heritage Harbor)' in s.email_block(0, dk, False),
   'tagReview': '(Dockwa message to Heritage Harbor)' in s.email_block(0, dk, True), 'noTag': '(Dockwa' not in s.email_block(0, nd, True),
   'screenRule': 'Dockwa' in s.SCREEN_SYSTEM, 'reviewRule': 'Dockwa' in s.AI_SYSTEM}
+rc = s.extract(msg('POS+ Receipts <no-reply@posplus.example>', 'Your receipt from Quest Watersports', 'Total $412.50 Visa 4412 Customer: John White'), 'x')
+calls.clear()
+c4 = s.ai_review([rc], set(), FakeLlm())
+out['pos'] = {'kept': rc is not None and rc['pos'], 'screened': any(k['kind'] == 'screen' for k in calls),
+  'model': [k['model'] for k in calls], 'posPrompt': 'POS+' in s.POS_SYSTEM, 'ai': 'ai' in rc}
 out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
 print(json.dumps(out))
 `;
@@ -472,6 +501,9 @@ if (pyOut) {
   const DK = pyOut.dockwa || {};
   check('Dockwa: messages are tagged for the screen and the review, others are not', DK.flag === true && DK.plain === false && DK.tagScreen && DK.tagReview && DK.noTag);
   check('Dockwa: both the screen and the review carry the "mechanical work or storage only" rule', DK.screenRule && DK.reviewRule);
+  const PS = pyOut.pos || {};
+  check('POS+: a receipt from a no-reply address is kept for matching, not dropped as a robot', PS.kept === true);
+  check('POS+: receipts skip the relevance screen and are read by Haiku, not Opus', PS.screened === false && JSON.stringify(PS.model) === '["claude-haiku-5-5"]' && PS.ai && PS.posPrompt, JSON.stringify(PS));
   const C = pyOut.cli || {};
   check('subscription: chosen when the token is set, answer read from structured_output', C.mode === 'cli' && C.ans && C.ans.results[0].keep === false);
   check('subscription: print mode, the model asked for, no tools, schema enforced', C.print && C.model === 'claude-haiku-5-5' && C.tools === '' && C.schema && C.mcp);

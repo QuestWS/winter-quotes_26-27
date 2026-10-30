@@ -78,7 +78,7 @@ symptom.
 | The "review & sign" link | `signUrlFor` (engine), `signUrlFor_` (`.gs` wrapper) | both |
 | Send, and record in Email History | `adminSendEmail`, `recordEmail_` | `.gs` |
 | The two automatic sends | `dailyReminderCheck`, `leadFollowUpCheck` | `.gs` |
-| The Inbox Review tab (nightly scan of chris@ for unlogged payments and changes) | `inboxServe_`, `inboxIngest_`, `inboxRowFor_`, `inboxKnown_`, `inboxQuotesByName_`, `setupInboxScan`; the AI review lives in the scanner; the console's Inbox review panel is `adminInboxScanState`, `adminInboxScanRun`, `adminInboxList`, `adminInboxMark`, the already-applied check `inboxAppliedOf_` / `inboxKindOf_` (page: `toggleInbox`, `runInboxScan`, `loadInboxList`, `ibxApply`, `ibxMark`); the reader is `tools/inbox-scan.py`, run by `.github/workflows/scan-inbox.yml` | `.gs` |
+| The Inbox Review tab (nightly scan of chris@ for unlogged payments and changes) | `inboxServe_`, `inboxIngest_`, `inboxRowFor_`, `inboxKnown_`, `inboxQuotesByName_`, `setupInboxScan`; the AI review lives in the scanner; the console's Inbox review panel is `adminInboxScanState`, `adminInboxScanRun`, `adminInboxList`, `adminInboxMark`, the already-applied check `inboxAppliedOf_` / `inboxKindOf_`, POS+ receipt matching `inboxPosMatch_` (page: `toggleInbox`, `runInboxScan`, `loadInboxList`, `ibxApply`, `ibxMark`); the reader is `tools/inbox-scan.py`, run by `.github/workflows/scan-inbox.yml` | `.gs` |
 | Holding the reminder off an imported quote | `isImportHoldMark_`, `isImportSentMark_`, `importSentAt_`, `releaseImportHold_` | `.gs` |
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |

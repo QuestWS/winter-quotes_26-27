@@ -79,7 +79,10 @@ QUOTE_CUT_RE = re.compile(
 
 
 def env(name, default=''):
-    return os.environ.get(name, default).strip()
+    # An Actions variable that was never set arrives as an empty string, not
+    # as a missing one -- so empty means "use the default" too. (The first
+    # live run died on int('') for IMAP_PORT exactly this way.)
+    return (os.environ.get(name) or '').strip() or default
 
 
 def web_app_url():

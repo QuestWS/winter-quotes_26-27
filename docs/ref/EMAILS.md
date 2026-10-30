@@ -609,6 +609,30 @@ the robot filter and always reaches the screen. A Dockwa row's Reviewed by
 ends `· Dockwa`. Rows reviewed before this rule (Oct 30 2026) and still *New*
 are reviewed once more, and removed if they fail it.
 
+**POS+ receipts: only winter money.** POS+ (the register) emails a receipt
+for every sale. The scanner tags them (`pos+`, `posplus` or `pospluslogin` in
+the sender, name or subject) and exempts them from the robot filter. They skip
+the relevance screen: Haiku only reads each one (customer name as printed, the
+total paid, method, what was bought). The backend then decides by matching
+(`inboxPosMatch_`), with no judgment involved:
+
+| Receipt | Card |
+|---|---|
+| Name matches a winter customer **and** the amount equals that quote's expected deposit, balance or total | **High**, on that quote |
+| Name matches, amount doesn't | **Medium**, "may be a service job" |
+| No name match, amount equals the deposit/balance/total of 1–3 quotes | **Low**, on those quotes |
+| Anything else, including an amount shared by more than three quotes such as the standard deposit | no card |
+
+A POS card is a payment card, so the already-applied check hides it once that
+payment is on the quote. Reviewed by ends `· POS`, and POS rows reviewed
+before this rule and still *New* are reviewed once more.
+
+Not built yet: asking the service tracker (QuestWS/servicetracker) whether a
+receipt is a service-job payment logged there. The tracker has no
+server-to-server read for that. Its only shared-key door is its own read of
+this system's winter feed (`WINTER_KEY` / `TRACKER_KEY`), and everything else
+needs a staff sign-in. It would need a new key-gated lookup on the tracker's side.
+
 **Adobe Sign's signed PDFs are read.** "Signed and filed" mail often names
 nobody in its body, so for Adobe senders only (`adobesign`, `echosign`,
 `adobe.com`) the scanner opens the attached PDF with pypdf. Any form fields

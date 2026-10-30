@@ -9605,7 +9605,7 @@ function inboxNormName_(s) {
    Email cell can hold two addresses ("a@x.com, b@y.com"); each one indexes.
    Names are for staff mail: Jeff writes "the Hendersons", not an address. */
 function inboxQuoteIndex_(ss) {
-  const byQn = {}, byEmail = {}, byName = {}, byLast = {};
+  const byQn = {}, byEmail = {}, byName = {}, byLast = {}, all = [];
   const push = function (map, k, q) { if (k) (map[k] = map[k] || []).push(q); };
   ss.getSheets().forEach(function (sh) {
     const name = sh.getName();
@@ -9613,12 +9613,13 @@ function inboxQuoteIndex_(ss) {
     if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
     const last = sh.getLastRow();
     if (last < 2) return;
-    sh.getRange(2, 1, last - 1, COL.TOTAL).getValues().forEach(function (r) {
+    sh.getRange(2, 1, last - 1, COL.DEP).getValues().forEach(function (r) {
       const qn = String(r[COL.QN - 1] || '').trim();
       if (!qn) return;
       const q = { qn: qn, tab: name,
         name: [r[COL.FIRST - 1], r[COL.LAST - 1]].filter(Boolean).join(' '),
-        bal: r[COL.BAL - 1], total: r[COL.TOTAL - 1], ts: r[COL.TS - 1] };
+        bal: r[COL.BAL - 1], total: r[COL.TOTAL - 1], dep: r[COL.DEP - 1], ts: r[COL.TS - 1] };
+      all.push(q);
       byQn[inboxNormQn_(qn) || qn.toUpperCase()] = q;
       String(r[COL.EMAIL - 1] || '').toLowerCase().split(/[\s,;]+/).forEach(function (em) {
         if (em.indexOf('@') > 0) push(byEmail, em, q);
@@ -9627,7 +9628,7 @@ function inboxQuoteIndex_(ss) {
       push(byLast, inboxNormName_(r[COL.LAST - 1]), q);
     });
   });
-  return { byQn: byQn, byEmail: byEmail, byName: byName, byLast: byLast };
+  return { byQn: byQn, byEmail: byEmail, byName: byName, byLast: byLast, all: all };
 }
 
 /* A name from the email → quotes. Full name first; then the surname alone,
@@ -9645,6 +9646,53 @@ function inboxQuotesByName_(name, idx) {
     if (hit && hit.length <= 3) return hit;
   }
   return [];
+}
+
+/* POS+ RECEIPTS — the register emails one for every sale, and almost none
+   are winter money. Chris, Oct 2026: flag one only if it matches a winter
+   customer's name and/or an expected deposit or balance. So:
+     name AND amount match one quote   → High   (this is a winter payment)
+     name matches, amount does not     → Medium (a winter customer; maybe a
+                                                  service job — check)
+     amount matches 1–3 quotes, no name → Low    (could be; the name on the
+                                                  receipt didn't match)
+     anything else                      → no row
+   "Amount matches" is the quote's expected deposit, its balance, or its
+   total, to the cent. An amount shared by more than three quotes (the
+   standard deposit) says nothing on its own. Returns null for no row. */
+const INBOX_POS_AMOUNT_MAX_QUOTES_ = 3;
+function inboxPosMatch_(it, ai, idx) {
+  const names = (ai && Array.isArray(ai.customer_names)) ? ai.customer_names.slice(0, 4) : [];
+  const amounts = ((ai && Array.isArray(ai.amounts)) ? ai.amounts : (Array.isArray(it.amounts) ? it.amounts : []))
+    .map(Number).filter(function (n) { return isFinite(n) && n > 0; });
+  const close = function (a, b) { return b !== '' && b != null && isFinite(Number(b)) && Math.abs(a - Number(b)) < 0.005; };
+  const which = function (q) {
+    for (let i = 0; i < amounts.length; i++) {
+      if (close(amounts[i], q.bal) && Number(q.bal) > 0) return 'balance';
+      if (close(amounts[i], q.dep)) return 'deposit';
+      if (close(amounts[i], q.total)) return 'total';
+    }
+    return '';
+  };
+  const byName = [];
+  names.forEach(function (n) {
+    inboxQuotesByName_(n, idx).forEach(function (q) { if (byName.indexOf(q) < 0) byName.push(q); });
+  });
+  const both = byName.filter(function (q) { return which(q); });
+  if (both.length) {
+    return { quotes: both, pri: 'High', why: 'POS+ receipt: name and amount match the ' + which(both[0]) + ' on ' + both[0].qn };
+  }
+  if (byName.length) {
+    return { quotes: byName, pri: 'Medium',
+             why: 'POS+ receipt in a winter customer\'s name, but the amount matches no deposit or balance — may be a service job' };
+  }
+  const byAmt = (idx.all || []).filter(function (q) { return which(q); });
+  if (byAmt.length && byAmt.length <= INBOX_POS_AMOUNT_MAX_QUOTES_) {
+    return { quotes: byAmt, pri: 'Low',
+             why: 'POS+ receipt amount equals the ' + which(byAmt[0]) + ' on ' + byAmt.map(function (q) { return q.qn; }).join(', ') +
+                  '; the name on the receipt does not match' };
+  }
+  return null;
 }
 
 /* The AI's answer, if there is one and it has the shape we asked for. */
@@ -9666,6 +9714,8 @@ function inboxRowFor_(it, idx) {
   const ai = inboxAiOf_(it);
   if (ai && !ai.relevant) return null;
   if (!ai && it.staff) return null;
+  const pos = it.pos ? inboxPosMatch_(it, ai, idx) : null;
+  if (it.pos && !pos) return null;
   const email = cut(it.fromEmail, 200).toLowerCase().trim();
   const signals = (Array.isArray(it.signals) ? it.signals : []).map(function (s) { return cut(s, 40); });
   const amounts = ((ai && Array.isArray(ai.amounts)) ? ai.amounts : (Array.isArray(it.amounts) ? it.amounts : []))
@@ -9684,7 +9734,7 @@ function inboxRowFor_(it, idx) {
   if (ai && Array.isArray(ai.customer_names)) ai.customer_names.slice(0, 6).forEach(function (nm) {
     inboxQuotesByName_(nm, idx).forEach(function (q) { if (byName.indexOf(q) < 0) byName.push(q); });
   });
-  const quotes = named.length ? named : bySender.length ? bySender : byName;
+  const quotes = pos ? pos.quotes : named.length ? named : bySender.length ? bySender : byName;
   if (!ai && !quotes.length && !unknown.length && !signals.length && !amounts.length) return null;
 
   const why = [];
@@ -9694,7 +9744,7 @@ function inboxRowFor_(it, idx) {
     pri = INBOX_PRIORITIES_[ai.priority] ? ai.priority : 'Medium';
     why.push(cut(ai.summary, 500) + (ai.action ? ' → ' + cut(ai.action, 300) : ''));
     if (it.staff) notes.push('From staff');
-    if (!named.length && !bySender.length && byName.length) notes.push('Matched by name — check it is the right customer');
+    if (!pos && !named.length && !bySender.length && byName.length) notes.push('Matched by name — check it is the right customer');
     if (!quotes.length && ai.customer_names && ai.customer_names.length) notes.push('No quote found for ' + ai.customer_names.slice(0, 3).map(function (n) { return cut(n, 60); }).join(', '));
   } else {
     const has = function (s) { return signals.indexOf(s) >= 0; };
@@ -9710,9 +9760,10 @@ function inboxRowFor_(it, idx) {
     if (!quotes.length && (has('service') || has('schedule'))) why.push('Possible new customer');
   }
   if (unknown.length) notes.push(unknown.join(', ') + ' not found on the sheet');
+  if (pos) { pri = pos.pri; notes.unshift(pos.why); }
 
   const q = quotes.length === 1 ? quotes[0] : null;
-  if (q && amounts.length) {
+  if (!pos && q && amounts.length) {   // a POS+ receipt's priority is inboxPosMatch_'s
     const bal = Number(q.bal);
     if (amounts.some(function (a) { return Math.abs(a - bal) < 0.01; })) {
       notes.push('An amount equals the balance due'); pri = 'High';
@@ -9736,7 +9787,7 @@ function inboxRowFor_(it, idx) {
     amounts.map(fmtMoney_).join(', '),
     why.concat(notes).join(' · '),
     cut(it.snippet, 400), cut(it.mailbox, 80), cut(it.messageId, 300),
-    ai ? 'AI · ' + cut(ai.kind || 'other', 30) + (it.dockwa ? ' · Dockwa' : '') : 'Keywords'];
+    ai ? 'AI · ' + cut(ai.kind || 'other', 30) + (it.dockwa ? ' · Dockwa' : '') + (it.pos ? ' · POS' : '') : 'Keywords'];
 }
 
 /* The tab, created on first use. A tab made before the AI review had 15
@@ -9780,8 +9831,12 @@ function inboxRowsByMid_(sh) {
 function inboxAiDone_(rev, o) {
   rev = String(rev || '');
   if (rev.indexOf('AI · ') !== 0) return false;
-  const dockwa = o && /dockwa/i.test([o.fromName, o.email, o.subject].join(' '));
-  return !dockwa || / · Dockwa$/.test(rev);
+  const who = o ? [o.fromName, o.email, o.subject].join(' ') : '';
+  /* Same for POS+ receipts (Oct 30 2026): finished once matched under
+     inboxPosMatch_, marked "· POS". */
+  if (/dockwa/i.test(who) && !/ · Dockwa\b/.test(rev)) return false;
+  if (/pos\s*\+|posplus|pos plus|pospluslogin/i.test(who) && !/ · POS\b/.test(rev)) return false;
+  return true;
 }
 
 /* What the scanner need not send to the AI again: rows it already reviewed,

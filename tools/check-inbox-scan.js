@@ -97,6 +97,8 @@ check('AI: its amounts replace the keyword ones, and the balance match still mak
   r && r[H.amts] === '$412.50' && r[H.pri] === 'High');
 r = B.inboxRowFor_(item({ quoteNos: ['QW261255'] }), idx);
 check('keyword rows say so in the hidden column', r && r[15] === 'Keywords');
+r = B.inboxRowFor_(item({ dockwa: true, fromEmail: 'noreply@dockwa.com', ai: ai({ kind: 'service_request', summary: 'Wants winter storage' }) }), idx);
+check('Dockwa: a relevant Dockwa row is marked as reviewed under the Dockwa rule', r && r[15] === 'AI · service_request · Dockwa');
 
 /* ---- ingest: re-review in place, never over a person's mark ---- */
 function fakeSheet(rows) {
@@ -113,9 +115,11 @@ function fakeSheet(rows) {
   return S;
 }
 const HEAD = (gas.match(/^const INBOX_HEADERS_ = (\[[\s\S]*?\]);/m) || [])[1];
+const dockRow = (mid, rev) => ['New', 'Medium', '', 'Dockwa', 'noreply@dockwa.com', 'New message from a slip holder', '', '', '', '', '', 'x', '', 'm', mid, rev];
 const oldRow = (mid, status, rev) => ['' + status, 'Low', '', 'n', 'e', 's', '', '', '', '', '', 'keyword reason', '', 'm', mid, rev];
 const S = fakeSheet([eval(HEAD), oldRow('<keep-marked>', 'Logged', 'Keywords'), oldRow('<redo>', 'New', 'Keywords'),
-  oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI · payment'), oldRow('<legacy-ai>', 'New', 'AI')]);
+  oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI · payment'), oldRow('<legacy-ai>', 'New', 'AI'),
+  dockRow('<dock-old>', 'AI · service_request'), dockRow('<dock-new>', 'AI · service_request · Dockwa')]);
 const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
   decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_ROW_WIDTH_'),
   decl('INBOX_STATUSES_'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
@@ -126,20 +130,25 @@ const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
   { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
   () => idx);
 const kn = I.inboxKnown_().settled.sort().join(',');
-check('known: AI-reviewed and person-marked rows are not sent to the AI again', kn === '<ai-done>,<keep-marked>', kn);
+check('known: AI-reviewed and person-marked rows are not sent to the AI again', kn === '<ai-done>,<dock-new>,<keep-marked>', kn);
 const res = I.inboxIngest_([
   item({ messageId: '<keep-marked>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'NEW TEXT' }) }),
   item({ messageId: '<redo>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Mailed a check' }) }),
   item({ messageId: '<drop>', ai: ai({ relevant: false }) }),
   item({ messageId: '<ai-done>', ai: ai({ summary: 'AGAIN' }) }),
   item({ messageId: '<fresh>', quoteNos: ['QW-26-1255'], ai: ai({ summary: 'Brand new' }) }),
+  item({ messageId: '<dock-old>', dockwa: true, ai: ai({ relevant: false }) }),
+  item({ messageId: '<dock-new>', dockwa: true, ai: ai({ relevant: false }) }),
 ]);
 const rowOf = (m) => S.rows.find(r => r[14] === m);
 check('ingest: a keyword row still New is rewritten with the AI reading', res.updated === 1 && /Mailed a check/.test(rowOf('<redo>')[11]) && rowOf('<redo>')[15] === 'AI · payment');
-check('ingest: a keyword row the AI calls irrelevant is removed', res.removed === 1 && S.deleted.join() === '<drop>' && !rowOf('<drop>'));
+check('ingest: a keyword row the AI calls irrelevant is removed', S.deleted.indexOf('<drop>') >= 0 && !rowOf('<drop>'));
+check('Dockwa: an old Dockwa row the AI now calls irrelevant is removed; one already reviewed under the rule is left', S.deleted.indexOf('<dock-old>') >= 0 && !!rowOf('<dock-new>') && res.removed === 2, S.deleted.join());
 check('ingest: a row a person marked is never touched', rowOf('<keep-marked>')[0] === 'Logged' && rowOf('<keep-marked>')[11] === 'keyword reason');
 check('ingest: an AI-reviewed row is not reviewed twice', !/AGAIN/.test(rowOf('<ai-done>')[11]));
 check('known/ingest: a pre-kind AI row (bare "AI") still New is reviewed once more', kn.indexOf('<legacy-ai>') < 0);
+check('Dockwa: a row reviewed before the Dockwa rule is looked at again; one reviewed under it is settled',
+  kn.indexOf('<dock-old>') < 0 && I.inboxKnown_().settled.indexOf('<dock-new>') >= 0);
 check('ingest: a new message goes in at the top', res.added === 1 && S.rows[1][14] === '<fresh>' && /Brand new/.test(S.rows[1][11]));
 
 /* ---- the console's list and Logged / No action ---- */
@@ -405,6 +414,11 @@ out['adobe'] = {'havePdf': havePdf, 'kept': ad is not None, 'qns': (ad or {}).ge
   'signals': (ad or {}).get('signals'), 'inFresh': 'Signed by Jo Tester' in (ad or {}).get('_fresh', ''),
   'otherQns': (other or {}).get('quoteNos'), 'otherPdf': 'Signed by Jo Tester' in (other or {}).get('_fresh', ''),
   'snippetClean': 'Attached PDF' not in (ad or {}).get('snippet', '')}
+dk = s.extract(msg('Dockwa <noreply@dockwa.com>', 'New message from Pat', 'Can I get the pontoon winterized and stored?'), 'x')
+nd = s.extract(msg('Jo <jo@example.com>', 'Hi', 'Winterize please'), 'x')
+out['dockwa'] = {'flag': dk['dockwa'], 'plain': nd['dockwa'], 'tagScreen': '(Dockwa message to Heritage Harbor)' in s.email_block(0, dk, False),
+  'tagReview': '(Dockwa message to Heritage Harbor)' in s.email_block(0, dk, True), 'noTag': '(Dockwa' not in s.email_block(0, nd, True),
+  'screenRule': 'Dockwa' in s.SCREEN_SYSTEM, 'reviewRule': 'Dockwa' in s.AI_SYSTEM}
 out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
 print(json.dumps(out))
 `;
@@ -455,6 +469,9 @@ if (pyOut) {
   } else {
     check('Adobe: without pypdf the email is still handled from its body (no crash)', AD.kept === true && AD.inFresh === false);
   }
+  const DK = pyOut.dockwa || {};
+  check('Dockwa: messages are tagged for the screen and the review, others are not', DK.flag === true && DK.plain === false && DK.tagScreen && DK.tagReview && DK.noTag);
+  check('Dockwa: both the screen and the review carry the "mechanical work or storage only" rule', DK.screenRule && DK.reviewRule);
   const C = pyOut.cli || {};
   check('subscription: chosen when the token is set, answer read from structured_output', C.mode === 'cli' && C.ans && C.ans.results[0].keep === false);
   check('subscription: print mode, the model asked for, no tools, schema enforced', C.print && C.model === 'claude-haiku-5-5' && C.tools === '' && C.schema && C.mcp);

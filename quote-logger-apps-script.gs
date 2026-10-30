@@ -9736,7 +9736,7 @@ function inboxRowFor_(it, idx) {
     amounts.map(fmtMoney_).join(', '),
     why.concat(notes).join(' · '),
     cut(it.snippet, 400), cut(it.mailbox, 80), cut(it.messageId, 300),
-    ai ? 'AI · ' + cut(ai.kind || 'other', 30) : 'Keywords'];
+    ai ? 'AI · ' + cut(ai.kind || 'other', 30) + (it.dockwa ? ' · Dockwa' : '') : 'Keywords'];
 }
 
 /* The tab, created on first use. A tab made before the AI review had 15
@@ -9762,18 +9762,27 @@ function inboxRowsByMid_(sh) {
   const out = {};
   const last = sh.getLastRow();
   if (last < 2) return out;
-  const st = sh.getRange(2, 1, last - 1, 1).getValues();
+  const st = sh.getRange(2, 1, last - 1, 6).getValues();
   const ids = sh.getRange(2, INBOX_MID_COL_, last - 1, 2).getValues();
   ids.forEach(function (r, i) {
-    if (r[0]) out[String(r[0])] = { row: i + 2, status: String(st[i][0] || ''), rev: String(r[1] || '') };
+    if (r[0]) out[String(r[0])] = { row: i + 2, status: String(st[i][0] || ''), rev: String(r[1] || ''),
+      fromName: String(st[i][3] || ''), email: String(st[i][4] || ''), subject: String(st[i][5] || '') };
   });
   return out;
 }
 
 /* Reviewed by "AI · <kind>" is a finished AI review. A bare "AI" is one made
    before the kind was stored and before Adobe's signed PDFs were read: still
-   New, it is reviewed once more so it gains both. */
-function inboxAiDone_(rev) { return String(rev || '').indexOf('AI · ') === 0; }
+   New, it is reviewed once more so it gains both. A Dockwa message (Heritage
+   Harbor's slip customers, relevant only when they ask about mechanical work
+   or storage) is finished only once reviewed under that rule, marked
+   "· Dockwa" — the ones reviewed before Oct 30 2026 get one more look. */
+function inboxAiDone_(rev, o) {
+  rev = String(rev || '');
+  if (rev.indexOf('AI · ') !== 0) return false;
+  const dockwa = o && /dockwa/i.test([o.fromName, o.email, o.subject].join(' '));
+  return !dockwa || / · Dockwa$/.test(rev);
+}
 
 /* What the scanner need not send to the AI again: rows it already reviewed,
    and rows a person has already marked (their verdict stands either way). */
@@ -9782,7 +9791,7 @@ function inboxKnown_() {
   if (!sh) return { ok: 1, settled: [] };
   const by = inboxRowsByMid_(sh);
   return { ok: 1, settled: Object.keys(by).filter(function (m) {
-    return inboxAiDone_(by[m].rev) || by[m].status !== 'New';
+    return inboxAiDone_(by[m].rev, by[m]) || by[m].status !== 'New';
   }) };
 }
 
@@ -9809,7 +9818,7 @@ function inboxIngest_(items) {
       if (!mid) { skipped++; return; }
       const old = have[mid];
       if (old) {
-        if (old.done || !inboxAiOf_(it) || inboxAiDone_(old.rev) || old.status !== 'New') { dup++; return; }
+        if (old.done || !inboxAiOf_(it) || inboxAiDone_(old.rev, old) || old.status !== 'New') { dup++; return; }
         old.done = 1;
         const row = inboxRowFor_(it, idx);
         if (row) { sh.getRange(old.row, 1, 1, width).setValues([row]); updated++; }
@@ -9982,7 +9991,7 @@ function inboxRowOut_(r) {
 const INBOX_PAY_LOOKBACK_DAYS_ = 21;
 
 function inboxKindOf_(o) {
-  const m = /^AI · (\w+)/.exec(o.rev || '');
+  const m = /^AI · (\w+)/.exec(o.rev || '');   // "AI · payment" or "AI · payment · Dockwa"
   if (m) return m[1];
   const t = String(o.what || '');
   if (/\b(payment|paid|pay|check|cheque|deposit|zelle|venmo|paypal|balance)\b/i.test(t)) return 'payment';

@@ -552,6 +552,36 @@ column is that summary and action. The hidden **Reviewed by** column says
 3. Console → Menu → **Scan inbox** → *Everything on the server* → **Scan now**
    (or Actions → **Scan inbox** → Run workflow with `days` = 30). After that it runs by itself every morning.
 
+**Reviewing in the console, not on the tab.** Menu → **Inbox review** lists
+every row still marked *New*, High priority first and then newest first
+(`adminInboxList`). Each card shows the sender, subject, the AI's summary and
+action, the matched quote with its balance, and the amounts in the email, with
+an expandable excerpt. Its buttons:
+- **Record payment…** appears when the row reads as a payment on one quote. It
+  opens the quote and fills the payment card's Amount (if the email gave one
+  figure) and Method (a guess such as *Check (per email Oct 28)*). Chris checks
+  them and presses **Record payment** as always, so receipts, the payment lock
+  and the journal all work as they do for any payment.
+- **Open QW-…** opens each matched quote.
+- **Add to staff notes…** opens the quote and appends a dated line from the
+  email to the staff note box, unsaved. **Save note** saves it.
+- **Find customer** (no quote matched) runs the console search on the name.
+- **✓ Logged** / **No action** set the row's Status and stamp **Handled by** /
+  **Handled at** (columns 17–18) and the Activity Log (`adminInboxMark`).
+  **Show handled** lists those too, each with **Undo**.
+
+While a quote opened from a card is on screen, a strip above it repeats the
+email's summary with **Mark logged**, **No action** and **← Back to the list**.
+Opening a different quote by hand drops the strip.
+
+**Applying never writes on its own.** The buttons fill in the existing forms
+and stop. An AI-read amount is a suggestion. Posting it straight to a ledger,
+or sending its receipt, would skip the person who knows whether the check
+actually arrived, and every customer email here is a human click. The only
+writes are Logged / No action, and they touch the Inbox Review tab alone. Both
+calls are Chris only, like the rest of the panel; `inboxList` is a read,
+`inboxMark` a write.
+
 **Scan now, from the console.** Menu → **Scan inbox** (also a home tile)
 is **Chris only**: it is his mailbox. The server refuses every other sign-in,
 admins included (`inboxOwner_`, matching the roster name `INBOX_OWNER_`), and

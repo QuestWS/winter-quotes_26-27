@@ -183,6 +183,17 @@ border:1.5px solid var(--line);border-radius:8px;font-family:var(--mono);backgro
 .pill{display:inline-block;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
 .pill.blue{background:#E2ECF4;color:var(--frost)}.pill.green{background:#E2F1E7;color:var(--green)}
 .pill.gold{background:var(--gold-soft);color:#8A6516}.pill.red{background:#FBEEE2;color:var(--red)}
+/* Inbox review cards and the strip on a quote opened from one */
+.ibx{border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin:0 0 10px;background:#fff}
+.ibx.done{opacity:.6}
+.ibx .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.ibx .subj{font-weight:700;margin:6px 0 4px;overflow-wrap:anywhere}
+.ibx .what{font-size:14px;line-height:1.45;margin:4px 0;overflow-wrap:anywhere}
+.ibx .meta{font-size:12.5px;color:var(--muted);margin:4px 0;overflow-wrap:anywhere}
+.ibx details{font-size:12.5px;color:var(--muted);margin:4px 0}
+.ibx .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#ibxStrip{background:var(--gold-soft);border:1.5px solid var(--gold);border-radius:11px;padding:10px 12px;margin:0 0 12px;font-size:13.5px;line-height:1.45}
+#ibxStrip .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
 .stat{background:#FAFCFE;border:1px solid var(--line);border-radius:11px;padding:10px 12px;text-align:center}
 .stat .v{font-family:var(--mono);font-weight:700;font-size:17px;color:var(--navy)}
@@ -446,7 +457,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
       <button class="linkbtn hide" id="backupOpen" onclick="navGo(toggleBackup)">Restore from backup</button>
       <button class="linkbtn hide" id="hhListOpen" onclick="navGo(toggleHhList)">Heritage Harbor list</button>
-      <button class="linkbtn hide" id="inboxOpen" onclick="navGo(toggleInbox)">Scan inbox</button>
+      <button class="linkbtn hide" id="inboxOpen" onclick="navGo(toggleInbox)">Inbox review</button>
       <button class="linkbtn hide" id="pauseOpen" onclick="navGo(togglePause)">Automatic emails</button>
       <button class="linkbtn hide" id="repriceOpen" onclick="navGo(toggleReprice)">Re-price at current rates</button>
       <button class="linkbtn hide" id="importOpen" onclick="navGo(toggleImport)">Load from an old sheet</button>
@@ -494,8 +505,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <span>Turn one of last season's spreadsheets into a quote here, priced at today's rates.</span></button>
       <button class="tile hide" id="repriceTile" onclick="navGo(toggleReprice)"><b>Re-price at current rates</b>
         <span>Move the season onto this year's prices. Nothing is written until you apply it.</span></button>
-      <button class="tile hide" id="inboxTile" onclick="navGo(toggleInbox)"><b>Scan inbox</b>
-        <span>Check your email for payments, changes and requests that may not be logged yet. Runs by itself every morning too. Only you see this.</span></button>
+      <button class="tile hide" id="inboxTile" onclick="navGo(toggleInbox)"><b>Inbox review</b>
+        <span>Payments, changes and requests from your email that may not be logged yet — open the quote, fill it in, mark it done. Only you see this.</span></button>
       <button class="tile hide" id="pauseTile" onclick="navGo(togglePause)"><b>Automatic emails</b>
         <span>Pause or resume the only two emails that send on their own — the 10-day reminder and the lead follow-up.</span></button>
       <button class="tile hide" id="adminTile" onclick="navGo(toggleStaff)"><b>Staff &amp; permissions</b>
@@ -507,6 +518,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     </div>
 
     <div id="quoteArea" class="hide">
+      <div id="ibxStrip" class="hide"></div>
       <div class="grid">
         <div>
           <div class="card">
@@ -957,27 +969,31 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 
     <div class="card hide" id="inboxCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <h2 style="margin:0">Scan inbox</h2>
+        <h2 style="margin:0">Inbox review</h2>
         <button class="btn ghost sm" onclick="$('inboxCard').classList.add('hide')">✕ Close</button>
       </div>
       <div class="msg" style="margin-top:6px">Reads <b>chris@</b> (service@ and questws@ forward there)
-        and adds anything that looks like an unlogged payment, change or request to the
-        <b>Inbox Review</b> tab of the spreadsheet. It runs by itself every morning before 8.
-        It never changes a quote and never emails anyone.</div>
+        and lists below anything that looks like an unlogged payment, change or request.
+        It runs by itself every morning before 8. Nothing here changes a quote or emails
+        anyone until you press the usual button on the quote.</div>
       <div class="msg" id="inboxState" style="margin:8px 0">Checking…</div>
       <label class="fld">Look back</label>
       <select class="txt" id="inboxDays">
         <option value="1">Since yesterday</option>
         <option value="3" selected>Last 3 days</option>
         <option value="7">Last week</option>
-        <option value="30">Last 30 days</option>
-        <option value="30">Everything on the server (about 2 weeks)</option>
+        <option value="30">Everything on the server (catch-up)</option>
       </select>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="btn navy" id="inboxBtn" onclick="runInboxScan()">Scan now</button>
         <button class="btn ghost" onclick="refreshInbox()">Refresh</button>
       </div>
       <div class="msg" id="inboxMsg"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap">
+        <b id="ibxCount">To review</b>
+        <label class="chk" style="margin:0"><input type="checkbox" id="ibxShowDone" onchange="loadInboxList()"> Show handled</label>
+      </div>
+      <div id="ibxList" style="margin-top:8px"></div>
     </div>
 
     <div class="card hide" id="importCard">
@@ -1250,7 +1266,7 @@ const $=id=>document.getElementById(id);
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
 const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
-  listStaff:1,autoPause:1,inboxScanState:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
+  listStaff:1,autoPause:1,inboxScanState:1,inboxList:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
 /* Once a POST has come back lost, every later READ goes straight to GET — no
@@ -1313,7 +1329,7 @@ async function apiRead_(res){
    over again. */
 const API_POST_TIMEOUT_MS=12000;
 const API_QUICK_READ={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,photoInfo:1,hhListInfo:1,
-  listStaff:1,autoPause:1,inboxScanState:1,draftList:1,jobStatus:1,bulkImpState:1};
+  listStaff:1,autoPause:1,inboxScanState:1,inboxList:1,draftList:1,jobStatus:1,bulkImpState:1};
 async function apiPost_(body,timeoutMs){
   let res,timer=null,ctl=null;
   if(timeoutMs&&typeof AbortController==='function'){
@@ -2384,6 +2400,8 @@ async function doLookup(qn){
 }
 function renderQuote(r){
   $('quoteArea').classList.remove('hide');
+  if(IBX_CUR&&IBX_CUR.qns.length&&IBX_CUR.qns.indexOf(r.quoteNo)<0) IBX_CUR=null;   // a different quote opened by hand
+  renderIbxStrip_();
   QTERM=r.term||'Quote';
   const pb=$('btnPrint'); if(pb) pb.textContent=printBtnLabel_();
   renderQuoteLink(r.quoteUrl,QTERM);
@@ -4202,8 +4220,119 @@ async function doReprice(){
 let INBOX_POLL=null;
 function toggleInbox(){
   $('inboxCard').classList.toggle('hide');
-  if(!$('inboxCard').classList.contains('hide')){ setMsg('inboxMsg',''); refreshInbox(); }
+  if(!$('inboxCard').classList.contains('hide')){ setMsg('inboxMsg',''); refreshInbox(); loadInboxList(); }
 }
+
+/* ---------- Inbox review: the list, and turning a row into the real action ----------
+   A row is what an email SEEMED to say. Nothing here writes to a quote: each
+   button opens the quote and fills in the existing form — the payment card,
+   the staff note — for Chris to check and press. Those paths already journal,
+   lock and send receipts, and every customer email stays a human click. Only
+   Logged / No action write, and they write to the Inbox Review tab alone. */
+let IBX=[], IBX_CUR=null;
+function ibxFind_(mid){ return IBX.find(r=>r.mid===mid)||null; }
+function ibxPill_(p){ return '<span class="pill '+(p==='High'?'red':p==='Medium'?'gold':'blue')+'">'+esc(p||'—')+'</span>'; }
+function ibxDate_(iso){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+/* The dollar figures the row carries ("$412.50, $90.00") as numbers. */
+function ibxAmounts_(r){ return String(r.amounts||'').split(/,\s*/).map(a=>Number(a.replace(/[$,]/g,''))).filter(n=>isFinite(n)&&n>0); }
+/* Payment wording, to pre-fill the Method box — a guess for Chris to check. */
+function ibxMethod_(r){
+  const t=(r.what+' '+r.subject+' '+r.excerpt).toLowerCase();
+  const m=[['zelle','Zelle'],['venmo','Venmo'],['paypal','PayPal'],['square','Square'],['cash','Cash'],['check','Check'],['cheque','Check'],['card','Card']].find(x=>t.indexOf(x[0])>=0);
+  return (m?m[1]+' ':'')+'(per email '+ibxDate_(r.at).split(' ').slice(0,2).join(' ')+')';
+}
+function ibxIsPayment_(r){ return /payment|paid|check|zelle|venmo|deposit|balance/i.test(r.what) && ibxAmounts_(r).length>0; }
+async function loadInboxList(){
+  const box=$('ibxList'); if(!box) return;
+  box.innerHTML='<div class="msg">Loading…</div>';
+  try{
+    const r=await api('inboxList',[$('ibxShowDone').checked?1:0]);
+    if(!r||!r.ok){ box.innerHTML=''; setMsg('inboxMsg',(r&&r.error)||'Could not load the list.',false); return; }
+    IBX=r.rows||[];
+    $('ibxCount').textContent=r.pending?(r.pending+' to review'):'Nothing to review';
+    renderInboxList_();
+  }catch(e){ box.innerHTML=''; setMsg('inboxMsg',e.message,false); }
+}
+function renderInboxList_(){
+  const box=$('ibxList');
+  if(!IBX.length){ box.innerHTML='<div class="msg">All caught up.</div>'; return; }
+  box.innerHTML=IBX.map(r=>{
+    const done=r.status!=='New';
+    const one=r.qns.length===1?r.qns[0]:'';
+    const acts=[];
+    if(!done){
+      if(one&&ibxIsPayment_(r)) acts.push(`<button class="btn gold sm" onclick="ibxApply('${esc(r.mid)}','pay')">Record payment…</button>`);
+      r.qns.forEach(q=>acts.push(`<button class="btn navy sm" onclick="ibxApply('${esc(r.mid)}','open','${esc(q)}')">Open ${esc(q)}</button>`));
+      if(one) acts.push(`<button class="btn ghost sm" onclick="ibxApply('${esc(r.mid)}','note')">Add to staff notes…</button>`);
+      if(!r.qns.length) acts.push(`<button class="btn ghost sm" onclick="ibxApply('${esc(r.mid)}','find')">Find customer</button>`);
+      acts.push(`<button class="btn ghost sm" onclick="ibxMark('${esc(r.mid)}','Logged')">✓ Logged</button>`);
+      acts.push(`<button class="btn ghost sm" onclick="ibxMark('${esc(r.mid)}','No action')">No action</button>`);
+    } else {
+      acts.push(`<span class="meta">${esc(r.status)}${r.by?' by '+esc(r.by):''}${r.handledAt?' · '+esc(ibxDate_(r.handledAt)):''}</span>`);
+      acts.push(`<button class="btn ghost sm" onclick="ibxMark('${esc(r.mid)}','New')">Undo</button>`);
+    }
+    return `<div class="ibx${done?' done':''}" id="ibx_${esc(r.mid).replace(/[^A-Za-z0-9]/g,'_')}">
+      <div class="top">${ibxPill_(r.priority)}<span>${esc(ibxDate_(r.at))}</span><span>${esc(r.fromName||r.email)}${r.fromName?' &lt;'+esc(r.email)+'&gt;':''}</span></div>
+      <div class="subj">${esc(r.subject||'(no subject)')}</div>
+      <div class="what">${esc(r.what)}</div>
+      <div class="meta">${r.qns.length?esc(r.qns.join(', '))+(r.customer?' · '+esc(r.customer):''):'No quote matched'}${r.balance!==null&&r.qns.length===1?' · balance '+esc(fmt$(r.balance)):''}${r.amounts?' · in email: '+esc(r.amounts):''}</div>
+      ${r.excerpt?`<details><summary>Email excerpt</summary>${esc(r.excerpt)}</details>`:''}
+      <div class="acts">${acts.join('')}</div></div>`;
+  }).join('');
+}
+async function ibxMark(mid,status){
+  try{
+    const r=await api('inboxMark',[mid,status]);
+    if(!r||!r.ok){ toast((r&&r.error)||'Could not save.'); return false; }
+    const i=IBX.findIndex(x=>x.mid===mid);
+    if(i>=0){ if(status!=='New'&&!$('ibxShowDone').checked) IBX.splice(i,1); else IBX[i]=r.row; }
+    const pend=Math.max(0,(parseInt($('ibxCount').textContent,10)||0)+(status==='New'?1:-1));
+    $('ibxCount').textContent=pend?pend+' to review':'Nothing to review';
+    renderInboxList_();
+    if(IBX_CUR&&IBX_CUR.mid===mid&&status!=='New'){ IBX_CUR=null; renderIbxStrip_(); }
+    toast(status==='New'?'Back on the list':'Marked '+status.toLowerCase());
+    return true;
+  }catch(e){ toast(e.message); return false; }
+}
+/* Turn a row into the real action: open the quote, fill in the form, stop. */
+async function ibxApply(mid,how,qn){
+  const r=ibxFind_(mid); if(!r) return;
+  IBX_CUR=r;
+  $('inboxCard').classList.add('hide');
+  if(how==='find'){
+    const name=(r.customer||r.fromName||'').split(/\s+/).pop()||'';
+    $('qn').value=name; renderIbxStrip_();
+    if(name) await doSearch(); else setMsg('lookupMsg','Type a name or quote number to find the customer.');
+    return;
+  }
+  await doLookup(qn||r.qns[0]);
+  renderIbxStrip_();
+  if(how==='pay'&&!$('payCard').classList.contains('hide')){
+    const a=ibxAmounts_(r);
+    $('payAmt').value=a.length===1?String(a[0]):'';
+    $('payMethod').value=ibxMethod_(r);
+    setMsg('payMsg',a.length>1?'The email mentions '+r.amounts+' — enter the one that was paid.':'Filled in from the email — check the amount and method before recording.');
+    $('payCard').scrollIntoView({behavior:'smooth',block:'center'}); $('payAmt').focus();
+  } else if(how==='note'&&!$('noteCard').classList.contains('hide')){
+    const line=ibxDate_(r.at).split(' ').slice(0,2).join(' ')+' email from '+(r.fromName||r.email)+': '+r.what;
+    const t=$('staffNote'); t.value=(t.value.trim()?t.value.replace(/\s+$/,'')+'\n':'')+line;
+    setMsg('noteMsg','Added from the email — edit if needed, then Save note.');
+    $('noteCard').scrollIntoView({behavior:'smooth',block:'center'}); t.focus();
+  }
+}
+/* The strip on the quote screen while working an inbox row. It goes away when
+   the row is marked, or when a different quote is opened by hand. */
+function renderIbxStrip_(){
+  const el=$('ibxStrip'); if(!el) return;
+  const r=IBX_CUR;
+  if(!r){ el.classList.add('hide'); return; }
+  el.innerHTML=`<b>From your inbox:</b> ${esc(r.what)}<div class="meta" style="color:var(--muted);font-size:12.5px">${esc(r.fromName||r.email)} · ${esc(ibxDate_(r.at))}</div>
+    <div class="acts"><button class="btn gold sm" onclick="ibxMark('${esc(r.mid)}','Logged')">✓ Mark logged</button>
+    <button class="btn ghost sm" onclick="ibxMark('${esc(r.mid)}','No action')">No action</button>
+    <button class="btn ghost sm" onclick="ibxBack()">← Back to the list</button></div>`;
+  el.classList.remove('hide');
+}
+function ibxBack(){ IBX_CUR=null; renderIbxStrip_(); $('quoteArea').classList.add('hide'); toggleInbox(); syncHome(); }
 function inboxWhen_(iso){
   const d=new Date(iso); if(isNaN(d)) return '';
   return d.toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
@@ -4215,9 +4344,9 @@ async function refreshInbox(){
   if(!r||!r.ok){ setMsg('inboxState',(r&&r.error)||'Could not read the scan state.',false); return null; }
   let h='';
   h+=r.pending
-    ? '<b>'+r.pending+' email'+(r.pending===1?'':'s')+'</b> waiting for review on the Inbox Review tab.'
-    : 'Nothing waiting on the Inbox Review tab.';
-  if(r.url) h+=' <a href="'+esc(r.url)+'" target="_blank" rel="noopener">Open the tab</a>';
+    ? '<b>'+r.pending+' email'+(r.pending===1?'':'s')+'</b> waiting for review.'
+    : 'Nothing waiting for review.';
+  if(r.url) h+=' <a href="'+esc(r.url)+'" target="_blank" rel="noopener">The spreadsheet tab</a>';
   if(r.tokenProblem) h+='<br>'+esc(r.tokenProblem);
   else if(!r.configured) h+='<br>The <b>Scan now</b> button is not set up yet (no GitHub token in Script Properties). The morning scan still runs.';
   else if(r.run){

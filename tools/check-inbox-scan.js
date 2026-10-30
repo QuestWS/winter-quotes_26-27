@@ -104,6 +104,7 @@ function fakeSheet(rows) {
   const range = (r, c, nr, nc) => ({
     getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => ((S.rows[r - 1 + i] || [])[c - 1 + j]) ?? '')),
     setValues: (v) => v.forEach((row, i) => row.forEach((x, j) => { (S.rows[r - 1 + i] = S.rows[r - 1 + i] || [])[c - 1 + j] = x; })),
+    setValue: (x) => { (S.rows[r - 1] = S.rows[r - 1] || [])[c - 1] = x; },
     setDataValidation: () => {}, setNumberFormat: () => {}, setFontWeight: () => {},
   });
   S.sheet = { getLastRow: () => S.rows.length, getRange: range, hideColumns: () => {}, setFrozenRows: () => {}, setColumnWidth: () => {},
@@ -116,7 +117,7 @@ const oldRow = (mid, status, rev) => ['' + status, 'Low', '', 'n', 'e', 's', '',
 const S = fakeSheet([eval(HEAD), oldRow('<keep-marked>', 'Logged', 'Keywords'), oldRow('<redo>', 'New', 'Keywords'),
   oldRow('<drop>', 'New', 'Keywords'), oldRow('<ai-done>', 'New', 'AI')]);
 const I = new Function('SpreadsheetApp', 'LockService', 'inboxQuoteIndex_', [
-  decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'),
+  decl('COL'), decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_ROW_WIDTH_'),
   decl('INBOX_STATUSES_'), decl('INBOX_PRIORITIES_'), fn('fmtMoney_'), fn('inboxNormQn_'), fn('inboxNormName_'),
   fn('inboxQuotesByName_'), fn('inboxAiOf_'), fn('inboxRowFor_'), fn('inboxSheet_'), fn('inboxRowsByMid_'),
   fn('inboxIngest_'), fn('inboxKnown_'), 'return {inboxIngest_, inboxKnown_};'
@@ -140,6 +141,41 @@ check('ingest: a row a person marked is never touched', rowOf('<keep-marked>')[0
 check('ingest: an AI-reviewed row is not reviewed twice', !/AGAIN/.test(rowOf('<ai-done>')[11]));
 check('ingest: a new message goes in at the top', res.added === 1 && S.rows[1][14] === '<fresh>' && /Brand new/.test(S.rows[1][11]));
 
+/* ---- the console's list and Logged / No action ---- */
+const S2 = fakeSheet([eval(HEAD),
+  ['New', 'Low', new Date('2026-10-20T10:00:00Z'), 'A', 'a@x', 's1', 'QW-26-1255', 'John White', 'Inside', 412.5, '$412.50', 'low one', '', 'm', '<low>', 'AI'],
+  ['New', 'High', new Date('2026-10-18T10:00:00Z'), 'B', 'b@x', 's2', '', '', '', '', '', 'high one', '', 'm', '<high>', 'AI'],
+  ['Logged', 'High', new Date('2026-10-22T10:00:00Z'), 'C', 'c@x', 's3', '', '', '', '', '', 'done one', '', 'm', '<done>', 'AI', 'Chris', new Date()],
+  ['New', 'High', new Date('2026-10-21T10:00:00Z'), 'D', 'd@x', 's4', 'QW-26-1255, QW-26-9999', '', '', '', '', 'newer high', '', 'm', '<high2>', 'AI']]);
+let WHO2 = 'Chris'; const audit2 = [];
+const L = new Function('SpreadsheetApp', 'LockService', 'inboxOwner_', 'auditLog_', [
+  decl('INBOX_TAB'), decl('INBOX_HEADERS_'), decl('INBOX_MID_COL_'), decl('INBOX_REV_COL_'), decl('INBOX_STATUSES_'),
+  decl('INBOX_LIST_MAX_'), fn('inboxRowsByMid_'), fn('inboxRowOut_'), fn('adminInboxList'), fn('adminInboxMark'),
+  'return {adminInboxList, adminInboxMark};'
+].join('\n'))(
+  { getActiveSpreadsheet: () => ({ getSheetByName: () => S2.sheet }) },
+  { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+  () => { if (WHO2 !== 'Chris') throw new Error('Only Chris can use the inbox scan — it reads his email.'); return { name: WHO2 }; },
+  (who, what) => audit2.push(what));
+let lst = L.adminInboxList('t', 0);
+check('list: New rows only, High first and newest first within it', lst.rows.map(r => r.mid).join() === '<high2>,<high>,<low>' && lst.pending === 3 && lst.done === 1,
+  lst.rows.map(r => r.mid).join());
+check('list: a row carries its quotes, balance and summary', lst.rows[2].qns.join() === 'QW-26-1255' && lst.rows[2].balance === 412.5
+  && lst.rows[0].qns.length === 2 && lst.rows[1].balance === null && lst.rows[2].what === 'low one');
+check('list: "show handled" adds the marked ones, after the open ones', L.adminInboxList('t', 1).rows.map(r => r.mid).pop() === '<done>');
+let mk = L.adminInboxMark('t', '<low>', 'Logged');
+const lowRow = () => S2.rows.find(r => r[14] === '<low>');
+check('mark: sets Status, stamps who and when, writes the Activity Log', mk.ok === 1 && lowRow()[0] === 'Logged' && lowRow()[16] === 'Chris'
+  && lowRow()[17] instanceof Date && /INBOX REVIEW Logged — a@x \(QW-26-1255\)/.test(audit2[0] || ''), audit2[0]);
+check('mark: touches nothing else on the row', lowRow()[11] === 'low one' && lowRow()[9] === 412.5 && lowRow()[15] === 'AI');
+L.adminInboxMark('t', '<low>', 'New');
+check('mark: Undo puts it back to New and clears the stamp', lowRow()[0] === 'New' && lowRow()[16] === '' && lowRow()[17] === '');
+check('mark: an unknown status or a vanished email is refused', L.adminInboxMark('t', '<low>', 'Deleted').ok === 0 && L.adminInboxMark('t', '<gone>', 'Logged').ok === 0);
+WHO2 = 'Jeff'; let threw = '';
+try { L.adminInboxList('t', 0); } catch (e) { threw = e.message; }
+let threw2 = '';
+try { L.adminInboxMark('t', '<low>', 'Logged'); } catch (e) { threw2 = e.message; }
+check('list and mark: Chris only', /Only Chris/.test(threw) && /Only Chris/.test(threw2) && lowRow()[0] === 'New');
 KEY = '';
 check('no key configured refuses everyone', !B.inboxKeyOk_(''));
 KEY = 'short';
@@ -361,6 +397,10 @@ check('console: only Chris sees the panel', /navGate\('inbox',\s*ME\.name==='Chr
 check('server: both console calls check the owner', /function adminInboxScanState\(token\) \{\s*inboxOwner_\(token\)/.test(gas)
   && /function adminInboxScanRun\(token, days\) \{\s*const who = inboxOwner_\(token\)/.test(gas));
 check('console: both calls are routed', /inboxScanState:\s*function/.test(gas) && /inboxScanRun:\s*function/.test(gas));
+check('console: the list is a read, marking is a write', /\binboxList: 1\b/.test(getFns) && /\binboxList:1\b/.test(apiGetOk)
+  && !/inboxMark/.test(getFns) && !/inboxMark/.test(apiGetOk) && /inboxMark:\s*function/.test(gas));
+check('console: applying a row never writes — only Logged / No action call the server',
+  !/api\('(pay|staffNote|adjust)'/.test((adm.match(/async function ibxApply\([\s\S]*?\n}/) || [''])[0]));
 
 const props = {}; let fetched = []; let ghCode = 204; let audits = [];
 const R = new Function('PropertiesService', 'UrlFetchApp', 'requireAuth_', 'auditLog_', [

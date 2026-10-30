@@ -7,3 +7,7 @@
 *.png
 !favicon.png
 !Quest wet rect.png
+
+# Python bytecode from running tools/inbox-scan.py or its checks.
+__pycache__/
+*.pyc

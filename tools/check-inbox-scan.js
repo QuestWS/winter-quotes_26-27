@@ -261,6 +261,40 @@ out['cli'] = {'mode': L2.mode, 'ans': ans, 'model': av[av.index('--model') + 1],
               'cwdIsRepo': os.path.realpath(rec['cwd']).startswith(os.path.realpath(os.path.dirname(os.path.dirname(sys.argv[1])))),
               'bare': '--bare' in av, 'mcp': '--strict-mcp-config' in av}
 os.environ.pop('CLAUDE_CODE_OAUTH_TOKEN'); os.environ.pop('ANTHROPIC_API_KEY')
+
+# ---- the whole script, from main(): fake mailbox, fake model, fake backend ----
+# Every piece above is tested on its own; this is the run the Action does.
+# (A refactor once deleted scan() and every piece-wise check still passed.)
+box = [msg('Menards <deals@menards.example>', 'Weekly ad', 'Menards rebate'),
+       msg('Jo <jo@example.com>', 'Re: QW-26-1255', 'I mailed a check for $412.50 today.')]
+class FakeImap:
+    addr = None; readonly = None; last = None
+    def __init__(self, host, port): self.peeked = []; FakeImap.last = self; FakeImap.addr = (host, port)
+    def login(self, u, p): pass
+    def select(self, f, readonly=False): FakeImap.readonly = readonly; return 'OK', [b'2']
+    def search(self, *a): return 'OK', [b'1 2']
+    def fetch(self, i, what): self.peeked.append(what); return 'OK', [(b'x', box[int(i) - 1])]
+    def logout(self): pass
+s.imaplib.IMAP4_SSL = FakeImap
+posts = []
+def fake_post(url, key, items, fn='ingest'):
+    posts.append({'fn': fn, 'items': items})
+    return {'ok': 1, 'settled': []} if fn == 'known' else {'ok': 1, 'added': len(items)}
+s.post = fake_post
+s.Llm = FakeLlm
+calls.clear()
+for k, v in {'IMAP_USER': 'u', 'IMAP_PASSWORD': 'p', 'INBOX_SCAN_KEY': 'k' * 30, 'SCAN_DAYS': '30'}.items(): os.environ[k] = v
+mainlog = io.StringIO()
+try:
+    with contextlib.redirect_stdout(mainlog): s.main()
+    mainErr = None
+except BaseException as e:
+    mainErr = '%s: %s' % (type(e).__name__, e)
+ing = [p for p in posts if p['fn'] == 'ingest']
+out['main'] = {'err': mainErr, 'log': mainlog.getvalue(),
+  'host': list(FakeImap.addr or []), 'readonly': FakeImap.readonly, 'peek': bool(FakeImap.last) and all('PEEK' in w for w in FakeImap.last.peeked),
+  'knownFirst': posts and posts[0]['fn'] == 'known',
+  'posted': [{'from': i['fromEmail'], 'ai': (i.get('ai') or {}).get('relevant'), 'private': [k for k in i if k[0] == '_']} for p in ing for i in p['items']]}
 del out['reply']['_quoted']
 for k in ('IMAP_HOST', 'IMAP_PORT', 'IMAP_FOLDERS'): os.environ[k] = ''
 out['envDefaults'] = [s.env('IMAP_HOST', 'questwatersports.com'), s.env('IMAP_PORT', '993'), s.env('IMAP_FOLDERS', 'INBOX')]
@@ -296,6 +330,14 @@ if (pyOut) {
   check('API key: Opus gets default fallbacks and the schema; Haiku gets no fallbacks', A.mode === 'api' && A.opusFallbacks === 'default'
     && A.haikuFallbacks === null && A.schema === 'json_schema');
   check('API key: an API error or a refusal is a short reason, not content', JSON.stringify(A.errs) === '["APIError","refusal"]');
+  const M = pyOut.main || {};
+  check('whole script: main() runs end to end', M.err === null, M.err || '');
+  check('whole script: the mailbox is opened read-only and every fetch is a PEEK', M.readonly === true && M.peek === true);
+  check('whole script: default host and port', JSON.stringify(M.host) === '["questwatersports.com",993]', JSON.stringify(M.host));
+  check('whole script: asks the backend what is settled before calling the AI', M.knownFirst === true);
+  check('whole script: posts the flyer as screened out and the reply as reviewed, no private text',
+    JSON.stringify(M.posted) === JSON.stringify([{ from: 'deals@menards.example', ai: false, private: [] }, { from: 'jo@example.com', ai: true, private: [] }]), JSON.stringify(M.posted));
+  check('whole script: the log holds counts, never an address or a subject', M.log && !/menards|jo@|Weekly ad|QW-26/i.test(M.log) && /Inbox Review: /.test(M.log));
   const C = pyOut.cli || {};
   check('subscription: chosen when the token is set, answer read from structured_output', C.mode === 'cli' && C.ans && C.ans.results[0].keep === false);
   check('subscription: print mode, the model asked for, no tools, schema enforced', C.print && C.model === 'claude-haiku-5-5' && C.tools === '' && C.schema && C.mcp);

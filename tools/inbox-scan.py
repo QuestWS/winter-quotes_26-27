@@ -451,6 +451,45 @@ def ai_review(items, known, llm=None):
     return counts
 
 
+def scan(days):
+    # The mail host's own setup sheet names questwatersports.com as the IMAP
+    # server. mail.questwatersports.com (the MX record) is the same machine,
+    # but its TLS certificate may not carry that name, so use theirs.
+    host = env('IMAP_HOST', 'questwatersports.com')
+    user, password = env('IMAP_USER'), os.environ.get('IMAP_PASSWORD', '')
+    if not user or not password:
+        sys.exit('IMAP_USER and IMAP_PASSWORD must be set (Actions secrets).')
+    folders = [f.strip() for f in env('IMAP_FOLDERS', 'INBOX').split(',') if f.strip()]
+    since = (datetime.date.today() - datetime.timedelta(days=days)).strftime('%d-%b-%Y')
+
+    items, skipped = [], 0
+    imap = imaplib.IMAP4_SSL(host, int(env('IMAP_PORT', '993')))
+    try:
+        imap.login(user, password)
+        for folder in folders:
+            typ, _ = imap.select('"%s"' % folder, readonly=True)
+            if typ != 'OK':
+                print('  folder %d of %d could not be opened -- skipped' % (folders.index(folder) + 1, len(folders)))
+                continue
+            typ, data = imap.search(None, 'SINCE', since)
+            ids = data[0].split() if typ == 'OK' and data and data[0] else []
+            for i in ids:
+                typ, parts = imap.fetch(i, '(BODY.PEEK[])')
+                raw = next((p[1] for p in parts if isinstance(p, tuple)), None)
+                item = extract(raw, user + '/' + folder) if raw else None
+                if item:
+                    items.append(item)
+                else:
+                    skipped += 1
+            print('  folder %d: %d message(s) since %s' % (folders.index(folder) + 1, len(ids), since))
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+    return items, skipped
+
+
 def for_post(item):
     """What the backend gets: everything but the full text kept for the AI."""
     return {k: v for k, v in item.items() if not k.startswith('_')}

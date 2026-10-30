@@ -9735,7 +9735,8 @@ function inboxRowFor_(it, idx) {
     q && q.bal !== '' && q.bal != null ? Number(q.bal) : '',
     amounts.map(fmtMoney_).join(', '),
     why.concat(notes).join(' · '),
-    cut(it.snippet, 400), cut(it.mailbox, 80), cut(it.messageId, 300), ai ? 'AI' : 'Keywords'];
+    cut(it.snippet, 400), cut(it.mailbox, 80), cut(it.messageId, 300),
+    ai ? 'AI · ' + cut(ai.kind || 'other', 30) : 'Keywords'];
 }
 
 /* The tab, created on first use. A tab made before the AI review had 15
@@ -9769,6 +9770,11 @@ function inboxRowsByMid_(sh) {
   return out;
 }
 
+/* Reviewed by "AI · <kind>" is a finished AI review. A bare "AI" is one made
+   before the kind was stored and before Adobe's signed PDFs were read: still
+   New, it is reviewed once more so it gains both. */
+function inboxAiDone_(rev) { return String(rev || '').indexOf('AI · ') === 0; }
+
 /* What the scanner need not send to the AI again: rows it already reviewed,
    and rows a person has already marked (their verdict stands either way). */
 function inboxKnown_() {
@@ -9776,7 +9782,7 @@ function inboxKnown_() {
   if (!sh) return { ok: 1, settled: [] };
   const by = inboxRowsByMid_(sh);
   return { ok: 1, settled: Object.keys(by).filter(function (m) {
-    return by[m].rev === 'AI' || by[m].status !== 'New';
+    return inboxAiDone_(by[m].rev) || by[m].status !== 'New';
   }) };
 }
 
@@ -9803,7 +9809,7 @@ function inboxIngest_(items) {
       if (!mid) { skipped++; return; }
       const old = have[mid];
       if (old) {
-        if (old.done || !inboxAiOf_(it) || old.rev === 'AI' || old.status !== 'New') { dup++; return; }
+        if (old.done || !inboxAiOf_(it) || inboxAiDone_(old.rev) || old.status !== 'New') { dup++; return; }
         old.done = 1;
         const row = inboxRowFor_(it, idx);
         if (row) { sh.getRange(old.row, 1, 1, width).setValues([row]); updated++; }
@@ -9956,26 +9962,94 @@ function inboxRowOut_(r) {
   };
 }
 
+/* ALREADY APPLIED? Chris is looking for what he missed, not for what he
+   already did. A payment email whose payment is on the quote, or a contract
+   email whose signed contract is on file, is hidden from the list — decided
+   when the list is read, so a payment recorded after the scan still clears
+   it, and nothing is written: the row stays New on the tab, and "Show
+   handled" lists it with the reason.
+
+   Which rows: a single matched quote, and a payment or signature row. The kind
+   comes from the AI (stored as "AI · payment" in Reviewed by) or, for rows
+   reviewed before that was stored, from the summary's wording.
+
+   A payment counts as applied when the quote holds a payment of an amount the
+   email names, recorded no earlier than PAY_LOOKBACK days before the email
+   (a counter payment and the customer's "I paid today" email can be either way
+   round; a deposit from August is not this week's check). An email naming no
+   amount counts only if the quote is paid in full with a payment in that
+   window. Only the quotes those rows name are read, one cached lookup each. */
+const INBOX_PAY_LOOKBACK_DAYS_ = 21;
+
+function inboxKindOf_(o) {
+  const m = /^AI · (\w+)/.exec(o.rev || '');
+  if (m) return m[1];
+  const t = String(o.what || '');
+  if (/\b(payment|paid|pay|check|cheque|deposit|zelle|venmo|paypal|balance)\b/i.test(t)) return 'payment';
+  if (/\b(sign|signed|signature|contract|agreement)\b/i.test(t)) return 'signature';
+  return '';
+}
+
+/* null when nothing on the quote covers the email; else the reason it does. */
+function inboxAppliedOf_(o, d) {
+  if (!d) return null;
+  const kind = inboxKindOf_(o);
+  if (kind === 'signature') return d.contractUrl ? 'Signed contract already on file' : null;
+  if (kind !== 'payment') return null;
+  const sent = new Date(o.at);
+  const since = isNaN(sent) ? 0 : sent.getTime() - INBOX_PAY_LOOKBACK_DAYS_ * 86400000;
+  const pays = (d.payments || []).filter(function (p) {
+    const when = new Date(p.at || p.date);
+    return Number(p.amt) > 0 && (isNaN(when) || when.getTime() >= since);
+  });
+  const amts = String(o.amounts || '').split(/,\s*/).map(function (a) { return Number(a.replace(/[$,]/g, '')); })
+    .filter(function (n) { return isFinite(n) && n > 0; });
+  const say = function (p) {
+    const when = new Date(p.at || p.date);
+    return usd_(Number(p.amt)) + ' recorded' + (isNaN(when) ? '' : ' ' + Utilities.formatDate(when, Session.getScriptTimeZone(), 'MMM d')) +
+      (p.by ? ' by ' + p.by : '') + (p.method ? ' (' + p.method + ')' : '');
+  };
+  for (let i = 0; i < pays.length; i++) {
+    if (amts.some(function (a) { return Math.abs(a - Number(pays[i].amt)) < 0.01; })) return 'Already on the quote: ' + say(pays[i]);
+  }
+  if (!amts.length && pays.length && Number(d.total || 0) - paymentsTotal_(d) <= 0.005) {
+    return 'Quote is paid in full; last payment ' + say(pays[pays.length - 1]);
+  }
+  return null;
+}
+
 function adminInboxList(token, includeDone) {
   inboxOwner_(token);
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(INBOX_TAB);
   if (!sh || sh.getLastRow() < 2) return { ok: 1, rows: [], pending: 0, done: 0 };
   const vals = sh.getRange(2, 1, sh.getLastRow() - 1, INBOX_HEADERS_.length).getValues();
   const rank = { High: 0, Medium: 1, Low: 2 };
-  let pending = 0, done = 0;
-  const rows = [];
+  let pending = 0, done = 0, applied = 0;
+  const rows = [], quotes = {};
+  const quoteFor = function (qn) {
+    if (!(qn in quotes)) {
+      try { const ctx = findQuoteCtx_(qn); quotes[qn] = ctx ? ctx.d : null; } catch (e) { quotes[qn] = null; }
+    }
+    return quotes[qn];
+  };
   vals.forEach(function (r) {
     if (!r[INBOX_MID_COL_ - 1]) return;
     const o = inboxRowOut_(r);
-    if (o.status === 'New') pending++; else done++;
-    if (o.status === 'New' || includeDone) rows.push(o);
+    if (o.status === 'New' && o.qns.length === 1 && /^(payment|signature)$/.test(inboxKindOf_(o))) {
+      o.applied = inboxAppliedOf_(o, quoteFor(o.qns[0]));
+    }
+    if (o.status === 'New' && o.applied) applied++;
+    else if (o.status === 'New') pending++;
+    else done++;
+    if ((o.status === 'New' && !o.applied) || includeDone) rows.push(o);
   });
+  const open = function (o) { return o.status === 'New' && !o.applied; };
   rows.sort(function (a, b) {
-    if ((a.status === 'New') !== (b.status === 'New')) return a.status === 'New' ? -1 : 1;
+    if (open(a) !== open(b)) return open(a) ? -1 : 1;
     const p = (a.priority in rank ? rank[a.priority] : 3) - (b.priority in rank ? rank[b.priority] : 3);
     return p || String(b.at).localeCompare(String(a.at));
   });
-  return { ok: 1, rows: rows.slice(0, INBOX_LIST_MAX_), pending: pending, done: done,
+  return { ok: 1, rows: rows.slice(0, INBOX_LIST_MAX_), pending: pending, done: done, applied: applied,
            truncated: rows.length > INBOX_LIST_MAX_ };
 }
 

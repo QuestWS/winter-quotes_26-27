@@ -455,10 +455,16 @@ adds a row to the **Inbox Review** tab, newest first, with a Priority and a
 "Why it is here". Staff set **Status** to *Logged* or *No action*.
 
 **AI review.** Keywords cannot read "dropped the check in your box Tuesday", or
-Jeff writing "the Hendersons want the pontoon pulled before the 10th". With an
-`ANTHROPIC_API_KEY` Actions secret set, every message that gets past the cheap
-filter is read by Claude (`claude-opus-5-5`, effort low; override with the
-`INBOX_AI_MODEL` variable). It answers in a fixed JSON shape: relevant or not,
+Jeff writing "the Hendersons want the pontoon pulled before the 10th". With a
+Claude credential set (below), the AI review runs in two passes:
+1. **Screen**: Claude Haiku 5.5 (`INBOX_SCREEN_MODEL`) sees the sender, subject
+   and first 600 characters of each message, 25 at a time, and drops what is
+   clearly unrelated: a Menards flyer, newsletters, vendor pitches, order and
+   shipping notices for Quest's own purchases, personal mail. It is told to
+   keep anything it is unsure of. A dropped message counts as "nothing to log".
+   Mail that names a quote number skips the screen.
+2. **Review**: Claude Opus 5.5 (`INBOX_REVIEW_MODEL`, effort low) reads all of
+   what the screen kept, six messages a call. It answers in a fixed JSON shape: relevant or not,
 what kind (payment, cancellation, contact change, schedule, service request,
 signature, staff direction, new customer, question), priority, a one-line
 summary, the action to take in the quote system, and the customers, quote
@@ -479,22 +485,35 @@ column is that summary and action. The hidden **Reviewed by** column says
   *New* is rewritten with the AI's reading when the AI sees that message, or
   removed if the AI says there is nothing to log. A row a person has marked is
   never touched. So the first AI catch-up cleans up the keyword rows.
-- **Falls back, never loses.** No key, an API error, a refusal or a bad answer
-  means that one message falls back to keywords (and gets another try on the
-  next run). Staff mail without an AI review makes no row: keywords cannot tell
+- **Falls back, never loses.** If a screen call fails, its whole batch goes on
+  to review. If a review call fails (no credential, an API error, a usage limit,
+  a refusal, a bad answer), its messages fall back to keywords and get another
+  try on the next run. Staff mail without an AI review makes no row: keywords cannot tell
   direction from chatter.
-- **Email text is data.** It goes to the model inside delimited tags, the
-  system prompt says never to follow instructions in it, and the answer is held
-  to the schema. The worst a hostile email can do is mislabel its own row.
+- **Email text is data.** Each message goes to the model inside its own
+  `<email>` tags, the system prompt says never to follow instructions in one,
+  and the answer is held to the schema. Messages share a call, so the worst a
+  hostile email can do is mislabel rows in its batch, and a row only asks a
+  person to look.
+- **Credentials: subscription or API key.** `CLAUDE_CODE_OAUTH_TOKEN` (Chris's
+  Claude subscription, made with `claude setup-token`) runs the calls through
+  the Claude Code CLI. It has no separate bill and counts against the plan's
+  usage limits. The CLI runs from an empty temporary folder, with every tool
+  off and no MCP servers, and the emails go in on stdin. Never pass `--bare`:
+  it turns off subscription sign-in. `ANTHROPIC_API_KEY` runs the same calls
+  through the Python SDK on pay-as-you-go billing. If both are set, the
+  subscription is used.
 - **Where the mail goes.** Each reviewed message's sender, subject and text
   (the new part, up to 12,000 characters, plus up to 1,500 of the quoted
   original) is sent to Anthropic's API. It is not used to train models under
   Anthropic's commercial terms.
-- **Cost**, roughly, at Opus 5.5 rates ($4 / $20 per million tokens): a cent or
-  two per email. That is about $10–15 for a 90-day catch-up of ~750 messages
-  and about $10–15 a month after that. Claude Haiku 5.5
-  (`INBOX_AI_MODEL` = `claude-haiku-5-5`) is around forty times cheaper and less
-  careful.
+- **Cost.** On the subscription, no bill, only usage, and the screen keeps
+  most of the volume on Haiku. On an API key, roughly: the screen is a
+  fraction of a cent per batch, and each message Opus reviews is about a cent.
+  If about half the mail survives the screen, that is a few dollars a month.
+- **The server keeps about two weeks of mail.** The scan reads whatever is
+  still there, so the morning run is the only record of anything older. The
+  console's catch-up choice is *Everything on the server* (30 days).
 
 **Rules it keeps:**
 - **Read-only on the mailbox.** The folder is opened read-only and every fetch
@@ -523,19 +542,22 @@ column is that summary and action. The hidden **Reviewed by** column says
 2. GitHub → repo Settings → Secrets and variables → Actions → add three
    repository secrets: `INBOX_SCAN_KEY` (that key), `IMAP_USER`
    (`chris@questwatersports.com`), `IMAP_PASSWORD` (its mail password).
-   For the AI review, a fourth secret: `ANTHROPIC_API_KEY` (console.anthropic.com
-   → API keys; put a monthly spend limit on it under Billing → Limits).
+   For the AI review, a fourth secret, one of these:
+   `CLAUDE_CODE_OAUTH_TOKEN`, from running `claude setup-token` on a computer
+   with Claude Code, signed in with the Claude subscription; or
+   `ANTHROPIC_API_KEY` (console.anthropic.com → API keys; put a monthly spend
+   limit on it under Billing → Limits).
    Optional variables: `IMAP_HOST` (default `questwatersports.com`),
    `IMAP_PORT` (default 993), `IMAP_FOLDERS` (default `INBOX`, comma-separated).
-3. Actions → **Scan inbox** → Run workflow with `days` = 90 to catch up on the
-   season so far. After that it runs by itself every morning.
+3. Console → Menu → **Scan inbox** → *Everything on the server* → **Scan now**
+   (or Actions → **Scan inbox** → Run workflow with `days` = 30). After that it runs by itself every morning.
 
 **Scan now, from the console.** Menu → **Scan inbox** (also a home tile)
 is **Chris only**: it is his mailbox. The server refuses every other sign-in,
 admins included (`inboxOwner_`, matching the roster name `INBOX_OWNER_`), and
 the console hides the menu item and tile from them. The panel shows how many rows still say *New*, links
 straight to the tab, shows the last run, and has a **Scan now** button with a
-look-back choice (since yesterday through 90 days). The button asks GitHub to
+look-back choice (since yesterday through everything on the server). The button asks GitHub to
 start the same workflow early (`adminInboxScanRun`). That needs a GitHub token
 in Script Properties; without one the panel says so and the morning run is
 unaffected. A second press inside a minute is refused rather than queued, and

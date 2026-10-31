@@ -92,6 +92,7 @@ symptom.
 | Sign in, sessions, lockout | `adminAuth`, `requireAuth_` | `doLogin` |
 | Permissions incl. the `keys` and `measure` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_` | `permsOf`, `myPerms_` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
+| Search by name in any order, phone digits, email, boat (also what the Service Desk at `questws.github.io/desk/` calls) | `searchMatcher_` | `doSearch`; `?q=` opens a quote or search via `openLinked_` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
 | Speed: one trip per click, timing, warm-up | `withQuote_`, `adminPing` | `afterWrite_`, `apiTiming_` |
 | Get ready (pre-warm before use) | `adminWarmup` | `getReady`, `keepWarm_`, `warmQuiet_` (console and Harbor Haul Out) |

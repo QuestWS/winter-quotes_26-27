@@ -183,6 +183,17 @@ const J = (v) => JSON.stringify(v);
   else ok('search is identical from one batch read and from the per-tab reads');
   if (fast.stats.batch !== 2 || fast.stats.trips > 0) fail('search made ' + fast.stats.batch + ' batch read(s) and ' + fast.stats.trips + ' per-tab trip(s) with the service on');
   else ok('search costs two reads (was ' + slow.stats.trips + ')');
+  /* Whatever the caller says first: full name in either order, a phone number
+     however it is punctuated, the make of the boat. */
+  const qns = (q) => ((fast.ctx.adminSearch('t', q).hits) || []).map((h) => h.quoteNo).join(',');
+  const want = { 'z alder': 'QW-26-1006', 'alder z': 'QW-26-1006', '(815) 555-0101': 'QW-26-1001',
+    '5550101': 'QW-26-1001', 'sea ray': 'QW-26-1001', 'ray alder': 'QW-26-1001', 'b alder': '' };
+  const bad = Object.keys(want).filter((q) => qns(q) !== want[q]);
+  if (bad.length) fail('search by name / phone / boat missed: ' + bad.map((q) => '"' + q + '" → ' + qns(q)).join('; '));
+  else ok('search finds a customer by full name in either order, by phone however it is typed, and by boat');
+  const one = fast.ctx.adminSearch('t', 'sea ray').hits[0] || {};
+  if (one.phone !== '8155550101' || one.tab !== 'Dry Storage') fail('a search hit no longer carries phone and tab for the Service Desk: ' + J(one));
+  else ok('a search hit carries phone, email and tab for the Service Desk');
 }
 {
   const want = ['QW-26-1003', 'QW-26-1004', 'QW-26-1005', 'qw-26-1002', 'QW-26-9999'];

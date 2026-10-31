@@ -3804,10 +3804,36 @@ function findQuoteCtx_(qn) {
   return null;
 }
 
+/* WHAT A SEARCH MATCHES — whatever the customer says first on the phone.
+   ---------------------------------------------------------------------------
+   Chris, Oct 2026: a customer calls and gives a name, and finding them meant
+   two consoles and a search that only knew surnames — "John White" found
+   nobody, because no surname contains a space. So every word typed has to turn
+   up somewhere in the first name, last name, email, quote number or the
+   unit's year/make/model, in any order: "john white", "white john", "white"
+   and "sea ray white" all find the same quote. A query made only of digits
+   and phone punctuation is a phone number and is matched on digits alone, so
+   "815-555-0101", "(815) 555 0101" and "5550101" agree with however the
+   cell was typed. Every column used is inside 1..DIMS, which adminSearch
+   already reads; nothing here adds a read. */
+function searchMatcher_(q) {
+  const digits = q.replace(/\D/g, '');
+  if (/^[\d\s()+.\-]+$/.test(q) && digits.length >= 3) {
+    return function (r) { return String(r[COL.PHONE - 1] || '').replace(/\D/g, '').indexOf(digits) !== -1; };
+  }
+  const words = q.split(/[\s,]+/).filter(Boolean);
+  return function (r) {
+    const hay = [r[COL.FIRST - 1], r[COL.LAST - 1], r[COL.EMAIL - 1], r[COL.QN - 1], r[COL.YMM - 1]]
+      .join(' ').toLowerCase();
+    return words.every(function (w) { return hay.indexOf(w) !== -1; });
+  };
+}
+
 function adminSearch(token, query) {
   requireAuth_(token, 'view');
   const q = String(query || '').trim().toLowerCase();
-  if (q.length < 2) return { ok: 0, error: 'Type at least 2 letters of the last name.' };
+  if (q.length < 2) return { ok: 0, error: 'Type at least 2 letters of a name, or part of a phone number.' };
+  const match = searchMatcher_(q);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const hits = [];
   const sheets = ss.getSheets();
@@ -3830,14 +3856,19 @@ function adminSearch(token, query) {
       body = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
     }
     body.forEach(function (r) {
-      const ln = String(r[COL.LAST - 1] || '').toLowerCase();
-      if (!ln || ln.indexOf(q) === -1) return;
+      if (!String(r[COL.QN - 1] || '').trim()) return;
+      if (!match(r)) return;
       const bal = Number(r[COL.BAL - 1] || 0);
       hits.push({ quoteNo: r[COL.QN - 1],
         name: [r[COL.FIRST - 1], r[COL.LAST - 1]].filter(Boolean).join(' '),
         unit: r[COL.UNIT - 1], ymm: r[COL.YMM - 1] || '',
         status: r[COL.STATUS - 1] || '',
-        balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)) });
+        balance: bal < -0.005 ? 'CREDIT ' + usd_(-bal) : usd_(Math.max(0, bal)),
+        /* For the Service Desk (questws.github.io/desk/), which puts these hits
+           beside the service tracker's and has to tell which belong to the
+           same person. Both columns are already in the range read above. */
+        phone: String(r[COL.PHONE - 1] || ''), email: String(r[COL.EMAIL - 1] || ''),
+        tab: sh.getName() });
     });
   });
   hits.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });

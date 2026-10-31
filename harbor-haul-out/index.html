@@ -53,6 +53,8 @@ body{background:var(--ice);overscroll-behavior-y:none}
 .bar .who{font-size:12px;color:#B9CDDD;white-space:nowrap}
 .bar .out{background:none;border:1px solid #2C4E73;color:#B9CDDD;border-radius:8px;
   padding:7px 10px;font-size:12px;font-family:var(--body);cursor:pointer;min-height:34px}
+a.out{text-decoration:none;display:inline-flex;align-items:center;white-space:nowrap}
+.bar .ttl.home{background:none;border:0;color:inherit;padding:0;text-align:left;cursor:pointer}
 /* Tabs live in the bar so they survive the list scrolling under them. */
 .tabs{display:flex;margin-top:10px}
 .tabs button{flex:1;background:none;border:0;border-bottom:3px solid transparent;color:#9FC3DC;
@@ -246,8 +248,10 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
 <div id="app" class="hide">
   <div class="bar">
     <div class="row1">
-      <div class="ttl">Harbor Haul Out</div>
+      <!-- Tap the name for this app's home; Tools for every Quest app. -->
+      <button class="ttl home" onclick="goHome()" aria-label="Harbor Haul Out home">Harbor Haul Out</button>
       <div class="who" id="who"></div>
+      <a class="out" href="https://questws.github.io/" aria-label="All Quest tools">&#8962; Tools</a>
       <button class="out" onclick="signOut()">Sign out</button>
     </div>
     <!-- The four states a unit moves through, in the order it moves through
@@ -1429,6 +1433,14 @@ async function openQuote(qn){
   }
 }
 function closeSheet(){ $('sheet').classList.add('hide'); stopDictation(); QLOAD++; }
+/* HOME: the To pull list, nothing open, nothing searched, at the top. */
+function goHome(){
+  if(!$('sheet').classList.contains('hide')) closeSheet();
+  if(!$('pullDlg').classList.contains('hide')) closePullDlg();
+  const q=$('q'); if(q) q.value='';
+  setTab('pull');
+  window.scrollTo(0,0);
+}
 function renderSheet(r){
   const listRow=ROWS.filter(x=>x.qn===r.quoteNo)[0]||{};
   $('dName').textContent=r.name||r.quoteNo;

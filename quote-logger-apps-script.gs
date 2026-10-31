@@ -8891,22 +8891,24 @@ function adminRepriceApply(token, only, first) {
    should not have. The clients read the answer; none of them computes it.
 
    `stamp` is the wording the paper and the screens print, so a hold cannot be
-   described two different ways in two places. */
+   described two different ways in two places. Chris, Oct 2026: only NEITHER
+   says "DO NOT PULL" — a hold names what is missing and nothing more, so the
+   words "do not pull" keep meaning the one state nobody may touch. */
 function haulAuth_(hasDeposit, hasContract) {
   if (hasContract && hasDeposit) {
     return { state: 'cleared', why: '', label: 'Signed', stamp: '' };
   }
   if (!hasContract && !hasDeposit) {
     return { state: 'blocked', why: 'both', label: 'NO DEPOSIT \u00b7 NO CONTRACT',
-             stamp: 'NO DEPOSIT \u00b7 NO CONTRACT' };
+             stamp: 'NO DEPOSIT \u00b7 NO CONTRACT \u2014 DO NOT PULL' };
   }
   if (hasContract) {
     /* Signed, nothing paid. The liability is covered; the money is not. */
     return { state: 'hold', why: 'payment', label: 'NO DEPOSIT',
-             stamp: 'NO DEPOSIT \u2014 DO NOT PULL' };
+             stamp: 'NO DEPOSIT' };
   }
   return { state: 'hold', why: 'signature', label: 'NO CONTRACT',
-           stamp: 'NO SIGNED CONTRACT \u2014 DO NOT PULL' };
+           stamp: 'NO SIGNED CONTRACT' };
 }
 
 /* `opt.fresh`: Harbor Haul Out's Refresh button. A deliberate tap asks for the

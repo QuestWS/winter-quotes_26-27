@@ -1441,8 +1441,8 @@ function renderSheet(r){
     : a.state==='hold'
       ? '<div class="auth '+(a.why==='payment'?'money':'stop')+'">'+esc(a.stamp)+
         '<small>'+(a.why==='payment'
-          ? 'They have signed, but nothing has been paid. Plan around it — do not pull it.'
-          : 'A deposit is in, but nobody has signed. Plan around it — do not pull it.')+'</small></div>'
+          ? 'They have signed, but nothing has been paid yet.'
+          : 'A deposit is in, but nobody has signed yet.')+'</small></div>'
       : '<div class="auth stop">DO NOT TOUCH — NOT AUTHORISED<small>No deposit and no signed agreement. '+
         'Not a unit to move, work on or pull.</small></div>';
   $('dAuth').innerHTML=box;

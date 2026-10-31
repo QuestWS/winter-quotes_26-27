@@ -3472,9 +3472,9 @@ function renderStorage(){
          about its absence. */
       const a=haulAuth_(x);
       const tag=a.state==='cleared' ? ''
-        : a.why==='signature' ? '<span class="tagred">NO CONTRACT — DO NOT PULL</span>'
-        : a.why==='payment'   ? '<span class="taggold">NO DEPOSIT — DO NOT PULL</span>'
-        : '<span class="tagmute">not authorised</span>';
+        : a.why==='signature' ? '<span class="tagred">NO CONTRACT</span>'
+        : a.why==='payment'   ? '<span class="taggold">NO DEPOSIT</span>'
+        : '<span class="tagmute">no deposit · no contract — do not pull</span>';
       /* On the deposit tab the balance alone doesn't say how much came in —
          $700 owing reads the same whether they paid $500 or $5. */
       const took=(SFILTER==='dep'&&x.paidTxt)?' · '+esc(x.paidTxt)+' paid':'';
@@ -4807,7 +4807,7 @@ async function printHaulOut(){
         ${planRows}
       </table>
       <div class="pgFoot">Ordered by what the customer asked for: ready now, then stated dates, then will call, then no answer yet.
-        A shaded HOLD row is missing either the signature or the deposit — plan around it, do not pull it.
+        A shaded HOLD row is missing either the signature or the deposit — plan around it.
         Quest Watersports · (815) 433-2200</div>
     </div>`:'';
   /* Its own page, no checkboxes, and nothing about timing: these are not units

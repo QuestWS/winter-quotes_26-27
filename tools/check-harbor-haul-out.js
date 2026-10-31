@@ -230,7 +230,7 @@ Y.ev('ROWS = ' + JSON.stringify([
   Y.ev('ROWS = ' + JSON.stringify([
     { qn: 'H', name: 'Held',  slip: 'B-1', tab: 'Building A', unit: 'Boat',
       auth: { state: 'hold', why: 'signature', label: 'NO CONTRACT',
-              stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } },
+              stamp: 'NO SIGNED CONTRACT' } },
     { qn: 'C', name: 'Clear', slip: 'B-2', tab: 'Building A', unit: 'Boat',
       auth: { state: 'cleared' } },
     { qn: 'S', name: 'Stow',  slip: '',    tab: 'Building A', unit: 'Boat',
@@ -268,7 +268,7 @@ Y.ev('ROWS = ' + JSON.stringify([
     fail('the opened unit offers Mark pulled on a boat nobody may touch — the app would be ' +
          'where the rule violation gets written down');
   else ok('an opened unit that is not cleared offers no Mark pulled');
-  if (/DO NOT PULL/.test(held))
+  if (/NO SIGNED CONTRACT/.test(held))
     ok('it shows the server\'s stamp in place of the button, so the crew knows why');
   else fail('the blocked unit does not say why it cannot be pulled: ' + held);
   /* PULL ANYWAY (Chris, Oct 2026): some boats have to come out before the
@@ -465,7 +465,7 @@ Y.ev('ROWS = ' + JSON.stringify([
   else ok('a unit with no alert renders nothing');
   /* It must not be confusable with the thing that stops a boat moving. */
   const held = Y.row_({ qn: 'C', name: 'Clark', slip: 'B-2', alert: 'watch the canvas',
-                        auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } },
+                        auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT' } },
                       'Slip B-2', '');
   if (/class="alert"/.test(held) && /class="badge none"/.test(held))
     ok('an alert and a do-not-pull stamp are separate marks on the same row');
@@ -524,7 +524,7 @@ Y.ev('ROWS = ' + JSON.stringify([
     { qn: 'QW-26-1255', name: "O'Brien, Pat", unit: 'Boat', slip: 'B-14', alert: 'no keys',
       auth: { state: 'cleared' } },
     { qn: 'QW-26-0002', name: 'Baker, Bo', unit: 'Boat', slip: 'A-3',
-      auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT — DO NOT PULL' } }
+      auth: { state: 'hold', why: 'signature', stamp: 'NO SIGNED CONTRACT' } }
   ];
   let markup = '';
   rows.forEach(function (r) {

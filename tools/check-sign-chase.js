@@ -204,9 +204,12 @@ ok('a unit is cleared if and only if it is both signed and paid');
   const sigTxt = B.haulAuth_(true, false).stamp;
   const payTxt = B.haulAuth_(false, true).stamp;
   if (sigTxt === payTxt) fail('both holds stamp the same text — the sheet cannot say which chase it is');
-  else if (!/DO NOT PULL/.test(sigTxt) || !/DO NOT PULL/.test(payTxt))
-    fail('a hold stamp does not say DO NOT PULL: ' + JSON.stringify([sigTxt, payTxt]));
-  else ok('the two holds stamp different words, and both say DO NOT PULL');
+  /* Chris, Oct 2026: "do not pull" is reserved for NEITHER on file. */
+  else if (/DO NOT PULL/.test(sigTxt) || /DO NOT PULL/.test(payTxt))
+    fail('a hold stamp says DO NOT PULL — only neither-on-file may: ' + JSON.stringify([sigTxt, payTxt]));
+  else if (!/DO NOT PULL/.test(B.haulAuth_(false, false).stamp))
+    fail('the neither-on-file stamp does not say DO NOT PULL: ' + B.haulAuth_(false, false).stamp);
+  else ok('the two holds stamp different words, and only neither-on-file says DO NOT PULL');
 }
 /* THE FAIL-SAFE. A row the server did not stamp — an older backend, a cache
    entry written before this deploy — must read as blocked on every client.
@@ -258,9 +261,9 @@ ok('a unit is cleared if and only if it is both signed and paid');
     eq(pages, 2, 'two pages: the working list, and the units nobody may touch');
     if (/DO NOT TOUCH — NOT AUTHORISED/.test(html)) ok('the held-off units get their own headed page');
     else fail('there is no "do not touch" page for the units with neither');
-    if (/NO SIGNED CONTRACT — DO NOT PULL/.test(html)) ok('a deposit-only row is stamped in words on the sheet');
+    if (/>NO SIGNED CONTRACT</.test(html)) ok('a deposit-only row is stamped in words on the sheet');
     else fail('a deposit-only row carries no printed warning — colour alone will not survive a shop printer');
-    if (/NO DEPOSIT — DO NOT PULL/.test(html)) ok('a signed-but-unpaid row is stamped with its OWN reason');
+    if (/>NO DEPOSIT</.test(html)) ok('a signed-but-unpaid row is stamped with its OWN reason');
     else fail('a signed-but-unpaid row is not stamped, or is stamped as if the signature were missing');
     if (/signed AND a deposit is in/.test(html)) ok('the rule itself is printed on the sheet');
     else fail('the sheet does not state the rule');

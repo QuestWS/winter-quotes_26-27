@@ -1393,12 +1393,12 @@ but never signed", asked from a phone.
 - **A row that cannot be pulled is tagged, in the weight its risk deserves**
   — `haulAuth_` decides, so the screen and the paper cannot disagree. Three
   weights, all palette tokens:
-  **solid red `NO CONTRACT — DO NOT PULL`** where money is in but nobody has
+  **solid red `NO CONTRACT`** where money is in but nobody has
   signed — somebody has every reason to think that unit is good to go and the
   exposure is legal, so that is the one that has to stop a person;
-  **gold `NO DEPOSIT — DO NOT PULL`** where they have signed and not paid — a
+  **gold `NO DEPOSIT`** where they have signed and not paid — a
   money hold, and gold is already what this console uses for an open balance;
-  **a quiet outlined `not authorised`** where neither is in — nobody is about
+  **a quiet outlined `no deposit · no contract — do not pull`** where neither is in — nobody is about
   to pull it, and on the *No deposit* tab that is most of the rows, so shouting
   there would only train people to stop seeing red. The contract is
   `d.contractUrl`, written by `adminUploadContract`.
@@ -1497,8 +1497,8 @@ storage rows alike:
 | On file | State | `why` | What happens |
 |---|---|---|---|
 | Signature **and** deposit | `cleared` | — | Normal row, tick box, pull it |
-| Deposit, no signature | `hold` | `signature` | On the haul-out list **for planning**, shaded, stamped `NO SIGNED CONTRACT — DO NOT PULL`, **no tick box** |
-| Signature, no deposit | `hold` | `payment` | Same treatment, stamped `NO DEPOSIT — DO NOT PULL` |
+| Deposit, no signature | `hold` | `signature` | On the haul-out list **for planning**, shaded, stamped `NO SIGNED CONTRACT`, **no tick box** |
+| Signature, no deposit | `hold` | `payment` | Same treatment, stamped `NO DEPOSIT` |
 | Neither | `blocked` | `both` | Off the working list entirely, on a `DO NOT TOUCH — NOT AUTHORISED` page at the back |
 
 - **A hold can be pulled anyway — on purpose, never by accident.** Some boats
@@ -1518,8 +1518,10 @@ storage rows alike:
 - **Cleared means both, and the guard asserts it as one sentence.**
   `tools/check-sign-chase.js` walks the whole truth table and fails unless
   `cleared === (signed && paid)`, so neither gate can quietly start releasing a
-  unit on its own. It also asserts the two hold stamps differ and that both say
-  `DO NOT PULL`.
+  unit on its own. It also asserts the two hold stamps differ and that
+  **only neither-on-file says `DO NOT PULL`** (Chris, Oct 2026: a hold names
+  what is missing and no more, so "do not pull" keeps meaning the one state
+  nobody may touch).
 - **The tick box is the instruction.** A box somebody can tick is the box that
   gets ticked, so a held row does not get one — it gets the word `HOLD`.
 - **Shop printers are black and white**, so none of this may depend on colour:

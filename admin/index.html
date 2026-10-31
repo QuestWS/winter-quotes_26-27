@@ -471,7 +471,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
          a pause nobody can see is a pause somebody forgets to lift. -->
     <div class="pausebar hide" id="pauseBar"></div>
     <div class="hero">
-      <input id="qn" placeholder="Quote # (QW-26-####) or last name — partial OK, e.g. Kuj" autocapitalize="characters" autocomplete="off">
+      <input id="qn" placeholder="Quote #, name or phone — partial OK, e.g. Kuj or John White" autocapitalize="characters" autocomplete="off">
       <button class="btn navy" onclick="doSearch()">Look up</button>
     </div>
     <div class="msg" id="lookupMsg"></div>
@@ -1479,7 +1479,7 @@ async function afterWrite_(r){
 function apiDone_(j,opts){
   /* `quiet`: the background re-warm (keepWarm_) must not reload the page out
      from under somebody typing; it stops itself instead. */
-  if(j&&j.error&&String(j.error).includes('expired')&&!(opts&&opts.quiet)){localStorage.clear();location.reload();}
+  if(j&&j.error&&String(j.error).includes('expired')&&!(opts&&opts.quiet)){clearSession_();location.reload();}
   return j;
 }
 /* Escape before interpolating anything into innerHTML. Dimensions, notes and
@@ -1522,6 +1522,17 @@ function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className=
 function navGate(base,allowed){
   ['Open','Tile'].forEach(sfx=>{const e=$(base+sfx); if(e) e.classList.toggle('hide',!allowed);});
 }
+/* ?q=QW-26-1255 (or ?q=a name) opens straight onto that quote or search —
+   how the Service Desk (questws.github.io/desk/) hands a customer over. Read
+   once and then taken off the address, so a reload is an ordinary reload.
+   Before sign-in it waits: boot() runs again after the PIN and picks it up. */
+let LINKED_Q_=(()=>{try{return new URLSearchParams(location.search).get('q')||'';}catch(e){return '';}})();
+function openLinked_(){
+  const q=String(LINKED_Q_||'').trim(); if(!q) return;
+  LINKED_Q_='';
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  $('qn').value=q; doSearch();
+}
 function boot(){
   if(T&&ME){$('loginView').classList.add('hide');$('appView').classList.remove('hide');
     $('userName').textContent=ME.name;
@@ -1542,6 +1553,7 @@ function boot(){
     syncHome();
     /* A reload inside the ready window carries on keeping things warm. */
     if(Date.now()<READY_UNTIL) warmQuiet_();
+    openLinked_();
   } else {$('loginView').classList.remove('hide');$('appView').classList.add('hide');}
 }
 
@@ -1635,7 +1647,13 @@ async function doLogin(){
     T=r.token;ME=r;localStorage.setItem('qwtok',T);localStorage.setItem('qwme',JSON.stringify(r));boot();
   }catch(e){setMsg('loginMsg',e.message,false);}
 }
-function logout(){localStorage.clear();location.reload();}
+/* Only this console's keys. The console shares an origin (questws.github.io)
+   with the service tracker portal and the Service Desk, and a clear() here
+   signed the writer out of the service tracker too. */
+function clearSession_(){
+  try{ ['qwtok','qwme','qwready'].forEach(k=>localStorage.removeItem(k)); }catch(e){}
+}
+function logout(){clearSession_();location.reload();}
 function pillClass(st){
   st=st.toLowerCase();
   if(st.includes('paid in full')||st.includes('credit'))return 'green';
@@ -1646,7 +1664,9 @@ function pillClass(st){
 async function doSearch(){
   const q=$('qn').value.trim();if(!q)return;
   $('resultsCard').classList.add('hide');
-  if(/^qw[- ]?\d/i.test(q)||/^\d{3,}$/.test(q)){ doLookup(q.toUpperCase().replace(/\s+/g,'')); return; }
+  /* Up to six bare digits is a quote number; seven or more is a phone number,
+     which the search matches on its digits. */
+  if(/^qw[- ]?\d/i.test(q)||/^\d{3,6}$/.test(q)){ doLookup(q.toUpperCase().replace(/\s+/g,'')); return; }
   setMsg('lookupMsg','Searching for "'+q+'"…');
   try{const r=await api('search',[q]);
     if(!r.ok){setMsg('lookupMsg',r.error,false);return;}

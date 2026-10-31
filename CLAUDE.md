@@ -58,12 +58,13 @@ icon; that one is outside the rule.
 https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec
 ```
 
-It appears in **five places that must stay in sync**:
+It appears in **six places that must stay in sync**:
 1. `quote-logger-apps-script.gs` → `const WEB_APP_URL`
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
 4. `sign.html` → `const API_URL`
 5. `harbor-haul-out/index.html` → `const API_URL`
+6. `questws.github.io` repo → `desk/index.html` (unchecked; `docs/ref/STAFF-CONSOLE.md`)
 
 Same URL serves several behaviors: plain `/exec` (quote page lookups + console
 API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a

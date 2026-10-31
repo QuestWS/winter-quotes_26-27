@@ -1649,3 +1649,28 @@ nothing had checked. Four rules came out of it:
 Script's real behaviour — an empty string is not content, `appendRow` writes
 below the last row that is — because the premise is the part a grep cannot
 hold down.
+
+## The Service Desk — one search over both consoles
+
+`questws.github.io/desk/` (repo `QuestWS/questws.github.io`) is a search page
+for a customer on the phone: one box, and it asks this console's `search` and
+the service tracker's `listJobs` in parallel, then draws the hits grouped by
+person (shared phone, email, or name). It writes nothing; a hit opens in its
+own console — here at `admin/?q=<quote #>` (`openLinked_`, which waits for the
+PIN if nobody is signed in and then takes itself off the address).
+
+- **Each side keeps its own sign-in.** The winter half is the staff member's
+  own PIN session with its permissions; the tracker half is the portal
+  password. The pages share the `questws.github.io` origin, so a sign-in on
+  either page is a sign-in on both.
+- **So this console signs out by removing its own keys** (`qwtok`, `qwme`,
+  `qwready` — `clearSession_`), **never `localStorage.clear()`**, which wiped
+  the service tracker's session along with it.
+- **What a search matches** (`searchMatcher_`): every word typed, in any order,
+  somewhere in first name, last name, email, quote number or year/make/model;
+  a query of only digits and phone punctuation is matched on the phone's
+  digits. All of it is inside columns 1..DIMS, so it costs no extra read. The
+  console sends six digits or fewer to the quote lookup and seven or more to
+  the search, as a phone number.
+- **The winter `/exec` URL is written into that page** — the sixth place in
+  CLAUDE.md §1. The tracker's is imported from its own `assets/lib/config.js`.

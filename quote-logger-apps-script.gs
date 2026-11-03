@@ -9472,6 +9472,29 @@ function trackerWorkOf_(d) {
   return out;
 }
 
+/* WHETHER IT IS GOING INTO STORAGE, AND WHERE — for the mechanic's tag.
+   Chris, Nov 2026: "list if a boat is going into storage and which storage
+   location on the service tracker mechanic app so it can be tagged
+   appropriately by the mechanic."
+
+   The answer is the TAB the quote sits on, not the customer's own answer:
+   a staff relocation (manual.measured.storage) moves the row, so the tab is
+   where the office has actually put it. 'No Storage' means the unit is here
+   for work and goes back to the customer. How it sits — on its trailer or
+   blocked on stands — is the effective state's hasTrailer, and is left out
+   for land units, which are neither. */
+const TRACKER_STORAGE_LABELS_ = { 'Inside': 'Inside (non-heated)', 'Premium Inside': 'Premium inside',
+  'Outside': 'Outside', 'Golf Cart': 'Golf cart storage', 'E-Bike': 'E-bike storage' };
+function trackerStorageOf_(tab, pd, st) {
+  const t = String(tab || '').trim();
+  if (!t || t === 'No Storage') return { storing: false, storageLabel: 'Not going into storage', storageHow: '' };
+  let how = '';
+  if (!isLandUnit_(pd) && st && st.hasTrailer !== undefined) {
+    how = st.hasTrailer ? 'On its trailer' : 'Off the trailer — blocked / on stands';
+  }
+  return { storing: true, storageLabel: TRACKER_STORAGE_LABELS_[t] || t, storageHow: how };
+}
+
 /* One unit as the tracker sees it, or null when it is not on To store.
    `r` is the row's 1..DIMS cells, `pd` its parsed payload. */
 function trackerUnitOf_(r, pd, tab) {
@@ -9485,12 +9508,14 @@ function trackerUnitOf_(r, pd, tab) {
   const st = effectiveState_(pd) || pd.state || null;
   const pick = function (k) { return String((st && st[k] !== undefined ? st[k] : pd[k]) || ''); };
   const alert = placementAlertOf_(pd);
+  const store = trackerStorageOf_(tab, pd, st);
   return {
     qn: String(r[COL.QN - 1] || ''),
     name: [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
     unit: String(r[COL.UNIT - 1] || ''), ymm: String(r[COL.YMM - 1] || ''),
     dims: String(r[COL.DIMS - 1] || ''),
     tab: String(tab || ''),
+    storing: store.storing, storageLabel: store.storageLabel, storageHow: store.storageHow,
     slip: pick('slipNo'), keys: pick('keyLoc'), trailerLoc: pick('trailerLoc'),
     state: state, stateLabel: PLACEMENT_STATES_[state].label,
     stateAt: String((placementOf_(pd) && placementOf_(pd).at) || ''),

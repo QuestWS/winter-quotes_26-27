@@ -9572,12 +9572,47 @@ function trackerKeyOk_(given) {
   return diff === 0;
 }
 
+/* THE WINTER SERVICE MENU, for a walk-in.
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: a work order loaded into the service tracker can be marked
+   as a winterize job, and "all of the options from winter services should
+   populate for me to check off" — full or basic, engine type left blank when
+   the customer does not know, so the mechanic picks it at the boat.
+
+   Built from the engine's own lists (LEVEL_DESC, BOAT_ENGINES, SERVICE_MENU),
+   not a copy, so a service added here for the season is on the walk-in
+   checklist the next time the tracker asks. No prices: the tracker is not
+   pricing anything — the walk-in is billed in BiT. Left out: Retrieval and the
+   in-water wrap, which are about getting a boat out of the harbor and into a
+   spot, not work done to it at the counter. Read-only. */
+const TRACKER_MENU_SKIP_ = { 'retrieval': 1, 'inWater': 1 };
+function trackerMenu_() {
+  return {
+    ok: 1, v: 1,
+    levels: [
+      { id: 'basic', label: 'Basic', steps: LEVEL_DESC.basic, stepsPwc: LEVEL_DESC.basic },
+      { id: 'full', label: 'Full service', steps: LEVEL_DESC.fullQuote, stepsPwc: LEVEL_DESC.fullPwcQuote }
+    ],
+    engines: BOAT_ENGINES.map(function (e) {
+      return { id: e.id, name: e.name, pwc: !!e.likePwc };
+    }).concat([{ id: 'pwc', name: 'PWC / Jetski', pwc: true }]),
+    services: SERVICE_MENU.filter(function (m) { return !TRACKER_MENU_SKIP_[m.key]; }).map(function (m) {
+      /* Water systems and the drive train freeze; they are winterization in
+         the same sense as WINTERIZE_SECS_, and the checklist marks them so. */
+      return { key: m.key, label: m.label, kind: m.kind === 'count' ? 'count' : 'flag', group: m.group,
+               units: m.units, needs: m.needs || '', request: !!m.request,
+               winterize: !!WINTERIZE_SECS_[m.group] };
+    })
+  };
+}
+
 function trackerServe_(p) {
   let out;
   try {
     if (!trackerKeyOk_(p && p.key)) out = { ok: 0, error: 'Not authorised.' };
     else if (String(p.fn || '') === 'winterWork') out = trackerFeed_();
     else if (String(p.fn || '') === 'winterTicks') out = trackerSetTicks_(p.ticks);
+    else if (String(p.fn || '') === 'menu') out = trackerMenu_();
     else out = { ok: 0, error: 'Unknown function.' };
   } catch (err) {
     out = { ok: 0, error: String(err.message || err) };

@@ -187,6 +187,27 @@ console.log('\n=== 2e. going into storage, and where ===');
     /trackerStorageOf_\(tab, pd, st\)/.test(fn('trackerUnitOf_')));
 }
 
+console.log('\n=== 2f. the walk-in menu comes from the engine ===');
+{
+  const engA = gas.indexOf('// ENGINE-START'), engB = gas.indexOf('// ENGINE-END');
+  const M = new Function([gas.slice(engA, engB), decl('WINTERIZE_SECS_'), decl('TRACKER_MENU_SKIP_'), fn('trackerMenu_'),
+    'return { menu: trackerMenu_(), SERVICE_MENU, BOAT_ENGINES };'].join('\n'))();
+  const m = M.menu;
+  check('full and basic, with the steps for each', m.levels.map((l) => l.id).join() === 'basic,full' &&
+    m.levels.every((l) => l.steps && l.stepsPwc) && /oil/.test(m.levels[1].steps));
+  check('every boat engine type, plus PWC', M.BOAT_ENGINES.every((e) => m.engines.some((x) => x.id === e.id)) &&
+    m.engines.some((x) => x.id === 'pwc' && x.pwc));
+  const keys = m.services.map((x) => x.key);
+  check('every service on the winter menu but retrieval and the in-water wrap',
+    M.SERVICE_MENU.filter((x) => x.key !== 'retrieval' && x.key !== 'inWater').every((x) => keys.includes(x.key)) &&
+    !keys.includes('retrieval') && !keys.includes('inWater'), keys.join());
+  check('water systems and drive train are marked winterization, shrinkwrap is not',
+    m.services.find((x) => x.key === 'ballast').winterize && m.services.find((x) => x.key === 'dtTrans').winterize &&
+    !m.services.find((x) => x.key === 'wrap').winterize);
+  check('no prices on it', !/\$|price|perFt|amt/i.test(JSON.stringify(m)));
+  check('it is behind the key like the rest', /'menu'\) out = trackerMenu_\(\)/.test(fn('trackerServe_')));
+}
+
 console.log('\n=== 3. no money ===');
 {
   const u = B.trackerUnitOf_(row('A'), quote('pulled'), 'Inside');

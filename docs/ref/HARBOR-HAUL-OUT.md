@@ -276,6 +276,20 @@ appropriately by the mechanic."* Each unit on the feed carries `storing`,
 `check-tracker-feed.js` § 2e runs every area, the No Storage case, the
 trailer answer and the land units.
 
+### The winter service menu, for walk-ins
+
+Chris, Nov 2026: a work order loaded into the service tracker can be marked a
+winterize job, and *"all of the options from winter services should populate"*.
+So the tracker asks here (`fn:'menu'` → `trackerMenu_`, same key, read-only)
+and gets the engine's own lists: the two levels with their steps
+(`LEVEL_DESC`), the engine types (`BOAT_ENGINES` plus PWC), and every
+`SERVICE_MENU` entry but Retrieval and the in-water wrap — those are about
+getting a boat out of the harbor, not work done at the counter. Water systems
+and the drive train are marked winterization, as in `WINTERIZE_SECS_`. **No
+prices**: the walk-in is billed in BiT. A service added to the engine for the
+season is on the walk-in checklist the next time the tracker's six-hour cache
+turns over. `check-tracker-feed.js` § 2f runs it against the real engine.
+
 ### Winterize pending — the second strip
 
 Chris, Sep 2026: *"add an alert in the Harbor Haul Out app for boats that are

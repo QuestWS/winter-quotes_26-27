@@ -3663,7 +3663,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 10;
+const STORAGE_VIEW_V_ = 11;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -9118,6 +9118,8 @@ function storageViewBuild_(opt) {
           alert: alert,
           /* Winterization still to be ticked off in the mechanic app, or null. */
           winter: winter,
+          /* Done with Harbor Haul Out: see hhoDone_. The console still lists it. */
+          hhoDone: hhoDone_(noStore, placementState, winter),
           /* The customer's own note, trimmed for the list. See customerNoteOf_. */
           cnote: cnote,
           /* Signed agreement on file. Deposit taken and this still false is the
@@ -9470,6 +9472,26 @@ function trackerWorkOf_(d) {
     out.push({ sec: 'Quote requested', label: label, requested: true });
   });
   return out;
+}
+
+/* A NO STORAGE UNIT THE HARBOR IS FINISHED WITH.
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: "No storage boats do not need to be listed. Once they are
+   pulled and winterized and just waiting to be picked back up, they no longer
+   need to be in the haul out app and should just be found on the admin page."
+
+   So a unit with no storage bought (the same `noStorage` the row carries,
+   off the effective state, so a staff change counts) drops out of Harbor Haul Out once it is
+   here (pulled, dropped off, stored or picked up) and its winterization is
+   done — or it had none to do. Until then it stays: it still has to be pulled,
+   and a boat whose engine is not yet winterized is still the harbor's
+   business. Decided here, once, and stamped on the storage row; the app only
+   leaves out a row the server marked. The console's storage view ignores the
+   stamp and keeps listing it, which is where the office finds it for pickup. */
+function hhoDone_(noStorage, placementState, winter) {
+  if (!noStorage) return false;
+  if (!placementState || !PLACEMENT_STATES_[placementState]) return false;
+  return !(winter && winter.pending && winter.pending.length);
 }
 
 /* WHETHER IT IS GOING INTO STORAGE, AND WHERE — for the mechanic's tag.

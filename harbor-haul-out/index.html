@@ -780,7 +780,9 @@ async function loadList(force){
     ROWS=[];
     (r.groups||[]).forEach(function(g){
       if(g.lead) return;                 // a lead has no unit with us
-      (g.rows||[]).forEach(function(x){ ROWS.push(Object.assign({tab:g.tab},x)); });
+      /* A No Storage unit that is here and winterized is the office's now,
+         waiting for its owner — the server says which (hhoDone_). */
+      (g.rows||[]).forEach(function(x){ if(x.hhoDone) return; ROWS.push(Object.assign({tab:g.tab},x)); });
     });
     LIST_AT=Date.now(); listSave_();
     render();

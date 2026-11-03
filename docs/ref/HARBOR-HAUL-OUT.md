@@ -290,6 +290,21 @@ prices**: the walk-in is billed in BiT. A service added to the engine for the
 season is on the walk-in checklist the next time the tracker's six-hour cache
 turns over. `check-tracker-feed.js` § 2f runs it against the real engine.
 
+### No Storage units leave once they are done
+
+Chris, Nov 2026: *"No storage boats do not need to be listed. Once they are
+pulled and winterized and just waiting to be picked back up, they no longer
+need to be in the haul out app and should just be found on the admin page."*
+
+A unit with no storage bought (`noStorage` on the row) is stamped `hhoDone`
+by `hhoDone_` once it is here — pulled, dropped off, stored or picked up — and
+its winterization is done or it had none. Harbor Haul Out leaves those rows
+out when it builds its list; the console's storage view ignores the stamp and
+keeps showing them, which is where the office finds a boat for pickup. Until
+then it stays: still in the water it has to be pulled, and with winterization
+pending it is still the harbor's business. The server decides; the app only
+skips what it is told to. `check-tracker-feed.js` § 2g.
+
 ### Winterize pending — the second strip
 
 Chris, Sep 2026: *"add an alert in the Harbor Haul Out app for boats that are

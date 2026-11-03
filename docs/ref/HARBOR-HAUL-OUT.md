@@ -259,6 +259,23 @@ one — `docs/ref/STAFF-CONSOLE.md` § *Winter quotes with a service tracker QR*
 lines count as work, that nothing monetary or contact-shaped is on a unit,
 and that the key is checked first and in full.
 
+### Going into storage, and where — for the mechanic's tag
+
+Chris, Nov 2026: *"list if a boat is going into storage and which storage
+location on the service tracker mechanic app so it can be tagged
+appropriately by the mechanic."* Each unit on the feed carries `storing`,
+`storageLabel` and `storageHow` (`trackerStorageOf_`):
+
+- **Read off the TAB, not the customer's answer.** A staff relocation moves the
+  row, so the tab is where the office has actually put the unit. `No Storage`
+  is **not going into storage** — here for work, going back to the customer.
+- **How it sits** — *On its trailer* or *Off the trailer — blocked / on stands*
+  — from the effective state's `hasTrailer`; left blank when nobody has said,
+  and never for a golf cart or e-bike.
+
+`check-tracker-feed.js` § 2e runs every area, the No Storage case, the
+trailer answer and the land units.
+
 ### Winterize pending — the second strip
 
 Chris, Sep 2026: *"add an alert in the Harbor Haul Out app for boats that are

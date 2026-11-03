@@ -36,6 +36,7 @@ const B = new Function('PropertiesService', [
   decl('WINTERIZE_SECS_'), decl('WINTERIZE_STATES_'), fn('winterDoneOf_'), fn('winterizeStatusOf_'),
   fn('placementOf_'), fn('placementStateOf_'), fn('placementAlertOf_'),
   fn('effectiveState_'), fn('customerNoteOf_'),
+  decl('TRACKER_STORAGE_LABELS_'), fn('isLandUnit_'), fn('trackerStorageOf_'),
   fn('trackerWorkOf_'), fn('trackerUnitOf_'), fn('trackerKeyOk_'),
   'return {trackerWorkOf_, trackerUnitOf_, trackerKeyOk_, winterizeStatusOf_, COL};'
 ].join('\n'))({ getScriptProperties: () => ({ getProperty: () => KEY }) });
@@ -165,6 +166,25 @@ console.log('\n=== 2d. the staff console shows it too, and cannot change it ==='
   check('nothing on the console sends ticks', !/winterTicks/.test(con));
   const fnSrc = con.match(/function renderWinterCard\(w\)\{[\s\S]*?\n\}/)[0];
   check('the card never reads or writes the alert', !/_alert|placementAlert/.test(fnSrc));
+}
+
+console.log('\n=== 2e. going into storage, and where ===');
+{
+  const at = (tab, extra) => B.trackerUnitOf_(row('A'), quote('pulled', extra), tab);
+  const inside = at('Inside', { state: { slipNo: 'B-12', keyLoc: 'front desk', hasTrailer: true } });
+  check('a unit on a storage tab is going into storage, and says where',
+    inside.storing === true && inside.storageLabel === 'Inside (non-heated)', JSON.stringify([inside.storing, inside.storageLabel]));
+  check('and how it sits', inside.storageHow === 'On its trailer');
+  const blocked = at('Outside', { state: { hasTrailer: false } });
+  check('a boat off its trailer says so', blocked.storageLabel === 'Outside' && /blocked/.test(blocked.storageHow));
+  check('premium inside is named as such', at('Premium Inside').storageLabel === 'Premium inside');
+  const none = at('No Storage');
+  check('No Storage is NOT going into storage', none.storing === false && /Not going into storage/.test(none.storageLabel));
+  check('an unknown trailer answer says nothing rather than guess', at('Inside', { state: {} }).storageHow === '');
+  const cart = B.trackerUnitOf_(row('A'), quote('dropped', { unit: 'Golf cart', state: { hasTrailer: false } }), 'Golf Cart');
+  check('a land unit gets its area and no trailer talk', cart.storing && cart.storageLabel === 'Golf cart storage' && cart.storageHow === '');
+  check('a staff move wins over the customer: the tab, not their answer, is read',
+    /trackerStorageOf_\(tab, pd, st\)/.test(fn('trackerUnitOf_')));
 }
 
 console.log('\n=== 3. no money ===');

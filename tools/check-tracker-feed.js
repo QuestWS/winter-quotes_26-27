@@ -208,6 +208,25 @@ console.log('\n=== 2f. the walk-in menu comes from the engine ===');
   check('it is behind the key like the rest', /'menu'\) out = trackerMenu_\(\)/.test(fn('trackerServe_')));
 }
 
+console.log('\n=== 2g. No Storage units leave Harbor Haul Out once done ===');
+{
+  const D = new Function([decl('PLACEMENT_STATES_'), fn('hhoDone_'), 'return hhoDone_;'].join('\n'))();
+  const pend = { total: 2, pending: ['Full service — Inboard'] };
+  const clear = { total: 2, pending: [] };
+  check('still in the water: stays, it has to be pulled', D(true, '', null) === false);
+  check('pulled with winterization pending: stays', D(true, 'pulled', pend) === false);
+  check('pulled and winterized: gone', D(true, 'pulled', clear) === true);
+  check('dropped off with nothing to winterize: gone', D(true, 'dropped', null) === true);
+  check('picked up: gone', D(true, 'pickedup', clear) === true);
+  check('a unit with storage is never hidden', D(false, 'pulled', clear) === false && D(false, 'stored', null) === false);
+  check('an unknown state is not hidden — it falls to a real list', D(true, 'launched', clear) === false);
+  check('the storage row carries it', /hhoDone: hhoDone_\(noStore, placementState, winter\)/.test(fn('storageViewBuild_')));
+  const app = fs.readFileSync(path.join(ROOT, 'harbor-haul-out/index.html'), 'utf8');
+  check('Harbor Haul Out leaves those rows out', /if\(x\.hhoDone\) return;/.test(app));
+  const con = fs.readFileSync(path.join(ROOT, 'admin/index.html'), 'utf8');
+  check('the console does not — that is where they are found for pickup', !/hhoDone/.test(con));
+}
+
 console.log('\n=== 3. no money ===');
 {
   const u = B.trackerUnitOf_(row('A'), quote('pulled'), 'Inside');

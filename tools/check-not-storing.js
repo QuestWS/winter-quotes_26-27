@@ -196,6 +196,7 @@ console.log('=== storageViewBuild_ ===');
     'function effectiveState_(){return null;} function paymentsTotal_(){return 0;}',
     "function placementStateOf_(){return '';} function placementOf_(){return null;} function placementAlertOf_(){return null;}",
     "function customerNoteOf_(){return '';} function winterizeStatusOf_(){return null;}",
+    fn('hhoDone_'),
     "function haulAuth_(){return {state:'held'};} function fmtPhone(p){return p;} function usd_(n){return '$'+n;}",
     fn('storageViewBuild_'), 'return storageViewBuild_({});'
   ]).join('\n'))(ssOf([tab('Inside', QUOTES)]));

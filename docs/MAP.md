@@ -108,6 +108,7 @@ symptom.
 | Customer link for a quote | `quoteLinkFor_` (on `adminLookup`) | `renderQuoteLink`, `copyQuoteLink` |
 | Season re-price | `repriceScan_`, `adminRepricePreview`, `adminRepriceApply` | `previewReprice`, `doReprice` |
 | The one quote held out of it (not a category) | `priceIsFirm_` (engine) | — |
+| Quick quote — one-screen price check, save as a quote | `adminQuickQuote` → `importApplyCore_` (`origin:'console'`) | `toggleQuick`, `renderQuick`, `qqTicket_`, `saveQuick`; prices with `../pricing-engine.js` |
 | Old-sheet import (one at a time) | `parseLegacyGrid_`, `legacyToState_`, `adminImportPreview`, `adminImportApply`, `importApplyCore_` | `previewImport`, `doImport` |
 | Bulk import of a season folder | `bulkImport1_Scan`, `bulkImport2_Apply`, `bulkImportStep`, `bulkImportOne_`, `bulkImportDuplicateOf_`, `BULKIMP_NOT_A_QUOTE_` | editor-run; report sheet on Drive |
 | Keeping a draft off every customer path | `IMPORT_TAB`, `isImportTab_`, `isOffstageTab_` | — |
@@ -183,6 +184,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `check-perms-pause.js` | The `keys` fallback, and that a corrupt pause reads as PAUSED |
 | `check-reprice.js` | A discount survives a season re-price |
 | `check-legacy-import.js` | Old-sheet parsing, including the broken and comparison files |
+| `check-quick-quote.js` | Quick quote prices with the shared engine and the quote page's state shape, holds the reminder, emails nobody |
 | `check-import-write.js` | An imported quote lands on a free row — never on the last quote, never on the header row |
 | `check-phone-format.js` | One phone format everywhere, and nothing mangled |
 | `check-pricing-notice.js` | The estimate disclaimer renders on page, PDF and every email while pricing is provisional, and one flag removes all of it |

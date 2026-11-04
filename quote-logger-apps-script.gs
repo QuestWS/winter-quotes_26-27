@@ -1567,6 +1567,7 @@ function consoleFns_(p) {
     importList:     function (a) { return adminImportList(p.token); },
     importPreview:  function (a) { return adminImportPreview(p.token, a[0], a[1], a[2], a[3]); },
     importApply:    function (a) { return adminImportApply(p.token, a[0], a[1]); },
+    quickQuote:     function (a) { return adminQuickQuote(p.token, a[0], a[1]); },
     bulkImpStart:   function (a) { return adminBulkImportStart(p.token, a[0]); },
     bulkImpState:   function (a) { return adminBulkImportState(p.token); },
     bulkImpStop:    function (a) { return adminBulkImportStop(p.token); },
@@ -8397,6 +8398,39 @@ function adminImportApply(token, state, meta) {
   return importApplyCore_(who, state, meta, '');
 }
 
+/* QUICK QUOTE (Nov 2026) — the console's price-check card, saved as a quote.
+   Chris: "a way for me to quickly make a quote and check prices from the admin
+   page … without having to tab through the customer facing quote generator."
+   The pricing on that card is the shared engine running in the browser and
+   needs nothing from here; this is only the Save button.
+
+   It goes through importApplyCore_ on purpose. That path already builds a
+   payload from engine STATE (never from a browser's priced lines), prices it
+   here with the embedded engine, mints a number against the sheet, writes the
+   row onto the storage tab the state implies, reads it back, and HOLDS THE
+   9am REMINDER until a human sends the customer something. Every one of those
+   is what a staff-made quote needs, and a second copy of that write is a
+   second place for the column list to go stale.
+
+   Any signed-in staff may use it — the customer page creates quotes with no
+   PIN at all, so gating this tighter would only push staff back onto it.
+   Never emails anyone, the customer or service@. */
+function adminQuickQuote(token, state, meta) {
+  const who = requireAuth_(token, 'view');
+  meta = meta || {};
+  const last = String(meta.lastName || (state && state.lastName) || '').trim();
+  if (!last) return { ok: 0, error: 'A last name is needed — it is how the quote is looked up later.' };
+  if (!state || ['boat', 'jetski', 'golf', 'ebike'].indexOf(state.unit) < 0) {
+    return { ok: 0, error: 'Pick what is being quoted first.' };
+  }
+  const first = String(meta.firstName || state.firstName || '').trim();
+  return importApplyCore_(who, state, {
+    origin: 'console', firstName: first, lastName: last,
+    owner: (first ? first + ' ' : '') + last,
+    note: String(meta.note || '').slice(0, 2000)
+  }, '');
+}
+
 /* The write, shared by the one-at-a-time importer and the bulk run. Pulled out
    rather than copied because the two differ in exactly one thing -- which tab
    the row lands on -- and a second copy of "build the payload, price it, write
@@ -8418,9 +8452,18 @@ function importApplyCore_(who, state, meta, tabOverride) {
   const owner = String(meta.owner || '').trim();
   const parts = owner.split(/\s+/);
   const st = JSON.parse(JSON.stringify(state));
-  st.lastName = parts.length > 1 ? parts[parts.length - 1] : owner;
-  st.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+  /* The quick quote knows which half is which; an old sheet only has one
+     string to split, and "Mary Ann Van Dyke" is a guess either way. */
+  const fromConsole = meta.origin === 'console';
+  if (fromConsole) {
+    st.lastName = String(meta.lastName || '').trim();
+    st.firstName = String(meta.firstName || '').trim();
+  } else {
+    st.lastName = parts.length > 1 ? parts[parts.length - 1] : owner;
+    st.firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+  }
   st.quoteNo = '';
+  const srcLabel = fromConsole ? 'Quick quote in the staff console' : 'Imported from ' + (meta.file || 'a previous sheet');
 
   /* Minted server-side against what is already on the sheet. An import runs
      in a batch — hundreds in a sitting — which is precisely the shape that
@@ -8428,7 +8471,7 @@ function importApplyCore_(who, state, meta, tabOverride) {
   const qn = uniqueQuoteNo_('');
 
   const d = {
-    status: 'Imported from ' + (meta.file || 'a previous sheet') + ' — not yet sent',
+    status: srcLabel + ' — not yet sent',
     quoteNo: qn, ts: new Date().toISOString(),
     unit: st.unit === 'jetski' ? 'Jet ski' : st.unit === 'golf' ? 'Golf cart' :
           st.unit === 'ebike' ? 'E-bike' : 'Boat',
@@ -8447,7 +8490,9 @@ function importApplyCore_(who, state, meta, tabOverride) {
     state: st, lines: [], total: '0.00',
     /* Why this quote exists and what it came from, in the staff note — which
        is exactly the "what was I thinking" record Chris asked for. */
-    staffNote: ('Imported from the old winter-services sheet' +
+    staffNote: fromConsole
+      ? ('Made with Quick quote in the staff console by ' + who.name + '.' + (meta.note ? '\n' + meta.note : ''))
+      : ('Imported from the old winter-services sheet' +
       (meta.file ? ' "' + meta.file + '"' : '') + '.' +
       (meta.oldTotal ? ' That sheet said ' + meta.oldTotal + '.' : '') +
       (meta.oldTotalUnreliable ? ' Its total priced more than one storage option side by side, so it was not a quoted figure.' : '') +
@@ -8459,7 +8504,8 @@ function importApplyCore_(who, state, meta, tabOverride) {
   const cross = rebuildLinesFromState_(d);
   if (!cross.rebuilt) return { ok: 0, error: 'Could not price the imported quote: ' + cross.reason };
   recomputeTotals_(d);
-  notePriceChange_(d, null, 'Imported from ' + (meta.file || 'a previous sheet') +
+  notePriceChange_(d, null, fromConsole ? srcLabel + ' (' + who.name + ')' :
+    'Imported from ' + (meta.file || 'a previous sheet') +
     (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -8504,11 +8550,21 @@ function importApplyCore_(who, state, meta, tabOverride) {
      it now, so a quote written somewhere nothing can see it still fails. */
   const landedRow = findQuoteRow_(sh, qn);
   if (landedRow !== ctx.rowNum) {
+    if (fromConsole) return { ok: 0, error: 'The quote did not land on the "' + tabName + '" tab — ' +
+      'nothing has been saved under ' + qn + '. Look it up before trying again.' };
     return { ok: 0, error: 'The import did not land on the "' + tabName + '" tab — ' +
       'nothing has been saved under ' + qn + '. Do not re-import until Chris has looked: ' +
       'run repairImportedRows from the Apps Script editor.' };
   }
 
+  /* Never "IMPORTED …" for a quick quote: bulkImportRepair reconciles every
+     line that starts that way against the sheet. */
+  if (fromConsole) {
+    auditLog_(who.name, 'QUICK QUOTE ' + qn + ' created — ' + d.unit + ', ' + tabName +
+      ' row ' + landedRow + ', ' + usd_(Number(d.total || 0)));
+    return { ok: 1, quoteNo: qn, tab: tabName, row: landedRow, total: usd_(Number(d.total || 0)),
+             msg: 'Saved as ' + qn + ' on ' + tabName + '. No one has been emailed.' };
+  }
   auditLog_(who.name, 'IMPORTED ' + qn + ' from "' + (meta.file || '?') + '" — ' +
     d.unit + ', ' + tabName + ' row ' + landedRow + ', ' + usd_(Number(d.total || 0)) +
     (meta.oldTotal ? ' (old sheet said ' + meta.oldTotal + ')' : ''));

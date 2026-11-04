@@ -618,6 +618,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: imported quotes can overwrite a row"; sed 's/^/       /' "$TMP/impw.txt"; FAIL=1
   fi
+  # QUICK QUOTE. The console's price check must price with the shared engine
+  # and the quote page's state shape, and its Save must never email anyone.
+  if node tools/check-quick-quote.js > "$TMP/qq.txt" 2>&1; then
+    echo "  OK   gate: quick quote prices with the shared engine and emails nobody"
+  else
+    echo "  FAIL gate: quick quote"; sed 's/^/       /' "$TMP/qq.txt"; FAIL=1
+  fi
   # RE-PRICE. This rewrites what customers owe across a whole season, so the
   # rules are executed against a fake sheet with the rates actually moved.
   if node tools/check-reprice.js > "$TMP/rp.txt" 2>&1; then

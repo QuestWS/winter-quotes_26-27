@@ -128,7 +128,7 @@ const P = (o) => Object.assign({ rqLabel: 'Wash & wax', label: 'Wash & wax — 2
   ctx.ctxCell_ = (c, col) => (col === COL.STATUS ? 'Deposit received' : '');
   ctx.invalidateStorageView_ = () => {};
   ctx.auditLog_ = () => {};
-  ctx.notifyOfferDecision_ = (c, pr, ch) => { told.push(ch); };
+  ctx.notifyOfferDecisions_ = (c, done) => { told.push(done.map((x) => x.choice).join('+')); };
   const call = (b) => JSON.parse(ctx.offersServe_(Object.assign({ api: 'offers', quote: '1255', ln: 'quote', item: 'Wash & wax' }, b))._text);
   const bogus = call({ choice: 'withdraw' });
   if (!bogus.ok && bogus._api === 'offers') ok('CUSTOMER: only accept / decline / call; reply stamped _api:offers');
@@ -139,11 +139,32 @@ const P = (o) => Object.assign({ rqLabel: 'Wash & wax', label: 'Wash & wax — 2
   else fail('CUSTOMER call: ' + JSON.stringify({ c1, told, saved }));
   const a = call({ choice: 'accepted' });
   const back = call({ choice: 'declined' });
-  if (a.ok && !back.ok && /already accepted/.test(back.error || '') && hasLine(d, 'Wash & wax — 24ft') === 1)
+  if (a.ok && /already accepted/.test(back.warn || '') && hasLine(d, 'Wash & wax — 24ft') === 1)
     ok('CUSTOMER: accepted is final from the page — un-accepting is a phone call');
   else fail('CUSTOMER un-accept: ' + JSON.stringify({ a: a.ok, back }));
   if (!/decidedBy|pricedBy/.test(JSON.stringify(a.offers))) ok('CUSTOMER: reply carries no staff names');
   else fail('CUSTOMER reply leaks staff fields: ' + JSON.stringify(a.offers));
+
+  /* BATCH — Chris: one tap and one office email per quote was maddening.
+     Three answers in one POST: one save, one email, all three applied. */
+  const d2 = fresh([P({ status: 'pending' }),
+    P({ rqLabel: 'Impeller change', label: 'Impeller change', amt: 185, status: 'pending' }),
+    P({ rqLabel: 'Propeller refurbishment', label: 'Propeller refurbishment', amt: 140, status: 'pending' })]);
+  ctx.offersCtx_ = () => ({ d: d2, sh: {}, rowNum: 2 });
+  saved.length = 0; told.length = 0;
+  const all = call({ item: undefined, note: 'Parts included?', answers: [
+    { item: 'Wash & wax', choice: 'accepted' }, { item: 'Impeller change', choice: 'call' },
+    { item: 'Propeller refurbishment', choice: 'declined' }] });
+  const st = (it) => (all.offers || []).filter((o) => o.item === it)[0].status;
+  if (all.ok && saved.length === 1 && told.length === 1 && told[0] === 'accepted+call+declined' &&
+      st('Wash & wax') === 'accepted' && st('Impeller change') === 'call' && st('Propeller refurbishment') === 'declined' &&
+      Math.abs(total(d2) - total(fresh()) - 304) < 0.005)
+    ok('BATCH: three answers, one save, one office email, only the accepted one in the total');
+  else fail('BATCH: ' + JSON.stringify({ ok: all.ok, saved: saved.length, told, msg: all.msg, err: all.error }));
+  saved.length = 0; told.length = 0;
+  const again = call({ answers: [{ item: 'Impeller change', choice: 'call' }] });
+  if (again.ok && !saved.length && !told.length) ok('BATCH: a resend of the same answers saves and emails nothing');
+  else fail('BATCH resend: ' + JSON.stringify({ saved: saved.length, told }));
 }
 
 /* ---- EMAIL ---- */
@@ -172,7 +193,7 @@ const P = (o) => Object.assign({ rqLabel: 'Wash & wax', label: 'Wash & wax — 2
 }
 if (/\(MANUAL\.priced\|\|\[\]\)\.filter\(QuestPricing\.offerOnQuote\)/.test(PAGE)) ok('PAGE: quote page replays only accepted quotes');
 else fail('index.html computeLines no longer filters priced requests through offerOnQuote');
-if (/method: 'POST'/.test(OFFERS) && /api: 'offers'/.test(OFFERS) && /_api !== 'offers'/.test(OFFERS)) ok('PAGE: answers go by POST and only a stamped reply counts');
+if (/method: 'POST'/.test(OFFERS) && /api: 'offers'/.test(OFFERS) && /_api !== 'offers'/.test(OFFERS) && /answers: ch\.map/.test(OFFERS)) ok('PAGE: all answers go in one POST and only a stamped reply counts');
 else fail('service-quotes.html answer transport changed');
 if (/id="em_offers"/.test(ADMIN) && /api\('offerDecision'/.test(ADMIN)) ok('CONSOLE: send button and on-behalf answers present');
 else fail('console lost the offers controls');

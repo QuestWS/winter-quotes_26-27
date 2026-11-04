@@ -443,6 +443,14 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
   .ysub{color:#444;font-size:10.5px}
   .ybal{white-space:nowrap;font-family:monospace}
   .pgFoot{font-size:9.5px;color:#555;margin-top:8px}
+  /* Items to Quote: the item list in each row, and the price state in words. */
+  ul.tq{list-style:none;margin:0;padding:0}
+  ul.tq li{margin:0 0 3px;display:flex;gap:6px;align-items:flex-start}
+  ul.tq .cb{flex:0 0 auto;width:11px;height:11px;margin-top:1px}
+  .tqs{font-size:9.5px;white-space:nowrap}
+  .tqs.need{border:1.2px solid #000;padding:0 3px;font-weight:bold;text-transform:uppercase;letter-spacing:.04em}
+  h2.tqh{font-size:13px;margin:12px 0 2px;text-transform:uppercase;letter-spacing:.04em}
+  h2.tqh small{font-weight:400;text-transform:none}
 }
 .hit .l b{color:var(--navy);font-size:15px}.hit .l div{font-size:12.5px;color:var(--muted)}
 .hit .r{text-align:right;font-family:var(--mono);font-size:13px;color:var(--navy);white-space:nowrap}
@@ -1257,6 +1265,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <div style="display:flex;gap:8px">
           <button class="btn navy sm" onclick="printStorage()">Print storage sheets</button>
           <button class="btn gold sm" onclick="printHaulOut()">Print haul-out list</button>
+          <button class="btn navy sm" onclick="printItemsToQuote()">Print items to quote</button>
           <button class="btn navy sm" onclick="toggleWinterQuotes()">Print winter quotes</button>
           <button class="btn ghost sm" onclick="$('storageCard').classList.add('hide')">✕ Close</button>
         </div>
@@ -5400,6 +5409,74 @@ async function printHaulOut(){
       <div class="pgFoot">This page is for the office, not the harbor. Quest Watersports · (815) 433-2200</div>
     </div>`:'';
   $('printArea').innerHTML=planPage+blockedPage;
+  window.print();
+}
+
+/* ITEMS TO QUOTE — detailing, quoted-on-request work and hull washes, every
+   quote that has any, printed as of today. The server decides what is on the
+   list and where each price stands (itemsToQuoteOf_ → `tq` on every storage
+   row); this only lays it out, so the console print and Harbor Haul Out can
+   never disagree. Same three groups as the Oct 31 list: deposit and contract
+   on file first, then one of the two, then neither. Not narrowed by the
+   storage tab or deposit filter you happen to be on. Page 2 is every power
+   wash and acid wash on its own, with the dimensions they are priced from. */
+const TQ_STATE_={open:'needs price',asked:'requested — no price',dims:'needs dimensions'};
+function tqStateTxt_(t){
+  return t.s==='quoted'?'quoted '+fmt$(t.a):(TQ_STATE_[t.s]||t.s);
+}
+async function printItemsToQuote(){
+  if(!window._sg){await loadStorage();}
+  if(!window._sg){return;}
+  const now=new Date();
+  const asOf=now.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  const all=[];
+  window._sg.forEach(g=>(g.rows||[]).forEach(x=>{
+    if(x.tq&&x.tq.length) all.push(Object.assign({tab:g.tab,lead:!!g.lead},x));
+  }));
+  if(!all.length){ toast('No quote has items to quote, detailing or a hull wash.'); return; }
+  const tier=x=>x.deposit&&x.contract?0:(x.deposit||x.contract?1:2);
+  const TIERS=['Deposit &amp; contract on file','Paid or signed — not both','No deposit, no contract'];
+  const paid=x=>x.balance==='Paid'?'Paid in full':(x.paidTxt||'—');
+  const byName=(a,b)=>String(a.name).localeCompare(String(b.name));
+  const items=x=>'<ul class="tq">'+x.tq.map(t=>'<li><span class="cb"></span><span>'+esc(t.l)+
+    ' <span class="tqs'+(t.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(t))+'</span></span></li>').join('')+'</ul>';
+  const nItems=all.reduce((n,x)=>n+x.tq.length,0);
+  const nOpen=all.reduce((n,x)=>n+x.tq.filter(t=>t.s!=='quoted').length,0);
+  const cols='<colgroup><col style="width:12%"><col style="width:28%"><col style="width:12%"><col style="width:10%"><col style="width:38%"></colgroup>';
+  let body='';
+  [0,1,2].forEach(t=>{
+    const rs=all.filter(x=>tier(x)===t).sort(byName);
+    if(!rs.length) return;
+    body+='<h2 class="tqh">'+TIERS[t]+' <small>('+rs.length+')</small></h2>'+
+      '<table class="printsheet" style="table-layout:fixed">'+cols+
+      '<tr><th>Quote</th><th>Customer / unit</th><th>Tab</th><th>Paid</th><th>Items</th></tr>'+
+      rs.map(x=>'<tr><td><span class="ysub">'+esc(x.qn)+'</span></td>'+
+        '<td><span class="yn">'+esc(x.name)+'</span><br><span class="ysub">'+esc(x.unit)+(x.ymm?' · '+esc(x.ymm):'')+'</span></td>'+
+        '<td>'+esc(x.tab)+(x.lead?'<br><span class="ysub">unfinished quote</span>':'')+'</td>'+
+        '<td>'+esc(paid(x))+'</td><td>'+items(x)+'</td></tr>').join('')+'</table>';
+  });
+  const page1='<div class="pg"><div class="pgHead"><h1>QUEST WATERSPORTS — ITEMS TO QUOTE</h1>'+
+    '<div class="meta">As of '+esc(asOf)+'<br>'+all.length+' customer'+(all.length===1?'':'s')+' · '+
+    nItems+' item'+(nItems===1?'':'s')+' · '+nOpen+' still to price</div></div>'+body+
+    '<div class="pgFoot">Detailing, quoted-on-request work, jetski details and hull washes on every quote, priced or not. '+
+    '"Deposit" is a payment recorded on the quote; "contract" is a signed contract uploaded to it. '+
+    'Not-storing quotes and unsent imports are left off. Quest Watersports · (815) 433-2200</div></div>';
+  /* The washes on their own: the yard list for the pressure washer. */
+  const washes=[];
+  all.forEach(x=>x.tq.forEach(t=>{ if(t.w) washes.push({x:x,t:t}); }));
+  washes.sort((a,b)=>String(a.t.l).localeCompare(String(b.t.l))||byName(a.x,b.x));
+  const placeTxt=x=>(PLACE_TAG_[x.placementState]||['Not here yet'])[0];
+  const page2=washes.length?'<div class="pg"><div class="pgHead"><h1>POWER WASHES &amp; ACID WASHES</h1>'+
+    '<div class="meta">As of '+esc(asOf)+'<br>'+washes.filter(w=>/^Powerwash/.test(w.t.l)).length+' power wash · '+
+    washes.filter(w=>/^Acid/.test(w.t.l)).length+' acid wash</div></div>'+
+    '<table class="printsheet"><tr><th style="width:34px">Done</th><th>Wash</th><th>Customer</th><th>Unit / dims</th><th>Tab</th><th>Where it is</th><th>Price</th></tr>'+
+    washes.map(w=>'<tr><td><span class="cb"></span></td><td><b>'+esc(w.t.l)+'</b></td>'+
+      '<td><span class="yn">'+esc(w.x.name)+'</span><br><span class="ysub">'+esc(w.x.qn)+'</span></td>'+
+      '<td>'+esc(w.x.unit)+(w.x.ymm?' · '+esc(w.x.ymm):'')+(w.x.dims?'<br><span class="ysub">'+esc(w.x.dims)+'</span>':'')+'</td>'+
+      '<td>'+esc(w.x.tab)+'</td><td>'+esc(placeTxt(w.x))+'</td>'+
+      '<td><span class="tqs'+(w.t.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(w.t))+'</span></td></tr>').join('')+
+    '</table><div class="pgFoot">Acid wash replaces the power wash — a hull never gets both. Quest Watersports · (815) 433-2200</div></div>':'';
+  $('printArea').innerHTML=page1+page2;
   window.print();
 }
 

@@ -1531,6 +1531,38 @@ Season re-price has not reached yet; the *Everyone* header counts them.
 - `tools/check-season-tag.js` runs `storageViewBuild_` and the console's
   `seasonTag_` / `renderStorage` against fixture rows.
 
+## Items to Quote — details, requests and hull washes (console)
+
+**Storage overview → Print items to quote.** Chris, Oct 31 2026, asked for a
+list of every quote with items to be quoted, "also include ones with details
+that have already been quoted like jetski details"; it was built that day by
+hand from a sheet export. Nov 4 2026: power washes and acid washes added to
+it, and the list made something staff can print again any time, the same way
+every time.
+
+- **One rule, on the server:** `itemsToQuoteOf_` puts `tq` on every storage
+  row — `[{l, s, a, w}]`. It lists every `QUOTE_ITEMS` request (detailing,
+  bottom paint, propeller, impeller): **quoted $x** when staff priced it
+  (`manual.priced` and its line still on the quote), **needs price** while it
+  sits in `quotesRequested`, **requested — no price** when it is ticked but
+  neither (a hand edit took the line off: listed so somebody looks). Then the
+  engine-priced lines: the jetski detail (`Detailing`), **Powerwash hull** and
+  **Acid wash hull** (`w:1`), and **needs dimensions** for a wash that is on
+  but has no LOA/beam to price from. Read off the effective state, so a
+  service taken off in the console is not on it. Payload already parsed.
+- **Page 1, "Items to Quote as of <date>":** the same three groups the Oct 31
+  list used — deposit and contract on file, one of the two, neither — with a
+  tick box per item. States are printed as words in a box, never as a colour:
+  the shop printer is black and white.
+- **Page 2, Power washes & acid washes:** every wash on its own, with dims,
+  tab and where the unit is (the placement tag). Acid wash replaces the power
+  wash, so a hull is on it once.
+- **Not narrowed by the storage tab or deposit filter**, like the haul-out
+  list. Not-storing quotes and the Import tab are left off because the
+  storage view leaves them off.
+- **Harbor Haul Out shows the same `tq`** — `docs/ref/HARBOR-HAUL-OUT.md`.
+  Guard: `tools/check-items-to-quote.js`.
+
 ## Asking a customer to sign (console)
 
 A quote with no signed agreement on file gets an **Ask them to sign** button,

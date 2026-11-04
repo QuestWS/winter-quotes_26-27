@@ -3664,7 +3664,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 11;
+const STORAGE_VIEW_V_ = 12;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -9086,7 +9086,7 @@ function storageViewBuild_(opt) {
         const bal = Number(r[COL.BAL - 1] || 0);
         let keys = '', slip = '', trailer = null, done = null, paid = 0, contract = false,
             trailerLoc = '', notes = 0, placementState = '', placementAt = '', alert = '', cnote = '',
-            winter = null, season = '', hh = '', ns = false, nsNote = '', noStore = false;
+            winter = null, season = '', hh = '', ns = false, nsNote = '', noStore = false, tq = [];
         try {
           const pd = JSON.parse(pays[i][0] || '{}');
           /* Deposit and signed contract come off the payload that is already
@@ -9141,6 +9141,9 @@ function storageViewBuild_(opt) {
           hh = hf ? hf.state : '';
           ns = notStoringActive_(pd);
           nsNote = ns ? String(pd.notStoring.note || '') : '';
+          /* Items to quote, detailing and hull washes — itemsToQuoteOf_. Last,
+             so a problem here can never cost the row anything above. */
+          tq = itemsToQuoteOf_(pd, st);
         } catch (e) {}
         /* Not storing this season: never a unit to store or pull, never in a
            count — listed apart so the console can still open it. */
@@ -9174,6 +9177,10 @@ function storageViewBuild_(opt) {
           alert: alert,
           /* Winterization still to be ticked off in the mechanic app, or null. */
           winter: winter,
+          /* The Items to Quote list: detailing, quoted-on-request work and hull
+             washes on this quote, each with where its price stands. Empty for
+             most units. See itemsToQuoteOf_. */
+          tq: tq,
           /* Done with Harbor Haul Out: see hhoDone_. The console still lists it. */
           hhoDone: hhoDone_(noStore, placementState, winter),
           /* The customer's own note, trimmed for the list. See customerNoteOf_. */
@@ -9450,6 +9457,61 @@ function winterizeStatusOf_(d) {
   const done = winterDoneOf_(d);
   return { total: items.length,
            pending: items.filter(function (w) { return !done[w.label]; }).map(function (w) { return w.label; }) };
+}
+
+/* ITEMS TO QUOTE — detailing, quoted-on-request work and hull washes.
+   ---------------------------------------------------------------------------
+   Chris, Oct 31 2026: a list of every quote with items to be quoted, "also
+   include ones with details that have already been quoted like jetski
+   details". Built that day by hand from a sheet export; Nov 4 2026: "I need a
+   list of all power washes and acid washes … included with the detail quotes
+   list. They also need to be visible in Harbor Haul Out", and the same list
+   must come out the same every time it is printed.
+
+   So the rule lives here, once, and rides the storage view row (`tq`). The
+   console prints "Items to Quote as of <date>" from it and Harbor Haul Out
+   shows it on the row and the opened unit. Neither decides anything.
+
+   One entry per item, {l: label, s: state, a: amount or null, w: 1 if a hull
+   wash}. States:
+     'open'   — asked for and still waiting on a price (in quotesRequested)
+     'quoted' — has a price on the quote (staff-priced request, jetski detail,
+                powerwash, acid wash)
+     'asked'  — ticked on the quote but neither open nor priced (an edit took
+                its line off by hand). Listed so somebody looks, not dropped.
+     'dims'   — a wash is on, but no line yet because the LOA/beam is missing.
+   Read off the EFFECTIVE state, so a service staff took off in the console is
+   not on the list and one they added is. Payload already parsed — no read. */
+const TQ_WASH_RE_ = /^(Powerwash hull|Acid wash hull)/;
+function itemsToQuoteOf_(d, st) {
+  st = st || (d && d.state) || {};
+  const lines = (d && d.lines) || [];
+  const open = String((d && d.quotesRequested) || '').split('; ').filter(function (x) { return x; });
+  const priced = (d && d.manual && d.manual.priced) || [];
+  const out = [];
+  const lineFor = function (label) {
+    return lines.filter(function (l) { return String(l.label || '') === label; })[0] || null;
+  };
+  QUOTE_ITEMS.forEach(function (q) {
+    const key = q[0], label = q[1];
+    const pr = priced.filter(function (p) { return p && p.rqLabel === label; })[0];
+    const ln = pr ? lineFor(pr.label) : null;
+    if (ln) { out.push({ l: label, s: 'quoted', a: Number(ln.amt) || 0 }); return; }
+    if (open.indexOf(label) !== -1) { out.push({ l: label, s: 'open', a: null }); return; }
+    if (st[key]) out.push({ l: label, s: 'asked', a: null });
+  });
+  /* Priced lines that are not requests: the jetski detail and the two washes. */
+  lines.forEach(function (l) {
+    const lab = String(l.label || '');
+    const wash = TQ_WASH_RE_.test(lab);
+    if (!wash && l.sec !== 'Detailing') return;
+    out.push({ l: lab, s: 'quoted', a: Number(l.amt) || 0, w: wash ? 1 : 0 });
+  });
+  /* A wash is ticked but cannot price yet (no LOA, or no beam for acid). */
+  const hasLine = function (re) { return lines.some(function (l) { return re.test(String(l.label || '')); }); };
+  if (st.acidWash && !hasLine(/^Acid wash hull/)) out.push({ l: 'Acid wash hull', s: 'dims', a: null, w: 1 });
+  else if (st.powerwash && !st.acidWash && !hasLine(/^Powerwash hull/)) out.push({ l: 'Powerwash hull', s: 'dims', a: null, w: 1 });
+  return out;
 }
 
 /* The service tracker's ticks, for one quote or many: {qn: [{label, by, at}]}.

@@ -347,6 +347,15 @@ state. Search matches the labels, so typing *acid* lists every acid wash.
   nothing, and nothing is edited from here.
 - **Dashed outline on white, not a filled strip**: it is work on the unit,
   not a warning, so it must never read as the alert or the winterize strip.
+- **Pricing a request from here.** Chris, Nov 4 2026: "make it so John can
+  quote details through the haul out app". An item that **needs price** gets
+  a price box and **Add price to quote** for anyone with the **Price
+  requests** permission (`quote`, `canQuote_` / app `canQuote`). It is the
+  console's own call, `adminPriceRequest`: the price becomes a line, the
+  request closes, the PDF is rebuilt, nothing is emailed, the Activity Log
+  says who. A confirm names the item, price and customer first. Only open
+  requests can be priced here — washes and jetski details are priced by the
+  engine, not by hand.
 
 ## Opening fast: the list is on the phone
 

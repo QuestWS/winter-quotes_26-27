@@ -3583,6 +3583,21 @@ function canMeasure_(st) {
   if (p.measure !== undefined && p.measure !== null && p.measure !== '') return !!Number(p.measure);
   return canKeys_(st);
 }
+/* Pricing a quote request — putting a dollar figure on a detail, a wash & wax,
+   a bottom-paint job the customer asked us to quote. Its own permission
+   because it is its own act: Chris, Nov 4 2026, "make it so John can quote
+   details through the haul out app". John looks at the boat and knows what the
+   detail costs; `adjust` would also hand him discounts and charges out of
+   nothing, which is not what was asked. Unset falls back to `adjust`, so
+   everybody who could price a request before still can; an explicit setting
+   (the console's Staff panel → Price requests) always wins, including OFF. */
+function canQuote_(st) {
+  if (!st) return false;
+  if (st.admin) return true;
+  const p = st.perms || {};
+  if (p.quote !== undefined && p.quote !== null && p.quote !== '') return !!Number(p.quote);
+  return !!Number(p.adjust || 0);
+}
 /* The resolved permission set, so the console never has to re-implement the
    fallback above and then disagree with the server about it. */
 function resolvedPerms_(st) {
@@ -3590,6 +3605,7 @@ function resolvedPerms_(st) {
   Object.keys((st && st.perms) || {}).forEach(function (k) { p[k] = st.perms[k]; });
   p.keys = canKeys_(st) ? 1 : 0;
   p.measure = canMeasure_(st) ? 1 : 0;
+  p.quote = canQuote_(st) ? 1 : 0;
   return p;
 }
 
@@ -3607,6 +3623,7 @@ function requireAuth_(token, perm) {
   if (perm && perm !== 'view' && !st.admin) {
     const ok = (perm === 'keys') ? canKeys_(st)
              : (perm === 'measure') ? canMeasure_(st)
+             : (perm === 'quote') ? canQuote_(st)
              : !!(st.perms && st.perms[perm]);
     if (!ok) throw new Error('Your account doesn\'t have permission for that — ask Chris or Jeff.');
   }
@@ -10422,7 +10439,7 @@ function adminDraftList(token) {
 }
 
 function adminPriceRequest(token, qn, rqLabel, amt, note) {
-  const who = requireAuth_(token, 'adjust');
+  const who = requireAuth_(token, 'quote');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;

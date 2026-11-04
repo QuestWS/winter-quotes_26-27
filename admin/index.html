@@ -1630,6 +1630,8 @@ function permsOf(me){
      this permission existed must resolve the same way the server does rather
      than reading `undefined` as "no". */
   if(p.measure===undefined||p.measure===null||p.measure==='') p.measure=p.keys?1:0;
+  /* Mirrors canQuote_: unset falls back to adjust. */
+  if(p.quote===undefined||p.quote===null||p.quote==='') p.quote=p.adjust?1:0;
   return p;
 }
 /* My own permissions, admin's blanket grant included. One place, because the
@@ -1637,7 +1639,7 @@ function permsOf(me){
    re-rendered after an upload with a narrower set than the one renderQuote had
    just used, so a button could come back missing on a page that had shown it a
    second earlier. */
-function myPerms_(){ return ME&&ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1,measure:1}:permsOf(ME); }
+function myPerms_(){ return ME&&ME.admin?{pay:1,adjust:1,email:1,photos:1,keys:1,measure:1,quote:1}:permsOf(ME); }
 /* Tolerant of a missing target: some of these live inside panels that get
    re-rendered, so the element a caller is writing to may already be gone. */
 function setMsg(id,t,ok){const m=$(id);if(!m)return;m.textContent=t;m.className='msg '+(ok===true?'ok':ok===false?'err':'');}
@@ -2578,7 +2580,8 @@ function renderQuote(r){
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
   const canAdj2=ME.admin||((ME.perms||{}).adjust);
-  renderRequests(canAdj2);
+  /* Pricing a request is `quote` (canQuote_), not adjust. */
+  renderRequests(!!myPerms_().quote);
   renderSeasonDone(canAdj2);
   /* A draft entry is not a send until the sweep says so. */
   const dstate=e=>!e.draft?'':e.draft.state==='sent'?' · <b>draft sent</b> '+esc(e.draft.sentAt||'')
@@ -5485,13 +5488,13 @@ async function loadStaff(){
   const r=await api('listStaff',[]);
   if(!r.ok){toast(r.error);return;}
   STAFF=r.staff||[];
-  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',keys:'Keys & slip',measure:'Re-measure',admin:'Admin'};
+  const names={pay:'Payments',adjust:'Adjustments',email:'Emails',photos:'Photos',keys:'Keys & slip',measure:'Re-measure',quote:'Price requests',admin:'Admin'};
   $('staffList').innerHTML=STAFF.map((st,i)=>{
     const btn=(p,on)=>`<span class="prm"><button class="${on?'on':''}" onclick="togglePerm(${i},'${p}',${on?0:1})">${names[p]}</button></span>`;
     const isMe=ME&&ME.name===st.name;
     return `<div class="staffrow"><div class="nm">${esc(st.name)}${st.admin?' · admin':''}${isMe?' <span style="font-weight:400;color:var(--muted)">(you)</span>':''}
       <span class="prm rm">${isMe?'':`<button onclick="removeStaff(${i})">Remove</button>`}</span></div>
-      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('keys',st.perms.keys)}${btn('measure',st.perms.measure)}${btn('admin',st.admin)}
+      ${btn('pay',st.perms.pay)}${btn('adjust',st.perms.adjust)}${btn('email',st.perms.email)}${btn('photos',st.perms.photos)}${btn('keys',st.perms.keys)}${btn('measure',st.perms.measure)}${btn('quote',st.perms.quote)}${btn('admin',st.admin)}
       <span class="prm"><button onclick="resetPin(${i})">Reset PIN</button></span></div>`;
   }).join('');
 }

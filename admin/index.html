@@ -684,6 +684,14 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
                every email it went out in, with the money each one showed. For
                the payment that matches nothing on today's balance. Loaded on a
                tap, not with the quote — it searches Sent mail. -->
+          <!-- Payments received: the ledger alone, newest first. The quick
+               answer to "how did they last pay?" without the Quote history. -->
+          <div class="card" id="payListCard">
+            <h2>Payments received</h2>
+            <div class="msg" id="payListSum" style="margin:0 0 4px"></div>
+            <div id="payList"></div>
+          </div>
+
           <div class="card" id="histCard">
             <h2>Quote history</h2>
             <div class="msg" style="margin:0 0 6px">Every total this quote has had, every payment, and every
@@ -2558,6 +2566,7 @@ function renderQuote(r){
   renderQuoteLink(r.quoteUrl,QTERM);
   $('qName').textContent=r.quoteNo+' — '+r.name;
   resetHistory_();
+  renderPayList_(r.payments);
   $('qStatus').textContent=r.status||'—';$('qStatus').className='pill '+pillClass(r.status||'');
   const credit=r.balance.startsWith('CREDIT');
   $('stTotal').textContent=r.total;$('stPaid').textContent=r.paid;
@@ -2669,6 +2678,30 @@ function renderQuote(r){
    "your payment of") is never counted as a match — otherwise the payment
    being checked would find its own receipt and call that an explanation. */
 let HIST=null;
+/* The ledger from adminLookup, newest first. Refunds are negative payments
+   (DATA-AND-MONEY.md § Signed balances) and are shown as refunds, not hidden.
+   An older backend sends no `payments` at all; say nothing rather than
+   claim there are none. */
+function renderPayList_(list){
+  const box=$('payList');
+  if(!box) return;
+  if(!Array.isArray(list)){box.innerHTML='';$('payListSum').textContent='';return;}
+  if(!list.length){
+    $('payListSum').textContent='';
+    box.innerHTML='<div class="msg" style="padding:4px">No payments recorded yet.</div>';
+    return;
+  }
+  const net=list.reduce((a,p)=>a+Number(p.amt||0),0);
+  const n=list.filter(p=>p.amt>0).length,rf=list.length-n;
+  $('payListSum').textContent=n+' payment'+(n===1?'':'s')+(rf?' and '+rf+' refund'+(rf===1?'':'s'):'')+
+    ' · '+fmt$(net)+' received in all';
+  box.innerHTML=list.map(p=>{
+    const refund=p.amt<0;
+    return `<div class="histrow"><span class="htag ${refund?'':'payment'}">${refund?'Refund':'Payment'}</span> `+
+      `<b>${fmt$(Math.abs(p.amt))}</b>${p.method?' · '+esc(p.method):''}`+
+      `<div class="hm">${esc(p.when||'date not recorded')}${p.by?' · by '+esc(p.by):''}</div></div>`;
+  }).join('');
+}
 function resetHistory_(){
   HIST=null;
   if(!$('histList')) return;

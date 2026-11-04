@@ -6485,6 +6485,10 @@ function adminLookup(token, qn) {
        that decides, the same way canSign does. */
     canDelete: !!who.admin,
     payCount: (d.payments || []).length,
+    /* The ledger itself, newest first, for the console's Payments card — the
+       quick "how did they last pay, and how many times" without the whole
+       Quote history. Already in the payload, so it costs no extra read. */
+    payments: paymentsOut_(d),
     /* The customer's own way back into this quote — quote number and last name
        already attached, so nothing to read out over the phone. Built server-
        side by the same quoteLink_ every customer email uses, so what staff copy
@@ -6795,6 +6799,19 @@ function historyAmounts_(text) {
     if (isFinite(v)) out.push({ k: '', v: Math.round(v * 100) / 100 });
   }
   return out;
+}
+
+/* The ledger as the console shows it: newest first, with the time printed
+   where the entry has one (Oct 2026 on) and the day otherwise — see
+   paymentWhen_, and never a made-up time for an old entry. */
+function paymentsOut_(d) {
+  const tz = Session.getScriptTimeZone();
+  return (d.payments || []).map(function (p, i) {
+    const at = p && p.at ? new Date(p.at) : null;
+    return { i: i, t: paymentWhen_(p), amt: Math.round(Number(p.amt || 0) * 100) / 100,
+      method: String(p.method || ''), by: String(p.by || ''),
+      when: at && !isNaN(at) ? Utilities.formatDate(at, tz, 'MMM d, yyyy h:mm a') : String(p.date || '') };
+  }).sort(function (a, b) { return (b.t - a.t) || (b.i - a.i); });
 }
 
 function adminQuoteHistory(token, qn) {

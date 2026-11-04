@@ -118,6 +118,7 @@ symptom.
 | Storage view and printing | `adminStorageView` | `printStorage`, `printHaulOut` |
 | Winter quotes with a service tracker QR (storage card, and *Shop copy + QR* on a quote) | `adminQuoteHtml` (unchanged — one per quote) | `toggleWinterQuotes`, `renderWqPanel_`, `wqRows_`, `onWinterList_`, `printWinterQuotes`, `printShopCopy`, `printQuotesWithQr_`, `qrSvg_`, `trackerQrUrl_`; `admin/qrcode.min.mjs` |
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet`; customer page `trailerLocApplies` |
+| Payments received card (the ledger alone, newest first) | `paymentsOut_` (`payments` on `adminLookup`) | `renderPayList_` |
 | Quote history: every total, payment and email on one quote, and "where did this amount come from" | `adminQuoteHistory`, `notePriceChange_`, `historyFigures_`, `quoteNoRe_` | `loadHistory`, `renderHistory_`, `histMatchable_`, `resetHistory_` |
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
 | Working down the storage list: ‹ Prev · Next › · List bar on a quote opened from it, ✓ on rows opened, instant return to your place | — (the overview's own `storageView`, no new call) | `fromStorage`, `WALK`, `walkStep`, `walkBack`, `renderWalkBar_`, `syncWalkBar_`, `srowAttrs_`, `STORAGE_HERE`, `renderStorageKeepPlace_`, `storageFresh_` |

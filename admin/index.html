@@ -378,6 +378,18 @@ padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:
 .srow .bl{font-family:var(--mono);text-align:right;white-space:nowrap}
 .srow .bl.paid{color:var(--green)}.srow .bl.owe{color:var(--gold)}
 .srow .bl.ref{color:var(--red)}
+/* Working down the storage list: where you were, and who you have opened. */
+.srow.here{background:var(--gold-soft);box-shadow:inset 0 0 0 2px var(--gold)}
+.srow.seen .nm::before{content:'\2713  ';color:var(--green)}
+#walkBar{position:fixed;left:0;right:0;bottom:0;z-index:90;background:var(--navy);color:#fff;display:flex;
+align-items:center;gap:8px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));box-shadow:0 -4px 16px rgba(0,0,0,.2)}
+#walkBar button{background:#fff;color:var(--navy);border:0;border-radius:9px;padding:10px 14px;font-weight:700;
+font-size:14px;cursor:pointer;white-space:nowrap}
+#walkBar button:disabled{opacity:.35;cursor:default}
+#walkBar button.list{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.6)}
+#walkBar .pos{flex:1;text-align:center;font-size:12.5px;line-height:1.3;min-width:0;overflow:hidden;text-overflow:ellipsis}
+body.walking{padding-bottom:72px}
+body.walking .toast{bottom:86px}
 /* Receivables: three money figures must fit a phone without pushing the card. */
 #recvCard .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:640px){#recvCard .stat{padding:8px 4px}#recvCard .stat .v{font-size:14px}}
@@ -572,6 +584,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 
     <div id="quoteArea" class="hide">
       <div id="ibxStrip" class="hide"></div>
+      <div id="walkBar" class="hide"></div>
       <div class="grid">
         <div>
           <div class="card">
@@ -1265,6 +1278,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         </div>
       </div>
       <div id="storageTabs" class="stabs hide" style="margin-top:10px"></div>
+      <div id="storageFresh" class="msg hide" style="margin:8px 0 0"></div>
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
@@ -1684,6 +1698,7 @@ function syncHome(){
   /* Only write when it actually changes — the observer watches this element
      too, and an unconditional toggle would wake it on every pass. */
   if(el.classList.contains('hide')!==busy) el.classList.toggle('hide',busy);
+  syncWalkBar_();
 }
 /* GET READY (Oct 2026). The first use after a while was the slow one: the
    boot-time ping wakes Apps Script, but the caches behind it — the storage
@@ -2509,7 +2524,7 @@ async function copyQuoteLink(){
   }catch(e){ el.focus(); el.select(); toast('Press and hold the link to copy it'); }
 }
 function openQuoteLink(){ if(window._quoteUrl) window.open(window._quoteUrl,'_blank'); }
-function closeQuote(){$('quoteArea').classList.add('hide');QN='';clearPayForm_();setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
+function closeQuote(){WALK=null;renderWalkBar_();$('quoteArea').classList.add('hide');QN='';clearPayForm_();setMsg('lookupMsg','');$('qn').value='';$('qn').focus();}
 async function doLookup(qn){
   const prevQN=QN;
   QN=qn||$('qn').value.trim().toUpperCase();if(!QN)return;
@@ -2525,6 +2540,8 @@ function renderQuote(r){
   $('quoteArea').classList.remove('hide');
   if(IBX_CUR&&IBX_CUR.qns.length&&IBX_CUR.qns.indexOf(r.quoteNo)<0) IBX_CUR=null;   // a different quote opened by hand
   renderIbxStrip_();
+  if(WALK){ if(WALK.qns.indexOf(r.quoteNo)<0) WALK=null; else { WALK.at=r.quoteNo; WALK_SEEN[r.quoteNo]=true; } }
+  renderWalkBar_();
   QTERM=r.term||'Quote';
   const pb=$('btnPrint'); if(pb) pb.textContent=printBtnLabel_();
   renderQuoteLink(r.quoteUrl,QTERM);
@@ -3387,6 +3404,7 @@ function navGo(fn){$('navlinks').classList.remove('open');fn();syncHome();}
 function goHome(){
   $('navlinks').classList.remove('open');
   HOME_PANELS.forEach(id=>{const e=$(id); if(e) e.classList.add('hide');});
+  WALK=null; renderWalkBar_();
   QN=''; clearPayForm_(); setMsg('lookupMsg',''); $('qn').value='';
   syncHome(); window.scrollTo(0,0);
 }
@@ -3412,19 +3430,53 @@ async function loadStorage(){
   $('storageCard').classList.remove('hide');
   $('recvCard').classList.add('hide');
   $('adminCard').classList.add('hide');
-  $('storageTabs').classList.add('hide');
-  $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
+  /* Opened before on this page: the last copy goes up at once and is swapped
+     for the fresh one when it lands, instead of a blank "Loading…". */
+  const had=!!window._sg;
+  if(had){ renderStorage(); storageFresh_('Refreshing…'); }
+  else{
+    $('storageTabs').classList.add('hide');
+    $('storageBody').innerHTML='<span class="msg">Loading storage overview…</span>';
+  }
   /* In parallel, not awaited: a draft sent since the last look must drop off,
      and the storage view must not wait on it. */
-  window._drafts=null; loadDrafts_();
+  if(!had) window._drafts=null;
+  loadDrafts_();
+  const my=++STORAGE_REQ_N;
   try{
     const r=await api('storageView',[]);
-    if(!r.ok){$('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;}
-    window._sg=r.groups;
-    window._curSeason=r.currentSeason||'';
-    window._ns=r.notStoring||[];
-    renderStorage();
-  }catch(e){$('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';}
+    if(my!==STORAGE_REQ_N) return;
+    if(!r.ok){
+      if(had){ storageFresh_('Could not refresh — showing the copy from earlier. '+esc(r.error),true); return; }
+      $('storageBody').innerHTML='<span class="msg err">'+r.error+'</span>';return;
+    }
+    storageTake_(r);
+    storageFresh_('');
+    renderStorageKeepPlace_();
+  }catch(e){
+    if(my!==STORAGE_REQ_N) return;
+    if(had){ storageFresh_('Could not refresh — showing the copy from earlier. '+esc(e.message),true); return; }
+    $('storageBody').innerHTML='<span class="msg err">'+e.message+'</span>';
+  }
+}
+let STORAGE_REQ_N=0;
+function storageTake_(r){
+  window._sg=r.groups;
+  window._curSeason=r.currentSeason||'';
+  window._ns=r.notStoring||[];
+}
+function storageFresh_(html,err){
+  const el=$('storageFresh'); if(!el) return;
+  el.innerHTML=html||''; el.className='msg'+(err?' err':'')+(html?'':' hide');
+}
+/* Re-render without the page jumping: whichever row was marked as "here"
+   stays at the same height on screen. */
+function renderStorageKeepPlace_(){
+  if($('storageCard').classList.contains('hide')) return;
+  const before=walkRowEl_(STORAGE_HERE), top=before?before.getBoundingClientRect().top:null;
+  renderStorage();
+  const after=walkRowEl_(STORAGE_HERE);
+  if(after&&top!==null) window.scrollBy(0,after.getBoundingClientRect().top-top);
 }
 /* ---------------------------------------------------------------------------
    THE DEPOSIT FILTER
@@ -3498,7 +3550,7 @@ async function loadDrafts_(){
     if(r&&r.ok){ window._drafts=r.rows||[]; }
     else{ window._draftsErr=(r&&r.error)||'Could not load the imported drafts.'; }
   }catch(e){ window._draftsErr=e.message; }
-  if(!$('storageCard').classList.contains('hide')) renderStorage();
+  renderStorageKeepPlace_();
 }
 function renderDrafts_(){
   if(window._draftsErr&&!window._drafts) return '<span class="msg err">'+esc(window._draftsErr)+'</span>';
@@ -3512,7 +3564,7 @@ function renderDrafts_(){
 }
 const HH_TAG='<span class="taghh">\u2693 HH \u2014 SLIPHOLDER?</span>';
 function draftRow_(x){
-  return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+  return `<div ${srowAttrs_(x.qn)}>
     <span class="nm">${esc(x.name)}${x.cnote?'<span class="tagnote">\u{1F4AC} NOTE</span>':''}${
       x.hh==='open'?HH_TAG:''}${x.hasEmail?'':'<span class="tagmute">no email</span>'}</span>
     <span class="un">${esc(x.qn)} · ${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${
@@ -3641,7 +3693,7 @@ function renderStorage(){
       const area=SGROUP==='unit'&&x._area?' · '+esc(x._area):'';
       const htag=x.hh==='open'?HH_TAG:'';
       const ptag=placementTag_(x);
-      return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+      return `<div ${srowAttrs_(x.qn)}>
         <span class="nm">${esc(x.name)}${ptag}${tag}${htag}${ntag}${stag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${area} · ${esc(x.status)}${took}</span>
         <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
@@ -3681,14 +3733,108 @@ function renderStorage(){
      them out), listed under Everyone so they can still be opened. */
   const ns=SFILTER==='all'?(window._ns||[]):[];
   const nsList=ns.length?`<div class="sgH"><b>Not storing this season</b><span>${ns.length}</span></div>`+
-    ns.map(x=>`<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
+    ns.map(x=>`<div ${srowAttrs_(x.qn)}>
       <span class="nm">${esc(x.name)}</span>
       <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.note?' · '+esc(x.note):''}</span>
       <span class="bl">${esc(x.qn)}</span></div>`).join(''):'';
   $('storageBody').innerHTML=grpBar+`<div class="msg" style="margin:0 0 4px">${head}</div>`+
     ((shown||drafts)?body+drafts:'<div class="msg" style="padding:6px">— nothing in this view —</div>')+nsList;
 }
-function fromStorage(qn){$('storageCard').classList.add('hide');doLookup(qn);window.scrollTo({top:0,behavior:'smooth'});}
+/* ---------------------------------------------------------------------------
+   WORKING DOWN THE STORAGE LIST (Nov 2026)
+   ---------------------------------------------------------------------------
+   Going ticket to ticket down the list used to be: open a row, make the
+   change, close the quote, open the storage overview again, wait for it, and
+   scroll back to find your place. Now a quote opened from the list gets a bar
+   pinned to the bottom of the screen — ‹ Prev · 7 of 42 · List · Next › —
+   so the next customer is one tap, wherever on the quote you are.
+
+   - The order is the list exactly as it was on screen when the row was
+     tapped: the same filter (No deposit, Customer notes, …) and grouping.
+     It is read off the rendered rows (data-qn), so it cannot disagree with
+     what staff were looking at.
+   - "List" goes back to the overview INSTANTLY from the copy already in the
+     page, scrolled to the row just worked and outlined in gold, then quietly
+     swaps in a fresh copy (a write drops the server's cache, so the edit shows
+     up when it lands) without moving the page.
+   - Every quote opened this way gets a ✓ on its row, for this page load, so
+     "where was I" is visible at a glance.
+   - Opening a quote that is not on the list (a search) ends the walk, as do
+     ✕ on the quote and HOME. A payment typed in but not recorded is asked
+     about before moving on — the move would clear it. */
+let WALK=null;            // {qns:[...], label, at}
+const WALK_SEEN={};       // qn -> true, this page load
+let STORAGE_HERE='';      // the row to outline: the last one worked from the list
+function srowAttrs_(qn){
+  const q=esc(qn);
+  const cls='srow'+(qn&&qn===STORAGE_HERE?' here':'')+(WALK_SEEN[qn]?' seen':'');
+  return `class="${cls}" data-qn="${q}" onclick="fromStorage('${q}')"`;
+}
+function walkRowEl_(qn){
+  if(!qn) return null;
+  const rows=document.querySelectorAll('#storageBody .srow[data-qn]');
+  for(let i=0;i<rows.length;i++) if(rows[i].getAttribute('data-qn')===qn) return rows[i];
+  return null;
+}
+function walkSnapshot_(){
+  const seen={}, out=[];
+  document.querySelectorAll('#storageBody .srow[data-qn]').forEach(function(el){
+    const q=el.getAttribute('data-qn'); if(q&&!seen[q]){ seen[q]=1; out.push(q); }
+  });
+  return out;
+}
+function fromStorage(qn){
+  const qns=walkSnapshot_();
+  WALK={qns:qns.indexOf(qn)<0?[qn]:qns,label:SFILTER_LABEL[SFILTER]||'Storage list',at:qn};
+  $('storageCard').classList.add('hide');
+  walkOpen_(qn);
+}
+function walkOpen_(qn){
+  WALK.at=qn; WALK_SEEN[qn]=true; STORAGE_HERE=qn;
+  renderWalkBar_();
+  doLookup(qn);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function walkLeaveOk_(){
+  const amt=String(($('payAmt')||{}).value||'').trim();
+  return !amt||confirm('A payment of '+amt+' is typed in but not recorded. Leave this quote without recording it?');
+}
+function walkStep(d){
+  if(!WALK) return;
+  const j=WALK.qns.indexOf(WALK.at)+d;
+  if(j<0||j>=WALK.qns.length||!walkLeaveOk_()) return;
+  walkOpen_(WALK.qns[j]);
+}
+function walkBack(){
+  if(!walkLeaveOk_()) return;
+  const at=(WALK&&WALK.at)||STORAGE_HERE;
+  WALK=null; renderWalkBar_();
+  $('quoteArea').classList.add('hide'); QN=''; clearPayForm_(); setMsg('lookupMsg',''); $('qn').value='';
+  STORAGE_HERE=at;
+  loadStorage();          // the copy in hand goes up at once; the fresh one follows
+  const el=walkRowEl_(at);
+  if(el) el.scrollIntoView({block:'center'}); else window.scrollTo(0,0);
+}
+function renderWalkBar_(){
+  const el=$('walkBar'); if(!el) return;
+  if(!WALK){ el.innerHTML=''; syncWalkBar_(); return; }
+  const i=WALK.qns.indexOf(WALK.at), n=WALK.qns.length;
+  const done=WALK.qns.filter(q=>WALK_SEEN[q]).length;
+  el.innerHTML=`<button onclick="walkStep(-1)" ${i<=0?'disabled':''} aria-label="Previous on the list">‹ Prev</button>`+
+    `<button class="list" onclick="walkBack()">☰ List</button>`+
+    `<span class="pos"><b>${i+1} of ${n}</b><br>${esc(WALK.label)} · ${done} opened</span>`+
+    `<button onclick="walkStep(1)" ${i>=n-1?'disabled':''} aria-label="Next on the list">Next ›</button>`;
+  syncWalkBar_();
+}
+/* Shown only while the quote it belongs to is on screen. Called from syncHome
+   (the class observer), so it writes only when something changes. */
+function syncWalkBar_(){
+  const el=$('walkBar'); if(!el) return;
+  const qa=$('quoteArea');
+  const on=!!WALK&&!!qa&&!qa.classList.contains('hide');
+  if(el.classList.contains('hide')===on) el.classList.toggle('hide',!on);
+  if(document.body.classList.contains('walking')!==on) document.body.classList.toggle('walking',on);
+}
 /* ---------------------------------------------------------------------------
    RECEIVABLES
    ---------------------------------------------------------------------------

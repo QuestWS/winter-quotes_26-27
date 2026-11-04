@@ -427,6 +427,39 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 .hit .r{text-align:right;font-family:var(--mono);font-size:13px;color:var(--navy);white-space:nowrap}
 
 .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:28px}
+
+/* Quick quote: form and tick-boxes on the left, the live ticket on the right.
+   On a phone the ticket drops below, and a running total stays pinned to the
+   bottom of the screen so nobody has to scroll to see what a tick did. */
+.qqgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,340px);gap:18px;align-items:start;margin-top:10px}
+.qqtk{position:sticky;top:12px;background:var(--ice);border-radius:12px;padding:12px 14px}
+.qqtk h3{margin:0 0 6px;font-size:14px;color:var(--navy)}
+.qqsec{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:10px 0 2px}
+.qqln{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px dashed var(--line)}
+.qqln .c{display:block;color:var(--muted);font-size:11.5px}
+.qqln .a{font-family:var(--mono);white-space:nowrap}
+.qqtot{display:flex;justify-content:space-between;font-weight:700;font-size:16px;color:var(--navy);margin-top:10px;font-family:var(--mono)}
+.qqsub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-family:var(--mono);margin-top:3px}
+.qqnote{font-size:12.5px;margin-top:8px;padding:6px 8px;border-radius:8px;background:#fff}
+.qqnote.warn{background:var(--gold-soft);color:#6B4E10}
+.qqunits{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:4px}
+.qqunits button{padding:10px 4px;border:1.5px solid var(--line);border-radius:10px;background:#fff;font-family:var(--disp);font-size:14px;cursor:pointer;color:var(--ink)}
+.qqunits button.on{border-color:var(--navy);background:var(--navy);color:#fff}
+.qqdims{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin-top:8px}
+.qqdims .h{font-size:11.5px;color:var(--muted);min-height:14px}
+.svcrow select.lvl{padding:7px 8px;font-size:13.5px;border:1.5px solid var(--line);border-radius:8px;font-family:var(--disp);max-width:150px}
+.svcrow input.slip{width:110px;padding:8px 10px;font-size:14px;border:1.5px solid var(--line);border-radius:8px}
+.svcrow.off{opacity:.45}
+.qqbar{display:none}
+@media (max-width:760px){
+  .qqgrid{grid-template-columns:minmax(0,1fr)}
+  .qqtk{position:static}
+  .qqunits{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .qqbar{display:flex;position:sticky;bottom:0;justify-content:space-between;align-items:center;
+    background:var(--navy);color:#fff;font-family:var(--mono);font-weight:700;padding:10px 14px;
+    border-radius:10px;margin-top:10px;z-index:5}
+  .qqbar a{color:#fff;font-family:var(--disp);font-weight:400;font-size:13px}
+}
 </style>
 </head>
 <body>
@@ -458,6 +491,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     <nav class="navlinks" id="navlinks">
       <button class="linkbtn" onclick="navGo(goHome)">&#8962; Console home</button>
       <a class="linkbtn" href="https://questws.github.io/">All Quest tools</a>
+      <button class="linkbtn" id="quickOpen" onclick="navGo(toggleQuick)">Quick quote</button>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
       <button class="linkbtn" onclick="navGo(toggleReceivables)">Receivables</button>
       <button class="linkbtn" onclick="navGo(printBlankContract)">Print blank contract</button>
@@ -501,6 +535,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
            See getReady(). -->
       <button class="tile" id="warmTile" onclick="getReady()"><b>Get ready</b>
         <span id="warmMsg">Tap a few minutes before you need the console. Wakes the server and pre-loads the storage list, receivables and the quote index, so the first taps are fast. Stays ready for 2 hours while this page is open.</span></button>
+      <button class="tile" id="quickTile" onclick="navGo(toggleQuick)"><b>Quick quote</b>
+        <span>Price a unit on one screen — fill in the customer, tick what they want, see the total as you go. Save it as a quote only if you want to.</span></button>
       <button class="tile" onclick="navGo(toggleStorage)"><b>Storage view</b>
         <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile" onclick="navGo(toggleReceivables)"><b>Receivables</b>
@@ -1004,6 +1040,53 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div id="ibxList" style="margin-top:8px"></div>
     </div>
 
+    <!-- QUICK QUOTE (Nov 2026). The customer quote page, minus the steps:
+         contact at the top, tick-boxes below, the price ticket beside them.
+         Priced live by pricing-engine.js in this browser — the same file the
+         quote page loads — so a price check costs no trip to the server. Only
+         Save writes anything, and it never emails anyone. -->
+    <div class="card hide" id="quickCard">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Quick quote</h2>
+        <button class="btn ghost sm" onclick="$('quickCard').classList.add('hide')">✕ Close</button>
+      </div>
+      <div class="msg" style="margin-top:6px">
+        Prices update as you tick. <b>Nothing is saved</b> until you press Save, and
+        <b>no one is emailed</b> — send it from the quote afterwards.</div>
+      <div class="qqgrid">
+        <div>
+          <div class="row2">
+            <div><label class="fld" for="qqFirst">First name</label>
+              <input class="txt" id="qqFirst" data-qq="firstName" autocomplete="off"></div>
+            <div><label class="fld" for="qqLast">Last name</label>
+              <input class="txt" id="qqLast" data-qq="lastName" autocomplete="off"></div>
+          </div>
+          <div class="row2" style="margin-top:8px">
+            <div><label class="fld" for="qqPhone">Phone</label>
+              <input class="txt" id="qqPhone" data-qq="phone" type="tel" inputmode="tel" autocomplete="off"></div>
+            <div><label class="fld" for="qqEmail">Email</label>
+              <input class="txt" id="qqEmail" data-qq="email" type="email" autocapitalize="none" autocomplete="off"></div>
+          </div>
+          <label class="fld" for="qqYmm" style="margin-top:8px">Year / make / model</label>
+          <input class="txt" id="qqYmm" data-qq="ymm" autocomplete="off" placeholder="e.g. 2019 Malibu 23 LSV">
+          <label class="fld" style="margin-top:10px">What is it?</label>
+          <div class="qqunits" id="qqUnits"></div>
+          <div id="qqDims"></div>
+          <div id="qqRows"></div>
+          <label class="fld" for="qqNote" style="margin-top:12px">Staff note (saved with the quote, never shown to the customer)</label>
+          <textarea class="txt" id="qqNote" rows="2"></textarea>
+          <div class="row2" style="margin-top:10px">
+            <button class="btn navy" id="qqSaveBtn" onclick="saveQuick()">Save as a quote</button>
+            <button class="btn ghost" onclick="resetQuick()">Start over</button>
+          </div>
+          <div class="msg" id="qqMsg"></div>
+          <div id="qqDone" class="hide"></div>
+        </div>
+        <div class="qqtk" id="qqTicket"></div>
+      </div>
+      <div class="qqbar" id="qqBar"></div>
+    </div>
+
     <div class="card hide" id="importCard">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0">Load from an old sheet</h2>
@@ -1241,6 +1324,9 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 </div>
 <div id="printArea"></div>
 <div class="toast" id="toast"></div>
+<!-- The shared pricing engine, for Quick quote. The same file the customer
+     page loads and the Apps Script embeds — never a copy. -->
+<script src="../pricing-engine.js"></script>
 <script>
 const API_URL='https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
 let T=localStorage.getItem('qwtok')||'',ME=JSON.parse(localStorage.getItem('qwme')||'null'),QN='',PURL='';
@@ -1569,7 +1655,7 @@ function boot(){
    than by a call at every close button: every panel here closes itself with
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
-const HOME_PANELS=['resultsCard','quoteArea','adminCard','pauseCard','inboxCard','importCard',
+const HOME_PANELS=['resultsCard','quoteArea','quickCard','adminCard','pauseCard','inboxCard','importCard',
   'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard'];
 /* PRINT BLANK CONTRACT (Oct 2026). For the customer who insists on paper: the
    same Storage Terms the Adobe web form carries, as a one-page PDF in the repo
@@ -4133,6 +4219,280 @@ async function doImport(){
     IMP=null; toast('Imported '+r.quoteNo);
   }catch(e){ setMsg('impMsg',e.message,false); }
   finally{ b.disabled=false; b.textContent='Import as a new quote'; }
+}
+
+/* ---------- Quick quote ----------
+   Chris, Nov 2026: "a way for me to quickly make a quote and check prices from
+   the admin page … without having to tab through the customer facing quote
+   generator." One screen: contact, unit, dimensions, tick-boxes, live ticket.
+
+   PRICED BY THE SHARED ENGINE, NOT BY THIS PAGE. pricing-engine.js is loaded
+   from the repo root — the same file the quote page loads and the .gs embeds —
+   and computeQuote() is fed the same state shape the quote page builds, so a
+   figure here is the figure the customer page and the server would give.
+   Nothing on this card holds a price of its own: the hints beside each box are
+   read from PRICES, and the list of extras is SERVICE_MENU, the same menu the
+   quote screen's "Add or remove services" card offers.
+
+   SAVE goes to adminQuickQuote, which prices the state again on the server and
+   writes it exactly the way the old-sheet importer does: a fresh number, the
+   storage tab the state implies, its own PDF, the 9am reminder held until
+   somebody sends the customer something, and no email to anyone. */
+const QP=window.QuestPricing||null;
+let QQ=null, QQ_SAVED='';
+const QQ_UNITS=[['boat','Boat'],['jetski','Jetski'],['golf','Golf cart'],['ebike','E-bike']];
+/* The quote page's starting state (index.html, const S). Same keys, same
+   defaults: the server prices this object, so a key missing here is a box
+   the engine reads as undefined. */
+function qqBlank_(){
+  return {unit:'boat',firstName:'',lastName:'',phone:'',email:'',ymm:'',notes:'',
+    loa:0,beam:0,lwt:0,trailerOverhang:0,skiLen:0,skiWid:0,skiDetail:0,hasTrailer:false,
+    engines:{inboard:{qty:0,level:'basic'},io:{qty:0,level:'basic'},outboard:{qty:0,level:'basic'},
+             jet:{qty:0,level:'basic'},pwc:{qty:1,level:'basic'}},
+    dtTrans:0,dtTransom:0,ballast:0,addlHeads:0,isPontoon:false,impeller:false,
+    waterCold:false,waterHead:false,pumpout:false,ac:false,genBasic:false,genFull:false,
+    storage:'none',retrieval:'none',wrap:false,inWater:false,
+    powerwash:false,acidWash:false,lateRetrieval:false,hho:false,slipNo:'',hhoAddr:'',keyLoc:'',trailerLoc:'',
+    bottomTouch:false,bottomStrip:false,propRefurb:false,
+    extDetail:false,washWax:false,intDetail:false,intWipe:false,
+    quoteNo:'',payMode:'deposit',acceptedTerms:false,termsVersion:'',termsAcceptedAt:''};
+}
+const qqMoney_=n=>QP?QP.fmtMoney_(n):'$'+Number(n||0).toFixed(2);
+/* Feet as staff say them: 22'6", 22 6, 22ft 6in, or plain 22.5. */
+function qqFt_(v){
+  v=String(v==null?'':v).trim(); if(!v) return 0;
+  const m=v.match(/^(\d+(?:\.\d+)?)\s*(?:'|’|ft\.?|feet|\s)\s*(?:(\d+(?:\.\d+)?)\s*(?:"|”|''|in\.?|inches)?)?$/i);
+  if(m) return QP.ftInToDecimal(m[1],m[2]||0);
+  const n=Number(v); return isFinite(n)&&n>0?Math.round(n*1000)/1000:0;
+}
+function toggleQuick(){
+  const c=$('quickCard');
+  if(!c.classList.contains('hide')){ c.classList.add('hide'); return; }
+  if(!QP){ toast('The price list did not load — reload the page.'); return; }
+  if(!QQ) resetQuick(true);
+  c.classList.remove('hide');
+  window.scrollTo(0,c.offsetTop-10);
+}
+function resetQuick(quiet){
+  if(!quiet&&QQ&&(QQ.lastName||QQ.loa)&&!QQ_SAVED&&!confirm('Clear this quick quote and start over?')) return;
+  QQ=qqBlank_(); QQ_SAVED='';
+  ['qqFirst','qqLast','qqPhone','qqEmail','qqYmm','qqNote'].forEach(id=>{const e=$(id); if(e) e.value='';});
+  $('qqDone').classList.add('hide'); setMsg('qqMsg','');
+  renderQuick();
+}
+/* Contact boxes are plain inputs bound by data-qq; everything else is drawn
+   by renderQuick and reports through qqSet. */
+document.addEventListener('input',function(e){
+  const k=e.target&&e.target.getAttribute&&e.target.getAttribute('data-qq');
+  if(!k||!QQ) return;
+  QQ[k]=e.target.value; qqChanged_();
+});
+document.addEventListener('focusout',function(e){
+  if(e.target&&e.target.id==='qqPhone'&&QQ&&QP){ e.target.value=QQ.phone=QP.fmtPhone(e.target.value); }
+});
+function qqChanged_(){
+  if(QQ_SAVED){ QQ_SAVED=''; $('qqDone').classList.add('hide'); setMsg('qqMsg',''); }
+  qqTicket_();
+}
+function qqUnit(u){
+  if(!QQ||QQ.unit===u) return;
+  QQ.unit=u;
+  /* Storage a jetski can't take (outside, premium) must not ride along
+     invisibly from the boat it was switched from. */
+  if(u==='jetski'&&QQ.storage!=='inside') QQ.storage='none';
+  if(u==='golf'||u==='ebike') QQ.storage='none';
+  renderQuick(); qqChanged_();
+}
+function qqSet(key,el){
+  if(!QQ) return;
+  const t=el.type, raw=el.value;
+  let v;
+  if(t==='checkbox') v=el.checked;
+  else if(el.getAttribute('data-kind')==='count') v=Math.max(0,Math.min(20,parseInt(raw,10)||0));
+  else if(el.getAttribute('data-kind')==='ft') v=qqFt_(raw);
+  else v=raw;
+  if(key.indexOf('eng.')===0){
+    const [,id,part]=key.split('.');
+    QQ.engines[id]=QQ.engines[id]||{qty:0,level:'basic'};
+    QQ.engines[id][part]=part==='qty'?v:raw;
+  } else QQ[key]=v;
+  if(key==='hasTrailer'||key==='storage'||key==='hho'){ renderQuick(); }
+  else qqSync_();
+  if(el.getAttribute('data-kind')==='ft'){
+    const h=$('qqH_'+key); if(h) h.textContent=v?QP.fmtFtIn(v):(raw.trim()?'can’t read that':'');
+  }
+  qqChanged_();
+}
+/* What needs another box first (additional heads need a head, in-water wrap
+   needs a wrap) greys out rather than vanishing, so the list doesn't jump. */
+function qqSync_(){
+  document.querySelectorAll('#qqRows [data-needs]').forEach(row=>{
+    const on=!!QQ[row.getAttribute('data-needs')];
+    row.classList.toggle('off',!on);
+    row.querySelectorAll('input,select').forEach(i=>{i.disabled=!on;});
+  });
+}
+function qqHint_(m){
+  const P=QP.PRICES;
+  if(m.price&&P[m.price]!=null) return qqMoney_(P[m.price])+(m.kind==='count'?' each':'');
+  if(m.perFt&&P[m.perFt]!=null){
+    if(m.key==='acidWash') return qqMoney_(P.acidNarrowFt)+'/ft to '+QP.RULES.acidBeamMax+'′ beam, '+qqMoney_(P.acidWideFt)+'/ft over';
+    return qqMoney_(P[m.perFt])+' / ft';
+  }
+  if(m.key==='wrap') return QP.wrapAuto(QQ).label;
+  if(m.request) return m.key==='impeller'&&P.impellerStartingAt?'quoted — usually from '+qqMoney_(P.impellerStartingAt):'quoted by staff';
+  return '';
+}
+function qqRow_(m){
+  const id='qqS_'+m.key, v=QQ[m.key];
+  const needs=m.needs?' data-needs="'+m.needs+'"':'';
+  const hint=qqHint_(m), note=m.note?'<div class="sh">'+esc(m.note)+'</div>':'';
+  const lab='<label class="sl" for="'+id+'">'+esc(m.label)+(hint?' <span class="sh">· '+esc(hint)+'</span>':'')+note+'</label>';
+  if(m.kind==='flag') return '<div class="svcrow"'+needs+'><input type="checkbox" id="'+id+'"'+(v?' checked':'')+
+    ' onchange="qqSet(\''+m.key+'\',this)">'+lab+'</div>';
+  if(m.kind==='count') return '<div class="svcrow"'+needs+'>'+lab+'<input class="cnt" id="'+id+'" type="number" min="0" max="20" inputmode="numeric" data-kind="count" value="'+(Number(v)||0)+
+    '" oninput="qqSet(\''+m.key+'\',this)"></div>';
+  if(m.kind==='choice') return '<div class="svcrow choice"'+needs+'>'+lab+'<select class="txt" id="'+id+'" onchange="qqSet(\''+m.key+'\',this)">'+
+    (m.options||[]).map(o=>'<option value="'+esc(o[0])+'"'+(String(v)===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></div>';
+  return '';
+}
+function qqFtBox_(key,label,ph){
+  const v=Number(QQ[key])||0;
+  return '<div><label class="fld" for="qqD_'+key+'">'+label+'</label>'+
+    '<input class="txt" id="qqD_'+key+'" data-kind="ft" inputmode="decimal" autocomplete="off" placeholder="'+(ph||'e.g. 22′ 6″ or 22.5')+'"'+
+    ' value="'+(v?esc(QP.fmtFtIn(v)):'')+'" oninput="qqSet(\''+key+'\',this)">'+
+    '<div class="h" id="qqH_'+key+'">'+(v?esc(QP.fmtFtIn(v)):'')+'</div></div>';
+}
+function renderQuick(){
+  if(!QQ||!QP) return;
+  const P=QP.PRICES, u=QQ.unit;
+  $('qqUnits').innerHTML=QQ_UNITS.map(x=>'<button type="button" class="'+(u===x[0]?'on':'')+'" onclick="qqUnit(\''+x[0]+'\')">'+x[1]+'</button>').join('');
+
+  /* ---- dimensions ---- */
+  let dims='';
+  if(u==='boat'){
+    dims='<div class="qqdims">'+qqFtBox_('loa','Length (LOA)')+qqFtBox_('beam','Beam','e.g. 8′ 6″')+'</div>'+
+      '<label class="chk"><input type="checkbox"'+(QQ.hasTrailer?' checked':'')+' onchange="qqSet(\'hasTrailer\',this)"> Stored on its trailer</label>'+
+      (QQ.hasTrailer?'<div class="qqdims" style="margin-top:0">'+qqFtBox_('trailerOverhang','Trailer adds (past the boat)','e.g. 3′')+'<div></div></div>':
+        '<label class="chk"><input type="checkbox"'+(QQ.isPontoon?' checked':'')+' onchange="qqSet(\'isPontoon\',this)"> Pontoon</label>');
+  } else if(u==='jetski'&&QQ.storage==='inside'){
+    dims='<div class="qqdims">'+qqFtBox_('skiLen','Stored length (on trailer)')+qqFtBox_('skiWid','Stored width','e.g. 4′')+'</div>';
+  }
+  $('qqDims').innerHTML=dims;
+
+  /* ---- tick-boxes ---- */
+  let h='';
+  const grp=t=>'<div class="svcgrp">'+t+'</div>';
+  const lvl=(id,g)=>{
+    const b=P.basic[id], f=P.full[id];
+    return '<select class="lvl" onchange="qqSet(\'eng.'+id+'.level\',this)">'+
+      '<option value="basic"'+(g.level!=='full'?' selected':'')+'>Basic '+qqMoney_(b)+'</option>'+
+      '<option value="full"'+(g.level==='full'?' selected':'')+'>Full '+qqMoney_(f)+'</option></select>';
+  };
+  const motor=(id,name)=>{
+    const g=QQ.engines[id]||{qty:0,level:'basic'};
+    return '<div class="svcrow"><span class="sl">'+esc(name)+'</span>'+lvl(id,g)+
+      '<input class="cnt" type="number" min="0" max="20" inputmode="numeric" data-kind="count" value="'+(Number(g.qty)||0)+'" aria-label="How many '+esc(name)+' motors" oninput="qqSet(\'eng.'+id+'.qty\',this)"></div>';
+  };
+  if(u==='boat'){
+    h+=grp('Engines — how many, and which service');
+    QP.BOAT_ENGINES.forEach(e=>{ h+=motor(e.id,e.name); });
+  }
+  if(u==='jetski'){ h+=grp('Winterization — how many skis'); h+=motor('pwc','PWC / Jetski'); }
+  if(u==='boat'||u==='jetski'){
+    const T=QQ.hasTrailer;
+    const opts=u==='jetski'
+      ? [['none','No storage'],['inside','Inside storage — '+qqMoney_(P.insideT)+'/sqft']]
+      : [['none','No storage'],['outside','Outside — '+qqMoney_(P.outsidePerFt)+'/ft'],
+         ['inside','Inside (non-heated) — '+qqMoney_(T?P.insideT:P.insideNT)+'/sqft'],
+         ['insidePrem','Premium inside — '+qqMoney_(T?P.insidePremT:P.insidePremNT)+'/sqft (Quest approval)']];
+    h+=grp('Storage')+'<div class="svcrow choice"><select class="txt" onchange="qqSet(\'storage\',this)">'+
+      opts.map(o=>'<option value="'+o[0]+'"'+(QQ.storage===o[0]?' selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></div>';
+    let last='';
+    QP.SERVICE_MENU.filter(m=>m.units.indexOf(u)>=0).forEach(m=>{
+      if(m.group!==last){ h+=grp(m.group); last=m.group; }
+      h+=qqRow_(m);
+    });
+    h+=grp('Heritage Harbor')+'<div class="svcrow"><input type="checkbox" id="qqS_hho"'+(QQ.hho?' checked':'')+
+      ' onchange="qqSet(\'hho\',this)"><label class="sl" for="qqS_hho">Slipholder <span class="sh">· discount is approved on the quote after saving</span></label>'+
+      (QQ.hho?'<input class="slip" placeholder="Slip #" value="'+esc(QQ.slipNo)+'" oninput="qqSet(\'slipNo\',this)">':'')+'</div>';
+  }
+  if(u==='golf') h+='<div class="msg">Flat rate, '+qqMoney_(P.golfCart)+' — storage with Heritage Harbor pickup &amp; delivery. Nothing to choose.</div>';
+  if(u==='ebike') h+='<div class="msg">Flat rate, '+qqMoney_(P.ebikeStorage)+' — storage including a tune-up. Nothing to choose.</div>';
+  $('qqRows').innerHTML=h;
+  qqSync_(); qqTicket_();
+}
+/* The state exactly as the engine (and the server) will price it. */
+function qqState_(){
+  const s=JSON.parse(JSON.stringify(QQ));
+  s.lwt=(s.unit==='boat'&&s.hasTrailer)?QP.lwtFromOverhang(s.loa,s.trailerOverhang):0;
+  if(!(s.unit==='boat'&&s.hasTrailer)) s.trailerOverhang=0;
+  if(!s.hho) s.slipNo='';
+  s.notes='';
+  return s;
+}
+function qqTicket_(){
+  if(!QQ||!QP) return;
+  const s=qqState_();
+  let r;
+  try{ r=QP.computeQuote(s); }catch(e){ $('qqTicket').innerHTML='<div class="qqnote warn">Could not price this: '+esc(e.message)+'</div>'; return; }
+  const total=r.lines.reduce((a,l)=>a+Number(l.amt||0),0);
+  const dep=Math.min(QP.depositBaseFor(s),total);
+  let h='<h3>'+esc(QQ_UNITS.filter(x=>x[0]===s.unit)[0][1])+(s.ymm?' · '+esc(s.ymm):'')+'</h3>';
+  if(!r.lines.length) h+='<div class="msg" style="margin:0">Tick something to see a price.</div>';
+  let sec='';
+  r.lines.forEach(l=>{
+    if(l.sec!==sec){ h+='<div class="qqsec">'+esc(l.sec)+'</div>'; sec=l.sec; }
+    h+='<div class="qqln"><span>'+esc(l.label)+(l.calc?'<span class="c">'+esc(l.calc)+'</span>':'')+'</span><span class="a">'+(l.amt?qqMoney_(l.amt):'incl.')+'</span></div>';
+  });
+  h+='<div class="qqtot"><span>Total</span><span>'+qqMoney_(total)+'</span></div>';
+  if(total>0){
+    if(s.storage==='none') h+='<div class="qqsub"><span>No storage — due when the work is done</span><span></span></div>';
+    else h+='<div class="qqsub"><span>Deposit to reserve</span><span>'+qqMoney_(dep)+'</span></div>';
+    h+='<div class="qqsub"><span>By card (+'+QP.RULES.ccPct+'%)</span><span>'+qqMoney_(total*(1+QP.RULES.ccPct/100))+'</span></div>';
+    h+='<div class="qqsub"><span>After '+esc(QP.SEASON.payByShort)+' (+'+QP.RULES.latePct+'%)</span><span>'+qqMoney_(total*(1+QP.RULES.latePct/100))+'</span></div>';
+  }
+  if(s.hho&&total>0){
+    const d=QP.hhoDiscountFor(QP.hhoServicesTotal(r.lines));
+    h+='<div class="qqnote">Slipholder discount, once approved: '+(d?'<b>−'+qqMoney_(d)+'</b> (tier on '+qqMoney_(QP.hhoServicesTotal(r.lines))+')':'none at this total')+'. Not in the total above.</div>';
+  }
+  if(r.rq&&r.rq.length) h+='<div class="qqnote">Quoted by staff, not in the total: '+esc(r.rq.join(', '))+'.</div>';
+  if(r.need&&r.need.length) h+='<div class="qqnote warn">Still needed to price: '+esc(r.need.join('; '))+'.</div>';
+  (r.flags||[]).forEach(f=>{ h+='<div class="qqnote warn">'+esc(f.msg)+'</div>'; });
+  if(QP.PRICING.provisional) h+='<div class="qqnote warn">'+esc(QP.pricingNotice())+'</div>';
+  $('qqTicket').innerHTML=h;
+  $('qqBar').innerHTML='<span>Total '+qqMoney_(total)+'</span><a href="#qqTicket">see the lines ↓</a>';
+}
+async function saveQuick(){
+  if(!QQ||!QP) return;
+  if(QQ_SAVED){ toast('Already saved as '+QQ_SAVED); return; }
+  const s=qqState_();
+  const last=String(s.lastName||'').trim();
+  if(!last){ setMsg('qqMsg','Add a last name first — it is how the quote is looked up later.',false); $('qqLast').focus(); return; }
+  const r0=QP.computeQuote(s);
+  const total=r0.lines.reduce((a,l)=>a+Number(l.amt||0),0);
+  if(!confirm('Save this as a new quote for '+[s.firstName,last].filter(Boolean).join(' ')+' — '+qqMoney_(total)+'?\n\n'+
+    'The server prices it again and gives it a number. No one is emailed.')) return;
+  const b=$('qqSaveBtn'); b.disabled=true; b.textContent='Saving…';
+  setMsg('qqMsg','Saving — this writes the quote and its PDF, so give it a few seconds.',null);
+  try{
+    const r=await api('quickQuote',[s,{firstName:s.firstName,lastName:last,note:($('qqNote')||{}).value||''}]);
+    if(!r||!r.ok){ setMsg('qqMsg',(r&&r.error)||'The quote was not saved.',false); return; }
+    QQ_SAVED=r.quoteNo||'saved';
+    setMsg('qqMsg','');
+    const moved=r.total&&r.total!==qqMoney_(total);
+    $('qqDone').innerHTML='<div class="bkwarn"><b>'+esc(r.msg)+'</b>'+
+      (r.total?'<br>Server total: '+esc(r.total)+(moved?' — <b>not the '+esc(qqMoney_(total))+' shown here</b>; the server figure is the one stored.':''):'')+
+      (r.quoteNo?'<div style="margin-top:8px"><button class="btn navy sm" onclick="qqOpen()">Open '+esc(r.quoteNo)+'</button></div>':'')+'</div>';
+    $('qqDone').classList.remove('hide');
+    toast('Saved '+(r.quoteNo||''));
+  }catch(e){ setMsg('qqMsg',e.message,false); }
+  finally{ b.disabled=false; b.textContent='Save as a quote'; }
+}
+function qqOpen(){
+  if(!QQ_SAVED||QQ_SAVED==='saved') return;
+  $('quickCard').classList.add('hide');
+  $('qn').value=QQ_SAVED; doSearch(); window.scrollTo(0,0);
 }
 
 /* ---------- Re-price at current rates ----------

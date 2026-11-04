@@ -1124,6 +1124,37 @@ are **not** honoured on the strength of a deposit. So paid quotes are in scope.
   request would time out mid-write with no record of where it stopped.
 
 
+## Quick quote (console)
+
+Chris, Nov 2026: *"a way for me to quickly make a quote and check prices from
+the admin page … without having to tab through the customer facing quote
+generator."* Home tile and menu item **Quick quote**: contact boxes at the top,
+the unit and its dimensions, then tick-boxes, with the priced ticket beside
+them (below them on a phone, with the total pinned to the bottom of the screen).
+
+- **Priced by the shared engine, in the browser.** The console loads
+  `../pricing-engine.js` — the same file the quote page loads — and feeds
+  `computeQuote()` the quote page's own state shape (`qqBlank_` mirrors
+  `const S` in `index.html`; `check-quick-quote.js` fails if a key goes
+  missing). A price check costs no trip to the server. Nothing on the card
+  holds a rate of its own: hints are read from `PRICES`, and the extras are
+  `SERVICE_MENU`, the same list as *Add or remove services*.
+- **Dimensions take feet the way staff say them** — `22' 6"`, `22 6`, or
+  `22.5`. The parsed value is echoed under the box.
+- **Save is optional and emails nobody.** `adminQuickQuote` (any signed-in
+  staff — the public quote page creates quotes with no PIN, so gating this
+  tighter would only push staff back onto it) writes through `importApplyCore_`
+  with `origin:'console'`: a fresh number, priced again on the server, the
+  storage tab the state implies, its own PDF, the staff note, and the **9am
+  reminder held** until a human sends the customer something — a quote the
+  customer never saw must not be chased with "your quote is waiting". Its
+  Activity Log line reads `QUICK QUOTE …`, never `IMPORTED …`, because
+  `bulkImportRepair` reconciles every IMPORTED line against the sheet.
+- **Not on the card, on purpose:** the slipholder discount (approved on the
+  quote after saving — the card shows the tier it would earn), penalties
+  (pumpout, late retrieval), keys and trailer location. Open the saved quote
+  for those, and to email or sign it.
+
 ## Loading an old winter-services sheet (console)
 
 `Load from an old sheet`, menu, gated on `adjust`. The pre-system quotes were

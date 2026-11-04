@@ -1467,6 +1467,19 @@ not recognisably a jet ski, golf cart or e-bike counts as a boat.
 so the paper stays one page per area whatever the screen shows, and the
 haul-out list keeps its own order (`haulOrder_`).
 
+## Where the unit is — the placement tag on the storage overview
+
+Each row carries a navy tag for the state Harbor Haul Out records
+(`PLACEMENT_STATES_`): **PULLED** and **DROPPED OFF** outlined (on the way
+in), **IN STORAGE** solid, **PICKED UP** quiet grey. *Not started* draws
+nothing — before haul-out that is every row, and a tag on all of them says
+nothing. Hover shows the date it moved. It reads `placementState` /
+`placementAt`, already on every storage row, so it costs no extra read. It is
+display only (`placementTag_`): the state is still set from Harbor Haul Out
+or the quote card's placement buttons, and the tag never decides whether a
+unit may be pulled — that stays `haulAuth_`. Screen only; the printed sheets
+are unchanged.
+
 ## The season tag on the storage overview
 
 Every storage row carries a small tag saying **which season's card the quote

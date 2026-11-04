@@ -1301,7 +1301,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         </div>
       </div>
       <div class="stats">
-        <div class="stat"><div class="v" id="rvOut">—</div><div class="k">Outstanding</div></div>
+        <div class="stat"><div class="v" id="rvOut">—</div><div class="k" title="Balances owed on quotes with a deposit or a signed contract">Outstanding</div></div>
         <div class="stat"><div class="v" id="rvIn">—</div><div class="k">Collected</div></div>
         <div class="stat"><div class="v" id="rvCr">—</div><div class="k">Credits due</div></div>
       </div>
@@ -3916,8 +3916,14 @@ function renderReceivables(){
   if(RTAB==='unpaid'||RTAB==='partial') list.sort((a,b)=>b.bal-a.bal);
   else if(RTAB==='credit') list.sort((a,b)=>a.bal-b.bal);
   const sum=list.reduce((s,c)=>s+c.bal,0);
+  /* Outstanding counts committed quotes only (a deposit or a signed contract)
+     — the server decides that and sends both sums. Here, unpaid quotes are
+     all unpaid by definition, so committed means a contract is on file. */
+  const nSigned=list.filter(c=>c.committed).length, unc=r.totals.uncommitted||0;
   const head={
-    unpaid:`<b>${list.length}</b> quote${list.length===1?'':'s'} with nothing paid yet — <b>${fmt$(sum)}</b> outstanding.`+
+    unpaid:`<b>${list.length}</b> quote${list.length===1?'':'s'} with nothing paid yet. `+
+      `<b>${nSigned}</b> ha${nSigned===1?'s':'ve'} a signed contract — <b>${fmt$(sum-unc)}</b>, counted in Outstanding. `+
+      `The other ${list.length-nSigned} (no deposit, no contract) total <b>${fmt$(unc)}</b> and are not counted yet.`+
       (r.unpriced?` ${r.unpriced} unpriced quote${r.unpriced===1?' is':'s are'} left out (no total, nothing to collect).`:''),
     partial:`<b>${list.length}</b> quote${list.length===1?'':'s'} with a deposit or part payment — <b>${fmt$(sum)}</b> still to collect.`,
     paid:`<b>${list.length}</b> quote${list.length===1?'':'s'} paid in full.`,
@@ -3929,7 +3935,8 @@ function renderReceivables(){
     const owe=c.bal>0.005, cr=c.bal<-0.005;
     const bl=cr?'CREDIT '+fmt$(-c.bal):owe?fmt$(c.bal):'Paid';
     const last=c.lastAt?new Date(c.lastAt).toLocaleDateString():c.lastDate;
-    const nc=(RTAB==='partial'||RTAB==='paid')&&!c.contract?'<span class="tagmute">no contract</span>':'';
+    const nc=(RTAB==='partial'||RTAB==='paid')&&!c.contract?'<span class="tagmute">no contract</span>':
+      RTAB==='unpaid'?(c.committed?'<span class="tagmute">contract signed</span>':'<span class="tagmute">not committed</span>'):'';
     return `<div class="srow" onclick="fromRecv('${esc(c.qn)}')">
       <span class="nm">${esc(c.name||'(no name)')}${nc}</span>
       <span class="un">${esc(c.qn)} · ${esc(c.unit)}${c.ymm?' · '+esc(c.ymm):''} · paid ${fmt$(c.paid)} of ${fmt$(c.total)}`+

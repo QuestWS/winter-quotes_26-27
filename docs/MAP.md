@@ -120,6 +120,7 @@ symptom.
 | Whether to ask where the trailer is | `needsTrailerLoc_`, `trailerApplies` (land units have none) | `renderKeys`, `keysNoTrailer`; Harbor Haul Out `renderSheet`; customer page `trailerLocApplies` |
 | Quote history: every total, payment and email on one quote, and "where did this amount come from" | `adminQuoteHistory`, `notePriceChange_`, `historyFigures_`, `quoteNoRe_` | `loadHistory`, `renderHistory_`, `histMatchable_`, `resetHistory_` |
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
+| Working down the storage list: ‹ Prev · Next › · List bar on a quote opened from it, ✓ on rows opened, instant return to your place | — (the overview's own `storageView`, no new call) | `fromStorage`, `WALK`, `walkStep`, `walkBack`, `renderWalkBar_`, `syncWalkBar_`, `srowAttrs_`, `STORAGE_HERE`, `renderStorageKeepPlace_`, `storageFresh_` |
 | Storage overview grouped by unit type (jet skis first) | — | `setStorageGroup`, `SGROUP`, `unitKind_`, `UNIT_ORDER_`, `storageGroups_` |
 | Storage overview: pulled / dropped off / in storage / picked up tag on each row | `adminStorageView` (`placementState`, `placementAt` — already on every row) | `placementTag_`, `PLACE_TAG_`, `.tagplace` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |

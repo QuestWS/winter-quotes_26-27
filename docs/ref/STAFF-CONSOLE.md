@@ -1452,6 +1452,33 @@ but never signed", asked from a phone.
   changes.
 
 
+## Working down the storage list (console)
+
+Going ticket to ticket used to mean: open a row, change the quote, ✕ it,
+reopen the overview, wait for it, scroll back to your place. A quote opened
+**from the storage overview** now carries a bar pinned to the bottom of the
+screen — **‹ Prev · ☰ List · 7 of 42 · Next ›** — so the next customer is one
+tap from anywhere on the quote.
+
+- **The order is the list as it was on screen when the row was tapped** — same
+  filter (No deposit, Customer notes, Heritage Harbor, Imported…) and same
+  grouping. It is read off the rendered rows (`data-qn`), so it cannot disagree
+  with what staff were looking at. Moving between quotes does not re-fetch the
+  list.
+- **☰ List returns instantly** from the copy already in the page, scrolled to
+  the row just worked and outlined in gold, then swaps in a fresh copy when it
+  lands (every write drops the server's storage cache, so the edit shows)
+  **without moving the page** (`renderStorageKeepPlace_`). Opening the overview
+  from the menu does the same: the last copy shows with *Refreshing…* rather
+  than a blank *Loading…*. A failed refresh keeps the earlier copy and says so.
+- **Every quote opened this way gets a ✓ on its row** for this page load — a
+  reload clears them. It is a "where was I" mark, not a record of work done.
+- **The walk ends** on ✕, HOME, or opening a quote that is not on the list (a
+  search). A payment typed in but not recorded is asked about before Prev /
+  Next / List, because moving clears the payment form.
+- Screen only, no new server call: nothing here changes what prints or what
+  Harbor Haul Out sees.
+
 ## Grouping the storage overview by unit type
 
 The storage areas mix boats and jet skis — Outside / Inside / Premium Inside

@@ -361,6 +361,15 @@ color:var(--muted);border:1.5px solid var(--line)}
 letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:#fff;
 color:var(--navy);border:1.5px solid var(--navy)}
 .card.hhflag{border:2px solid var(--gold)}
+/* Where the unit is in the season, from Harbor Haul Out (placementTag_).
+   Navy, never red or gold: it is a fact about the unit, not a hold and not
+   money. Pulled / dropped off are outlined (on the way in); in storage is
+   solid (done); picked up is the quiet grey of a season that is over. */
+.tagplace{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:800;
+letter-spacing:.04em;white-space:nowrap;margin-left:6px;vertical-align:1px;background:var(--ice);
+color:var(--navy);border:1.5px solid var(--navy)}
+.tagplace.stored{background:var(--navy);color:#fff}
+.tagplace.done{background:#fff;color:var(--muted);border-color:var(--line);font-weight:700}
 .srow{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,4fr) auto;gap:10px;align-items:center;
 padding:9px 6px;border-bottom:1px solid var(--ice);cursor:pointer;border-radius:8px;font-size:13.5px}
 .srow:hover{background:#F4F9FC}
@@ -3568,6 +3577,19 @@ function seasonTag_(x){
   if(lbl===cur) return {html:'<span class="tagseason cur">'+esc(short)+'</span>',old:false};
   return {html:'<span class="tagseason">'+esc(lbl?short+' rates':'season ?')+'</span>',old:true};
 }
+/* Where the unit is in the season — the state Harbor Haul Out records
+   (PLACEMENT_STATES_ on the server), already on every storage row as
+   placementState. Not started draws nothing: before haul-out that is every
+   row, and a tag on all of them says nothing. The date it moved is on hover. */
+const PLACE_TAG_={pulled:['PULLED',''],dropped:['DROPPED OFF',''],stored:['IN STORAGE','stored'],
+  pickedup:['PICKED UP','done']};
+function placementTag_(x){
+  const t=PLACE_TAG_[String((x&&x.placementState)||'')];
+  if(!t) return '';
+  const d=x.placementAt?new Date(x.placementAt):null;
+  const when=d&&!isNaN(d)?' title="since '+esc(d.toLocaleDateString())+'"':'';
+  return '<span class="tagplace '+t[1]+'"'+when+'>'+t[0]+'</span>';
+}
 function renderStorage(){
   const c=storageCounts_();
   const tab=(k,n)=>`<button class="${SFILTER===k?'on':''}" onclick="setStorageFilter('${k}')">`+
@@ -3618,8 +3640,9 @@ function renderStorage(){
       const stag=lead?'':seasonTag_(x).html;
       const area=SGROUP==='unit'&&x._area?' · '+esc(x._area):'';
       const htag=x.hh==='open'?HH_TAG:'';
+      const ptag=placementTag_(x);
       return `<div class="srow" onclick="fromStorage('${esc(x.qn)}')">
-        <span class="nm">${esc(x.name)}${tag}${htag}${ntag}${stag}</span>
+        <span class="nm">${esc(x.name)}${ptag}${tag}${htag}${ntag}${stag}</span>
         <span class="un">${esc(x.unit)}${x.ymm?' · '+esc(x.ymm):''}${x.dims?' · '+esc(x.dims):''}${area} · ${esc(x.status)}${took}</span>
         <span class="bl ${owe?'owe':'paid'}">${esc(x.balance)}</span>${al}${wz}${nbox}</div>`;
     }).join(''):'<div class="msg" style="padding:6px">— empty —</div>';

@@ -111,7 +111,9 @@ us to call about — with its price, and one button, **Review my quotes**, to
 - **It sets no status**, for the sign chase's reason: an answer about one
   add-on must not overwrite `Deposit received`. Email History records it.
 - **Staff-clicked, one quote at a time.** Not in `BULK_KINDS_`, not automatic.
-- **Every customer answer emails service@** (`notifyOfferDecision_`) — a call
+- **One email to service@ per submission, not per quote**
+  (`notifyOfferDecisions_`; Chris, Nov 2026: an email per quote "is
+  maddening"). It groups accepted / call me / declined — a
   request leads its subject with 📞 CALL REQUESTED and carries their question
   and phone number. That is mail to Quest, never to the customer.
 

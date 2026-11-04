@@ -38,19 +38,35 @@
 .offer .amt{font-family:var(--mono);font-weight:600;font-size:17px;white-space:nowrap}
 .offer .state{font-size:13.5px;margin-top:4px;color:var(--muted)}
 .offer.accepted .state{color:#1F5A38;font-weight:600}
-.choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.choices .btn{width:auto;flex:1 1 140px;font-size:17px;padding:12px 12px}
-.btn.ok{background:var(--ok)}
-.btn.ok:hover{background:#1F5A38}
-.btn.line{background:#fff;color:var(--navy);border:1.5px solid var(--line)}
-.btn.line:hover{background:var(--ice)}
-.btn.gold{background:var(--gold)}
-.btn.gold:hover{background:#9C6F18}
-.confirm{margin-top:10px}
-.confirm textarea{margin-top:6px;min-height:70px}
-.confirm .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-.confirm .row .btn{width:auto;flex:1 1 140px;font-size:17px;padding:12px}
-.offer .said{margin-top:8px}
+/* One tick per quote: three boxes, only one can be ticked (a radio group
+   drawn as tick boxes — a quote cannot be both accepted and declined). The
+   whole box is the tap target; the tick lives in a real input underneath, so
+   it works with a keyboard and a screen reader. */
+.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.pick label{position:relative;display:flex;align-items:center;gap:7px;border:1.5px solid var(--line);
+  border-radius:8px;padding:10px 9px;background:#fff;cursor:pointer;font-weight:600;font-size:14.5px;
+  color:var(--navy);line-height:1.2;user-select:none;-webkit-tap-highlight-color:transparent}
+.pick input{position:absolute;opacity:0;width:1px;height:1px}
+.pick .box{flex:0 0 20px;height:20px;border:2px solid var(--line);border-radius:5px;background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:800}
+.pick input:checked + .box::after{content:"\2713"}
+.pick label.acc:has(input:checked){border-color:var(--ok);background:var(--ok-bg)}
+.pick label.acc input:checked + .box{background:var(--ok);border-color:var(--ok)}
+.pick label.dec:has(input:checked){border-color:var(--muted);background:var(--ice)}
+.pick label.dec input:checked + .box{background:var(--muted);border-color:var(--muted)}
+.pick label.cal:has(input:checked){border-color:var(--gold);background:var(--gold-soft)}
+.pick label.cal input:checked + .box{background:var(--gold);border-color:var(--gold)}
+.pick input:focus-visible + .box{outline:3px solid var(--frost-soft);outline-offset:1px}
+@media(max-width:400px){.pick label{font-size:13.5px;padding:10px 7px;gap:5px}}
+.bulk{display:flex;gap:16px;flex-wrap:wrap;margin:-4px 0 12px;font-size:14.5px}
+.bulk a{color:var(--frost);font-weight:600;cursor:pointer}
+#askBox{margin:4px 0 12px}
+#askBox textarea{min-height:70px;margin-top:6px}
+/* The one send: a sticky bar so it is always one thumb away on a phone, with
+   what it is about to do written on it. */
+#sendBar{position:sticky;bottom:0;background:#fff;padding:10px 0 12px;margin-top:6px;
+  border-top:1px solid var(--line)}
+#sendSum{font-size:14px;color:var(--muted);margin-bottom:7px;min-height:1.2em}
 .foot{font-size:14px;color:var(--muted);margin-top:16px}
 .foot a{color:var(--frost)}
 </style>
@@ -67,8 +83,8 @@
 <div class="wrap">
   <div class="card">
     <h1 id="title">Your quotes</h1>
-    <p class="lead" id="lead">You asked us to price some work. For each quote, choose
-      <b>Accept</b>, <b>Decline</b>, or <b>Call me</b> if you have questions.
+    <p class="lead" id="lead">You asked us to price some work. Tick <b>Accept</b>,
+      <b>Decline</b> or <b>Call me</b> for each one, then send them all at once.
       Nothing is added until you accept it.</p>
     <div class="unitline" id="unitline" hidden></div>
 
@@ -84,7 +100,17 @@
       <button class="btn" id="findBtn" type="button">Show my quotes</button>
     </div>
 
+    <div class="bulk" id="bulk" hidden><a id="allAcc" role="button" tabindex="0">Accept all</a>
+      <a id="allDec" role="button" tabindex="0">Decline all</a></div>
     <div id="list"></div>
+    <div id="askBox" hidden>
+      <label class="f" for="note">What would you like to ask? <small>— optional, we'll call you either way</small></label>
+      <textarea id="note" maxlength="1000" placeholder="e.g. Does the wash &amp; wax include the cockpit?"></textarea>
+    </div>
+    <div id="sendBar" hidden>
+      <div id="sendSum"></div>
+      <button class="btn" id="sendBtn" type="button" disabled>Send my answers</button>
+    </div>
     <div id="status" class="msg" role="status" aria-live="polite"></div>
     <div class="foot" id="foot" hidden>Your quote total right now: <b id="total"></b>.
       <a id="quoteLink" href="index.html">See your full quote</a></div>
@@ -180,66 +206,85 @@ var STATE_TXT = {
   pending: 'Waiting on your answer',
   call: "You asked us to call — we'll be in touch. You can still answer here.",
   accepted: '✓ Accepted — this is on your quote',
-  declined: "Declined — we won't do this one. Changed your mind? You can still accept it."
+  declined: "You declined this one. Changed your mind? Tick Accept."
 };
+var PICK = {};   // item -> the choice ticked on screen
 function paint(res) {
   DATA = res;
+  PICK = {};
   $('find').hidden = true;
   $('title').textContent = res.firstName ? res.firstName + ', here are your quotes' : 'Your quotes';
   var ul = $('unitline');
   ul.textContent = [res.quoteNo, res.unit].filter(Boolean).join(' · ');
   ul.hidden = !ul.textContent;
   var offers = res.offers || [];
+  var open = offers.filter(function (o) { return o.status !== 'accepted'; });
   if (!offers.length) {
     $('list').innerHTML = '<div class="msg">There are no quotes waiting on you for ' + esc(res.quoteNo) +
       '. If you expected one, call us at (815) 433-2200.</div>';
   } else {
     $('list').innerHTML = offers.map(function (o, i) {
-      var open = o.status !== 'accepted';
-      var btns = !open ? '' :
-        '<div class="choices" id="ch' + i + '">' +
-        '<button class="btn ok" type="button" onclick="ask(' + i + ',\'accepted\')">Accept</button>' +
-        (o.status !== 'declined' ? '<button class="btn line" type="button" onclick="ask(' + i + ',\'declined\')">Decline</button>' : '') +
-        '<button class="btn gold" type="button" onclick="ask(' + i + ',\'call\')">Call me, I have questions</button>' +
-        '</div><div class="confirm" id="cf' + i + '" hidden></div>';
+      /* What they already told us stays ticked, so sending again is harmless. */
+      if (o.status === 'declined' || o.status === 'call') PICK[o.item] = o.status;
+      var box = function (choice, cls, txt) {
+        return '<label class="' + cls + '"><input type="radio" name="o' + i + '" value="' + choice + '"' +
+          (PICK[o.item] === choice ? ' checked' : '') + ' onchange="pick(' + i + ',\'' + choice + '\')">' +
+          '<span class="box" aria-hidden="true"></span>' + txt + '</label>';
+      };
+      var picks = o.status === 'accepted' ? '' : '<div class="pick" role="radiogroup" aria-label="' + esc(o.label) + '">' +
+        box('accepted', 'acc', 'Accept') + box('declined', 'dec', 'Decline') + box('call', 'cal', 'Call me') + '</div>';
       return '<div class="offer ' + esc(o.status) + '">' +
         '<div class="top"><span class="what">' + esc(o.label) + '</span><span class="amt">' + money(o.amt) + '</span></div>' +
-        '<div class="state">' + esc(STATE_TXT[o.status] || '') + '</div>' + btns +
-        '<div class="msg said" id="said' + i + '" hidden></div></div>';
+        '<div class="state">' + esc(STATE_TXT[o.status] || '') + '</div>' + picks + '</div>';
     }).join('');
   }
+  $('bulk').hidden = open.length < 2;
   $('total').textContent = res.total || '';
   if (res.quoteUrl) $('quoteLink').href = res.quoteUrl;
   $('foot').hidden = false;
+  sync();
 }
-
-/* One step between the tap and the answer: an accept moves money, and a call
-   request is worth a line about what they want to ask. */
-function ask(i, choice) {
-  var o = DATA && DATA.offers && DATA.offers[i];
-  if (!o || BUSY) return;
-  var cf = $('cf' + i);
-  var html = '';
-  if (choice === 'accepted') {
-    html = '<div>Add <b>' + esc(o.label) + '</b> for <b>' + money(o.amt) + '</b> to your ' +
-      esc(String(DATA.term || 'quote').toLowerCase()) + '?</div>' +
-      '<div class="row"><button class="btn ok" type="button" onclick="answer(' + i + ',\'accepted\')">Yes, accept it</button>' +
-      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
-  } else if (choice === 'declined') {
-    html = '<div>Decline <b>' + esc(o.label) + '</b>? Nothing is added.</div>' +
-      '<div class="row"><button class="btn line" type="button" onclick="answer(' + i + ',\'declined\')">Yes, decline it</button>' +
-      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
-  } else {
-    html = '<label class="f" for="note' + i + '">What would you like to ask? <small>— optional</small></label>' +
-      '<textarea id="note' + i + '" maxlength="1000" placeholder="e.g. Does that include the materials?"></textarea>' +
-      '<div class="row"><button class="btn gold" type="button" onclick="answer(' + i + ',\'call\')">Please call me</button>' +
-      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
-  }
-  cf.innerHTML = html;
-  cf.hidden = false;
-  $('ch' + i).hidden = true;
+function pick(i, choice) {
+  var o = DATA.offers[i]; if (!o) return;
+  PICK[o.item] = choice;
+  sync();
 }
-function cancel(i) { $('cf' + i).hidden = true; $('ch' + i).hidden = false; }
+function setAll(choice) {
+  (DATA && DATA.offers || []).forEach(function (o, i) {
+    if (o.status === 'accepted') return;
+    PICK[o.item] = choice;
+    var el = document.querySelector('input[name="o' + i + '"][value="' + choice + '"]');
+    if (el) el.checked = true;
+  });
+  sync();
+}
+/* Only what differs from what is stored is sent: a quote left as it was is
+   not an answer, and re-sending one would be noise. */
+function changes() {
+  return (DATA && DATA.offers || []).filter(function (o) {
+    return o.status !== 'accepted' && PICK[o.item] && PICK[o.item] !== o.status;
+  }).map(function (o) { return { item: o.item, choice: PICK[o.item], amt: o.amt }; });
+}
+function sync() {
+  var ch = changes();
+  var n = function (c) { return ch.filter(function (x) { return x.choice === c; }); };
+  var acc = n('accepted'), dec = n('declined'), cal = n('call');
+  var add = acc.reduce(function (t, x) { return t + Number(x.amt || 0); }, 0);
+  var bits = [];
+  if (acc.length) bits.push(acc.length + ' accepted (adds ' + money(add) + ')');
+  if (dec.length) bits.push(dec.length + ' declined');
+  if (cal.length) bits.push(cal.length + ' call me');
+  var left = (DATA && DATA.offers || []).filter(function (o) { return o.status === 'pending' && !PICK[o.item]; }).length;
+  $('sendSum').textContent = (bits.length ? bits.join(' · ') : 'Tick a box for each quote.') +
+    (left ? ' · ' + left + ' not answered yet' : '');
+  $('sendBtn').disabled = !ch.length || BUSY;
+  /* Nothing waiting and nothing changed: the page is done, so the button
+     goes rather than sitting there greyed out. */
+  $('sendBar').hidden = !ch.length && !left;
+  $('sendBtn').textContent = ch.length > 1 ? 'Send my ' + ch.length + ' answers' : 'Send my answer';
+  /* One question box, shown while a NEW Call me is ticked. */
+  $('askBox').hidden = !cal.length;
+}
 
 /* ---- answering ---------------------------------------------------------- */
 function post(body) {
@@ -249,41 +294,53 @@ function post(body) {
        the quote loader replies instead — that is a transport failure, not a no. */
     .then(function (res) { if (!res || res._api !== 'offers') throw new Error('not ours'); return res; });
 }
-function answer(i, choice) {
-  var o = DATA && DATA.offers && DATA.offers[i];
-  if (!o || BUSY || !CUR) return;
+/* Everything in ONE request: one save and one email to the office, however
+   many quotes were answered. */
+function send() {
+  var ch = changes();
+  if (!ch.length || BUSY || !CUR) return;
   BUSY = true;
-  var noteEl = $('note' + i);
-  var body = { api: 'offers', quote: CUR.quote, ln: CUR.ln, item: o.item, choice: choice,
-               note: noteEl ? noteEl.value : '' };
-  var cf = $('cf' + i);
-  Array.prototype.forEach.call(cf.querySelectorAll('button'), function (b) { b.disabled = true; });
-  say('', 'Saving…');
+  $('sendBtn').disabled = true;
+  $('sendBtn').textContent = 'Sending…';
+  var body = { api: 'offers', quote: CUR.quote, ln: CUR.ln, note: $('note').value,
+               answers: ch.map(function (x) { return { item: x.item, choice: x.choice }; }) };
+  say('', '');
   post(body).catch(function () {
-    /* The answer may have landed even though we could not read the reply
+    /* The answers may have landed even though we could not read the reply
        (Apps Script's redirect leg can fail on a slow phone). Ask what is
-       actually stored before telling anybody it failed. */
+       stored before telling anybody it failed; resend only if it is not. */
     return getJson(readUrl(CUR)).then(function (res) {
-      var now = res && res.ok && (res.offers || []).filter(function (x) { return x.item === o.item; })[0];
-      if (now && now.status === choice) return Object.assign(res, { msg: 'Saved.' });
+      var landed = res && res.ok && ch.every(function (x) {
+        var now = (res.offers || []).filter(function (o) { return o.item === x.item; })[0];
+        return now && now.status === x.choice;
+      });
+      if (landed) return Object.assign(res, { msg: 'Saved — thank you.' });
       return post(body);   // never saw it: once more, safe because the server is idempotent
     });
   }).then(function (res) {
     BUSY = false;
     if (!res) throw new Error('no answer');
+    var note = $('note').value;
     if (res.offers) paint(res);
     if (!res.ok) { say('warn', esc(res.error || 'That did not save.')); return; }
-    say('ok', esc(res.msg || 'Saved.'));
+    $('note').value = note;
+    say('ok', esc(res.msg || 'Saved.') + (res.warn ? '<br>' + esc(res.warn) : ''));
     try { $('status').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
   }).catch(function () {
     BUSY = false;
-    say('warn', "We couldn't save that — please try again, or call us at (815) 433-2200.");
-    Array.prototype.forEach.call(cf.querySelectorAll('button'), function (b) { b.disabled = false; });
+    sync();
+    say('warn', "We couldn't send that — please try again, or call us at (815) 433-2200.");
   });
 }
 
 /* ---- wiring ------------------------------------------------------------- */
 $('findBtn').addEventListener('click', function () { load($('qn').value, $('ln').value); });
+$('sendBtn').addEventListener('click', send);
+[['allAcc', 'accepted'], ['allDec', 'declined']].forEach(function (x) {
+  var el = $(x[0]);
+  el.addEventListener('click', function () { setAll(x[1]); });
+  el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setAll(x[1]); } });
+});
 ['qn', 'ln'].forEach(function (id) {
   $(id).addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); load($('qn').value, $('ln').value); }

@@ -261,11 +261,20 @@ shows after loading a quote with something waiting (`showOffersNote_`).
   loader answers it, and the page treats that as a transport failure — it
   re-reads what is stored, and posts once more only if the answer is not there.
   Safe because `offerDecide_` is idempotent.
-- **Accept / Decline / Call me, I have questions**, each behind one confirm
-  step. *Call me* takes an optional question. Accepting adds the line and moves
-  the total; decline and call add nothing.
+- **Tick boxes, one send.** Chris, Nov 2026: a button per quote took seconds
+  each and an email per quote reached service@. Each quote now has three tick
+  boxes — **Accept**, **Decline**, **Call me** — drawn over a radio group, so
+  only one can be ticked (a quote cannot be both accepted and declined).
+  **Accept all / Decline all** for a long list. One sticky **Send my answers**
+  button posts them all as `answers:[{item, choice}]`: one lock, one save, one
+  PDF rebuild, one office email. Only answers that differ from what is stored
+  are sent. One optional question box appears while anything is ticked *Call
+  me*. Accepting adds the line and moves the total; decline and call add
+  nothing. The server still reads a single `{item, choice}` body as a list of
+  one, for a tab left open on the first version.
 - **Accepted is final from the page.** Un-accepting is a phone call — the work
-  may already be booked. Declined or call-me can still be accepted later.
+  may already be booked. In a batch it is skipped and reported (`warn`), and
+  the rest still save. Declined or call-me can still be accepted later.
 - **The status column is left alone** (`saveQuoteRow_` is handed the current
   status), and the PDF is rebuilt: it lists what is still waiting under
   *Quoted — waiting on your OK (not in the total)* (`offersPdfRows_`).

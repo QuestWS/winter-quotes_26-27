@@ -68,7 +68,7 @@ symptom.
 | Line edit and delete | `adminEditLine` (the action argument selects which) | `.gs` |
 | Price a requested service | `adminPriceRequest` | `.gs` |
 | Priced requests waiting on the customer: which count, and moving one | `OFFER_STATES`, `offerStatus`, `offerOnQuote`, `offerOpen`, `offersOf` (engine); `offerDecide_`, `adminOfferDecision`, `offersOut_`, `offersPdfRows_` | both |
-| The customer answering them (`service-quotes.html`) | `offersRead_` (`?action=offers`), `offersServe_` (POST `api:'offers'`), `offersCtx_`, `notifyOfferDecision_`, `offersLink_`, `offersLinkFor_` | `.gs` |
+| The customer answering them (`service-quotes.html`) | `offersRead_` (`?action=offers`), `offersServe_` (POST `api:'offers'`), `offersCtx_`, `notifyOfferDecisions_`, `offersLink_`, `offersLinkFor_` | `.gs` |
 | Add or remove a menu service (engine-priced, journalled) | `SERVICE_MENU` (engine), `sanitizeServices_`, `servicesProposal_`, `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | both |
 | Balance columns on the sheet | `writeMoneyCols_` | `.gs` |
 

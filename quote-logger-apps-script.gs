@@ -10578,7 +10578,7 @@ function adminPriceRequest(token, qn, rqLabel, amt, note) {
         button, to service-quotes.html, with the quote number and last name.
      4. The customer answers each one there (offersServe_, a POST): Accept puts
         the line on and moves the total; Decline and Call me do not. Every
-        answer emails service@ (notifyOfferDecision_), a call request loudest.
+        submission emails service@ once (notifyOfferDecisions_), a call loudest.
      5. Staff can answer on the customer's behalf from the console — they
         called, they said yes — or withdraw a quote to re-price it
         (adminOfferDecision).
@@ -10715,10 +10715,20 @@ function offersRead_(quote, ln) {
   return ctx ? offersReply_(ctx.d) : { ok: 0, error: OFFERS_MISS_ };
 }
 
-/* The customer's answer. POST only (doPost routes api:'offers' here); a GET
-   cannot reach it, so a link scanner cannot accept anything. Accepted is
-   final from this side — once it is on the quote, changing it is a phone
-   call, because the work may already be booked. */
+/* The customer's answers — ALL of them, in one POST (doPost routes
+   api:'offers' here). Chris, Nov 2026: one tap per quote, a few seconds each,
+   and an email to service@ per tap, was "maddening". So the page now collects
+   a choice per quote and sends them together: `answers: [{item, choice}]`
+   plus one optional question. One lock, one read, one save (one PDF rebuild —
+   the slow part), one email to the office summarising everything. A single
+   {item, choice} body (the first version of the page, still open in somebody's
+   tab) is read as a list of one.
+
+   POST only; a GET cannot reach it, so a link scanner cannot accept anything.
+   Accepted is final from this side — once it is on the quote, changing it is
+   a phone call, because the work may already be booked. Idempotent per item:
+   a resend changes nothing and tells nobody. */
+const OFFER_CUSTOMER_CHOICES_ = ['accepted', 'declined', 'call'];
 function offersServe_(b) {
   /* Stamped, like the console's _api:'console': a POST lost in transit lands on
      doGet and the quote loader answers it, and the page must be able to tell
@@ -10728,37 +10738,56 @@ function offersServe_(b) {
     return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
   };
   try {
-    const choice = String((b && b.choice) || '');
-    if (['accepted', 'declined', 'call'].indexOf(choice) < 0) return json({ ok: 0, error: 'Pick Accept, Decline or Call me.' });
+    const raw = Array.isArray(b && b.answers) ? b.answers : [{ item: b && b.item, choice: b && b.choice }];
+    const seen = {};
+    const answers = raw.slice(0, 50).map(function (a) {
+      return { item: String((a && a.item) || '').trim(), choice: String((a && a.choice) || '') };
+    }).filter(function (a) {
+      if (!a.item || seen[a.item]) return false;
+      seen[a.item] = 1;
+      return true;
+    });
+    if (!answers.length) return json({ ok: 0, error: 'Pick Accept, Decline or Call me for at least one quote.' });
+    if (answers.some(function (a) { return OFFER_CUSTOMER_CHOICES_.indexOf(a.choice) < 0; })) {
+      return json({ ok: 0, error: 'Pick Accept, Decline or Call me.' });
+    }
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) return json({ ok: 0, error: 'We\'re busy for a moment — please try again.' });
     try {
       const ctx = offersCtx_(b.quote, b.ln);
       if (!ctx) return json({ ok: 0, error: OFFERS_MISS_ });
       const d = ctx.d;
-      const item = String(b.item || '').trim();
-      const cur = offersOf(d.manual).filter(function (p) { return p.rqLabel === item; })[0];
-      if (!cur) return json(Object.assign(offersReply_(d), { ok: 0, error: 'That quote is no longer open — please call us at (815) 433-2200.' }));
-      if (offerStatus(cur) === 'accepted' && choice !== 'accepted') {
-        return json(Object.assign(offersReply_(d), { ok: 0,
-          error: 'You\'ve already accepted this one, so it\'s on your ' + docTerm_(d).toLowerCase() + '. To change it, call us at (815) 433-2200.' }));
-      }
-      const r = offerDecide_(d, item, choice, 'Customer', b.note);
-      if (!r.ok) return json(Object.assign(offersReply_(d), r));
-      if (r.changed) {
+      const term = docTerm_(d).toLowerCase();
+      const done = [], skipped = [];
+      answers.forEach(function (a) {
+        const cur = offersOf(d.manual).filter(function (p) { return p.rqLabel === a.item; })[0];
+        if (!cur) { skipped.push(a.item + ' — no longer open'); return; }
+        if (offerStatus(cur) === 'accepted' && a.choice !== 'accepted') {
+          skipped.push((cur.label || a.item) + ' — already accepted; call us to change it');
+          return;
+        }
+        const r = offerDecide_(d, a.item, a.choice, 'Customer', a.choice === 'call' ? b.note : '');
+        if (r.ok && r.changed) done.push({ pr: r.pr, was: r.was, choice: a.choice });
+      });
+      if (done.length) {
         /* The status column says where the quote stands in money and
-           placement; an answer about one add-on must not overwrite it. */
+           placement; answers about add-ons must not overwrite it. */
         const prevStatus = String(ctxCell_(ctx, COL.STATUS) || '');
         saveQuoteRow_(ctx, prevStatus || undefined);
         invalidateStorageView_();   // not a console call, so nothing else drops the cached lists
-        auditLog_('Customer', 'Quote "' + r.pr.label + '" on ' + d.quoteNo + ': ' + r.was + ' → ' + r.now +
-          ' (' + usd_(r.pr.amt) + ')' + (r.pr.note && choice === 'call' ? ' — "' + r.pr.note + '"' : ''));
-        notifyOfferDecision_(ctx, r.pr, choice);
+        auditLog_('Customer', 'Answered ' + done.length + ' quote(s) on ' + d.quoteNo + ': ' +
+          done.map(function (x) { return '"' + x.pr.label + '" ' + x.was + ' → ' + x.choice + ' (' + usd_(x.pr.amt) + ')'; }).join('; '));
+        notifyOfferDecisions_(ctx, done, String(b.note || '').trim());
       }
-      const msg = choice === 'accepted' ? 'Thanks — it\'s on your ' + docTerm_(d).toLowerCase() + '. Your new total is ' + usd_(d.total) + '.'
-        : choice === 'declined' ? 'Got it — we won\'t do that one. Nothing was added.'
-        : 'Thanks — we\'ll call you' + (d.phone ? ' at ' + fmtPhone(String(d.phone)) : '') + ' soon. Nothing was added.';
-      return json(Object.assign(offersReply_(d), { msg: msg }));
+      const n = function (c) { return done.filter(function (x) { return x.choice === c; }).length; };
+      const bits = [];
+      if (n('accepted')) bits.push(n('accepted') + ' accepted — your ' + term + ' total is now ' + usd_(d.total));
+      if (n('declined')) bits.push(n('declined') + ' declined');
+      if (n('call')) bits.push('we\'ll call you' + (d.phone ? ' at ' + fmtPhone(String(d.phone)) : '') + ' about ' + n('call'));
+      const msg = done.length ? 'Thanks — ' + bits.join('; ') + '.' : 'Nothing changed — those answers were already saved.';
+      const out = Object.assign(offersReply_(d), { msg: msg });
+      if (skipped.length) out.warn = 'Not changed: ' + skipped.join('; ') + '. Questions? (815) 433-2200.';
+      return json(out);
     } finally { lock.releaseLock(); }
   } catch (err) {
     console.error('Offer answer failed: ' + err);
@@ -10766,29 +10795,36 @@ function offersServe_(b) {
   }
 }
 
-/* Tell the office. A call request is somebody waiting by the phone, so it
-   says so first. Staff-only (NOTIFY_EMAIL); never the customer. */
-function notifyOfferDecision_(ctx, pr, choice) {
+/* Tell the office — ONE email per submission, however many quotes were
+   answered in it. A call request is somebody waiting by the phone, so it leads
+   the subject when there is one. Staff-only (NOTIFY_EMAIL); never the customer. */
+function notifyOfferDecisions_(ctx, done, note) {
   try {
     const d = ctx.d;
     const name = [d.firstName, d.lastName].filter(Boolean).join(' ');
-    const head = choice === 'call' ? '📞 CALL REQUESTED' : choice === 'accepted' ? '✅ Quote accepted' : '✖ Quote declined';
-    const subject = head + ' — ' + (d.quoteNo || '') + ' · ' + (pr.label || pr.rqLabel || '') + ' (' + usd_(pr.amt) + ')';
-    const lines = [
-      choice === 'call' ? 'The customer pressed "Call me, I have questions" on this quote. Please call them.'
-        : choice === 'accepted' ? 'The customer accepted this quote online. It is now a line on the ' + docTerm_(d).toLowerCase() + '.'
-        : 'The customer declined this quote online. Nothing was added.',
-      '',
+    const of = function (c) { return done.filter(function (x) { return x.choice === c; }); };
+    const calls = of('call'), acc = of('accepted'), dec = of('declined');
+    const parts = [];
+    if (acc.length) parts.push(acc.length + ' accepted');
+    if (dec.length) parts.push(dec.length + ' declined');
+    if (calls.length) parts.push(calls.length + ' call');
+    const head = calls.length ? '📞 CALL REQUESTED' : '✅ Quotes answered';
+    const subject = head + ' — ' + (d.quoteNo || '') + ' · ' + (name || '') + ' (' + parts.join(', ') + ')';
+    const row = function (x) { return '  • ' + (x.pr.label || x.pr.rqLabel || '') + ' — ' + usd_(x.pr.amt); };
+    const lines = [calls.length ? 'The customer answered their quotes online and asked us to call them. Please call.'
+      : 'The customer answered their quotes online.', ''];
+    if (acc.length) lines.push('ACCEPTED (now lines on the ' + docTerm_(d).toLowerCase() + '):', acc.map(row).join('\n'), '');
+    if (calls.length) lines.push('CALL ME, I HAVE QUESTIONS:', calls.map(row).join('\n'), '');
+    if (dec.length) lines.push('DECLINED (nothing added):', dec.map(row).join('\n'), '');
+    if (note && calls.length) lines.push('Their question: ' + note, '');
+    lines.push(
       'Quote #:  ' + (d.quoteNo || ''),
       'Customer: ' + (name || '—'),
       'Phone:    ' + (fmtPhone(String(d.phone || ctxCell_(ctx, COL.PHONE) || '')) || '—'),
       'Email:    ' + (d.email || '—'),
       'Unit:     ' + (d.unit || '—') + (d.ymm ? '  (' + d.ymm + ')' : ''),
-      'Item:     ' + (pr.label || pr.rqLabel || '') + ' — ' + usd_(pr.amt),
-      'Total:    ' + usd_(Number(d.total || 0))
-    ];
-    if (pr.note && choice === 'call') lines.push('', 'Their question: ' + pr.note);
-    lines.push('', 'Open it: ' + QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || ''));
+      'Total:    ' + usd_(Number(d.total || 0)),
+      '', 'Open it: ' + QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || ''));
     const body = lines.join('\n');
     if (FROM_ALIAS) GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, { from: FROM_ALIAS, name: 'Quest Winter Quotes' });
     else MailApp.sendEmail(NOTIFY_EMAIL, subject, body, { name: 'Quest Winter Quotes' });

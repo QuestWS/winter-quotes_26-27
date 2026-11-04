@@ -267,7 +267,7 @@ if [ -f harbor-haul-out/index.html ]; then
 else echo "  (harbor-haul-out/index.html not present)"; fi
 if [ -f service-quotes.html ]; then
   extract_scripts service-quotes.html "$TMP/offers.js"; check_js "$TMP/offers.js" "service-quotes.html"
-  sweep service-quotes.html "service-quotes" "API_URL" "action=offers" "api: 'offers'" "Call me, I have questions" "STATE_TXT"
+  sweep service-quotes.html "service-quotes" "API_URL" "action=offers" "api: 'offers'" "Call me" "STATE_TXT" "sendBtn" "answers: ch.map"
 fi
 
 echo "== Pricing engine parity =="

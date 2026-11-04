@@ -245,6 +245,35 @@ than carrying its own copy, and holds no Adobe URL and no Adobe field name of
 its own — those stay in `SIGNING`, in the engine.
 
 
+## Your quotes (`service-quotes.html`)
+
+Where a customer answers the work staff priced for them. Reached from the
+**Here are your quotes** email (`docs/ref/EMAILS.md`) or the note the quote page
+shows after loading a quote with something waiting (`showOffersNote_`).
+
+- **Quote number AND last name**, the same pair as `?action=load`, read by
+  `?action=offers` (`offersRead_`). One error for every miss, so it cannot be
+  used to learn which half was wrong. The reply holds the offers (label, price,
+  state), the first name, unit and total — no staff names, no selections.
+- **Answers are POST only** (`api:'offers'` → `offersServe_`). Never GET: a
+  link that accepts something gets followed by mail scanners. Replies are
+  stamped `_api:'offers'`; a POST lost in transit lands on `doGet` and the quote
+  loader answers it, and the page treats that as a transport failure — it
+  re-reads what is stored, and posts once more only if the answer is not there.
+  Safe because `offerDecide_` is idempotent.
+- **Accept / Decline / Call me, I have questions**, each behind one confirm
+  step. *Call me* takes an optional question. Accepting adds the line and moves
+  the total; decline and call add nothing.
+- **Accepted is final from the page.** Un-accepting is a phone call — the work
+  may already be booked. Declined or call-me can still be accepted later.
+- **The status column is left alone** (`saveQuoteRow_` is handed the current
+  status), and the PDF is rebuilt: it lists what is still waiting under
+  *Quoted — waiting on your OK (not in the total)* (`offersPdfRows_`).
+- **The quote page agrees on the money.** Its `computeLines` replays only
+  priced requests that pass `offerOnQuote` (engine), the same rule as the
+  server's `applyManualOps_`. And a customer save keeps the server's copy of
+  `manual.priced`, so a stale tab cannot put an accepted quote back to pending.
+
 ## Season-done survey
 A 3-option survey (done now / done on a date / will call) rides on customer
 emails — but **only once a deposit or payment exists** (`o.paid > 0`, checked in

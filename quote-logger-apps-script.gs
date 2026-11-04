@@ -1160,6 +1160,36 @@ function seasonStamp(){
     ratesLabel:         PRICING.ratesLabel
   };
 }
+/* STAFF QUOTES THE CUSTOMER STILL HAS TO ANSWER.
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: "When items are quoted, they should sit in limbo until
+   approved or declined by a customer." A request staff price (manual.priced)
+   now carries a `status`, and only an ACCEPTED one is a line on the quote:
+     pending  — priced, sent (or about to be), waiting on the customer
+     call     — the customer pressed "Call me, I have questions"
+     declined — the customer (or staff, on their word) said no
+     accepted — yes; it is a line and it is in the total
+   An entry with NO status was priced before this existed. It has been a line
+   on the quote all along — some of those customers have paid against it — so
+   it reads as accepted, and nothing already sent moves.
+
+   It is in the engine because the page and the server both replay the journal
+   (computeLines on the page, applyManualOps_ on the server) and must agree on
+   which priced requests count, or a customer re-save would move money. */
+const OFFER_STATES = { pending:'Waiting on your answer', call:'You asked us to call',
+                       declined:'Declined', accepted:'Accepted' };
+function offerStatus(pr){
+  const s = String((pr && pr.status) || '');
+  return Object.prototype.hasOwnProperty.call(OFFER_STATES, s) ? s : 'accepted';
+}
+function offerOnQuote(pr){ return offerStatus(pr) === 'accepted'; }
+/* Waiting on somebody: the customer (pending) or us (call). */
+function offerOpen(pr){ const s = offerStatus(pr); return s === 'pending' || s === 'call'; }
+/* The priced requests that went through the approval flow — the ones a
+   customer sees on the "your quotes" page. Legacy entries are just lines. */
+function offersOf(manual){
+  return ((manual && manual.priced) || []).filter(function(pr){ return pr && pr.status; });
+}
 // ENGINE-END
 
 function doPost(e) {
@@ -1184,6 +1214,8 @@ function doPost(e) {
     if (d.api === 'tracker') return trackerServe_(d);
     // ---- The nightly inbox scan (GitHub Action, shared key) ----
     if (d.api === 'inbox') return inboxServe_(d);
+    // ---- A customer answering a staff quote (service-quotes.html) ----
+    if (d.api === 'offers') return offersServe_(d);
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -1274,6 +1306,12 @@ function doPost(e) {
       if (oldD.formerLastNames && oldD.formerLastNames.length) d.formerLastNames = oldD.formerLastNames;
       reconcileManual_(oldD);
       if (!d.manual && oldD.manual) d.manual = oldD.manual;
+      /* Priced requests, and the customer's answers to them, are written only
+         on this side (adminPriceRequest, offerDecide_). The browser carries a
+         copy from whenever it loaded the quote — so a customer who accepted a
+         quote from the email and then re-saved an older tab would put it back
+         to "pending" and take the line off. The stored copy always wins. */
+      if (d.manual && oldD.manual && d.manual !== oldD.manual) d.manual.priced = (oldD.manual.priced || []).slice();
       /* Price it ourselves from the customer's selections, then replay the
          staff journal onto those clean lines exactly once. A lead row has no
          selections yet, so there is nothing to price and nothing to compare. */
@@ -1539,6 +1577,9 @@ function consoleFns_(p) {
     editLine:    function (a) { return adminEditLine(p.token, a[0], a[1], a[2], a[3], a[4]); },
     emailPreview:function (a) { return adminEmailPreview(p.token, a[0], a[1], a[2], a[3]); },
     priceRequest:function (a) { return adminPriceRequest(p.token, a[0], a[1], a[2], a[3]); },
+    /* Accept / decline on the customer's word, re-open, or withdraw to re-price.
+       A write: POST only, carries a rid. */
+    offerDecision:function (a) { return adminOfferDecision(p.token, a[0], a[1], a[2], a[3]); },
     setSeasonDone:function (a) { return adminSetSeasonDone(p.token, a[0], a[1], a[2], a[3]); },
     listStaff:   function (a) { return adminListStaff(p.token); },
     autoPause:   function (a) { return adminAutoPause(p.token); },
@@ -1941,6 +1982,13 @@ function doGet(e) {
     }
   }
 
+  /* The customer's "your quotes" page reading what is waiting on them.
+     Quote number AND last name, like ?action=load — and it returns less than
+     that does. Never a write: the answers arrive by POST (offersServe_). */
+  if (p.action === 'offers') {
+    try { return out(offersRead_(p.quote, p.ln)); }
+    catch (err) { console.error('Offers read failed: ' + err); return out({ ok: 0, error: 'Something went wrong — please call (815) 433-2200.' }); }
+  }
   // season-done survey from the quote email
   if (p.action === 'seasondone') {
     try {
@@ -2646,7 +2694,9 @@ function recomputeTotals_(d) {
  * re-applied whenever the page rebuilds the quote from wizard selections:
  *   manual.removed:     [label, ...]                    lines deleted
  *   manual.edits:       [{label, newAmt, newLabel}]     lines changed (label = original wizard label)
- *   manual.priced:      [{rqLabel, label, amt, sec}]    quote-requests given a price
+ *   manual.priced:      [{rqLabel, label, amt, sec, status, ...}] quote-requests given a price;
+ *                       only status 'accepted' (or none — priced before approvals) is a line.
+ *                       pending / call / declined wait on the customer — offerDecide_
  *   manual.adjustments: [{label, amt}]                  added charge/discount lines
  *   manual.services:    {stateKey: value}               services staff added or took off from
  *                       the console (SERVICE_MENU) — applied by effectiveState_, priced by the engine
@@ -2671,8 +2721,14 @@ function applyManualOps_(d) {
     } else { res.skipped++; res.notes.push('edit of "' + e2.label + '"'); }
   });
   (m.priced || []).forEach(function (pr) {
-    d.lines.push({ sec: pr.sec || 'Additional services', label: pr.label, calc: '', amt: Number(pr.amt), desc: '' });
-    res.applied++;
+    /* A priced request is only a LINE once the customer accepts it
+       (offerOnQuote, in the engine — the page's replay asks the same thing).
+       Pending, call-me and declined quotes still close the open request: they
+       have a price, so nobody is asked to price them again. */
+    if (offerOnQuote(pr)) {
+      d.lines.push({ sec: pr.sec || 'Additional services', label: pr.label, calc: '', amt: Number(pr.amt), desc: '' });
+      res.applied++;
+    }
     if (d.quotesRequested) {
       d.quotesRequested = String(d.quotesRequested).split('; ').filter(function (x) { return x !== pr.rqLabel; }).join('; ');
     }
@@ -3465,14 +3521,15 @@ function priceQuoteRequest() {
   const amt = Number(String(amtResp.getResponseText()).replace(/[$,\s]/g, ''));
   if (!isFinite(amt) || amt <= 0) { ui.alert('Enter a positive amount, e.g. 225'); return; }
 
-  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: 'Additional services' });
-  d.lines = d.lines || [];
-  d.lines.push({ sec: 'Additional services', label: item, calc: '', amt: amt, desc: '' });
+  /* Same as the console's Price this: priced, waiting on the customer, not
+     in the total until they accept (offerDecide_). */
+  ensureManual_(d).priced.push({ rqLabel: item, label: item, amt: amt, sec: 'Additional services',
+    status: 'pending', pricedBy: 'Sheet menu', pricedAt: new Date().toISOString() });
   d.quotesRequested = rqs.filter(function (x, i2) { return i2 !== idx; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
-  ui.alert('Priced: ' + item + ' — ' + usd_(amt) + '\nNew total: ' + usd_(d.total) +
-    '\n\nNo email sent — use "Email updated quote to customer" when ready.');
+  ui.alert('Quoted: ' + item + ' — ' + usd_(amt) + '\nWaiting on the customer — not in the total until they accept.' +
+    '\n\nNo email sent — send "Here are your quotes" from the staff console when ready.');
 }
 
 /* ============ STAFF CONSOLE: auth, permissions, actions ============ */
@@ -3681,7 +3738,7 @@ const STORAGE_VIEW_TTL_ = 600;           // seconds
 /* Bump this whenever adminStorageView's row or group shape changes, so a
    console served from the old cache is not handed rows missing a field it
    now renders from. Costs one cache miss at deploy time and nothing after. */
-const STORAGE_VIEW_V_ = 12;
+const STORAGE_VIEW_V_ = 13;
 /* Six hours, the most CacheService allows. Safe at any length because the
    hint is verified against the sheet before it is trusted (cachedQuoteRow_),
    and the storage view re-primes every row it reads (rememberQuoteRows_), so
@@ -6498,6 +6555,9 @@ function adminLookup(token, qn) {
     quoteUrl: quoteLinkFor_(d),
     rq: String(d.quotesRequested || ''),
     rqList: String(d.quotesRequested || '').split('; ').filter(function (x) { return x; }),
+    /* Priced requests waiting on (or answered by) the customer — offersOut_. */
+    offers: offersOut_(d),
+    offersUrl: offersLinkFor_(d),
     seasonDone: d.seasonDone || null,
     /* Terms acceptance, read-only on the console: which version this customer
        agreed to, and when. Falls back to the copy inside `state` for quotes
@@ -6705,6 +6765,11 @@ function adminAdjust(token, qn, amt, desc, emailNow) {
 function unbuildableMsg_(kind, d) {
   if (kind === 'latewarn') return 'No unpaid balance — nothing to warn about.';
   if (kind === 'firmquote') return firmQuoteBlocker_(d) || 'Could not build the firm-quote email.';
+  if (kind === 'offers') {
+    if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to send yet.';
+    if (!offersLinkFor_(d)) return 'This quote has no last name, so there is no link the customer could open.';
+    return 'No quotes are waiting on the customer — price a request first.';
+  }
   if (kind === 'signreminder') {
     if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to sign yet.';
     return 'No signing link for this quote — the Acrobat Sign web form is not configured.';
@@ -9518,8 +9583,11 @@ function winterizeStatusOf_(d) {
    One entry per item, {l: label, s: state, a: amount or null, w: 1 if a hull
    wash}. States:
      'open'   — asked for and still waiting on a price (in quotesRequested)
-     'quoted' — has a price on the quote (staff-priced request, jetski detail,
-                powerwash, acid wash)
+     'quoted' — has a price on the quote (staff-priced request the customer
+                accepted, jetski detail, powerwash, acid wash)
+     'awaiting' — staff priced it; the customer has not answered (amount set)
+     'call'   — the customer asked us to call them about it (amount set)
+     'declined' — the customer said no (amount set)
      'asked'  — ticked on the quote but neither open nor priced (an edit took
                 its line off by hand). Listed so somebody looks, not dropped.
      'dims'   — a wash is on, but no line yet because the LOA/beam is missing.
@@ -9538,6 +9606,11 @@ function itemsToQuoteOf_(d, st) {
   QUOTE_ITEMS.forEach(function (q) {
     const key = q[0], label = q[1];
     const pr = priced.filter(function (p) { return p && p.rqLabel === label; })[0];
+    /* Quoted, and waiting on the customer's answer (or ours, for a call). */
+    if (pr && !offerOnQuote(pr)) {
+      out.push({ l: label, s: { pending: 'awaiting', call: 'call', declined: 'declined' }[offerStatus(pr)], a: Number(pr.amt) || 0 });
+      return;
+    }
     const ln = pr ? lineFor(pr.label) : null;
     if (ln) { out.push({ l: label, s: 'quoted', a: Number(ln.amt) || 0 }); return; }
     if (open.indexOf(label) !== -1) { out.push({ l: label, s: 'open', a: null }); return; }
@@ -10476,14 +10549,250 @@ function adminPriceRequest(token, qn, rqLabel, amt, note) {
   if (!isFinite(a) || a <= 0) return { ok: 0, error: 'Enter a positive price, e.g. 225.' };
   const nt = String(note || '').trim();
   const finalLabel = nt ? item + ' — ' + nt : item;
-  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: 'Additional services' });
-  d.lines = d.lines || [];
-  d.lines.push({ sec: 'Additional services', label: finalLabel, calc: '', amt: a, desc: '' });
+  /* Priced, NOT added: it waits on the customer (OFFER_STATES in the engine).
+     The line and the total move only when they accept — offerDecide_. */
+  ensureManual_(d).priced.push({ rqLabel: item, label: finalLabel, amt: a, sec: 'Additional services',
+    status: 'pending', pricedBy: who.name, pricedAt: new Date().toISOString() });
   d.quotesRequested = rqs.filter(function (x) { return x !== item; }).join('; ');
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
-  auditLog_(who.name, 'Priced request "' + item + '" at ' + usd_(a) + ' on ' + d.quoteNo);
-  return { ok: 1, msg: 'Priced "' + item + '" at ' + usd_(a) + ' — new total ' + usd_(d.total) + '. No email sent yet.' };
+  auditLog_(who.name, 'Quoted request "' + item + '" at ' + usd_(a) + ' on ' + d.quoteNo + ' — awaiting the customer');
+  return { ok: 1, msg: 'Quoted "' + item + '" at ' + usd_(a) + ' — waiting on the customer, not in the total yet. ' +
+    'Send "Here are your quotes" when you are ready; nothing was emailed.' };
+}
+
+/* ============ STAFF QUOTES WAITING ON THE CUSTOMER ============
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: "When items are quoted, they should sit in limbo until
+   approved or declined by a customer. Give me a button to send them a 'Here's
+   your quotes' breakdown. When they're viewing their quotes they should be
+   able to choose Accept, Decline, or Call me, I have questions."
+
+   The life of one:
+     1. Customer ticks a QUOTE_ITEMS request → it sits in quotesRequested.
+     2. Staff press Price this (console, Harbor Haul Out, or the sheet menu) →
+        adminPriceRequest journals it in manual.priced with status 'pending'.
+        It is NOT a line and NOT in the total. The PDF lists it under
+        "Quoted — waiting on your OK".
+     3. Staff send "Here are your quotes" (buildEmailFor_ kind 'offers'). One
+        button, to service-quotes.html, with the quote number and last name.
+     4. The customer answers each one there (offersServe_, a POST): Accept puts
+        the line on and moves the total; Decline and Call me do not. Every
+        answer emails service@ (notifyOfferDecision_), a call request loudest.
+     5. Staff can answer on the customer's behalf from the console — they
+        called, they said yes — or withdraw a quote to re-price it
+        (adminOfferDecision).
+   Which entries count as lines is offerOnQuote, in the engine, because the
+   page replays the journal too and must agree. Legacy entries (no status)
+   were priced before this and stay lines. */
+const OFFERS_PAGE_URL = QUOTE_PAGE_URL + 'service-quotes.html';
+/* Same pair as quoteLink_, so it opens nothing the quote page does not. */
+function offersLink_(quoteNo, lastName) {
+  const qn = String(quoteNo || '').trim(), ln = String(lastName || '').trim();
+  if (!qn || !ln) return '';
+  return OFFERS_PAGE_URL + '?quote=' + encodeURIComponent(qn) + '&ln=' + encodeURIComponent(ln);
+}
+function offersLinkFor_(d) { return offersLink_(d && d.quoteNo, d && d.lastName); }
+
+/* For the console: everything, including who priced and who answered. */
+function offersOut_(d) {
+  return offersOf(d && d.manual).map(function (pr) {
+    return { item: String(pr.rqLabel || ''), label: String(pr.label || ''), amt: Number(pr.amt) || 0,
+      status: offerStatus(pr), pricedBy: String(pr.pricedBy || ''), pricedAt: String(pr.pricedAt || ''),
+      by: String(pr.decidedBy || ''), at: String(pr.decidedAt || ''), note: String(pr.note || '') };
+  });
+}
+/* For the customer: no staff names, no timestamps they did not make. */
+function offersPublic_(d) {
+  return offersOf(d && d.manual).map(function (pr) {
+    return { item: String(pr.rqLabel || ''), label: String(pr.label || ''), amt: Number(pr.amt) || 0,
+      status: offerStatus(pr), at: String(pr.decidedAt || '') };
+  });
+}
+
+/* The PDF rows for what is quoted but not agreed. Declined ones are left off
+   — the PDF is what they are buying, and a declined line is noise on it. */
+function offersPdfRows_(d) {
+  const open = offersOf(d && d.manual).filter(offerOpen);
+  if (!open.length) return '';
+  return '<tr><td colspan="2" class="sec">Quoted — waiting on your OK (not in the total)</td></tr>' +
+    open.map(function (pr) {
+      return '<tr><td>' + esc_(pr.label) + '</td><td class="amt">' + usd_(pr.amt) + '</td></tr>';
+    }).join('');
+}
+
+/* One decision on one priced request. Pure on the payload — the callers do
+   the reading, the saving and the telling — so check-quote-offers.js runs it.
+   `choice`: accepted | declined | call | pending (re-open) | withdraw (take
+   the price back off so it can be priced again; the request re-opens).
+   Idempotent: the same answer twice changes nothing, so a retried POST or a
+   double tap is harmless. */
+const OFFER_NOTE_MAX_ = 1000;
+function offerDecide_(d, item, choice, by, note) {
+  const m = ensureManual_(d);
+  const at = m.priced.findIndex(function (p) { return p && p.status && p.rqLabel === item; });
+  if (at < 0) return { ok: 0, error: 'That quote is no longer open.' };
+  const pr = m.priced[at];
+  const was = offerStatus(pr);
+  const sec = pr.sec || 'Additional services';
+  d.lines = d.lines || [];
+  const lineAt = function () {
+    return d.lines.findIndex(function (l) { return l && l.label === pr.label && (l.sec || '') === sec; });
+  };
+  const takeLineOff = function () { const i = lineAt(); if (i > -1) d.lines.splice(i, 1); };
+  if (choice === 'withdraw') {
+    if (was === 'accepted') takeLineOff();
+    m.priced.splice(at, 1);
+    const rqs = String(d.quotesRequested || '').split('; ').filter(function (x) { return x; });
+    if (rqs.indexOf(item) < 0) rqs.push(item);
+    d.quotesRequested = rqs.join('; ');
+    recomputeTotals_(d);
+    return { ok: 1, changed: true, was: was, now: 'withdrawn', pr: pr };
+  }
+  if (['accepted', 'declined', 'call', 'pending'].indexOf(choice) < 0) return { ok: 0, error: 'Unknown answer.' };
+  const nt = String(note || '').replace(/\r\n?/g, '\n').trim().slice(0, OFFER_NOTE_MAX_);
+  if (was === choice && (choice !== 'call' || !nt || nt === String(pr.note || ''))) {
+    return { ok: 1, changed: false, was: was, now: choice, pr: pr };
+  }
+  if (was === 'accepted') takeLineOff();
+  pr.status = choice;
+  pr.decidedAt = new Date().toISOString();
+  pr.decidedBy = String(by || '');
+  if (nt) pr.note = nt; else if (choice !== 'call') delete pr.note;
+  if (choice === 'accepted' && lineAt() < 0) {
+    /* Ahead of the Adjustments, where the replay (applyManualOps_) puts it,
+       so the PDF does not reshuffle on the customer's next save. */
+    let i = d.lines.findIndex(function (l) { return l && l.sec === 'Adjustments'; });
+    if (i < 0) i = d.lines.length;
+    d.lines.splice(i, 0, { sec: sec, label: pr.label, calc: '', amt: Number(pr.amt), desc: '' });
+  }
+  recomputeTotals_(d);
+  return { ok: 1, changed: true, was: was, now: choice, pr: pr };
+}
+
+/* Staff answering for the customer (they rang, they said yes at the counter),
+   re-opening one, or withdrawing it to price it again. Same permission as
+   pricing one: it is the same piece of work. */
+function adminOfferDecision(token, qn, item, choice, note) {
+  const who = requireAuth_(token, 'quote');
+  choice = String(choice || '');
+  if (['accepted', 'declined', 'pending', 'withdraw'].indexOf(choice) < 0) return { ok: 0, error: 'Unknown answer.' };
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const r = offerDecide_(d, String(item || '').trim(), choice, who.name, note);
+  if (!r.ok) return r;
+  const label = r.pr.label || item;
+  if (!r.changed) return { ok: 1, msg: '"' + label + '" was already ' + choice + '. Nothing changed.' };
+  saveQuoteRow_(ctx);
+  auditLog_(who.name, 'Quote "' + label + '" on ' + d.quoteNo + ': ' + r.was + ' → ' + r.now + ' (' + usd_(r.pr.amt) + ')');
+  const what = choice === 'accepted' ? 'Accepted "' + label + '" for the customer — added at ' + usd_(r.pr.amt) + '.'
+    : choice === 'declined' ? 'Marked "' + label + '" declined' + (r.was === 'accepted' ? ' — line taken off.' : '.')
+    : choice === 'pending' ? 'Re-opened "' + label + '" — waiting on the customer again' + (r.was === 'accepted' ? '; line taken off.' : '.')
+    : 'Withdrew "' + label + '" — the request is open again, price it afresh.';
+  return { ok: 1, msg: what + ' Total ' + usd_(d.total) + '. No email sent.' };
+}
+
+/* The customer's quote, found by number and checked against the last name —
+   the same pair that opens it on the quote page. One error for every miss, so
+   the page cannot be used to learn which half was wrong. */
+const OFFERS_MISS_ = 'We couldn\'t find that quote. Check the quote number and last name, or call us at (815) 433-2200.';
+function offersCtx_(quote, ln) {
+  const qn = normalizeQuoteNo(String(quote || '')) || String(quote || '').trim().toUpperCase();
+  const last = String(ln || '').trim().toLowerCase();
+  if (!qn || !last) return null;
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx || isStartedQuote_(ctx.d)) return null;
+  if (!lastNameMatches_(ctxCell_(ctx, COL.LAST), last, ctx.d)) return null;
+  return ctx;
+}
+function offersReply_(d) {
+  return { ok: 1, quoteNo: d.quoteNo || '', firstName: d.firstName || '', unit: d.unit || '',
+    term: docTerm_(d), total: usd_(Number(d.total || 0)), offers: offersPublic_(d), quoteUrl: quoteLinkFor_(d) };
+}
+function offersRead_(quote, ln) {
+  const ctx = offersCtx_(quote, ln);
+  return ctx ? offersReply_(ctx.d) : { ok: 0, error: OFFERS_MISS_ };
+}
+
+/* The customer's answer. POST only (doPost routes api:'offers' here); a GET
+   cannot reach it, so a link scanner cannot accept anything. Accepted is
+   final from this side — once it is on the quote, changing it is a phone
+   call, because the work may already be booked. */
+function offersServe_(b) {
+  /* Stamped, like the console's _api:'console': a POST lost in transit lands on
+     doGet and the quote loader answers it, and the page must be able to tell
+     that answer from ours. */
+  const json = function (o) {
+    o._api = 'offers';
+    return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  };
+  try {
+    const choice = String((b && b.choice) || '');
+    if (['accepted', 'declined', 'call'].indexOf(choice) < 0) return json({ ok: 0, error: 'Pick Accept, Decline or Call me.' });
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) return json({ ok: 0, error: 'We\'re busy for a moment — please try again.' });
+    try {
+      const ctx = offersCtx_(b.quote, b.ln);
+      if (!ctx) return json({ ok: 0, error: OFFERS_MISS_ });
+      const d = ctx.d;
+      const item = String(b.item || '').trim();
+      const cur = offersOf(d.manual).filter(function (p) { return p.rqLabel === item; })[0];
+      if (!cur) return json(Object.assign(offersReply_(d), { ok: 0, error: 'That quote is no longer open — please call us at (815) 433-2200.' }));
+      if (offerStatus(cur) === 'accepted' && choice !== 'accepted') {
+        return json(Object.assign(offersReply_(d), { ok: 0,
+          error: 'You\'ve already accepted this one, so it\'s on your ' + docTerm_(d).toLowerCase() + '. To change it, call us at (815) 433-2200.' }));
+      }
+      const r = offerDecide_(d, item, choice, 'Customer', b.note);
+      if (!r.ok) return json(Object.assign(offersReply_(d), r));
+      if (r.changed) {
+        /* The status column says where the quote stands in money and
+           placement; an answer about one add-on must not overwrite it. */
+        const prevStatus = String(ctxCell_(ctx, COL.STATUS) || '');
+        saveQuoteRow_(ctx, prevStatus || undefined);
+        invalidateStorageView_();   // not a console call, so nothing else drops the cached lists
+        auditLog_('Customer', 'Quote "' + r.pr.label + '" on ' + d.quoteNo + ': ' + r.was + ' → ' + r.now +
+          ' (' + usd_(r.pr.amt) + ')' + (r.pr.note && choice === 'call' ? ' — "' + r.pr.note + '"' : ''));
+        notifyOfferDecision_(ctx, r.pr, choice);
+      }
+      const msg = choice === 'accepted' ? 'Thanks — it\'s on your ' + docTerm_(d).toLowerCase() + '. Your new total is ' + usd_(d.total) + '.'
+        : choice === 'declined' ? 'Got it — we won\'t do that one. Nothing was added.'
+        : 'Thanks — we\'ll call you' + (d.phone ? ' at ' + fmtPhone(String(d.phone)) : '') + ' soon. Nothing was added.';
+      return json(Object.assign(offersReply_(d), { msg: msg }));
+    } finally { lock.releaseLock(); }
+  } catch (err) {
+    console.error('Offer answer failed: ' + err);
+    return json({ ok: 0, error: 'Something went wrong saving that — please call us at (815) 433-2200.' });
+  }
+}
+
+/* Tell the office. A call request is somebody waiting by the phone, so it
+   says so first. Staff-only (NOTIFY_EMAIL); never the customer. */
+function notifyOfferDecision_(ctx, pr, choice) {
+  try {
+    const d = ctx.d;
+    const name = [d.firstName, d.lastName].filter(Boolean).join(' ');
+    const head = choice === 'call' ? '📞 CALL REQUESTED' : choice === 'accepted' ? '✅ Quote accepted' : '✖ Quote declined';
+    const subject = head + ' — ' + (d.quoteNo || '') + ' · ' + (pr.label || pr.rqLabel || '') + ' (' + usd_(pr.amt) + ')';
+    const lines = [
+      choice === 'call' ? 'The customer pressed "Call me, I have questions" on this quote. Please call them.'
+        : choice === 'accepted' ? 'The customer accepted this quote online. It is now a line on the ' + docTerm_(d).toLowerCase() + '.'
+        : 'The customer declined this quote online. Nothing was added.',
+      '',
+      'Quote #:  ' + (d.quoteNo || ''),
+      'Customer: ' + (name || '—'),
+      'Phone:    ' + (fmtPhone(String(d.phone || ctxCell_(ctx, COL.PHONE) || '')) || '—'),
+      'Email:    ' + (d.email || '—'),
+      'Unit:     ' + (d.unit || '—') + (d.ymm ? '  (' + d.ymm + ')' : ''),
+      'Item:     ' + (pr.label || pr.rqLabel || '') + ' — ' + usd_(pr.amt),
+      'Total:    ' + usd_(Number(d.total || 0))
+    ];
+    if (pr.note && choice === 'call') lines.push('', 'Their question: ' + pr.note);
+    lines.push('', 'Open it: ' + QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || ''));
+    const body = lines.join('\n');
+    if (FROM_ALIAS) GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, { from: FROM_ALIAS, name: 'Quest Winter Quotes' });
+    else MailApp.sendEmail(NOTIFY_EMAIL, subject, body, { name: 'Quest Winter Quotes' });
+  } catch (e) { console.error('Offer notice failed for ' + (ctx && ctx.d && ctx.d.quoteNo) + ': ' + e); }
 }
 
 /* ============ SEASON-DONE SURVEY (from the quote email) ============ */
@@ -11523,6 +11832,37 @@ function buildEmailFor_(d, kind, extra, photos) {
      The link is rebuilt here like every other sign link (see the "review &
      sign" rules in docs/ref/EMAILS.md), so a slip staff typed into the console
      weeks after the quote was saved is what reaches Adobe. */
+  /* "HERE ARE YOUR QUOTES" — the staff-priced requests waiting on the
+     customer, each with its price, and one button to the page where they
+     Accept, Decline or ask us to call (service-quotes.html). The answers are
+     NOT links in the email: a mail scanner that follows every link would
+     otherwise accept a quote on the customer's behalf. Nothing waiting, no
+     email. Sets no status (like the sign chase) — Email History records it. */
+  if (kind === 'offers') {
+    if (isStartedQuote_(d)) return null;
+    const link = offersLinkFor_(d);
+    const open = offersOf(d.manual).filter(offerOpen);
+    if (!open.length || !link) return null;
+    const unitTxt = esc_(d.unit || 'unit');
+    const rows = open.map(function (pr) {
+      return '<tr><td style="padding:8px 0;border-bottom:1px solid #E2E9EF">' + esc_(pr.label) +
+        (offerStatus(pr) === 'call' ? '<br><span style="font-size:12.5px;color:#5C7185">You asked us to call you about this one — we will, or answer it below any time.</span>' : '') +
+        '</td><td align="right" style="padding:8px 0;border-bottom:1px solid #E2E9EF;font-weight:bold;white-space:nowrap">' +
+        usd_(pr.amt) + '</td></tr>';
+    }).join('');
+    const intro = 'You asked us to price ' + (open.length === 1 ? 'a service' : 'some services') +
+      ' for your ' + unitTxt + ', and ' + (open.length === 1 ? 'here is the quote' : 'here are the quotes') + '.' +
+      '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:10px 18px;margin:16px 0">' +
+      '<table width="100%" cellpadding="0" cellspacing="0">' + rows + '</table></div>' +
+      '<b>Nothing is added to your ' + docTerm_(d).toLowerCase() + ' until you say yes.</b> For each one you can ' +
+      '<b>Accept</b>, <b>Decline</b>, or tell us to <b>call you</b> if you have questions — the button below ' +
+      'opens your quotes with everything filled in.';
+    const btn = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Review my quotes', '#C08A22') + '</div>' +
+      '<div style="font-size:13px;color:#5C7185;margin-bottom:4px">Rather talk it through? Call us at (815) 433-2200 — ' +
+      'your quote number is <b>' + esc_(d.quoteNo || '') + '</b>.</div>';
+    return { subject: (open.length === 1 ? 'Here\'s your quote' : 'Here are your quotes') + ' — Quest Watersports · ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, btn, false), status: '' };
+  }
   if (kind === 'signreminder') {
     const signLink = signUrlFor_(d);
     /* No web form configured means no link, and an "almost there, just sign"
@@ -12967,10 +13307,10 @@ function quoteHtml_(d) {
       (li.desc ? '<br><span class="calc" style="font-style:italic">' + esc_(li.desc) + '</span>' : '') +
       '</td><td class="amt">' + (li.amt ? usd_(li.amt) : (li.tbd ? 'TBD' : 'incl.')) + '</td></tr>';
   });
-  const rq = d.quotesRequested
+  const rq = (d.quotesRequested
     ? '<tr><td colspan="2" class="sec">Quotes requested (pricing to follow)</td></tr>' +
       '<tr><td colspan="2">' + esc_(d.quotesRequested) + '</td></tr>'
-    : '';
+    : '') + offersPdfRows_(d);
   const notes = d.notes
     ? '<p class="notes"><b>Customer notes:</b> ' + esc_(d.notes) + '</p>' : '';
 

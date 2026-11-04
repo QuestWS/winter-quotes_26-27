@@ -1586,6 +1586,43 @@ every time.
   requests** to give it without `adjust` (John, Nov 2026: he prices details at
   the harbor but should not be handed discounts) or to take it away.
   Guard: `tools/check-items-to-quote.js`.
+- **A priced request waits on the customer** (below): the list prints it as
+  *quoted $x — awaiting customer*, *quoted $x — CALL CUSTOMER* (counted as
+  still open — somebody has to ring them) or *quoted $x — declined*.
+
+## Why the console exists
+
+Moved here from `CLAUDE.md` §7, word for word:
+
+- **Mobile Google Sheets app cannot show custom menus, ever.** Desktop web or
+  Chrome's "Desktop site" toggle only. That limitation is why the console
+  exists.
+- **Sheet menu prompts** (`ui.prompt`) only exist on desktop. Console
+  equivalents must supply their own inputs.
+
+## Quoted items — waiting on the customer (console)
+
+Chris, Nov 2026: "When items are quoted, they should sit in limbo until
+approved or declined by a customer." **Price this → Quote it** (console),
+**Quote it** (Harbor Haul Out) and the sheet menu's *Price a quote request* all
+go through `adminPriceRequest`, which now journals the price with
+`status:'pending'` and adds **no line** — the total does not move.
+
+- **The Quoted items list** on the quote card (`renderOffers`) shows each one:
+  waiting on the customer, 📞 customer asked for a call (with their question),
+  accepted — on the quote, or declined, with when and by whom.
+- **Here are your quotes** (Customer emails, `em_offers`) sends the breakdown;
+  shown only while something is waiting. `docs/ref/EMAILS.md`.
+- **The customer answers on `service-quotes.html`** — Accept, Decline, or Call
+  me, I have questions. Every answer emails service@. `docs/ref/QUOTE-PAGE.md`.
+- **On their behalf** (they rang, they said yes at the counter): **Accept for
+  them**, **Mark declined**, **Re-open**, or **Withdraw & re-price**, which takes
+  the price off and re-opens the request. `adminOfferDecision`, the `quote`
+  permission like pricing; a write, POST only. Unlike the customer, staff can
+  un-accept — that takes the line back off.
+- Priced before this shipped (no status) = accepted: those were lines on the
+  quote already, and some are paid against.
+- Guard: `tools/check-quote-offers.js`.
 
 ## Asking a customer to sign (console)
 

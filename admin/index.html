@@ -110,6 +110,19 @@ border-bottom:1px solid var(--ice);font-size:13px}
 .rqrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;
 background:var(--gold-soft);border:1px solid #E4CE9E;border-radius:9px;margin-bottom:6px;font-size:13px}
 .rqrow .btn{flex:0 0 auto}
+/* Quoted requests waiting on the customer (renderOffers). Colour AND words:
+   the state is printed, so it reads on the black-and-white shop printer and
+   to anybody who cannot tell the tints apart. */
+.ofrow{padding:8px 10px;border:1px solid var(--line);border-left-width:5px;border-radius:9px;margin-bottom:6px;font-size:13px;background:#fff}
+.ofrow.pending{border-left-color:var(--gold)}
+.ofrow.call{border-left-color:var(--red);background:#FBEEE2}
+.ofrow.accepted{border-left-color:var(--green);background:#E2F1E7}
+.ofrow.declined{border-left-color:var(--muted);color:var(--muted)}
+.ofrow .oh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ofrow .oamt{font-family:var(--mono);white-space:nowrap;font-weight:700}
+.ofrow .ost{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+.ofrow .onote{margin-top:4px;font-style:italic}
+.ofrow .obtns{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
 /* The customer's own link to their quote. It exists to be handed over — read
    out on the phone, texted, pasted into an email — so the URL is shown in full
    and selectable rather than hidden behind a button that may have no clipboard
@@ -654,6 +667,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
               </div>
             </div>
             <div id="rqBlock" style="margin-top:8px"></div>
+            <div id="offerBlock" style="margin-top:8px"></div>
             <div id="seasonBlock" style="margin-top:8px"></div>
             <div class="ctr cfile" id="contractRow">
               <span class="lab" id="contractLab">Signed contract</span>
@@ -967,6 +981,10 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
                    is a web form to send them to. Previewed like every other
                    email before anything leaves. -->
               <button class="btn gold hide" id="em_signreminder" onclick="sendKind('signreminder')">Ask them to sign</button>
+              <!-- The priced requests still waiting on the customer, with one
+                   button to the page where they Accept / Decline / Call me.
+                   Shown only while there is something waiting. -->
+              <button class="btn gold hide" id="em_offers" onclick="sendKind('offers')">Here are your quotes</button>
               <!-- "Rates are final, here is your firm quote." Always shown, so
                    it can be found; when this quote cannot be called firm yet the
                    reason is printed under the buttons (firmBlock from the
@@ -2588,9 +2606,11 @@ function renderQuote(r){
   window._lines=r.linesRaw||[];
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
+  window._offers=r.offers||[];
   const canAdj2=ME.admin||((ME.perms||{}).adjust);
   /* Pricing a request is `quote` (canQuote_), not adjust. */
   renderRequests(!!myPerms_().quote);
+  renderOffers(myPerms_());
   renderSeasonDone(canAdj2);
   /* A draft entry is not a send until the sweep says so. */
   const dstate=e=>!e.draft?'':e.draft.state==='sent'?' · <b>draft sent</b> '+esc(e.draft.sentAt||'')
@@ -2659,6 +2679,7 @@ function renderQuote(r){
   }
   $('emailCard').classList.toggle('hide',!(P.email&&r.hasEmail));
   syncSignAsk_(P);
+  syncOffersAsk_(P);
   /* Older backend: no firmBlock at all, so say nothing rather than guess. */
   $('firmNote').textContent=r.firmBlock?'Firm quote not available yet — '+r.firmBlock:'';
   $('photoCard').classList.toggle('hide',!P.photos);
@@ -3102,7 +3123,7 @@ async function uploadContract(f){
 function renderRequests(canAdj){
   const b=$('rqBlock');
   if(!window._rq.length){b.innerHTML='';return;}
-  b.innerHTML='<div class="msg" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Open quote requests (price to convert to a line):</div>'+
+  b.innerHTML='<div class="msg" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Open quote requests — price it, then send "Here are your quotes" (nothing is added until they accept):</div>'+
     window._rq.map((q,i)=>`<div class="rqrow"><span>${q}</span>`+
       (canAdj?`<button class="btn navy sm" onclick="openPrice(${i})">Price this</button>`:'')+
       `</div>
@@ -3112,7 +3133,7 @@ function renderRequests(canAdj){
           <div><label>Note (optional)</label><input id="rqNote${i}" placeholder="e.g. incl. materials"></div>
         </div>
         <div class="row2" style="margin-top:8px">
-          <button class="btn navy sm" onclick="priceReq(${i})">Add as line</button>
+          <button class="btn navy sm" onclick="priceReq(${i})">Quote it</button>
           <button class="btn ghost sm" onclick="$('rqEd${i}').classList.add('hide')">Cancel</button>
         </div>
       </div>`).join('');
@@ -3123,6 +3144,54 @@ async function priceReq(i){
   const amt=$('rqAmt'+i).value;
   if(!amt){toast('Enter a price first.');return;}
   try{const r=await api('priceRequest',[QN,label,amt,$('rqNote'+i).value],{withQuote:QN});
+    if(!r.ok){toast(r.error);return;}
+    toast(r.msg);await afterWrite_(r);
+  }catch(e){toast(e.message);}
+}
+/* QUOTED — WAITING ON THE CUSTOMER. A priced request is not a line until
+   the customer accepts it (offerOnQuote in the engine). This lists every one
+   with where it stands, and lets whoever may price requests answer on the
+   customer's word (they rang, they said yes at the counter), re-open one, or
+   withdraw it to price it again. The customer's own answers arrive from
+   service-quotes.html and email service@. */
+const OFFER_TXT_={pending:'Waiting on the customer',call:'📞 Customer asked for a call',accepted:'Accepted — on the quote',declined:'Declined'};
+function renderOffers(P){
+  const b=$('offerBlock'); if(!b) return;
+  const list=window._offers||[];
+  if(!list.length){b.innerHTML='';return;}
+  const can=!!(P&&P.quote);
+  const btn=(i,ch,txt,cls)=>`<button class="btn ${cls} sm" onclick="offerAct(${i},'${ch}')">${txt}</button>`;
+  b.innerHTML='<div class="msg" style="margin:0 0 4px;font-weight:700;color:var(--navy)">Quoted items</div>'+
+    list.map((o,i)=>{
+      const when=o.at?' · '+esc(new Date(o.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))+(o.by?' by '+esc(o.by):''):'';
+      let acts='';
+      if(can){
+        if(o.status!=='accepted') acts+=btn(i,'accepted','Accept for them','navy');
+        if(o.status!=='declined') acts+=btn(i,'declined','Mark declined','ghost');
+        if(o.status!=='pending') acts+=btn(i,'pending','Re-open','ghost');
+        acts+=btn(i,'withdraw','Withdraw & re-price','ghost');
+      }
+      return `<div class="ofrow ${esc(o.status)}"><div class="oh"><span>${esc(o.label)}</span><span class="oamt">${fmt$(o.amt)}</span></div>`+
+        `<div class="ost">${esc(OFFER_TXT_[o.status]||o.status)}<span style="font-weight:400;text-transform:none;letter-spacing:0">${when}</span></div>`+
+        (o.note?`<div class="onote">“${esc(o.note)}”</div>`:'')+
+        (acts?`<div class="obtns">${acts}</div>`:'')+'</div>';
+    }).join('');
+}
+/* The send button shows only while something is waiting on the customer —
+   an email with nothing to answer would be noise. */
+function syncOffersAsk_(P){
+  const e=$('em_offers'); if(!e) return;
+  const open=(window._offers||[]).some(o=>o.status==='pending'||o.status==='call');
+  e.classList.toggle('hide',!(P&&P.email&&window._hasEmail&&open));
+}
+const OFFER_CONFIRM_={accepted:'Accept "%s" for the customer? It is added to the quote at %a. Nothing is emailed.',
+  declined:'Mark "%s" declined? Nothing is emailed.',
+  pending:'Re-open "%s" so it waits on the customer again?',
+  withdraw:'Withdraw the %a price on "%s"? The request opens again so it can be priced afresh.'};
+async function offerAct(i,choice){
+  const o=(window._offers||[])[i]; if(!o) return;
+  if(!confirm(OFFER_CONFIRM_[choice].replace('%s',o.label).replace('%a',fmt$(o.amt)))) return;
+  try{const r=await api('offerDecision',[QN,o.item,choice,''],{withQuote:QN});
     if(!r.ok){toast(r.error);return;}
     toast(r.msg);await afterWrite_(r);
   }catch(e){toast(e.message);}
@@ -5464,9 +5533,15 @@ async function printHaulOut(){
    storage tab or deposit filter you happen to be on. Page 2 is every power
    wash and acid wash on its own, with the dimensions they are priced from. */
 const TQ_STATE_={open:'needs price',asked:'requested — no price',dims:'needs dimensions'};
+/* Priced but not agreed: the amount, and whose move it is. */
+const TQ_OFFER_={awaiting:'quoted %a — awaiting customer',call:'quoted %a — CALL CUSTOMER',declined:'quoted %a — declined'};
 function tqStateTxt_(t){
+  if(TQ_OFFER_[t.s]) return TQ_OFFER_[t.s].replace('%a',fmt$(t.a));
   return t.s==='quoted'?'quoted '+fmt$(t.a):(TQ_STATE_[t.s]||t.s);
 }
+/* Done from the office's side: priced and either agreed or answered. A call
+   request is not — somebody has to ring them. */
+const tqSettled_=t=>t.s==='quoted'||t.s==='awaiting'||t.s==='declined';
 async function printItemsToQuote(){
   if(!window._sg){await loadStorage();}
   if(!window._sg){return;}
@@ -5482,9 +5557,9 @@ async function printItemsToQuote(){
   const paid=x=>x.balance==='Paid'?'Paid in full':(x.paidTxt||'—');
   const byName=(a,b)=>String(a.name).localeCompare(String(b.name));
   const items=x=>'<ul class="tq">'+x.tq.map(t=>'<li><span class="cb"></span><span>'+esc(t.l)+
-    ' <span class="tqs'+(t.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(t))+'</span></span></li>').join('')+'</ul>';
+    ' <span class="tqs'+(tqSettled_(t)?'':' need')+'">'+esc(tqStateTxt_(t))+'</span></span></li>').join('')+'</ul>';
   const nItems=all.reduce((n,x)=>n+x.tq.length,0);
-  const nOpen=all.reduce((n,x)=>n+x.tq.filter(t=>t.s!=='quoted').length,0);
+  const nOpen=all.reduce((n,x)=>n+x.tq.filter(t=>!tqSettled_(t)).length,0);
   const cols='<colgroup><col style="width:12%"><col style="width:28%"><col style="width:12%"><col style="width:10%"><col style="width:38%"></colgroup>';
   let body='';
   [0,1,2].forEach(t=>{
@@ -5517,7 +5592,7 @@ async function printItemsToQuote(){
       '<td><span class="yn">'+esc(w.x.name)+'</span><br><span class="ysub">'+esc(w.x.qn)+'</span></td>'+
       '<td>'+esc(w.x.unit)+(w.x.ymm?' · '+esc(w.x.ymm):'')+(w.x.dims?'<br><span class="ysub">'+esc(w.x.dims)+'</span>':'')+'</td>'+
       '<td>'+esc(w.x.tab)+'</td><td>'+esc(placeTxt(w.x))+'</td>'+
-      '<td><span class="tqs'+(w.t.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(w.t))+'</span></td></tr>').join('')+
+      '<td><span class="tqs'+(tqSettled_(w.t)?'':' need')+'">'+esc(tqStateTxt_(w.t))+'</span></td></tr>').join('')+
     '</table><div class="pgFoot">Acid wash replaces the power wash — a hull never gets both. Quest Watersports · (815) 433-2200</div></div>':'';
   $('printArea').innerHTML=page1+page2;
   window.print();

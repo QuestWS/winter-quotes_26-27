@@ -17,6 +17,7 @@ in a day and a function name does not.
 | `admin/index.html` | ~2,100 | The staff console — one big `<script>`, so no duplicate top-level function names |
 | `pricing-engine.js` | ~340 | The shared rule set. Embedded verbatim in the `.gs` between `ENGINE-START`/`ENGINE-END` |
 | `sign.html` | ~250 | The scan-to-sign page: a QR at the counter, a quote number, and the hand-off to the Adobe form |
+| `service-quotes.html` | ~250 | The customer's "your quotes" page: reads `?action=offers`, answers Accept / Decline / Call me by POST (`api:'offers'`) |
 | `harbor-haul-out/index.html` | ~900 | Harbor Haul Out: four lists, one unit at a time, the Harbor Haul Out log, dictation, photos and re-measuring. One big `<script>`, same no-duplicate-names rule as the console. The last list is kept on the phone (`listLoad_`/`listSave_`) and shown before the server answers |
 | `harbor-haul-out/sw.js` | ~100 | Harbor Haul Out's service worker: the shell (page, `quest.css`, fonts, icon) off the phone after the first visit, network-first with a timeout; never the API |
 | `quest.css` | ~125 | The canonical Quest palette and control shapes, linked by `sign.html` |
@@ -66,6 +67,8 @@ symptom.
 | Late fee | `adminLateFee` | `.gs` |
 | Line edit and delete | `adminEditLine` (the action argument selects which) | `.gs` |
 | Price a requested service | `adminPriceRequest` | `.gs` |
+| Priced requests waiting on the customer: which count, and moving one | `OFFER_STATES`, `offerStatus`, `offerOnQuote`, `offerOpen`, `offersOf` (engine); `offerDecide_`, `adminOfferDecision`, `offersOut_`, `offersPdfRows_` | both |
+| The customer answering them (`service-quotes.html`) | `offersRead_` (`?action=offers`), `offersServe_` (POST `api:'offers'`), `offersCtx_`, `notifyOfferDecision_`, `offersLink_`, `offersLinkFor_` | `.gs` |
 | Add or remove a menu service (engine-priced, journalled) | `SERVICE_MENU` (engine), `sanitizeServices_`, `servicesProposal_`, `adminServicesPreview`, `adminServicesApply`, `servicesInfo_` | both |
 | Balance columns on the sheet | `writeMoneyCols_` | `.gs` |
 
@@ -130,6 +133,7 @@ symptom.
 | The customer's own note (list tag, Customer notes tab, quote card, staff edit) | `customerNoteOf_`, `adminSetCustomerNote` (`cnote` on the storage rows, `customerNote` on `adminLookup`) | `renderStorage`, `renderCustomerNote`, `saveCustomerNote` |
 | Imported drafts as a scrollable list | `adminDraftList` | `loadDrafts_`, `renderDrafts_` |
 | Asking a customer to sign | `signUrlFor_` (kind `signreminder` in `buildEmailFor_`), `unbuildableMsg_` | `signAskAllowed_`, `syncSignAsk_`, `myPerms_` |
+| Quoted items and "Here are your quotes" | `adminOfferDecision`, `offersOut_` (`offers` on `adminLookup`), kind `offers` in `buildEmailFor_` | `renderOffers`, `syncOffersAsk_`, `offerAct` |
 | Whether a unit may be pulled at all | `haulAuth_` (the .gs owns the rule; every client renders it) | `haulPartition_`, `haulSort_`, `haulHoldText_` |
 | Keys, slip and trailer location | `KEYFIELDS_`, `KEYLABELS_`, `sanitizeKeys_`, `adminKeysApply` | `renderKeys`, `saveKeys` |
 | The Harbor Haul Out log | `adminAddPlacementNote`, `PLACEMENT_NOTE_MAX_` | `renderPlacementLog`, `addPlacementNote` |

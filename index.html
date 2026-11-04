@@ -1074,7 +1074,10 @@ function computeLines(){
   if(MANUAL){
     (MANUAL.removed||[]).forEach(lb=>{ const i=r.L.findIndex(l=>l.label===lb); if(i>-1) r.L.splice(i,1); });
     (MANUAL.edits||[]).forEach(e=>{ const l=r.L.find(x=>x.label===e.label); if(l){ if(e.newAmt!=null){l.amt=Number(e.newAmt); l.calc='';} if(e.newLabel) l.label=e.newLabel; } });
-    (MANUAL.priced||[]).forEach(pr=>{ r.L.push({sec:pr.sec||'Additional services',label:pr.label,calc:'',amt:Number(pr.amt)}); });
+    /* Only a quote the customer ACCEPTED is a line — the same question the
+       server's replay asks (offerOnQuote, in the engine). Waiting, call-me
+       and declined ones are answered on service-quotes.html. */
+    (MANUAL.priced||[]).filter(QuestPricing.offerOnQuote).forEach(pr=>{ r.L.push({sec:pr.sec||'Additional services',label:pr.label,calc:'',amt:Number(pr.amt)}); });
     (MANUAL.adjustments||[]).forEach(a=>{ r.L.push({sec:'Adjustments',label:a.label,calc:'',amt:Number(a.amt)}); });
     r.rq=(r.rq||[]).filter(l=>!pricedRqLabels().includes(l));
     /* A slipholder discount only exists once staff approve it; replayed last,
@@ -1213,8 +1216,23 @@ function handleLoadResult(res, qn){
     if(MANUAL&&((MANUAL.adjustments||[]).length||(MANUAL.edits||[]).length||(MANUAL.removed||[]).length||(MANUAL.priced||[]).length||(MANUAL.hho&&MANUAL.hho.status==='approved'))) msg='Loaded '+qn+' — including updates applied by Quest. Totals shown are your official totals.';
     if(LOCKED) msg='Loaded '+qn+' — a deposit is on file, so selections are locked. You can review, print, sign, and pay your balance; call (815) 433-2200 for changes.';
     loadMsg(msg, true);
+    showOffersNote_(qn);
   }
   catch(err){ console.error(err); loadMsg('That quote could not be restored — please call (815) 433-2200 and we\'ll pull it up.'); }
+}
+/* Quest priced something they asked about and it is waiting on their answer:
+   say so under the load message, with the way to answer it. The page that
+   takes the answer is service-quotes.html; nothing is accepted from here. */
+function showOffersNote_(qn){
+  const m=$('#loadMsg'); if(!m||!MANUAL) return;
+  const open=QuestPricing.offersOf(MANUAL).filter(QuestPricing.offerOpen);
+  if(!open.length) return;
+  const ln=String(($('#loadLn')&&$('#loadLn').value)||'').trim();
+  const a=document.createElement('a');
+  a.href='service-quotes.html?quote='+encodeURIComponent(qn)+(ln?'&ln='+encodeURIComponent(ln):'');
+  a.textContent=open.length===1?'Review the quote waiting on your answer':'Review the '+open.length+' quotes waiting on your answer';
+  a.style.cssText='display:block;margin-top:6px;font-weight:700;color:#C08A22';
+  m.appendChild(a);
 }
 function loadQuoteJsonp(qn, ln){
   // fallback path if fetch is blocked

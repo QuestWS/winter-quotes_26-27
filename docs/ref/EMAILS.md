@@ -91,6 +91,30 @@ not count a signature until the signer clicks the link in its follow-up
 words; `tools/check-sign-link.js` fails a surface that drops them.
 
 
+## Here are your quotes (`offers`)
+
+Chris, Nov 2026: staff-priced requests wait on the customer, and this is how
+they hear about them. **Customer emails → Here are your quotes** (`em_offers`)
+lists every priced request that is still waiting — pending, or one they asked
+us to call about — with its price, and one button, **Review my quotes**, to
+`service-quotes.html?quote=…&ln=…` (`offersLink_`, the same pair as
+`quoteLink_`). The customer answers there; `docs/ref/QUOTE-PAGE.md` §
+*Your quotes*.
+
+- **No answer links in the email.** Accept / Decline / Call me are buttons on
+  the page, which POST. A link that accepted a quote would be followed by every
+  corporate mail scanner that pre-fetches links, accepting work on the
+  customer's behalf. `tools/check-quote-offers.js` fails if the email grows one.
+- **Nothing waiting, no email.** The builder returns `null` and
+  `unbuildableMsg_` says why; the console hides the button unless something is
+  waiting (`syncOffersAsk_`).
+- **It sets no status**, for the sign chase's reason: an answer about one
+  add-on must not overwrite `Deposit received`. Email History records it.
+- **Staff-clicked, one quote at a time.** Not in `BULK_KINDS_`, not automatic.
+- **Every customer answer emails service@** (`notifyOfferDecision_`) — a call
+  request leads its subject with 📞 CALL REQUESTED and carries their question
+  and phone number. That is mail to Quest, never to the customer.
+
 ## The sign chase (`signreminder`)
 
 "We still need your signature" — the nudge for a quote with no signed agreement

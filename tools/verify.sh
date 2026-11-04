@@ -40,7 +40,7 @@ if [ -f quote-logger-apps-script.gs ]; then
     "const COL" "applyManualOps_" "ensureManual_" "docTerm_" "isLandUnit_" \
     "buildEmailFor_" "recordEmail_" "requireAuth_" "auditLog_" "adminEditLine" \
     "adminEmailPreview" "adminUploadContract" "adminStorageView" "WEB_APP_URL" \
-    "signreminder" "unbuildableMsg_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddPlacementNote" "PLACEMENT_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "adminUploadSession" "MAX_DIRECT_BYTES_" "uploadType=resumable" "PLACEMENT_STATES_" "adminSetPlacementState" "placementStateOf_" "adminSetPlacementAlert" "PLACEMENT_ALERT_MAX_" "placementAlert" \
+    "signreminder" "unbuildableMsg_" "offerDecide_" "offersServe_" "adminOfferDecision" "offersPdfRows_" "STORAGE_VIEW_V_" "haulAuth_" "adminAddPlacementNote" "PLACEMENT_NOTE_MAX_" "KEYFIELDS_" "KEYLABELS_" "trailerLoc" "submitTranscript_" "applyTranscript_" "transcriptWebhook_" "sweepTranscripts" "queueTranscript_" "assemblyKey_" "adminUploadSession" "MAX_DIRECT_BYTES_" "uploadType=resumable" "PLACEMENT_STATES_" "adminSetPlacementState" "placementStateOf_" "adminSetPlacementAlert" "PLACEMENT_ALERT_MAX_" "placementAlert" \
     "applySeasonDone_" "adminSetSeasonDone" "adminPriceRequest" "findQuoteRowFrom_" \
     "balanceReportCheck" "adminLateFee" \
     "effectiveState_" "rebuildLinesFromState_" "driftNoteFor_" "pruneQuoteCopies_" \
@@ -265,6 +265,10 @@ if [ -f harbor-haul-out/index.html ]; then
     echo "  FAIL gate: Harbor Haul Out uploads"; sed 's/^/       /' "$TMP/hhoup.txt"; FAIL=1
   fi
 else echo "  (harbor-haul-out/index.html not present)"; fi
+if [ -f service-quotes.html ]; then
+  extract_scripts service-quotes.html "$TMP/offers.js"; check_js "$TMP/offers.js" "service-quotes.html"
+  sweep service-quotes.html "service-quotes" "API_URL" "action=offers" "api: 'offers'" "Call me, I have questions" "STATE_TXT"
+fi
 
 echo "== Pricing engine parity =="
 if [ -f pricing-engine.js ]; then
@@ -796,6 +800,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: items to quote broken"; sed 's/^/       /' "$TMP/tq.txt"; FAIL=1
   fi
+  # Staff quotes wait on the customer: pending is not in the total, accept /
+  # decline / withdraw move it correctly, the customer POST cannot un-accept,
+  # and the email carries no answer link a mail scanner could follow.
+  if node tools/check-quote-offers.js > "$TMP/offers.txt" 2>&1; then
+    echo "  OK   gate: quotes wait on the customer (accept / decline / call me)"
+  else
+    echo "  FAIL gate: quote offers broken"; sed 's/^/       /' "$TMP/offers.txt"; FAIL=1
+  fi
   # Staff-only, like the staff note: the customer page never hears of it.
   if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'notStoring'; then
     echo "  FAIL trap: the load endpoint returns the not-storing mark to the customer page"; FAIL=1
@@ -872,7 +884,7 @@ if [ -f quote-logger-apps-script.gs ]; then
 fi
 
 echo "== Terms, privacy & lead capture =="
-for f in terms.html privacy.html terms-config.js legal.css quest.css sign.html; do
+for f in terms.html privacy.html terms-config.js legal.css quest.css sign.html service-quotes.html; do
   if [ -f "$f" ]; then echo "  OK   present: $f"; else echo "  FAIL missing: $f"; FAIL=1; fi
 done
 if [ -f terms-config.js ]; then
@@ -1044,8 +1056,9 @@ U_PAGE=$(grep -o 'AKfycb[A-Za-z0-9_-]*' index.html 2>/dev/null | sort -u | head 
 U_ADM=$(grep -o 'AKfycb[A-Za-z0-9_-]*' admin/index.html 2>/dev/null | sort -u | head -1)
 U_SIGN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' sign.html 2>/dev/null | sort -u | head -1)
 U_HHO=$(grep -o 'AKfycb[A-Za-z0-9_-]*' harbor-haul-out/index.html 2>/dev/null | sort -u | head -1)
-echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  harbor-haul-out: ${U_HHO:-none}"
-if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_HHO:-$U_GAS}" != "$U_GAS" ]; }; then
+U_OFR=$(grep -o 'AKfycb[A-Za-z0-9_-]*' service-quotes.html 2>/dev/null | sort -u | head -1)
+echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  harbor-haul-out: ${U_HHO:-none}"; echo "  service-quotes: ${U_OFR:-none}"
+if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_HHO:-$U_GAS}" != "$U_GAS" ] || [ "${U_OFR:-$U_GAS}" != "$U_GAS" ]; }; then
   echo "  FAIL: deployment URLs do not match across files"; FAIL=1
 else echo "  OK   all present URLs match"; fi
 

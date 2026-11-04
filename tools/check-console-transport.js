@@ -69,7 +69,7 @@ Object.keys(ctx).forEach((k) => {
 
 /* ---- 1. writes are refused on GET, and never reach their function ---- */
 const WRITES = ['pay', 'adjust', 'lateFee', 'editLine', 'penalty', 'servicesApply', 'hho', 'keysApply', 'dimsApply',
-  'staffNote', 'sendEmail', 'setSeasonDone', 'priceRequest', 'uploadPhoto', 'uploadContract',
+  'staffNote', 'sendEmail', 'setSeasonDone', 'priceRequest', 'offerDecision', 'uploadPhoto', 'uploadContract',
   'setPerm', 'resetPin', 'addStaff', 'removeStaff', 'setAutoPause', 'backupRestore',
   'bulkSend', 'repriceApply', 'importApply', 'deleteQuote'];
 

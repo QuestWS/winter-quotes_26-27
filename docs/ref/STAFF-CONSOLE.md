@@ -249,6 +249,20 @@ records nothing; a payment or refund is still recorded on the quote.
   they show the day and sort by it. `tools/check-receivables.js` runs the
   builder over a fake sheet covering every bucket and both read routes.
 
+## Payments received (console)
+
+Every open quote shows a **Payments received** card above Quote history: the
+payment ledger alone, newest first — amount, method, when and who recorded
+it, refunds labelled as refunds — with a count and the net received. For
+"how did they last pay?" without loading the whole history.
+
+- **No extra trip.** It rides on `adminLookup` (`payments`, built by
+  `paymentsOut_` from `d.payments`), so it is there the moment the quote
+  opens and refreshes with every write that re-reads the quote.
+- **Times only where they exist.** Entries from Oct 2026 on carry `at` and
+  `by`; older ones show the day they were recorded and no name. Nothing is
+  backfilled (DATA-AND-MONEY.md § *Signed balances*).
+
 ## Quote history (console)
 
 The **Quote history** card under every open quote answers one question: *a

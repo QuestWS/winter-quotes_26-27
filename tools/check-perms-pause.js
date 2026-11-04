@@ -32,7 +32,7 @@ const PropertiesService={getScriptProperties:()=>({
   deleteProperty:k=>{delete store[k];}})};
 
 const B=new Function('PropertiesService',[
-  fn('canKeys_'), fn('canMeasure_'), fn('resolvedPerms_'),
+  fn('canKeys_'), fn('canMeasure_'), fn('canQuote_'), fn('resolvedPerms_'),
   "const AUTO_PAUSE_KEY_='AUTO_EMAIL_PAUSED';",
   fn('autoPauseState_'), fn('autoEmailsPaused_'), fn('autoPauseCooldown_'),
   'return {canKeys_,canMeasure_,resolvedPerms_,autoPauseState_,autoEmailsPaused_,autoPauseCooldown_};'
@@ -100,9 +100,9 @@ for(const n of ['John','Marina']){
   check(n+' resolvedPerms_.measure matches canMeasure_', !!p.measure===wantM[n], JSON.stringify(p));
 }
 check('other permissions survive untouched',
-  JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0,measure:0}));
+  JSON.stringify(B.resolvedPerms_(roster.Marina))===JSON.stringify({pay:0,adjust:0,email:0,photos:1,keys:0,measure:0,quote:0}));
 check('and the crew resolve as able to re-measure',
-  JSON.stringify(B.resolvedPerms_(roster.John))===JSON.stringify({pay:1,adjust:0,email:1,photos:1,keys:1,measure:1}));
+  JSON.stringify(B.resolvedPerms_(roster.John))===JSON.stringify({pay:1,adjust:0,email:1,photos:1,keys:1,measure:1,quote:0}));
 
 console.log('\n=== 4. the pause ===');
 store={};

@@ -122,5 +122,27 @@ else fail('console Items to Quote print missing');
 if (/function tq_\(/.test(hho) && /tq_\(x\)/.test(hho) && /renderTq\(listRow\)/.test(hho)) ok('Harbor Haul Out shows tq on the row and the unit');
 else fail('Harbor Haul Out no longer shows tq');
 
+/* Pricing a request: its own permission (canQuote_), falling back to adjust.
+   Chris, Nov 4 2026: John prices details from Harbor Haul Out without adjust. */
+{
+  const canQuote_ = new Function(fn('canQuote_') + '\nreturn canQuote_;')();
+  const cases = [
+    [{ admin: true, perms: {} }, true, 'admin'],
+    [{ perms: { adjust: 1 } }, true, 'unset, adjust → yes (as before)'],
+    [{ perms: { adjust: 0, keys: 1 } }, false, 'unset, no adjust → no'],
+    [{ perms: { adjust: 0, quote: 1 } }, true, 'explicit quote ON without adjust (John)'],
+    [{ perms: { adjust: 1, quote: 0 } }, false, 'explicit quote OFF wins over adjust'],
+  ];
+  cases.forEach((c) => { if (canQuote_(c[0]) === c[1]) ok('canQuote_: ' + c[2]); else fail('canQuote_: ' + c[2]); });
+  if (/function adminPriceRequest\(token[^)]*\) \{\n  const who = requireAuth_\(token, 'quote'\)/.test(gas)) ok('adminPriceRequest is gated on quote');
+  else fail('adminPriceRequest is not gated on the quote permission');
+  if (/\(perm === 'quote'\) \? canQuote_\(st\)/.test(gas) && /p\.quote = canQuote_\(st\)/.test(gas)) ok('requireAuth_ and resolvedPerms_ know quote');
+  else fail('requireAuth_/resolvedPerms_ do not resolve quote');
+  if (/function canQuote\(/.test(hho) && /api\('priceRequest'/.test(hho)) ok('Harbor Haul Out can price an open request');
+  else fail('Harbor Haul Out price box missing');
+  if (/quote:'Price requests'/.test(adm) && /btn\('quote',st\.perms\.quote\)/.test(adm)) ok('console Staff panel has the Price requests toggle');
+  else fail('console Staff panel toggle missing');
+}
+
 if (bad) { console.error(bad + ' failure(s)'); process.exit(1); }
 console.log('items to quote: all checks passed');

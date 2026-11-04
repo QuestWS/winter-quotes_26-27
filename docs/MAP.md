@@ -90,7 +90,7 @@ symptom.
 | Feature | Entry point (server) | Entry point (console) |
 |---|---|---|
 | Sign in, sessions, lockout | `adminAuth`, `requireAuth_` | `doLogin` |
-| Permissions incl. the `keys` and `measure` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_` | `permsOf`, `myPerms_` |
+| Permissions incl. the `keys`, `measure` and `quote` fallbacks | `resolvedPerms_`, `canKeys_`, `canMeasure_`, `canQuote_` | `permsOf`, `myPerms_` |
 | Load a quote | `adminLookup`, `adminSearch` | `renderQuote` |
 | Search by name in any order, phone digits, email, boat (also what the Service Desk at `questws.github.io/desk/` calls) | `searchMatcher_` | `doSearch`; `?q=` opens a quote or search via `openLinked_` |
 | Talking to the backend | `consoleServe_`, `consoleFns_` | `api`, `apiLostReply_` |
@@ -149,7 +149,7 @@ symptom.
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
 | Re-measuring at the harbor | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
 | The Harbor Haul Out log | `adminAddPlacementNote` | `renderLog`, `saveNote` |
-| Washes, detailing and items to quote on the row and the unit | `itemsToQuoteOf_` | `tq_`, `tqItems_`, `renderTq` |
+| Washes, detailing and items to quote on the row and the unit; pricing an open request | `itemsToQuoteOf_`, `adminPriceRequest`, `canQuote_` | `tq_`, `tqItems_`, `renderTq`, `priceTq`, `canQuote` |
 | Voice notes (record) | `voiceFolder_`, `adminAddPlacementNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |

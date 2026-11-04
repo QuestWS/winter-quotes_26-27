@@ -148,6 +148,10 @@ a.out{text-decoration:none;display:inline-flex;align-items:center;white-space:no
 .tqlist li:last-child{border-bottom:0}
 .tqlist .st{font-size:12.5px;color:var(--muted);white-space:nowrap}
 .tqlist .st.need{color:#6B3A14;font-weight:600}
+.tqlist li.open{flex-wrap:wrap}
+.tqprice{flex:1 1 100%;display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.tqprice input.txt{flex:1 1 110px;width:auto}
+.tqprice .btn{flex:1 1 100%}
 
 /* ---- detail sheet ---- */
 .sheet{position:fixed;inset:0;z-index:60;background:var(--ice);overflow-y:auto;
@@ -625,6 +629,16 @@ function canWrite(){
   return !!p.keys;
 }
 function canPhotos(){ return !!(ME&&(ME.admin||(ME.perms||{}).photos)); }
+/* Pricing a quote request (a detail, wash & wax, bottom paint…). Mirrors
+   canQuote_ in the .gs including its fallback: unset means `adjust`. The
+   server checks it again; this only decides whether the box is drawn. */
+function canQuote(){
+  if(!ME) return false;
+  if(ME.admin) return true;
+  const p=ME.perms||{};
+  if(p.quote===undefined||p.quote===null||p.quote==='') return !!p.adjust;
+  return !!p.quote;
+}
 /* Mirrors canMeasure_ in the .gs INCLUDING its fallback, which is now
    canKeys_: whoever can record harbor facts can correct a measurement. Chris's
    call — the people holding the tape are the crew, and leaving it on
@@ -942,11 +956,47 @@ function tq_(x){
   if(!t.length) return '';
   return '<div class="tqline"><span class="i">\uD83E\uDDFD</span><span>'+t.map(i=>esc(i.l)).join(' \u00b7 ')+'</span></div>';
 }
+/* An open request gets a price box for whoever may price one (canQuote).
+   Same server call the console's "Price this" makes (adminPriceRequest): the
+   price becomes a line on the quote, the request closes, the PDF is rebuilt,
+   and nothing is emailed. */
 function renderTq(listRow){
   const t=tqItems_(listRow);
+  const can=canQuote();
   $('tqBlk').classList.toggle('hide',!t.length);
-  $('dTq').innerHTML=t.length?'<ul class="tqlist">'+t.map(i=>'<li><b>'+esc(i.l)+'</b><span class="st'+
-    (i.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(i))+'</span></li>').join('')+'</ul>':'';
+  $('dTq').innerHTML=t.length?'<ul class="tqlist">'+t.map((i,n)=>{
+    const priceable=can&&i.s==='open';
+    return '<li'+(priceable?' class="open"':'')+'><b>'+esc(i.l)+'</b><span class="st'+
+      (i.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(i))+'</span>'+
+      (priceable?'<div class="tqprice"><input class="txt" id="tqAmt'+n+'" inputmode="decimal" placeholder="Price, e.g. 225" aria-label="Price for '+esc(i.l)+'">'+
+        '<input class="txt" id="tqNote'+n+'" placeholder="Note (optional)" aria-label="Note">'+
+        '<button class="btn" id="tqBtn'+n+'" onclick="priceTq('+n+')">Add price to quote</button></div>':'')+
+      '</li>';
+  }).join('')+'</ul><div class="msg" id="tqMsg"></div>':'';
+}
+async function priceTq(n){
+  if(!CUR) return;
+  const qn=CUR.quoteNo;
+  const row=ROWS.filter(x=>x.qn===qn)[0]||{};
+  const item=tqItems_(row)[n];
+  if(!item) return;
+  const amt=($('tqAmt'+n).value||'').trim();
+  const note=($('tqNote'+n).value||'').trim();
+  const v=Number(amt.replace(/[$,\s]/g,''));
+  if(!amt||!isFinite(v)||v<=0){ setMsg('tqMsg','Enter a price, e.g. 225.',false); return; }
+  if(!confirm('Add '+item.l+' at $'+v.toFixed(2)+' to '+(CUR.name||qn)+'\'s quote? Nothing is emailed.')) return;
+  const b=$('tqBtn'+n); b.disabled=true; b.textContent='Saving…';
+  setMsg('tqMsg','');
+  try{
+    const r=await api('priceRequest',[qn,item.l,amt,note]);
+    if(!r||!r.ok){ setMsg('tqMsg',(r&&r.error)||'Could not save that.',false); return; }
+    /* Move the list with it, without re-fetching the whole thing. */
+    ROWS.forEach(x=>{ if(x.qn===qn) (x.tq||[]).forEach(t=>{ if(t.l===item.l&&t.s==='open'){ t.s='quoted'; t.a=v; } }); });
+    listSave_(); render();
+    if(CUR&&CUR.quoteNo===qn) renderTq(ROWS.filter(x=>x.qn===qn)[0]||{});
+    setMsg('tqMsg',r.msg||'Priced.',true); toast('Priced');
+  }catch(e){ setMsg('tqMsg',e.message,false); }
+  finally{ const bb=$('tqBtn'+n); if(bb){ bb.disabled=false; bb.textContent='Add price to quote'; } }
 }
 function notes_(x){
   return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';

@@ -1560,7 +1560,13 @@ every time.
 - **Not narrowed by the storage tab or deposit filter**, like the haul-out
   list. Not-storing quotes and the Import tab are left off because the
   storage view leaves them off.
-- **Harbor Haul Out shows the same `tq`** — `docs/ref/HARBOR-HAUL-OUT.md`.
+- **Harbor Haul Out shows the same `tq`**, and prices open requests from it —
+  `docs/ref/HARBOR-HAUL-OUT.md`.
+- **Price requests is its own permission** (`quote`, `canQuote_`). Pricing a
+  request was `adjust`; it is now `quote`, which falls back to `adjust` when
+  unset, so nobody lost it. Set explicitly in Staff & permissions → **Price
+  requests** to give it without `adjust` (John, Nov 2026: he prices details at
+  the harbor but should not be handed discounts) or to take it away.
   Guard: `tools/check-items-to-quote.js`.
 
 ## Asking a customer to sign (console)

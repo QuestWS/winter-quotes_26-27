@@ -355,8 +355,14 @@ def manual():
             '<b>credit</b> owed to the customer.')]
     s += [B('<b>Print quote</b> — the current PDF.')]
     s += [B('<b>Customer link</b> — Copy link / Open. Hidden if the quote has no last name.')]
-    s += [B('<b>Quote requests</b> — items the customer asked to have priced (Price this → Add '
-            'as line, <font color="#C08A22"><b>adjust</b></font>).')]
+    s += [B('<b>Quote requests</b> — items the customer asked to have priced (Price this → Quote '
+            'it, <font color="#C08A22"><b>quote</b></font>). A quoted item is <b>not</b> added to the total: '
+            'it waits under <b>Quoted items</b> until the customer answers.')]
+    s += [B('<b>Quoted items</b> — each priced request and where it stands: waiting on the customer, '
+            'customer asked for a call, accepted (on the quote), declined. <b>Accept for them</b> / '
+            '<b>Mark declined</b> when they answer by phone; <b>Withdraw &amp; re-price</b> to change the price. '
+            'Send them the list with <b>Customer emails → Here are your quotes</b>: one button to a page where '
+            'they press Accept, Decline or "Call me, I have questions". Every answer emails service@.')]
     s += [B('<b>Season timing</b> — Done now / Set date… / Will call '
             '(<font color="#C08A22"><b>adjust</b></font>).')]
     s += [B('<b>Signed contract</b> — the link, or "not on file" with Upload '
@@ -859,7 +865,9 @@ def manual():
         ['Chase a signature', 'Ask them to sign', perm('email')],
         ['Give a discount', 'Adjustment, negative amount', perm('adjust')],
         ['Charge a late fee', 'Late fee warning, then Late fee', perms('email', 'adjust')],
-        ['Price something they asked about', 'Quote requests → Price this', perm('adjust')],
+        ['Price something they asked about', 'Quote requests → Price this', perm('quote')],
+        ['Send them their quotes to accept or decline', 'Customer emails → Here are your quotes', perm('email')],
+        ['They said yes / no on the phone', 'Quoted items → Accept for them / Mark declined', perm('quote')],
         ['Record when they want it out', 'Season timing', perm('adjust')],
         ['Fix the boat\'s size', 'Unit details &amp; storage / Harbor Haul Out Measurements', perm('measure')],
         ['Move them to inside storage', 'Unit details &amp; storage', perm('measure')],

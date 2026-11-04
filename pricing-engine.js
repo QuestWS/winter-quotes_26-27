@@ -849,6 +849,36 @@ function seasonStamp(){
     ratesLabel:         PRICING.ratesLabel
   };
 }
+/* STAFF QUOTES THE CUSTOMER STILL HAS TO ANSWER.
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: "When items are quoted, they should sit in limbo until
+   approved or declined by a customer." A request staff price (manual.priced)
+   now carries a `status`, and only an ACCEPTED one is a line on the quote:
+     pending  — priced, sent (or about to be), waiting on the customer
+     call     — the customer pressed "Call me, I have questions"
+     declined — the customer (or staff, on their word) said no
+     accepted — yes; it is a line and it is in the total
+   An entry with NO status was priced before this existed. It has been a line
+   on the quote all along — some of those customers have paid against it — so
+   it reads as accepted, and nothing already sent moves.
+
+   It is in the engine because the page and the server both replay the journal
+   (computeLines on the page, applyManualOps_ on the server) and must agree on
+   which priced requests count, or a customer re-save would move money. */
+const OFFER_STATES = { pending:'Waiting on your answer', call:'You asked us to call',
+                       declined:'Declined', accepted:'Accepted' };
+function offerStatus(pr){
+  const s = String((pr && pr.status) || '');
+  return Object.prototype.hasOwnProperty.call(OFFER_STATES, s) ? s : 'accepted';
+}
+function offerOnQuote(pr){ return offerStatus(pr) === 'accepted'; }
+/* Waiting on somebody: the customer (pending) or us (call). */
+function offerOpen(pr){ const s = offerStatus(pr); return s === 'pending' || s === 'call'; }
+/* The priced requests that went through the approval flow — the ones a
+   customer sees on the "your quotes" page. Legacy entries are just lines. */
+function offersOf(manual){
+  return ((manual && manual.priced) || []).filter(function(pr){ return pr && pr.status; });
+}
 // ENGINE-END
 
   const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, SERVICE_MENU, DIM_FIELDS,
@@ -857,7 +887,8 @@ function seasonStamp(){
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
                 depositBaseFor, lwtFromOverhang, rateOverride_, seasonStamp,
                 FIRM_QUOTE_NO, FIRM_QUOTE_THROUGH, priceIsFirm_,
-                HHO_DISCOUNT_SEC, hhoDiscountFor, hhoServicesTotal, hhoDiscountLine, withHhoDiscount };
+                HHO_DISCOUNT_SEC, hhoDiscountFor, hhoServicesTotal, hhoDiscountLine, withHhoDiscount,
+                OFFER_STATES, offerStatus, offerOnQuote, offerOpen, offersOf };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

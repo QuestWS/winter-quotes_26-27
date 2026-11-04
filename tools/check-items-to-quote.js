@@ -33,9 +33,9 @@ const cst = (n) => {
   if (!m) { console.error('FAIL: cannot find const ' + n); process.exit(1); }
   return m[0];
 };
-const B = new Function('QUOTE_ITEMS',
+const B = new Function('QUOTE_ITEMS', 'offerOnQuote', 'offerStatus',
   cst('TQ_WASH_RE_') + '\n' + fn('effectiveState_') + '\n' + fn('itemsToQuoteOf_') +
-  '\nreturn { effectiveState_, itemsToQuoteOf_ };')(E.QUOTE_ITEMS);
+  '\nreturn { effectiveState_, itemsToQuoteOf_ };')(E.QUOTE_ITEMS, E.offerOnQuote, E.offerStatus);
 
 let bad = 0;
 const fail = (m) => { console.error('  FAIL ' + m); bad++; };

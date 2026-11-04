@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your Service Quotes — Quest Watersports</title>
+<!-- Reached from the "Here are your quotes" email, or the note on the quote
+     page. It is a customer's own quote, not a landing page. -->
+<meta name="robots" content="noindex, nofollow">
+<!-- One Quest mark for the whole site: favicon.png at the repo root. -->
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- The shared Quest palette and control shapes; this page declares none of its own. -->
+<link rel="stylesheet" href="quest.css">
+<style>
+/* Only what is specific to this page. */
+.wrap{max-width:620px;margin:0 auto;padding:22px 20px 0}
+@media(max-width:640px){.wrap{padding:16px 0 0}}
+.field{margin-bottom:14px}
+#qn{font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-size:17px}
+#ln{font-size:17px}
+#find .btn{margin-top:4px}
+#status{margin:14px 0 0}
+#status:empty{display:none}
+
+.unitline{font-family:var(--mono);font-size:13px;color:var(--muted);margin:-12px 0 16px;letter-spacing:.02em}
+
+/* One quote = one box. The state is written out as well as coloured. */
+.offer{border:1px solid var(--line);border-left:5px solid var(--gold);border-radius:var(--radius);
+  padding:14px 14px 12px;margin-bottom:12px;background:var(--paper)}
+.offer.accepted{border-left-color:var(--ok);background:var(--ok-bg)}
+.offer.declined{border-left-color:var(--muted);background:#fff}
+.offer.call{border-left-color:var(--frost);background:#fff}
+.offer .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.offer .what{font-weight:700;color:var(--navy);font-size:17px;line-height:1.3}
+.offer .amt{font-family:var(--mono);font-weight:600;font-size:17px;white-space:nowrap}
+.offer .state{font-size:13.5px;margin-top:4px;color:var(--muted)}
+.offer.accepted .state{color:#1F5A38;font-weight:600}
+.choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.choices .btn{width:auto;flex:1 1 140px;font-size:17px;padding:12px 12px}
+.btn.ok{background:var(--ok)}
+.btn.ok:hover{background:#1F5A38}
+.btn.line{background:#fff;color:var(--navy);border:1.5px solid var(--line)}
+.btn.line:hover{background:var(--ice)}
+.btn.gold{background:var(--gold)}
+.btn.gold:hover{background:#9C6F18}
+.confirm{margin-top:10px}
+.confirm textarea{margin-top:6px;min-height:70px}
+.confirm .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.confirm .row .btn{width:auto;flex:1 1 140px;font-size:17px;padding:12px}
+.offer .said{margin-top:8px}
+.foot{font-size:14px;color:var(--muted);margin-top:16px}
+.foot a{color:var(--frost)}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="site-inner">
+    <div class="brand"><img src="Quest%20wet%20rect.png" alt="Quest Watersports"></div>
+    <div class="season">Winter Services</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h1 id="title">Your quotes</h1>
+    <p class="lead" id="lead">You asked us to price some work. For each quote, choose
+      <b>Accept</b>, <b>Decline</b>, or <b>Call me</b> if you have questions.
+      Nothing is added until you accept it.</p>
+    <div class="unitline" id="unitline" hidden></div>
+
+    <div id="find">
+      <div class="field">
+        <label class="f" for="qn">Quote number</label>
+        <input id="qn" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="QW-26-1234">
+      </div>
+      <div class="field">
+        <label class="f" for="ln">Last name</label>
+        <input id="ln" type="text" autocomplete="family-name" spellcheck="false" placeholder="Last name">
+      </div>
+      <button class="btn" id="findBtn" type="button">Show my quotes</button>
+    </div>
+
+    <div id="list"></div>
+    <div id="status" class="msg" role="status" aria-live="polite"></div>
+    <div class="foot" id="foot" hidden>Your quote total right now: <b id="total"></b>.
+      <a id="quoteLink" href="index.html">See your full quote</a></div>
+  </div>
+</div>
+
+<footer class="site">
+  Questions? Call us at <a href="tel:+18154332200">(815)&nbsp;433-2200</a>.<br>
+  <a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a>
+</footer>
+
+<script src="pricing-engine.js"></script>
+<script>
+/* ============================================================================
+   YOUR QUOTES — the customer's answer to staff-priced requests.
+   ----------------------------------------------------------------------------
+   Staff price a request (bottom paint, detailing, impeller…) and it waits
+   here: not a line on the quote and not in the total until the customer
+   accepts it (offerOnQuote in pricing-engine.js). The "Here are your quotes"
+   email links here with the quote number and last name attached.
+
+   READ by GET (?action=offers, quote number + last name, like ?action=load).
+   ANSWERED by POST only (api:'offers' → offersServe_ in the Apps Script), so
+   a mail scanner following links can never accept anything for anybody.
+   Every answer is idempotent on the server, which is what makes the retry
+   below safe: sending "Accept" twice accepts it once.
+============================================================================ */
+
+/* The one URL everything shares — CLAUDE.md §1. tools/verify.sh fails if this
+   ever disagrees with the others. */
+var API_URL = 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+
+var E = window.QuestPricing || {};
+var $ = function (id) { return document.getElementById(id); };
+var CUR = null;            // { quote, ln } that last loaded
+var DATA = null;           // the server's last answer
+var BUSY = false;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function money(n) { return '$' + Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function say(kind, html) { var m = $('status'); m.className = 'msg' + (kind ? ' ' + kind : ''); m.innerHTML = html || ''; }
+
+/* ---- reading ------------------------------------------------------------ */
+function getJson(url) {
+  return fetch(url, { method: 'GET', redirect: 'follow' })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(function () { return jsonp(url); });
+}
+var jsonpSeq = 0;
+function jsonp(url) {
+  return new Promise(function (resolve) {
+    var name = '__qwOffers' + (++jsonpSeq);
+    var sc = document.createElement('script');
+    var t = setTimeout(function () { done(null); }, 20000);
+    function done(res) {
+      clearTimeout(t);
+      try { delete window[name]; } catch (e) { window[name] = undefined; }
+      if (sc.parentNode) sc.parentNode.removeChild(sc);
+      resolve(res);
+    }
+    window[name] = done;
+    sc.onerror = function () { done(null); };
+    sc.src = url + '&callback=' + name;
+    document.body.appendChild(sc);
+  });
+}
+function readUrl(c) {
+  return API_URL + '?action=offers&quote=' + encodeURIComponent(c.quote) +
+    '&ln=' + encodeURIComponent(c.ln) + '&t=' + Date.now();
+}
+
+function load(quote, ln) {
+  var q = E.normalizeQuoteNo ? (E.normalizeQuoteNo(quote) || String(quote || '').trim().toUpperCase()) : String(quote || '').trim().toUpperCase();
+  ln = String(ln || '').trim();
+  if (!q || !ln) { say('warn', 'Enter your quote number and last name.'); return; }
+  CUR = { quote: q, ln: ln };
+  $('findBtn').disabled = true;
+  say('', 'Looking up your quotes…');
+  getJson(readUrl(CUR)).then(function (res) {
+    $('findBtn').disabled = false;
+    if (!res) { say('warn', "We couldn't reach our quote system. Please try again, or call us at (815) 433-2200."); return; }
+    if (!res.ok) { say('warn', esc(res.error || "We couldn't find that quote.")); return; }
+    paint(res);
+    say('', '');
+  });
+}
+
+/* ---- painting ----------------------------------------------------------- */
+var STATE_TXT = {
+  pending: 'Waiting on your answer',
+  call: "You asked us to call — we'll be in touch. You can still answer here.",
+  accepted: '✓ Accepted — this is on your quote',
+  declined: "Declined — we won't do this one. Changed your mind? You can still accept it."
+};
+function paint(res) {
+  DATA = res;
+  $('find').hidden = true;
+  $('title').textContent = res.firstName ? res.firstName + ', here are your quotes' : 'Your quotes';
+  var ul = $('unitline');
+  ul.textContent = [res.quoteNo, res.unit].filter(Boolean).join(' · ');
+  ul.hidden = !ul.textContent;
+  var offers = res.offers || [];
+  if (!offers.length) {
+    $('list').innerHTML = '<div class="msg">There are no quotes waiting on you for ' + esc(res.quoteNo) +
+      '. If you expected one, call us at (815) 433-2200.</div>';
+  } else {
+    $('list').innerHTML = offers.map(function (o, i) {
+      var open = o.status !== 'accepted';
+      var btns = !open ? '' :
+        '<div class="choices" id="ch' + i + '">' +
+        '<button class="btn ok" type="button" onclick="ask(' + i + ',\'accepted\')">Accept</button>' +
+        (o.status !== 'declined' ? '<button class="btn line" type="button" onclick="ask(' + i + ',\'declined\')">Decline</button>' : '') +
+        '<button class="btn gold" type="button" onclick="ask(' + i + ',\'call\')">Call me, I have questions</button>' +
+        '</div><div class="confirm" id="cf' + i + '" hidden></div>';
+      return '<div class="offer ' + esc(o.status) + '">' +
+        '<div class="top"><span class="what">' + esc(o.label) + '</span><span class="amt">' + money(o.amt) + '</span></div>' +
+        '<div class="state">' + esc(STATE_TXT[o.status] || '') + '</div>' + btns +
+        '<div class="msg said" id="said' + i + '" hidden></div></div>';
+    }).join('');
+  }
+  $('total').textContent = res.total || '';
+  if (res.quoteUrl) $('quoteLink').href = res.quoteUrl;
+  $('foot').hidden = false;
+}
+
+/* One step between the tap and the answer: an accept moves money, and a call
+   request is worth a line about what they want to ask. */
+function ask(i, choice) {
+  var o = DATA && DATA.offers && DATA.offers[i];
+  if (!o || BUSY) return;
+  var cf = $('cf' + i);
+  var html = '';
+  if (choice === 'accepted') {
+    html = '<div>Add <b>' + esc(o.label) + '</b> for <b>' + money(o.amt) + '</b> to your ' +
+      esc(String(DATA.term || 'quote').toLowerCase()) + '?</div>' +
+      '<div class="row"><button class="btn ok" type="button" onclick="answer(' + i + ',\'accepted\')">Yes, accept it</button>' +
+      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
+  } else if (choice === 'declined') {
+    html = '<div>Decline <b>' + esc(o.label) + '</b>? Nothing is added.</div>' +
+      '<div class="row"><button class="btn line" type="button" onclick="answer(' + i + ',\'declined\')">Yes, decline it</button>' +
+      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
+  } else {
+    html = '<label class="f" for="note' + i + '">What would you like to ask? <small>— optional</small></label>' +
+      '<textarea id="note' + i + '" maxlength="1000" placeholder="e.g. Does that include the materials?"></textarea>' +
+      '<div class="row"><button class="btn gold" type="button" onclick="answer(' + i + ',\'call\')">Please call me</button>' +
+      '<button class="btn line" type="button" onclick="cancel(' + i + ')">Cancel</button></div>';
+  }
+  cf.innerHTML = html;
+  cf.hidden = false;
+  $('ch' + i).hidden = true;
+}
+function cancel(i) { $('cf' + i).hidden = true; $('ch' + i).hidden = false; }
+
+/* ---- answering ---------------------------------------------------------- */
+function post(body) {
+  return fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify(body) })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    /* Only OUR answer counts. A POST that lost its body arrives at doGet and
+       the quote loader replies instead — that is a transport failure, not a no. */
+    .then(function (res) { if (!res || res._api !== 'offers') throw new Error('not ours'); return res; });
+}
+function answer(i, choice) {
+  var o = DATA && DATA.offers && DATA.offers[i];
+  if (!o || BUSY || !CUR) return;
+  BUSY = true;
+  var noteEl = $('note' + i);
+  var body = { api: 'offers', quote: CUR.quote, ln: CUR.ln, item: o.item, choice: choice,
+               note: noteEl ? noteEl.value : '' };
+  var cf = $('cf' + i);
+  Array.prototype.forEach.call(cf.querySelectorAll('button'), function (b) { b.disabled = true; });
+  say('', 'Saving…');
+  post(body).catch(function () {
+    /* The answer may have landed even though we could not read the reply
+       (Apps Script's redirect leg can fail on a slow phone). Ask what is
+       actually stored before telling anybody it failed. */
+    return getJson(readUrl(CUR)).then(function (res) {
+      var now = res && res.ok && (res.offers || []).filter(function (x) { return x.item === o.item; })[0];
+      if (now && now.status === choice) return Object.assign(res, { msg: 'Saved.' });
+      return post(body);   // never saw it: once more, safe because the server is idempotent
+    });
+  }).then(function (res) {
+    BUSY = false;
+    if (!res) throw new Error('no answer');
+    if (res.offers) paint(res);
+    if (!res.ok) { say('warn', esc(res.error || 'That did not save.')); return; }
+    say('ok', esc(res.msg || 'Saved.'));
+    try { $('status').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+  }).catch(function () {
+    BUSY = false;
+    say('warn', "We couldn't save that — please try again, or call us at (815) 433-2200.");
+    Array.prototype.forEach.call(cf.querySelectorAll('button'), function (b) { b.disabled = false; });
+  });
+}
+
+/* ---- wiring ------------------------------------------------------------- */
+$('findBtn').addEventListener('click', function () { load($('qn').value, $('ln').value); });
+['qn', 'ln'].forEach(function (id) {
+  $(id).addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); load($('qn').value, $('ln').value); }
+  });
+});
+/* ?quote=QW-26-1234&ln=Smith — what the email's button carries. */
+(function deepLink() {
+  var q = new URLSearchParams(window.location.search);
+  var dq = String(q.get('quote') || '').trim(), dl = String(q.get('ln') || '').trim();
+  if (dq) $('qn').value = dq;
+  if (dl) $('ln').value = dl;
+  if (dq && dl) load(dq, dl);
+})();
+</script>
+</body>
+</html>

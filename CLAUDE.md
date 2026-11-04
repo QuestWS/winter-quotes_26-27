@@ -22,6 +22,7 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `index.html` | GitHub Pages root | Customer quote page |
 | `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
 | `sign.html` | GitHub Pages root | **Scan to sign** — the counter QR page: quote number in, pre-filled Adobe agreement out |
+| `service-quotes.html` | GitHub Pages root | Customer accepts / declines priced work |
 | `quest.css` | GitHub Pages root | **The canonical Quest palette**; `check-design-tokens.js` holds every other copy to it |
 | `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
 | `terms-config.js` | GitHub Pages root | **`QuestTerms.version`, single source of truth** — read by the page *and* both legal pages |
@@ -58,13 +59,14 @@ icon; that one is outside the rule.
 https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec
 ```
 
-It appears in **six places that must stay in sync**:
+It appears in **seven places that must stay in sync**:
 1. `quote-logger-apps-script.gs` → `const WEB_APP_URL`
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
 4. `sign.html` → `const API_URL`
 5. `harbor-haul-out/index.html` → `const API_URL`
-6. `questws.github.io` repo → `desk/index.html` (unchecked; `docs/ref/STAFF-CONSOLE.md`)
+6. `service-quotes.html` → `var API_URL`
+7. `questws.github.io` repo → `desk/index.html` (unchecked; `docs/ref/STAFF-CONSOLE.md`)
 
 Same URL serves several behaviors: plain `/exec` (quote page lookups + console
 API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a
@@ -333,9 +335,6 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
   read that walks the spreadsheet, check what it actually needs: the payload
   column is kilobytes per quote, and reading it to show a name is what made the
   storage view time out. `docs/ref/STAFF-CONSOLE.md`.
-- **Mobile Google Sheets app cannot show custom menus, ever.** Desktop web or
-  Chrome's "Desktop site" toggle only. That limitation is why the console
-  exists.
 - **`capture` attribute on a file input forces the camera** on Android, killing
   the gallery option. Only the dedicated camera buttons carry it, never the
   gallery input. Two further traps come with it, and both shipped once:
@@ -347,8 +346,7 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 - **Signed contracts and photo folders are "anyone with link, view."** That's
   what lets staff outside the Google account open them. Accepted tradeoff,
   documented for Chris; account-locking is a ~2-line change if ever wanted.
-- **Sheet menu prompts** (`ui.prompt`) only exist on desktop. Console
-  equivalents must supply their own inputs.
+- Sheets-mobile and `ui.prompt` limits: `docs/ref/STAFF-CONSOLE.md` § *Why the console exists*.
 
 ---
 

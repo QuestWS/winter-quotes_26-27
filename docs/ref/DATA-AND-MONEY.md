@@ -72,6 +72,18 @@ them and a re-price moves them with the rate card.
 The slipholder discount (`m.hho`) journals too, and is re-applied by
 `recomputeTotals_` rather than by the replay.
 
+**A priced request is not money until the customer accepts it.** Each
+`manual.priced` entry carries a `status` (`OFFER_STATES` in the engine):
+`pending`, `call`, `declined` or `accepted`. Only `offerOnQuote` entries — an
+accepted one, or one with **no** status, which was priced before approvals
+existed and has been a line all along — are replayed as lines. The others still
+close the open request (they have a price) but stay out of `d.lines` and the
+total. Page and server ask the engine the same question. `offerDecide_` moves
+one between states and edits `d.lines` to match; it is idempotent. On a
+customer save the server's `manual.priced` replaces the browser's copy, because
+only the server ever writes it. Detail: `docs/ref/STAFF-CONSOLE.md` § *Quoted
+items*.
+
 
 ## Payment lock
 Once `d.payments` is non-empty:

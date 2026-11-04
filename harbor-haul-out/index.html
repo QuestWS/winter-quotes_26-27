@@ -136,6 +136,18 @@ a.out{text-decoration:none;display:inline-flex;align-items:center;white-space:no
 .sheet .winterize{margin:0;border-radius:0;border-left:0;border-top:3px solid var(--navy);
   padding:13px 14px;font-size:15px}
 .winterize ul{margin:6px 0 0;padding-left:18px;font-weight:400}
+/* WASHES & ITEMS TO QUOTE. Work on the unit, not a warning: a dashed outline
+   on white, so it never reads as the alert or the winterize strip. The same
+   list the console prints as "Items to Quote" (itemsToQuoteOf_ on the server
+   decides it; this only shows it). */
+.tqline{display:flex;gap:7px;align-items:flex-start;border:1.5px dashed var(--navy);border-radius:6px;
+  padding:6px 10px;margin-top:8px;font-size:13px;color:var(--navy);line-height:1.35;background:#fff}
+.tqline .i{flex:0 0 auto}
+.tqlist{list-style:none;margin:0;padding:0}
+.tqlist li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--frost)}
+.tqlist li:last-child{border-bottom:0}
+.tqlist .st{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tqlist .st.need{color:#6B3A14;font-weight:600}
 
 /* ---- detail sheet ---- */
 .sheet{position:fixed;inset:0;z-index:60;background:var(--ice);overflow-y:auto;
@@ -295,6 +307,7 @@ input.txt{width:100%;font-family:var(--body);font-size:16px;padding:11px;border:
     <div id="dCall"></div>
     <div class="blk"><h3>Where it is</h3><div id="dState"></div></div>
     <div class="blk"><h3>The unit</h3><div id="dFacts"></div></div>
+    <div class="blk hide" id="tqBlk"><h3>Washing, detailing &amp; items to quote</h3><div id="dTq"></div></div>
     <div class="blk hide" id="dimsBlk">
       <h3>Measurements</h3>
       <div class="msg" id="dimsNow" style="margin-top:0"></div>
@@ -844,7 +857,9 @@ function search_(rows){
   const q=String(($('q')&&$('q').value)||'').trim().toLowerCase();
   if(!q) return rows;
   return rows.filter(function(x){
-    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
+    /* The wash and detail labels too, so "acid" finds every acid wash. */
+    return [x.name,x.qn,x.slip,x.unit,x.ymm,x.tab].concat(((x.tq)||[]).map(t=>t.l))
+      .some(v=>String(v||'').toLowerCase().indexOf(q)>-1);
   });
 }
 /* Soonest-first, the same order the pull list and the printed sheet use: a
@@ -912,6 +927,27 @@ function winterize_(x){
   return '<div class="winterize"><span class="i">\u2744</span><span>Winterize pending \u2014 '+
     n+' of '+w.total+' not done</span></div>';
 }
+/* Washes first: that is the job somebody does at the harbor with the boat on
+   the trailer or the stands; the rest is what the office still has to price. */
+function tqItems_(x){
+  const t=(x&&x.tq)||[];
+  return t.filter(i=>i.w).concat(t.filter(i=>!i.w));
+}
+const TQ_STATE_={open:'needs price',asked:'requested \u2014 no price',dims:'needs dimensions'};
+function tqStateTxt_(t){
+  return t.s==='quoted'?'quoted $'+Number(t.a||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','):(TQ_STATE_[t.s]||t.s);
+}
+function tq_(x){
+  const t=tqItems_(x);
+  if(!t.length) return '';
+  return '<div class="tqline"><span class="i">\uD83E\uDDFD</span><span>'+t.map(i=>esc(i.l)).join(' \u00b7 ')+'</span></div>';
+}
+function renderTq(listRow){
+  const t=tqItems_(listRow);
+  $('tqBlk').classList.toggle('hide',!t.length);
+  $('dTq').innerHTML=t.length?'<ul class="tqlist">'+t.map(i=>'<li><b>'+esc(i.l)+'</b><span class="st'+
+    (i.s==='quoted'?'':' need')+'">'+esc(tqStateTxt_(i))+'</span></li>').join('')+'</ul>':'';
+}
 function notes_(x){
   return x.notes?'<span class="badge note">'+x.notes+' note'+(x.notes===1?'':'s')+'</span>':'';
 }
@@ -929,7 +965,7 @@ function row_(x,right,action,when){
     '<div class="sub">'+esc(x.unit||'')+(x.ymm?' · '+esc(x.ymm):'')+
       (x.dims?' · '+esc(x.dims):'')+'</div>'+
     (when?'<div class="when'+(when.rank===3?' na':'')+'">Requested: '+esc(when.label)+'</div>':'')+
-    alert_(x)+winterize_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
+    alert_(x)+winterize_(x)+tq_(x)+badge_(x)+notes_(x)+(action||'')+'</div>';
 }
 /* The one-tap move along the line, used by the Awaiting and To store lists.
    The pull list deliberately has no such button: pulling a boat is the act the
@@ -1403,6 +1439,7 @@ async function openQuote(qn){
   $('dName').textContent='Loading…'; $('dQn').textContent=qn;
   $('dAuth').innerHTML=''; $('dFacts').innerHTML=''; $('dCall').innerHTML=''; $('dState').innerHTML='';
   $('dAlert').innerHTML=''; $('dWinter').innerHTML='';
+  $('tqBlk').classList.add('hide'); $('dTq').innerHTML='';
   $('dimsBlk').classList.add('hide'); $('dimsFields').innerHTML='';
   $('dimsDiff').classList.add('hide'); $('dimsDiff').innerHTML='';
   setMsg('dimsMsg',''); DIMS=null; PENDING=null;
@@ -1497,6 +1534,7 @@ function renderSheet(r){
 
   renderAlert();
   renderWinter();
+  renderTq(listRow);
   renderState();
   if(r.partial){
     /* The row knows nothing about measurements or the log: leave the one

@@ -789,6 +789,13 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: receivables broken"; sed 's/^/       /' "$TMP/recv.txt"; FAIL=1
   fi
+  # Items to Quote: itemsToQuoteOf_ is RUN over engine-priced quotes — open,
+  # priced, jetski detail, powerwash, acid wash, missing dimensions, taken off.
+  if node tools/check-items-to-quote.js > "$TMP/tq.txt" 2>&1; then
+    echo "  OK   gate: items to quote (details, requests, power and acid washes) hold"
+  else
+    echo "  FAIL gate: items to quote broken"; sed 's/^/       /' "$TMP/tq.txt"; FAIL=1
+  fi
   # Staff-only, like the staff note: the customer page never hears of it.
   if awk "/action === 'load'/,/^  }/" quote-logger-apps-script.gs | grep -q 'notStoring'; then
     echo "  FAIL trap: the load endpoint returns the not-storing mark to the customer page"; FAIL=1

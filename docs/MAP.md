@@ -122,6 +122,7 @@ symptom.
 | Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
 | Working down the storage list: ‹ Prev · Next › · List bar on a quote opened from it, ✓ on rows opened, instant return to your place | — (the overview's own `storageView`, no new call) | `fromStorage`, `WALK`, `walkStep`, `walkBack`, `renderWalkBar_`, `syncWalkBar_`, `srowAttrs_`, `STORAGE_HERE`, `renderStorageKeepPlace_`, `storageFresh_` |
 | Storage overview grouped by unit type (jet skis first) | — | `setStorageGroup`, `SGROUP`, `unitKind_`, `UNIT_ORDER_`, `storageGroups_` |
+| Items to Quote print (details, quoted-on-request work, jetski details, power and acid washes) | `itemsToQuoteOf_`, `TQ_WASH_RE_` (`tq` on every `adminStorageView` row) | `printItemsToQuote`, `tqStateTxt_` |
 | Storage overview: pulled / dropped off / in storage / picked up tag on each row | `adminStorageView` (`placementState`, `placementAt` — already on every row) | `placementTag_`, `PLACE_TAG_`, `.tagplace` |
 | Deposit / no-deposit tabs and the red no-contract tag | `adminStorageView` (`deposit`, `contract`, `STORAGE_VIEW_V_`) | `setStorageFilter`, `renderStorage`, `storageGroups_`, `storageCounts_` |
 | Customer details: fix a name, phone or email (and keep the old last name opening emailed links) | `adminSetContact`, `contactOf_`, `lastNameMatches_` (`contact` on `adminLookup`) | `renderContact`, `openContactEdit`, `saveContact` |
@@ -148,6 +149,7 @@ symptom.
 | One unit | `adminLookup` | `openQuote`, `renderSheet` |
 | Re-measuring at the harbor | `canMeasure_`, `adminDimsPreview`, `adminDimsApply`, `dimsProposal_` | `renderDims`, `collectDims`, `previewDims`, `drawDiff`, `applyDims`, `canMeasure` |
 | The Harbor Haul Out log | `adminAddPlacementNote` | `renderLog`, `saveNote` |
+| Washes, detailing and items to quote on the row and the unit | `itemsToQuoteOf_` | `tq_`, `tqItems_`, `renderTq` |
 | Voice notes (record) | `voiceFolder_`, `adminAddPlacementNote` | `startRec`, `stopRec`, `drawRecorder`, `recSupported_` |
 | Voice notes (typing them up) | `queueTranscript_`, `processTranscriptQueue`, `submitTranscript_`, `applyTranscript_`, `transcriptWebhook_`, `sweepTranscripts` | `renderLog` |
 | Photos and video | `adminUploadSession` (direct), `adminUploadPhoto` (relay), `adminPhotoInfo` | `upload`, `uploadOne_`, `putDirect_`, `upPump_`, `refreshPhotos` |

@@ -333,6 +333,21 @@ alert banner so that existing alerts do not get lost."*
   stays on the mechanics' list too, or the boat that most needs doing would
   vanish from it the moment it was stored.
 
+### Washes, detailing and items to quote
+
+Chris, Nov 4 2026: power washes and acid washes "need to be visible in Harbor
+Haul Out". The row carries a dashed navy strip (🧽) naming every wash and
+detailing / quoted-on-request item on the unit, washes first; the opened unit
+has a **Washing, detailing & items to quote** block with each item's price
+state. Search matches the labels, so typing *acid* lists every acid wash.
+
+- **Same data as the console's printed Items to Quote list** — `tq` on the
+  storage row, decided by `itemsToQuoteOf_` (`docs/ref/STAFF-CONSOLE.md`
+  § *Items to Quote*). The app renders it (`tq_`, `renderTq`); it decides
+  nothing, and nothing is edited from here.
+- **Dashed outline on white, not a filled strip**: it is work on the unit,
+  not a warning, so it must never read as the alert or the winterize strip.
+
 ## Opening fast: the list is on the phone
 
 Chris, Sep 2026: *"It takes FOREVER for the Harbor Haul Out app to load.

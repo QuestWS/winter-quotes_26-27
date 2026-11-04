@@ -9267,10 +9267,16 @@ function storageViewBuild_(opt) {
      outstanding total, because they owe nothing for a season they are
      skipping — but money already taken on one is still money taken, so its
      payments stay in `tx` and in `collected`.
+   - Outstanding counts only COMMITTED quotes — a deposit (anything paid) or
+     a signed contract on file. Chris, Nov 2026: "Outstanding to only reflect
+     balances owed on quotes with deposits and/or contracts." A priced quote
+     with neither is a customer who has not said yes yet; its balance is
+     money hoped for, not owed. It is still listed under Unpaid, flagged, and
+     its sum is sent as `totals.uncommitted` so the heading can say so.
 
    Read-only, on CONSOLE_GET_FNS_, cached like the storage view and dropped by
    the same writes (invalidateStorageView_). `opt.fresh` skips the cache. */
-const RECEIVABLES_V_ = 1;
+const RECEIVABLES_V_ = 2;   // 2: outstanding = committed quotes only
 const RECEIVABLES_TX_MAX_ = 400;   // newest first; the count says how many more exist
 
 function adminReceivables(token, opt) {
@@ -9347,7 +9353,8 @@ function receivablesBuild_(opt) {
         tab: sh.getName(), status: String(r[COL.STATUS - 1] || ''),
         phone: fmtPhone(String(r[COL.PHONE - 1] || '')), email: String(r[COL.EMAIL - 1] || ''),
         total: total, paid: paid, bal: bal, bucket: bucket,
-        contract: !!(pd && pd.contractUrl), payCount: ledger.length,
+        contract: !!(pd && pd.contractUrl),
+        committed: paid > 0.005 || !!(pd && pd.contractUrl), payCount: ledger.length,
         lastDate: lastPay ? String(lastPay.date || '') : '', lastAt: lastPay ? String(lastPay.at || '') : '',
         lastWhen: lastWhen });
     });
@@ -9359,12 +9366,14 @@ function receivablesBuild_(opt) {
   customers.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
   const sum = function (list, f) { return list.reduce(function (n, x) { return n + f(x); }, 0); };
   const owing = customers.filter(function (c) { return c.bucket === 'unpaid' || c.bucket === 'partial'; });
+  const isIn = function (c) { return c.committed; }, isOut = function (c) { return !c.committed; };
   const credits = customers.filter(function (c) { return c.bucket === 'credit'; });
   const out = { ok: 1, v: RECEIVABLES_V_, builtAt: new Date().toISOString(),
     totals: {
       billed: sum(customers.filter(function (c) { return c.bucket !== 'notstoring'; }), function (c) { return c.total; }),
       collected: sum(tx, function (t) { return t.amt; }),
-      outstanding: sum(owing, function (c) { return c.bal; }),
+      outstanding: sum(owing.filter(isIn), function (c) { return c.bal; }),
+      uncommitted: sum(owing.filter(isOut), function (c) { return c.bal; }),
       credit: sum(credits, function (c) { return -c.bal; })
     },
     unpriced: unpriced, txCount: tx.length,

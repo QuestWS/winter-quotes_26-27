@@ -6,7 +6,8 @@
    on a screen that disagrees with the sheet is worse than no screen, so the
    real builder is RUN here over quotes covering every bucket and every trap:
 
-     UNPAID    priced, nothing paid                       → unpaid
+     UNPAID    priced, nothing paid, no contract          → unpaid, NOT in outstanding
+     SIGNED    priced, nothing paid, contract on file     → unpaid, in outstanding
      PART      deposit recorded before `at` existed       → partial
      FULL      paid in full, stamped with at/by           → paid
      CRED      overpaid then partly refunded              → credit (signed, never clamped)
@@ -46,6 +47,7 @@ const near = (a, b) => Math.abs(a - b) < 0.005;
 const CUR = '2026–2027';
 const Q = [
   { qn: 'UNPAID', last: 'Able',  total: 900, pays: [] },
+  { qn: 'SIGNED', last: 'Abbot', total: 250, contract: 1, pays: [] },
   { qn: 'PART',   last: 'Baker', total: 900, pays: [{ amt: 300, method: 'Check #1', date: '9/20/2026' }] },
   { qn: 'FULL',   last: 'Cole',  total: 500, contract: 1,
     pays: [{ amt: 500, method: 'Zelle', date: '10/12/2026', at: '2026-10-12T15:30:00.000Z', by: 'Jeff' }] },
@@ -80,8 +82,8 @@ function tab(name, quotes) {
   };
 }
 const SHEETS = [
-  tab('Inside', Q.slice(0, 4)),
-  tab('Outside', Q.slice(4)),
+  tab('Inside', Q.slice(0, 5)),
+  tab('Outside', Q.slice(5)),
   tab('Import', [{ qn: 'DRAFT', last: 'Hale', total: 300, pays: [{ amt: 300, method: 'Cash', date: '10/13/2026' }] }]),
 ];
 /* What quoteTabGrids_ hands back for these spans: header row + data rows. */
@@ -115,7 +117,7 @@ for (const batch of [true, false]) {
   console.log('=== receivablesBuild_ — ' + (batch ? 'batch read' : 'per-tab fallback') + ' ===');
   const r = build(batch);
   const by = {}; (r.customers || []).forEach(c => { by[c.qn] = c; });
-  const want = { UNPAID: 'unpaid', PART: 'partial', FULL: 'paid', CRED: 'credit', SKIP: 'notstoring', BROKEN: 'unpaid' };
+  const want = { UNPAID: 'unpaid', SIGNED: 'unpaid', PART: 'partial', FULL: 'paid', CRED: 'credit', SKIP: 'notstoring', BROKEN: 'unpaid' };
   Object.keys(want).forEach((qn) => {
     if (!by[qn]) fail(qn + ' is missing from the customer list');
     else if (by[qn].bucket !== want[qn]) fail(qn + ' is in "' + by[qn].bucket + '", expected "' + want[qn] + '"');
@@ -130,8 +132,13 @@ for (const batch of [true, false]) {
   if (!by.BROKEN || !near(by.BROKEN.bal, 200)) fail('a row with a broken payload lost its balance');
   else ok('a broken payload still lists from the columns');
   const t = r.totals || {};
-  if (!near(t.outstanding, 900 + 600 + 200)) fail('outstanding is ' + t.outstanding + ', expected 1700 (not-storing excluded)');
-  else ok('outstanding = unpaid + partial, not-storing left out');
+  if (!near(t.outstanding, 600 + 250)) fail('outstanding is ' + t.outstanding + ', expected 850 (deposit or contract only; not-storing excluded)');
+  else ok('outstanding = owing quotes with a deposit or a contract, not-storing left out');
+  if (!near(t.uncommitted, 900 + 200)) fail('uncommitted is ' + t.uncommitted + ', expected 1100');
+  else ok('uncommitted = unpaid quotes with no deposit and no contract');
+  if (!by.SIGNED || !by.SIGNED.committed || !by.PART || !by.PART.committed || !by.UNPAID || by.UNPAID.committed)
+    fail('the committed flag is wrong on SIGNED/PART/UNPAID');
+  else ok('committed = paid something, or has a contract');
   if (!near(t.credit, 50)) fail('credits due is ' + t.credit + ', expected 50');
   else ok('credits due adds up');
   if (!near(t.collected, 300 + 500 + 500 - 50 + 100)) fail('collected is ' + t.collected + ', expected 1350 (refunds net, not-storing deposit in)');

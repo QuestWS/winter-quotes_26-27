@@ -238,6 +238,10 @@ records nothing; a payment or refund is still recorded on the quote.
 - **Not storing this season** is its own bucket and is kept out of
   Outstanding, but money already taken on one stays in Collected and in the
   transaction list.
+- **Outstanding counts committed quotes only** — a deposit (anything paid)
+  or a signed contract on file (Chris, Nov 2026). A priced quote with neither
+  is still listed under Unpaid, tagged *not committed*, and its sum is sent as
+  `totals.uncommitted` for the Unpaid heading — never added to Outstanding.
 - **Collected** is the net of every ledger entry, refunds included.
 - **The transaction list is capped at the newest 400** (`RECEIVABLES_TX_MAX_`)
   and says so under *All* when there are more.

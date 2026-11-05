@@ -478,6 +478,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: firm-quote email"; sed 's/^/       /' "$TMP/firmquote.txt"; FAIL=1
   fi
+  # The last call for storage: only quotes missing a deposit or an agreement,
+  # never after the deadline it announces, fees from the season, the right
+  # buttons, the PDF, no status — and the typed CC box takes real addresses only.
+  if node tools/check-last-call.js > "$TMP/lastcall.txt" 2>&1; then
+    echo "  OK   gate: last-call email and typed CC hold"
+  else
+    echo "  FAIL gate: last-call email / typed CC"; sed 's/^/       /' "$TMP/lastcall.txt"; FAIL=1
+  fi
   # Drafts instead of sends. A draft must not do what a send does, and the
   # sweep must record a send only when Gmail shows the draft gone AND in Sent
   # — never the same evening it vanished, never when Gmail is unreachable.

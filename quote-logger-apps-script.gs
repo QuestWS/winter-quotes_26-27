@@ -6765,6 +6765,7 @@ function adminAdjust(token, qn, amt, desc, emailNow) {
 function unbuildableMsg_(kind, d) {
   if (kind === 'latewarn') return 'No unpaid balance — nothing to warn about.';
   if (kind === 'firmquote') return firmQuoteBlocker_(d) || 'Could not build the firm-quote email.';
+  if (kind === 'lastcall') return lastCallBlocker_(d) || 'Could not build the last-call email.';
   if (kind === 'offers') {
     if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to send yet.';
     if (!offersLinkFor_(d)) return 'This quote has no last name, so there is no link the customer could open.';
@@ -7010,6 +7011,7 @@ function leaveImportTab_(sh, rowNum, d) {
 function adminSendEmail(token, qn, kind, extra, staff) {
   const who = requireAuth_(token, 'email');
   const sx = staffExtras_(staff);
+  if (sx.badCc.length) return { ok: 0, error: badCcMsg_(sx) };
   const ccTxt = sx.cc ? ' (cc ' + sx.cc + ')' : '';
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
@@ -7371,6 +7373,21 @@ const BULK_KINDS_ = {
     startTicked: false,
     batch: 10,
     blocker: function (d) { return firmQuoteBlocker_(d); }
+  },
+  /* "Last call for storage" — everyone still missing a deposit or a signed
+     agreement before the pay-by date. Hand-picked like the firm quote
+     (startTicked:false): somebody who signed a paper copy at the counter is
+     on this list until the scan is uploaded, so each send is a tick. Its bar
+     (lastCallBlocker_) holds back, with the reason, everyone who has both.
+     Imported drafts stay out: they have not been sent a quote to settle.
+     No status (''), for the sign chase's reason — see buildEmailFor_. */
+  lastcall: {
+    label: 'Last call for storage — deposit / agreement still missing',
+    skipTabs: [],
+    status: '',
+    startTicked: false,
+    batch: 10,
+    blocker: function (d) { return lastCallBlocker_(d); }
   }
 };
 
@@ -7486,6 +7503,7 @@ function adminBulkPreview(token, kind) {
     }),
     /* Absent means ticked, which is what the two announcements always did. */
     startTicked: cfg.startTicked !== false,
+    includeImports: !!cfg.includeImports,
     batch: cfg.batch || 0,
     notReady: t.notReady,
     byTab: Object.keys(t.byTab).sort().map(function (k) { return { tab: k, n: t.byTab[k] }; }),
@@ -7537,7 +7555,10 @@ function bulkSendKind_(kind, by, only) {
       if (built.attachPdf) { const pdf = getPdfBlob_(x.d.quoteNo, x.d); if (pdf) opts.attachments = [pdf]; }
       if (FROM_ALIAS) opts.from = FROM_ALIAS;
       GmailApp.sendEmail(x.d.email, built.subject, built.subject, opts);
-      x.sh.getRange(x.row, COL.STATUS).setValue(built.status || cfg.status);
+      /* A kind with no status (the last call) leaves the column alone rather
+         than blanking it. */
+      const stv = built.status || cfg.status;
+      if (stv) x.sh.getRange(x.row, COL.STATUS).setValue(stv);
       recordEmail_(x.sh, x.row, x.d, kind, by);
       sent++;
     } catch (e) {
@@ -11589,6 +11610,38 @@ function sendCustomerNotice_(d, subject, introHtml, extraButtonsHtml, includeMon
   GmailApp.sendEmail(d.email, subject, subject, opts);
 }
 
+/* MAY THIS QUOTE GET THE LAST CALL FOR STORAGE?
+   ---------------------------------------------------------------------------
+   '' when yes, otherwise the reason in words staff can act on. Shared by the
+   builder, unbuildableMsg_, the bulk picker and the console, like the firm
+   quote's bar. "Haven't received a deposit or contract" is the storage view's
+   own definition: a deposit is any money in (paid > 0), a contract is a
+   signed agreement on file. `now` is for the guard; callers omit it. */
+function lastCallBlocker_(d, now) {
+  if (!d) return 'No quote data.';
+  if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to settle yet.';
+  if (!(Number(d.total || 0) > 0.005)) return 'This quote has no priced total.';
+  if (!quoteLinkFor_(d)) return 'No last name on this quote, so there is no link to send them to.';
+  if (paymentsTotal_(d) > 0.005 && d.contractUrl) {
+    return 'Deposit and signed agreement are both on file — nothing to chase.';
+  }
+  if (lastCallPastDeadline_(d, now)) {
+    return 'The ' + ((d.season && d.season.payBy) || SEASON.payByDate) + ' deadline has passed — ' +
+      'this email says it is still coming. Use the late fee warning instead.';
+  }
+  return '';
+}
+
+/* True once the whole pay-by day has gone by (script time, Central). A date
+   that will not parse reads as "not passed": the worst case is a reminder
+   about a deadline, never a missed one. */
+function lastCallPastDeadline_(d, now) {
+  const t = new Date(String((d && d.season && d.season.payBy) || SEASON.payByDate));
+  if (isNaN(t.getTime())) return false;
+  const end = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1);
+  return (now ? new Date(now) : new Date()).getTime() >= end.getTime();
+}
+
 /* MAY THIS QUOTE BE CALLED FIRM?
    ---------------------------------------------------------------------------
    '' when yes, otherwise the reason in words staff can act on. The firm-quote
@@ -12130,6 +12183,103 @@ function buildEmailFor_(d, kind, extra, photos) {
     const btn = photos ? '<div style="margin:6px 0 2px">' + buttonHtml_(photos, 'View ' + photoWord, '#14293E') + '</div>' : '';
     return { subject: headline + ' · ' + d.quoteNo, html: noticeHtml_(d, intro, btn, true), status: 'Relaunched — customer notified' };
   }
+  /* LAST CALL FOR STORAGE (`lastcall`) — Chris, Nov 2026: "a last check in
+     with customers I haven't received a deposit or contract from that lets
+     them know that the November 15th date is coming and our $225 late pull
+     out requested fee and the 10% late invoice fee get added on soon".
+
+     It carries their quote as a PDF and the three ways to settle it: change
+     the quote (their own link), sign (rebuilt by signUrlFor_, dropped once a
+     contract is on file) and pay (dropped once paid in full). lastCallBlocker_
+     is the whole bar — shared by the builder, the preview, the send and the
+     bulk picker, so they cannot disagree about a quote. The fee, the
+     percentage and the date all come from the quote's own season stamp and
+     the engine, never typed here, so next season's rollover moves them too.
+
+     Sets no status, for the sign chase's reason: a quote that has paid its
+     deposit but not signed must keep "Deposit received" on the console pill
+     and the storage sheets. Email History records the send. */
+  if (kind === 'lastcall') {
+    if (lastCallBlocker_(d)) return null;
+    const term = docTerm_(d).toLowerCase();
+    const land = isLandUnit_(d);
+    const unitTxt = esc_(String(d.unit || 'unit').toLowerCase());
+    const paid = paymentsTotal_(d);
+    const total = Number(d.total || 0);
+    const bal = total - paid;
+    const signed = !!d.contractUrl;
+    const hasDep = paid > 0.005;
+    const signLink = signed ? '' : (signUrlFor_(d) || '');
+    const quoteUrl = quoteLinkFor_(d);
+    const sn = d.season || {};
+    const payBy = esc_(sn.payBy || SEASON.payByDate);
+    const payByShort = esc_(sn.payByShort || SEASON.payByShort);
+    const fee = usd_(Number(sn.lateRetrievalFee) || PRICES.lateRetrieval);
+    const pct = Number(RULES.latePct) || 10;
+    const feeName = land ? 'late pick-up request fee' : 'late pull-out request fee';
+    const noStorage = !!(d.state && d.state.storage === 'none');
+
+    const missing = !hasDep && !signed ? 'your deposit or your signed winter services agreement'
+      : !hasDep ? 'your deposit' : 'your signed winter services agreement';
+    let intro = 'This is our last check-in before the <b>' + payBy + '</b> winter storage deadline. ' +
+      'We still haven\'t received ' + missing + ' for your ' + unitTxt + '.';
+    if (hasDep) intro += ' (We do have your payment of <b>' + usd_(paid) + '</b> — thank you.)';
+    if (signed) intro += ' (We do have your signed agreement — thank you.)';
+    intro += '<br><br><b>After ' + payByShort + ', two charges are added:</b>' +
+      '<ul style="margin:8px 0 0;padding-left:20px">' +
+      '<li style="margin-bottom:4px">our <b>' + fee + ' ' + feeName + '</b>, for ' +
+        (land ? 'units we collect' : 'units we pull out') + ' after ' + payByShort + ', and</li>' +
+      '<li>a <b>' + pct + '% late invoice fee</b> on any balance still unpaid.</li></ul>' +
+      '<br>Getting it settled before ' + payByShort + ' avoids both. Everything you need is below — ' +
+      'your ' + term + ' is attached, and each button takes about a minute.';
+
+    const rowsHtml =
+      moneyRow_('Your ' + term + ' total', usd_(total), true) +
+      (hasDep ? moneyRow_('Payments received', '−' + usd_(paid), false) : '') +
+      (bal > 0.005
+        ? (!hasDep && !noStorage ? moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false) : '') +
+          moneyRow_('Balance if paid by ' + payByShort, usd_(bal), false) +
+          moneyRow_('Balance after ' + payByShort + ' (+' + pct + '%)', usd_(bal * (1 + pct / 100)), false)
+        : '');
+    const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
+      '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table></div>';
+
+    const step = function (title, body, btn) {
+      return '<div style="border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:0 0 12px">' +
+        '<div style="font-size:15px;font-weight:bold;color:#14293E;margin-bottom:4px">' + title + '</div>' +
+        '<div style="font-size:13.5px;color:#1D2B38;line-height:1.5;margin-bottom:10px">' + body + '</div>' +
+        btn + '</div>';
+    };
+    let steps = step('Need to change anything?',
+      'Open your ' + term + ' online — everything you chose is already filled in. Adjust it and save, ' +
+      'and your new total shows straight away.',
+      buttonHtml_(quoteUrl, 'Review or adjust my ' + term, '#4A81A6'));
+    if (!signed) {
+      steps += signLink
+        ? step('Sign your winter services agreement',
+            'The agreement opens with your quote number already filled in.',
+            buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') + signConfirmHtml_())
+        : step('Sign your winter services agreement',
+            'Call us on (815) 433-2200 and we\'ll get your agreement to you.', '');
+    }
+    if (bal > 0.005) {
+      steps += step(hasDep || noStorage ? 'Pay your balance' : 'Pay your deposit',
+        'Please put quote # <b>' + esc_(d.quoteNo || '') + '</b> in the payment memo.',
+        buttonHtml_(PAYMENT_URL, hasDep || noStorage ? 'Pay online' : 'Pay my deposit online', '#C08A22'));
+    }
+    steps += '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-bottom:4px">' +
+      'Already taken care of it, or signed a paper copy with us at the shop? Thank you — give us a call ' +
+      'and we\'ll match it up. Not storing with us this winter? Just reply and let us know, and we\'ll ' +
+      'stop the reminders.</div>';
+
+    return {
+      subject: 'Last call: settle your winter storage by ' + (sn.payByShort || SEASON.payByShort) +
+        ' · ' + (d.quoteNo || ''),
+      html: noticeHtml_(d, intro, box + steps, false),
+      status: '',
+      attachPdf: true
+    };
+  }
   if (kind === 'latewarn') {
     const paid = paymentsTotal_(d);
     const bal = Number(d.total || 0) - paid;
@@ -12147,6 +12297,7 @@ function buildEmailFor_(d, kind, extra, photos) {
 function adminEmailPreview(token, qn, kind, extra, staff) {
   requireAuth_(token, 'email');
   const sx = staffExtras_(staff);
+  if (sx.badCc.length) return { ok: 0, error: badCcMsg_(sx) };
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
@@ -12163,7 +12314,9 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
-    return { ok: 1, to: d.email, cc: sx.cc, html: withStaffNote_(html, sx.note), subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo, html: html };
+    /* (The object used to carry `html` twice, and the second -- without the
+       note -- won, so this one preview never showed the staff note.) */
+    return { ok: 1, to: d.email, cc: sx.cc, html: withStaffNote_(html, sx.note), subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo };
   }
   const built = buildEmailFor_(d, kind, extra, photos);
   if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
@@ -12178,10 +12331,31 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
    ever add NOTIFY_EMAIL (service@). */
 function staffExtras_(staff) {
   const o = (staff && typeof staff === 'object') ? staff : {};
+  /* Typed CC addresses (Chris, Nov 2026: "I want to be able to manually add
+     CC email addresses"). Comma, semicolon or space separated; each must look
+     like one address — no names, no angle brackets, nothing that could smuggle
+     a second header. At most CC_TYPED_MAX_, duplicates and service@ folded.
+     An address that does not pass is returned in `badCc` and the preview and
+     the send both refuse, so a typo is fixed rather than silently dropped. */
+  const list = o.cc ? [NOTIFY_EMAIL] : [];
+  const badCc = [];
+  String(o.ccTo || '').split(/[\s,;]+/).forEach(function (a) {
+    a = a.trim();
+    if (!a) return;
+    if (!/^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(a) || a.length > 254) { badCc.push(a); return; }
+    if (list.some(function (x) { return x.toLowerCase() === a.toLowerCase(); })) return;
+    list.push(a);
+  });
+  if (list.length > CC_TYPED_MAX_ + (o.cc ? 1 : 0)) badCc.push('more than ' + CC_TYPED_MAX_ + ' CC addresses');
   return {
-    cc: o.cc ? NOTIFY_EMAIL : '',
+    cc: list.join(','),
+    badCc: badCc,
     note: String(o.note || '').replace(/\r\n?/g, '\n').trim().slice(0, 4000)
   };
+}
+const CC_TYPED_MAX_ = 5;
+function badCcMsg_(sx) {
+  return 'Check the CC box — not a usable email address: ' + sx.badCc.slice(0, 3).join(', ') + '.';
 }
 
 /* The staff note sits right under "Hi <name>," -- a personal line reads as

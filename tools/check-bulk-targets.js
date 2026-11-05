@@ -100,6 +100,9 @@ try {
        here it is a stub that holds back exactly one quote, so this guard can
        prove a held-back quote is reported and never targeted. */
     "function firmQuoteBlocker_(d) { return d && d.quoteNo === 'Q-IM-2' ? 'not re-priced' : ''; }",
+    /* Same for the last call (executed for real in check-last-call.js): a stub
+       that holds back the one quote "with a deposit and a contract". */
+    "function lastCallBlocker_(d) { return d && d.quoteNo === 'Q-IN-2' ? 'both on file' : ''; }",
     fn('bulkTargets_'),
     fn('bulkFilterTargets_'),
     'return { bulkTargets_, BULK_KINDS_, bulkFilterTargets_ };'
@@ -160,6 +163,12 @@ for (const kind of kinds) {
     if (nr.indexOf('Q-IM-2') < 0) fail('firmquote dropped Q-IM-2 silently — a held-back quote must be reported');
     if ((t.notReady || []).some(x => !x.why)) fail('a held-back quote was reported with no reason');
     if (cfg.startTicked !== false) fail('the firm quote must start with nobody ticked');
+  } else if (kind === 'lastcall') {
+    if (cfg.includeImports) fail('the last call must not reach imported drafts — nobody has sent them a quote to settle');
+    if (cfg.startTicked !== false) fail('the last call must start with nobody ticked — paper signers are on its list');
+    if (cfg.status) fail('the last call must set no status — it would overwrite "Deposit received"');
+    if (qns.indexOf('Q-IN-2') > -1) fail('lastcall targeted Q-IN-2, which its blocker holds back');
+    if ((t.notReady || []).map(x => x.qn).indexOf('Q-IN-2') < 0) fail('lastcall dropped Q-IN-2 silently');
   } else if (cfg.blocker || cfg.startTicked === false) {
     fail(kind + ' picked up the firm quote\'s hand-picked/blocker behaviour');
   }
@@ -169,7 +178,8 @@ for (const kind of kinds) {
     .filter(x => !x.notAQuoteTab && x.name !== 'Quote Started' && cfg.skipTabs.indexOf(x.name) < 0 &&
                  (x.name !== 'Import' || cfg.includeImports))
     .reduce((a, x) => a.concat(x.rows.filter(r => r[2]).map(r => r[1])), [])
-    .filter(q => !(cfg.blocker && q === 'Q-IM-2'));
+    .filter(q => !(kind === 'firmquote' && q === 'Q-IM-2'))
+    .filter(q => !(kind === 'lastcall' && q === 'Q-IN-2'));
   const missing = expect.filter(q => qns.indexOf(q) < 0);
   if (missing.length) fail(kind + ' missed ' + missing.join(', '));
 

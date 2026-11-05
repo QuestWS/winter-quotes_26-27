@@ -29,9 +29,28 @@ The console's preview window has a **CC service@** box and a free-text
 `adminSendEmail`) — and both go through `staffExtras_`, so the preview stays
 byte-identical to the send. The note is escaped and placed by `withStaffNote_`
 directly under "Hi <name>," in either shell; typing re-renders the preview
-and **Send** waits until it has. The CC can only ever be `NOTIFY_EMAIL` — a
-checkbox, never a typed address. The bulk sample hides both: send-to-all
+and **Send** waits until it has. The bulk sample hides both: send-to-all
 builds its own mail and takes neither.
+
+**Typed CC addresses** (Chris, Nov 2026: *"I want to be able to manually add
+CC email addresses"*). Under the service@ checkbox is a free-text box for a
+spouse, a co-owner, a marina. It travels in the same object (`ccTo`) and goes
+through the same `staffExtras_`, so the preview header shows the CC list the
+send will use. The rules, executed by `tools/check-last-call.js`:
+
+- **One plain address per entry** — comma, semicolon or space separated; no
+  display names, no angle brackets, nothing that could carry a second header.
+- **A bad address refuses, it is never dropped.** `badCc` comes back, and
+  `adminEmailPreview` and `adminSendEmail` both answer with which one before
+  looking anything up — a typo silently removed is a co-owner who never got
+  the email staff think they sent.
+- **At most `CC_TYPED_MAX_` (5)** typed, service@ not counted; duplicates in
+  any case are folded.
+- **Single-quote sends only.** Send-to-all and its drafts take no typed CC —
+  one address on two hundred customers' email is never what was meant. A draft
+  can be given a CC in Gmail before it is sent.
+- Every send's CC list lands in the Activity Log (`(cc …)`), as the service@
+  one always did.
 
 ## The "pick up your quote" link
 
@@ -151,6 +170,48 @@ the storage view tags in red (`docs/ref/STAFF-CONSOLE.md`).
 - `tools/check-sign-chase.js` builds it for every one of those cases and
   asserts what came out; `verify.sh` runs it.
 
+
+## Last call for storage (`lastcall`)
+
+*"A premade email I can send to customers as a last call for storage … a last
+check in with customers I haven't received a deposit or contract from that
+lets them know that the November 15th date is coming and our $225 late pull out
+requested fee and the 10% late invoice fee get added on soon … These customers
+should have their quote attached, and links for adjusting their quote, making
+a payment, and to sign their contract"* — Chris, Nov 2026.
+
+- **`lastCallBlocker_` is the whole bar**, shared by the builder,
+  `unbuildableMsg_`, the bulk picker and the console, like the firm quote's.
+  Sendable when the quote is missing a deposit (no money in — the storage
+  view's own definition), a signed agreement, or both. Refused, with the
+  reason: both on file, a lead, no priced total, no last name (the adjust
+  button would be dead), and **after the pay-by day** — the email says the
+  date is coming; once it has gone, the late fee warning is the right email.
+  An unparseable date does not block.
+- **Nothing in the wording is typed.** The date is the quote's season stamp
+  (`payBy` / `payByShort`), the fee is `lateRetrievalFee` (falling back to
+  `PRICES.lateRetrieval`), the percentage is `RULES.latePct`. The rollover
+  moves all three.
+- **The buttons follow what is missing:** *Review or adjust my quote* always
+  (`quoteLinkFor_`); *Review & sign* while no contract is on file
+  (`signUrlFor_`, with the confirm-your-email note; no web form means "call
+  us"); *Pay my deposit* until money is in, then *Pay online* until the balance
+  is zero. The money box shows the balance by the date and what it becomes
+  after it (+10%).
+- **PDF attached, no status** — the sign chase's reason: a deposit-paid,
+  unsigned quote must keep `Deposit received`. Email History records it.
+- It closes with "already done it / signed paper at the shop? call us" and
+  "not storing with us? reply and we'll stop the reminders" — the second is
+  what feeds **Not storing this season**.
+- **Land units** get a *late pick-up request fee* for units we *collect*; never
+  "pull out", never water.
+- **One quote** (Customer emails → *Last call for storage*, with the typed CC
+  box) **or many** (Send to all → *Last call for storage*). In the picker it is
+  hand-picked like the firm quote — `startTicked:false`, because a customer who
+  signed a paper copy at the counter is on the list until the scan is
+  uploaded. Imported drafts stay out (nobody has sent them a quote to settle).
+  Batches of 10; drafts work the same as for the firm quote.
+- `tools/check-last-call.js` builds it for every case above; `verify.sh` runs it.
 
 ## An imported quote is held back from the automatic reminder
 
@@ -302,10 +363,11 @@ human**: the 10-day reminder and the lead follow-up.
 
 ## Send to all
 
-Three kinds and only three — `BULK_KINDS_` is the whole allow-list: `spring` (skips
+Four kinds and only four — `BULK_KINDS_` is the whole allow-list: `spring` (skips
 `No Storage`; nothing to relaunch for a unit we never stored), `fall` (skips
-nothing; a No Storage customer still has to get the unit to us) and `firmquote`
-(see *The firm quote* below — hand-picked, not a blast). Reachable from
+nothing; a No Storage customer still has to get the unit to us), `firmquote`
+(see *The firm quote* below — hand-picked, not a blast) and `lastcall` (see
+*Last call for storage* above — hand-picked too). Reachable from
 the console with **no quote loaded**, gated on `email`, and from the sheet menu
 (the two announcements only; the menu has no picker, so it has no firm quote).
 

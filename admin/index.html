@@ -990,6 +990,11 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
                    reason is printed under the buttons (firmBlock from the
                    server) and the preview refuses with the same words. -->
               <button class="btn navy" id="em_firmquote" onclick="sendKind('firmquote')">Firm quote — rates final</button>
+              <!-- Last call before the pay-by date: deposit / agreement still
+                   missing, the late fees that follow, quote attached, adjust /
+                   sign / pay buttons. Always shown; when the quote has both on
+                   file (or the date has passed) the preview says so and refuses. -->
+              <button class="btn gold" id="em_lastcall" onclick="sendKind('lastcall')">Last call for storage</button>
             </div>
             <div class="msg" id="firmNote" style="margin-top:6px"></div>
             <div class="row2" style="margin-top:10px">
@@ -1218,6 +1223,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <option value="fall">End of season note — winding down, last call for work, haul-out timing</option>
         <option value="spring">Spring relaunch alert — launch timing and last-minute work</option>
         <option value="firmquote">Firm quote — rates are final; change it online, or sign &amp; pay as-is (PDF attached, pick who)</option>
+        <option value="lastcall">Last call for storage — no deposit or agreement yet; late fees after the deadline (PDF attached, pick who)</option>
       </select>
       <button class="btn navy" id="bulkPrevBtn" onclick="previewBulk()">See who this goes to</button>
       <!-- Drafts: the same email into this account's Gmail Drafts instead of
@@ -1341,7 +1347,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 
 <div class="modal hide" id="pvModal">
   <div class="mbox">
-    <div class="mhead"><b id="pvSub"></b><div class="msub">To: <span id="pvTo"></span> — review, then send or cancel</div></div>
+    <div class="mhead"><b id="pvSub"></b><div class="msub">To: <span id="pvTo"></span><span id="pvCcLine"></span> — review, then send or cancel</div></div>
     <!-- allow-same-origin lets us write the email into the frame directly, which
      is the only method that renders reliably on iOS Safari. Scripts stay
      blocked: allow-scripts is deliberately NOT in this list, so the email
@@ -1352,7 +1358,12 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
          to the server with the preview AND the send (staffExtras_), so what is
          shown above is exactly what goes out. -->
     <div class="pvx" id="pvExtras">
-      <label class="cc"><input type="checkbox" id="pvCc"> CC service@questwatersports.com</label>
+      <label class="cc"><input type="checkbox" id="pvCc" onchange="pvNoteChanged()"> CC service@questwatersports.com</label>
+      <!-- Typed CC addresses (a spouse, a co-owner, a marina). Checked by the
+           server (staffExtras_): one bad address and the preview says which,
+           and nothing sends until it is fixed. -->
+      <input class="txt" id="pvCcTo" type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false"
+        maxlength="600" oninput="pvNoteChanged()" placeholder="CC other addresses (optional) — separate with commas">
       <textarea class="txt" id="pvNote" rows="2" maxlength="4000" oninput="pvNoteChanged()"
         placeholder="Add a note to the customer (optional) — appears under &ldquo;Hi&nbsp;name,&rdquo;"></textarea>
       <div class="hint" id="pvNoteHint"></div>
@@ -3280,20 +3291,23 @@ async function delLine(i){
 let PV={kind:'',extra:'',note:''};
 /* The CC box and note travel as one object, the 4th argument of both
    emailPreview and sendEmail — the server applies them the same way to both. */
-function pvStaff(){return {cc:$('pvCc').checked,note:$('pvNote').value.trim()};}
+function pvStaff(){return {cc:$('pvCc').checked,ccTo:$('pvCcTo').value.trim(),note:$('pvNote').value.trim()};}
+/* What the preview on screen was built with — Send waits until it matches. */
+const pvKey=()=>JSON.stringify(pvStaff());
+function pvShowCc(cc){$('pvCcLine').textContent=cc?' · CC: '+String(cc).split(',').join(', '):'';}
 async function previewSend(kind,extra){
-  PV={kind,extra:extra||'',note:''};
+  PV={kind,extra:extra||'',key:''};
   /* The bulk sample reuses this modal and hides its send button and extras.
      Restore them, or the next single-quote preview silently loses them. */
   $('pvSend').classList.remove('hide');
   $('pvExtras').classList.remove('hide');
-  $('pvCc').checked=false;$('pvNote').value='';$('pvNoteHint').textContent='';
+  $('pvCc').checked=false;$('pvCcTo').value='';$('pvNote').value='';$('pvNoteHint').textContent='';
   $('pvSend').disabled=false;
   setMsg('emailMsg','Building preview…');
   try{const r=await api('emailPreview',[QN,kind,PV.extra,pvStaff()]);
     if(!r.ok){setMsg('emailMsg',r.error,false);return;}
-    setMsg('emailMsg','');
-    $('pvSub').textContent=r.subject;$('pvTo').textContent=r.to;
+    setMsg('emailMsg','');PV.key=pvKey();
+    $('pvSub').textContent=r.subject;$('pvTo').textContent=r.to;pvShowCc(r.cc);
     $('pvModal').classList.remove('hide');
     pvRender(r.html);
   }catch(e){setMsg('emailMsg',e.message,false);}
@@ -3339,22 +3353,22 @@ function pvRender(html){
 let PV_T=0;
 function pvNoteChanged(){
   clearTimeout(PV_T);
-  if($('pvNote').value.trim()===PV.note){$('pvSend').disabled=false;$('pvNoteHint').textContent='';return;}
+  if(pvKey()===PV.key){$('pvSend').disabled=false;$('pvNoteHint').textContent='';return;}
   $('pvSend').disabled=true;$('pvNoteHint').textContent='Updating preview…';
   PV_T=setTimeout(pvRefresh,900);
 }
 async function pvRefresh(){
-  const note=$('pvNote').value.trim();
+  const key=pvKey();
   try{const r=await api('emailPreview',[QN,PV.kind,PV.extra,pvStaff()]);
+    if(pvKey()!==key) return; /* typed again — a newer refresh is coming */
     if(!r.ok){$('pvNoteHint').textContent=r.error;return;}
-    if($('pvNote').value.trim()!==note) return; /* typed again — a newer refresh is coming */
-    PV.note=note;pvRender(r.html);
+    PV.key=key;pvRender(r.html);pvShowCc(r.cc);
     $('pvNoteHint').textContent='';$('pvSend').disabled=false;
   }catch(e){$('pvNoteHint').textContent='Could not update the preview: '+e.message;}
 }
 function pvCancel(){clearTimeout(PV_T);$('pvModal').classList.add('hide');}
 async function pvConfirm(){
-  if($('pvNote').value.trim()!==PV.note){pvNoteChanged();return;}
+  if(pvKey()!==PV.key){pvNoteChanged();return;}
   $('pvSend').disabled=true;
   await act('pvSend','emailMsg','sendEmail',[QN,PV.kind,PV.extra,pvStaff()]);
   $('pvSend').disabled=false;
@@ -5187,8 +5201,10 @@ function renderBulk(r){
     '<div style="font-size:13.5px;color:var(--navy);font-weight:700">'+esc(r.label)+'</div>'+
     (r.startTicked===false
       ? '<div class="msg" style="margin:2px 0 6px"><b>'+r.count+'</b> customer(s) can receive it. <b>Nobody is ticked</b> — '+
-        'tick each one to send to. Each email carries that customer\'s own quote as a PDF. Imported drafts are '+
-        'included; sending one moves it onto its storage area. Leads are always excluded.</div>'
+        'tick each one to send to. Each email carries that customer\'s own quote as a PDF. '+
+        (r.includeImports?'Imported drafts are included; sending one moves it onto its storage area. ':'Imported drafts are not included. ')+
+        'Leads are always excluded.'+
+        (r.kind==='lastcall'?' To CC somebody else on one of these, use the email\'s own preview on that quote, or add them to its draft in Gmail.':'')+'</div>'
       : '<div class="msg" style="margin:2px 0 6px">Goes to <b>'+r.count+'</b> customer(s). Leads who never '+
       'finished a quote are always excluded.</div>')+
     tabs+skipped+noEmail+notReady+quota+
@@ -5277,9 +5293,9 @@ function syncBulkCount(){
 function showBulkSample(){
   if(!BULK||!BULK.sample) return;
   /* Reuse the same preview window every other email uses. */
-  PV={kind:BULK.kind,extra:''};
+  PV={kind:BULK.kind,extra:'',key:''};
   $('pvSub').textContent=BULK.sample.subject;
-  $('pvTo').textContent='example — '+BULK.sample.to;
+  $('pvTo').textContent='example — '+BULK.sample.to;pvShowCc('');
   $('pvModal').classList.remove('hide');
   pvRender(BULK.sample.html);
   /* This preview is illustrative only; sending happens from the card. */

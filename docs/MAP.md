@@ -86,6 +86,8 @@ symptom.
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
+| Last call for storage (no deposit / agreement before the pay-by date) and who may get it | `lastCallBlocker_`, `lastCallPastDeadline_` (kind `lastcall` in `buildEmailFor_`) | `.gs` |
+| Typed CC addresses in the email preview | `staffExtras_` (`ccTo`, `badCc`, `CC_TYPED_MAX_`) · `pvStaff` / `pvCcTo` | `.gs` · `admin/index.html` |
 | Drafts instead of sends, and the 6:30pm sweep that records them | `adminBulkDraft`, `draftOpts_`, `openDraftFor_`, `draftSweep_`, `draftWasSent_`, `draftSweepCheck`, `adminDraftSweep` | `.gs` (console: `doBulkSend`, `runDraftSweep`) |
 | Spreadsheet-menu sends | `menuSendKind_`, `menuBulkSend_` | `.gs` |
 

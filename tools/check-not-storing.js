@@ -153,7 +153,7 @@ console.log('=== leadFollowUpCheck ===');
 console.log('=== bulkTargets_ ===');
 {
   const B = new Function('SpreadsheetApp', COMMON.concat([
-    decl('BULK_KINDS_'), "function firmQuoteBlocker_(){return '';}",
+    decl('BULK_KINDS_'), "function firmQuoteBlocker_(){return '';}", "function lastCallBlocker_(){return '';}",
     fn('bulkTargets_'), 'return { bulkTargets_, BULK_KINDS_ };'
   ]).join('\n'))(ssOf([tab('Inside', QUOTES)]));
   Object.keys(B.BULK_KINDS_).forEach((k) => {

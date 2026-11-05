@@ -65,10 +65,16 @@ console.log('=== neither a deposit nor a contract ===');
     else has(e.html, 'get your agreement to you', 'with no web form, the sign step says to call');
     has(e.html, 'Pay my deposit online', 'nothing paid yet: it asks for the deposit');
     has(e.html, '$' + B.PRICES.lateRetrieval.toFixed(2), 'the late pull-out fee is the engine\'s figure');
-    has(e.html, 'late pull-out request fee', 'and is named the way Chris names it');
-    has(e.html, B.RULES.latePct + '% late invoice fee', 'the late percentage is the engine\'s');
+    has(e.html, 'late retrieval fee', 'and is named the way Chris names it');
+    has(e.html, B.RULES.latePct + '% late fee', 'the late percentage is the engine\'s');
     has(e.html, 'November 15, 2099', 'the date is the quote\'s own season stamp, not typed text');
-    has(e.html, '$1,100.00', 'it shows what the balance becomes after the deadline');
+    has(e.html, 'Payment in full is due at sign-up', 'waiting means paying in full up front');
+    has(e.html, '$1,100.00', 'after the date: the balance plus 10%');
+    has(e.html, '$1,325.00', 'then the fee on top of that');
+    has(e.html, 'saves you <b>$325.00</b>', 'and the difference is spelled out');
+    /* Chris: the fee is the customer's timing, never ours. */
+    has(e.html, 'because we haven\'t reached it yet', 'a boat we simply have not pulled yet owes no fee, and it says so');
+    has(e.html, 'pull your boat after', 'asking for a pull after the date carries the fee');
     has(e.html, 'your deposit or your signed winter services agreement', 'it says both are missing');
     eq(e.attachPdf, true, 'the quote is attached');
     eq(e.status, '', 'it sets no status');
@@ -108,7 +114,8 @@ console.log('=== paid in full, no contract ===');
   if (!e) fail('paid in full but unsigned got no last call');
   else {
     hasnt(e.html, B.PAYMENT_URL, 'no pay button when nothing is owed');
-    hasnt(e.html, '(+' + B.RULES.latePct + '%)', 'no late-balance figure when nothing is owed');
+    hasnt(e.html, '% late fee', 'no late-balance figure when nothing is owed');
+    has(e.html, 'saves you <b>$225.00</b>', 'only the fee is at stake when nothing is owed');
   }
 }
 
@@ -142,7 +149,7 @@ console.log('=== a golf cart ===');
   const e = build(quote({ unit: 'Golf Cart' }));
   if (!e) fail('no last call for a golf cart');
   else {
-    has(e.html, 'late pick-up request fee', 'a land unit gets a pick-up fee');
+    has(e.html, 'pick up your golf cart after', 'a land unit is picked up, with the same fee');
     const WET = /\bpull(?:ed)? out\b|\bpull-out\b|\bhaul|\bwater\b|\bslips?\b/i;
     if (WET.test(e.html)) fail('a golf cart is being pulled out of the water: ' +
       (e.html.match(new RegExp('[^<>]*(' + WET.source + ')[^<>]*', 'i')) || [''])[0].trim().slice(0, 140));

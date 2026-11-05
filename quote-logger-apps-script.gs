@@ -12216,33 +12216,56 @@ function buildEmailFor_(d, kind, extra, photos) {
     const payByShort = esc_(sn.payByShort || SEASON.payByShort);
     const fee = usd_(Number(sn.lateRetrievalFee) || PRICES.lateRetrieval);
     const pct = Number(RULES.latePct) || 10;
-    const feeName = land ? 'late pick-up request fee' : 'late pull-out request fee';
+    const feeNum = Number(sn.lateRetrievalFee) || PRICES.lateRetrieval;
     const noStorage = !!(d.state && d.state.storage === 'none');
 
+    /* WHEN THE LATE RETRIEVAL FEE APPLIES — Chris, Nov 2026: only when the
+       customer's own timing puts it after the date: they sign up after it, or
+       ask us to bring the unit in after it. A boat still in the water after
+       the date because we have not reached it yet owes nothing extra, and the
+       email says so, so nobody already on the list reads this as a threat.
+       Waiting past the date to sign up also means paying in full up front:
+       the balance plus the late percentage, then the fee on top. */
     const missing = !hasDep && !signed ? 'your deposit or your signed winter services agreement'
       : !hasDep ? 'your deposit' : 'your signed winter services agreement';
     let intro = 'This is our last check-in before the <b>' + payBy + '</b> winter storage deadline. ' +
       'We still haven\'t received ' + missing + ' for your ' + unitTxt + '.';
     if (hasDep) intro += ' (We do have your payment of <b>' + usd_(paid) + '</b> — thank you.)';
     if (signed) intro += ' (We do have your signed agreement — thank you.)';
-    intro += '<br><br><b>After ' + payByShort + ', two charges are added:</b>' +
-      '<ul style="margin:8px 0 0;padding-left:20px">' +
-      '<li style="margin-bottom:4px">our <b>' + fee + ' ' + feeName + '</b>, for ' +
-        (land ? 'units we collect' : 'units we pull out') + ' after ' + payByShort + ', and</li>' +
-      '<li>a <b>' + pct + '% late invoice fee</b> on any balance still unpaid.</li></ul>' +
-      '<br>Getting it settled before ' + payByShort + ' avoids both. Everything you need is below — ' +
-      'your ' + term + ' is attached, and each button takes about a minute.';
-
-    const rowsHtml =
-      moneyRow_('Your ' + term + ' total', usd_(total), true) +
-      (hasDep ? moneyRow_('Payments received', '−' + usd_(paid), false) : '') +
+    intro += '<br><br><b>Signing up after ' + payByShort + ' costs more.</b> ' +
       (bal > 0.005
-        ? (!hasDep && !noStorage ? moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false) : '') +
-          moneyRow_('Balance if paid by ' + payByShort, usd_(bal), false) +
-          moneyRow_('Balance after ' + payByShort + ' (+' + pct + '%)', usd_(bal * (1 + pct / 100)), false)
-        : '');
+        ? 'Payment in full is due at sign-up, with a ' + pct + '% late fee added to the balance and a ' +
+          fee + ' late retrieval fee on top of that.'
+        : 'A ' + fee + ' late retrieval fee is added.') +
+      ' The same fee applies if you ask us to ' + (land ? 'pick up your ' + unitTxt : 'pull your ' + unitTxt) +
+      ' after ' + payByShort + '.' +
+      '<br><br>If you\'re signed up in time, there\'s no fee — even if ' +
+      (land ? 'we don\'t get to your ' + unitTxt + ' until after ' + payByShort
+            : 'your ' + unitTxt + ' is still in the water after ' + payByShort + ' because we haven\'t reached it yet') +
+      '. Your ' + term + ' is attached, and each button below takes about a minute.';
+
+    /* Now vs later, in dollars — the clearest way to say it. */
+    const lateBal = bal > 0.005 ? bal * (1 + pct / 100) : 0;
+    const lateAll = lateBal + feeNum;
+    const sub = function (t) {
+      return '<tr><td colspan="2" style="padding:10px 0 2px;font-size:13px;font-weight:bold;color:#14293E;' +
+        'text-transform:uppercase;letter-spacing:.4px">' + t + '</td></tr>';
+    };
+    let rowsHtml = moneyRow_('Your ' + term + ' total', usd_(total), false) +
+      (hasDep ? moneyRow_('Payments received', '−' + usd_(paid), false) : '') +
+      sub('Sign up by ' + payByShort) +
+      (bal > 0.005
+        ? moneyRow_(hasDep || noStorage ? 'Balance' : 'Balance (start with the ' + usd_(d.deposit) + ' deposit)', usd_(bal), true)
+        : moneyRow_('Nothing more to pay', usd_(0), true)) +
+      sub('Sign up after ' + payByShort + (bal > 0.005 ? ' — paid in full at sign-up' : '')) +
+      (bal > 0.005
+        ? moneyRow_('Balance + ' + pct + '% late fee', usd_(lateBal), false) : '') +
+      moneyRow_('Late retrieval fee', usd_(feeNum), false) +
+      moneyRow_('Total after ' + payByShort, usd_(lateAll), true);
     const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
-      '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table></div>';
+      '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table>' +
+      '<div style="background:#FDF3E0;border-radius:6px;padding:10px 12px;margin-top:10px;font-size:14.5px;color:#5A431A">' +
+      'Settling up by ' + payByShort + ' saves you <b>' + usd_(lateAll - Math.max(0, bal)) + '</b>.</div></div>';
 
     const step = function (title, body, btn) {
       return '<div style="border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:0 0 12px">' +

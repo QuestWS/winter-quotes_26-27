@@ -690,8 +690,6 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
                 <div class="msg" id="lnMsg"></div>
               </div>
             </details>
-            <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Email history</summary>
-              <div id="qHist" style="margin-top:6px"></div></details>
           </div>
 
           <!-- Quote history: every total this quote has had, every payment and
@@ -704,6 +702,15 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             <h2>Payments received</h2>
             <div class="msg" id="payListSum" style="margin:0 0 4px"></div>
             <div id="payList"></div>
+          </div>
+
+          <!-- Emails sent: the quote's Email history (d.emailLog), newest
+               first, as its own card beside the payments. It used to be a
+               collapsed line at the foot of the quote card. -->
+          <div class="card" id="emailListCard">
+            <h2>Emails sent</h2>
+            <div class="msg" id="qHistSum" style="margin:0 0 4px"></div>
+            <div id="qHist"></div>
           </div>
 
           <div class="card" id="histCard">
@@ -2627,8 +2634,15 @@ function renderQuote(r){
   const dstate=e=>!e.draft?'':e.draft.state==='sent'?' · <b>draft sent</b> '+esc(e.draft.sentAt||'')
     :e.draft.state==='discarded'?' · draft deleted, never sent'
     :' · <b style="color:var(--gold)">draft waiting in Gmail'+(e.draft.stale?' — STALE, delete and re-create':'')+'</b>';
-  $('qHist').innerHTML=(r.emailLog&&r.emailLog.length)?r.emailLog.map(e=>
-    `<div class="histrow"><b>${esc(e.kind)}</b> → ${esc(e.to)} <span class="hm">· ${esc(e.ts)} · by ${esc(e.by)}${dstate(e)}</span></div>`).join('')
+  /* Newest first (adminLookup reverses the log). A draft is listed but not
+     counted as sent until the sweep says it left. */
+  const elog=r.emailLog||[];
+  const sentN=elog.filter(e=>!e.draft||e.draft.state==='sent').length;
+  $('qHistSum').textContent=elog.length?sentN+' email'+(sentN===1?'':'s')+' sent'+
+    (elog.length>sentN?' · '+(elog.length-sentN)+' draft'+(elog.length-sentN===1?'':'s')+' not sent':''):'';
+  $('qHist').innerHTML=elog.length?elog.map(e=>
+    `<div class="histrow"><span class="htag email">${e.draft?'Draft':'Email'}</span> <b>${esc(emailKindLabel_(e.kind))}</b>`+
+    `<div class="hm">${esc(e.ts)}${e.to?' · to '+esc(e.to):''}${e.by?' · by '+esc(e.by):''}${dstate(e)}</div></div>`).join('')
     :'<div class="msg" style="padding:4px">No emails sent yet.</div>';
   const P=myPerms_();
   window._contract=r.contractUrl||'';
@@ -2710,6 +2724,20 @@ function renderQuote(r){
    "your payment of") is never counted as a match — otherwise the payment
    being checked would find its own receipt and call that an explanation. */
 let HIST=null;
+/* What staff call an email kind: the wording of the console's own send
+   button for it, so the list and the buttons can never disagree. Kinds with
+   no button (the automatic reminder, older kinds) fall back to their name. */
+function emailKindLabel_(kind){
+  const k=String(kind||'');
+  /* Sends with no button of their own, or whose button reads as an action. */
+  const other={'quote copy':'Quote copy (customer saved)',receipt:'Payment receipt',
+    'late fee applied':'Late fee applied','auto-reminder':'Automatic reminder',
+    'finish-quote':'Finish-your-quote follow-up',upnext:"You're up next (spring)",upnextfall:"You're up next (haul-out)"};
+  if(other[k]) return other[k];
+  const b=document.getElementById('em_'+k);
+  const t=b?b.textContent.trim():'';
+  return t||(k?k.charAt(0).toUpperCase()+k.slice(1):'Email');
+}
 /* The ledger from adminLookup, newest first. Refunds are negative payments
    (DATA-AND-MONEY.md § Signed balances) and are shown as refunds, not hidden.
    An older backend sends no `payments` at all; say nothing rather than

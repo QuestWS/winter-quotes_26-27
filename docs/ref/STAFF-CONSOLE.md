@@ -263,6 +263,16 @@ it, refunds labelled as refunds — with a count and the net received. For
   `by`; older ones show the day they were recorded and no name. Nothing is
   backfilled (DATA-AND-MONEY.md § *Signed balances*).
 
+## Emails sent (console)
+
+Beside **Payments received**, every open quote shows **Emails sent**: the
+quote's Email history (`d.emailLog`, written by `recordEmail_` at every send
+site), newest first — which email, when, to whom and who sent it, with a
+count at the top. Drafts made with **Create drafts** are listed as drafts and
+only counted once the 6:30pm sweep has seen them leave. Each email is named
+by the console's own send-button wording (`emailKindLabel_`), so the list and
+the buttons cannot drift apart. It rides on `adminLookup`; no extra trip.
+
 ## Quote history (console)
 
 The **Quote history** card under every open quote answers one question: *a

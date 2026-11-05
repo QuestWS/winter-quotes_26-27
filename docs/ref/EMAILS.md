@@ -192,19 +192,27 @@ a payment, and to sign their contract"* — Chris, Nov 2026.
   (`payBy` / `payByShort`), the fee is `lateRetrievalFee` (falling back to
   `PRICES.lateRetrieval`), the percentage is `RULES.latePct`. The rollover
   moves all three.
+- **The late retrieval fee is the customer's timing, never ours** (Chris, Nov
+  2026). It applies when they sign up after the date or ask us to pull /
+  pick up the unit after it — *not* when a boat is still in the water after the
+  date because we have not reached it yet, and the email says so in as many
+  words. Signing up after the date also means **payment in full at sign-up**:
+  the balance plus the late percentage, then the fee on top.
+- **The money box is now vs later**: the balance if they sign up by the date,
+  the balance + 10% and the fee after it, the total after, and one line —
+  "Settling up by Nov 15 saves you $X". Paid in full but unsigned: only the
+  fee is at stake, and it says that.
 - **The buttons follow what is missing:** *Review or adjust my quote* always
   (`quoteLinkFor_`); *Review & sign* while no contract is on file
   (`signUrlFor_`, with the confirm-your-email note; no web form means "call
   us"); *Pay my deposit* until money is in, then *Pay online* until the balance
-  is zero. The money box shows the balance by the date and what it becomes
-  after it (+10%).
+  is zero.
 - **PDF attached, no status** — the sign chase's reason: a deposit-paid,
   unsigned quote must keep `Deposit received`. Email History records it.
 - It closes with "already done it / signed paper at the shop? call us" and
   "not storing with us? reply and we'll stop the reminders" — the second is
   what feeds **Not storing this season**.
-- **Land units** get a *late pick-up request fee* for units we *collect*; never
-  "pull out", never water.
+- **Land units** are *picked up*; never "pull", never water.
 - **One quote** (Customer emails → *Last call for storage*, with the typed CC
   box) **or many** (Send to all → *Last call for storage*). In the picker it is
   hand-picked like the firm quote — `startTicked:false`, because a customer who

@@ -12232,7 +12232,22 @@ function buildEmailFor_(d, kind, extra, photos) {
       'We still haven\'t received ' + missing + ' for your ' + unitTxt + '.';
     if (hasDep) intro += ' (We do have your payment of <b>' + usd_(paid) + '</b> — thank you.)';
     if (signed) intro += ' (We do have your signed agreement — thank you.)';
-    intro += '<br><br><b>Signing up after ' + payByShort + ' costs more.</b> ' +
+    /* Chris, Nov 2026: "if all we're waiting on is a contract, I'm not going
+       to charge someone a penalty." A customer whose money is in is signed up
+       as far as fees go: no late retrieval fee for a late signature, and no
+       "signing up after costs more". What still holds is the ordinary invoice
+       term every customer has — a balance unpaid after the date goes up by the
+       late percentage — so that comparison stays, and only when a balance is
+       actually owed. */
+    const contractOnly = hasDep && !signed;
+    if (contractOnly) {
+      /* Chris: don't mention a fee for the contract at all — no leniency
+         announced, just what we need and by when. */
+      intro += '<br><br>We do need it signed before we can ' + (land ? 'pick up your ' : 'pull your ') + unitTxt +
+        ', so please take care of it before ' + payByShort + '.' +
+        (bal > 0.005 ? ' As on every invoice, a balance still unpaid after ' + payByShort + ' goes up by ' + pct + '%.' : '') +
+        ' Your ' + term + ' is attached, and each button below takes about a minute.';
+    } else intro += '<br><br><b>Signing up after ' + payByShort + ' costs more.</b> ' +
       (bal > 0.005
         ? 'Payment in full is due at sign-up, with a ' + pct + '% late fee added to the balance and a ' +
           fee + ' late retrieval fee on top of that.'
@@ -12262,10 +12277,20 @@ function buildEmailFor_(d, kind, extra, photos) {
         ? moneyRow_('Balance + ' + pct + '% late fee', usd_(lateBal), false) : '') +
       moneyRow_('Late retrieval fee', usd_(feeNum), false) +
       moneyRow_('Total after ' + payByShort, usd_(lateAll), true);
-    const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
+    let saving = lateAll - Math.max(0, bal);
+    if (contractOnly) {
+      /* No fee, no "sign up after": just the balance by the date and after it. */
+      rowsHtml = moneyRow_('Your ' + term + ' total', usd_(total), false) +
+        moneyRow_('Payments received', '\u2212' + usd_(paid), false) +
+        moneyRow_('Balance if paid by ' + payByShort, usd_(bal), true) +
+        moneyRow_('Balance after ' + payByShort + ' (+' + pct + '%)', usd_(lateBal), false);
+      saving = lateBal - bal;
+    }
+    const showBox = !contractOnly || bal > 0.005;
+    const box = !showBox ? '' : '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table>' +
       '<div style="background:#FDF3E0;border-radius:6px;padding:10px 12px;margin-top:10px;font-size:14.5px;color:#5A431A">' +
-      'Settling up by ' + payByShort + ' saves you <b>' + usd_(lateAll - Math.max(0, bal)) + '</b>.</div></div>';
+      (contractOnly ? 'Paying the balance by ' : 'Settling up by ') + payByShort + ' saves you <b>' + usd_(saving) + '</b>.</div></div>';
 
     const step = function (title, body, btn) {
       return '<div style="border:1px solid #C7D5E0;border-radius:8px;padding:14px 16px;margin:0 0 12px">' +

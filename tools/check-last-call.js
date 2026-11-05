@@ -90,6 +90,14 @@ console.log('=== a deposit, no contract ===');
     has(e.html, '$500.00', 'it thanks them for the payment we have');
     has(e.html, 'your signed winter services agreement', 'it says the agreement is what is missing');
     hasnt(e.html, 'Pay my deposit online', 'it does not ask for a deposit already paid');
+    /* Chris: "if all we're waiting on is a contract, I'm not going to charge
+       someone a penalty." */
+    hasnt(e.html, 'late retrieval fee', 'only a contract missing: no late retrieval fee, anywhere');
+    hasnt(e.html, 'Signing up after', 'and no "signing up after costs more"');
+    hasnt(e.html, 'no late fee', 'and does not announce the leniency either — the fee is simply not mentioned');
+    has(e.html, 'signed before we can pull your boat', 'it says what we need and why');
+    has(e.html, '$550.00', 'the ordinary invoice term still shows: the $500 balance +10% after the date');
+    has(e.html, 'saves you <b>$50.00</b>', 'and the saving is the 10% alone');
     has(e.html, 'Pay online', 'it still offers to pay the balance');
     eq(e.status, '', 'and does not overwrite "Deposit received"');
   }
@@ -114,8 +122,8 @@ console.log('=== paid in full, no contract ===');
   if (!e) fail('paid in full but unsigned got no last call');
   else {
     hasnt(e.html, B.PAYMENT_URL, 'no pay button when nothing is owed');
-    hasnt(e.html, '% late fee', 'no late-balance figure when nothing is owed');
-    has(e.html, 'saves you <b>$225.00</b>', 'only the fee is at stake when nothing is owed');
+    hasnt(e.html, 'late retrieval fee', 'paid in full, only the contract missing: no fee');
+    hasnt(e.html, 'saves you', 'nothing owed and no fee: no comparison box at all');
   }
 }
 

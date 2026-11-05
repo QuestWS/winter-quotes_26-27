@@ -200,8 +200,15 @@ a payment, and to sign their contract"* — Chris, Nov 2026.
   the balance plus the late percentage, then the fee on top.
 - **The money box is now vs later**: the balance if they sign up by the date,
   the balance + 10% and the fee after it, the total after, and one line —
-  "Settling up by Nov 15 saves you $X". Paid in full but unsigned: only the
-  fee is at stake, and it says that.
+  "Settling up by Nov 15 saves you $X".
+- **Only the contract missing means no penalty** (Chris, Nov 2026: *"if all
+  we're waiting on is a contract, I'm not going to charge someone a
+  penalty"*). Money in = signed up as far as fees go: no late retrieval fee,
+  no "signing up after costs more". The email does not mention a fee for the
+  contract at all — not even that there isn't one (Chris: don't announce the
+  leniency) — only that it must be signed before the pull. The ordinary invoice
+  term still stands, so with a balance owed the box shows it by the date and
+  after (+10%); paid in full, there is no box at all.
 - **The buttons follow what is missing:** *Review or adjust my quote* always
   (`quoteLinkFor_`); *Review & sign* while no contract is on file
   (`signUrlFor_`, with the confirm-your-email note; no web form means "call

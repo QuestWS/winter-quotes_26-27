@@ -12241,8 +12241,9 @@ function buildEmailFor_(d, kind, extra, photos) {
        actually owed. */
     const contractOnly = hasDep && !signed;
     if (contractOnly) {
-      intro += '<br><br>Since we already have your payment, there\'s <b>no late fee for the agreement</b> — ' +
-        'but we do need it signed before we can ' + (land ? 'pick up your ' : 'pull your ') + unitTxt +
+      /* Chris: don't mention a fee for the contract at all — no leniency
+         announced, just what we need and by when. */
+      intro += '<br><br>We do need it signed before we can ' + (land ? 'pick up your ' : 'pull your ') + unitTxt +
         ', so please take care of it before ' + payByShort + '.' +
         (bal > 0.005 ? ' As on every invoice, a balance still unpaid after ' + payByShort + ' goes up by ' + pct + '%.' : '') +
         ' Your ' + term + ' is attached, and each button below takes about a minute.';

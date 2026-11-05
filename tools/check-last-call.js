@@ -94,7 +94,8 @@ console.log('=== a deposit, no contract ===');
        someone a penalty." */
     hasnt(e.html, 'late retrieval fee', 'only a contract missing: no late retrieval fee, anywhere');
     hasnt(e.html, 'Signing up after', 'and no "signing up after costs more"');
-    has(e.html, 'no late fee for the agreement', 'it says so outright');
+    hasnt(e.html, 'no late fee', 'and does not announce the leniency either — the fee is simply not mentioned');
+    has(e.html, 'signed before we can pull your boat', 'it says what we need and why');
     has(e.html, '$550.00', 'the ordinary invoice term still shows: the $500 balance +10% after the date');
     has(e.html, 'saves you <b>$50.00</b>', 'and the saving is the 10% alone');
     has(e.html, 'Pay online', 'it still offers to pay the balance');

@@ -5478,31 +5478,80 @@ function adminSetPlacementState(token, qn, state, override) {
    the ask was the arrival, and a notice per shuffle would be ignored. */
 const PLACEMENT_NOTIFY_STATES_ = { 'pulled': 1, 'dropped': 1 };
 
+/* Formatted, with a way in. Chris, Nov 2026: the plain-text notice was hard to
+   read and gave no way to the quote — and what he does next is open it, look
+   at the photos the crew took and send "We have your unit". So the HTML body
+   leads with an Open-quote button onto the console's ?q= deep link (signs in
+   first if needed, then lands on the quote), plus the photo folder when one
+   exists. The plain-text body is kept as the fallback for clients that will
+   not render HTML, and carries the same link. */
 function placementNotify_(d, tabName, state, by, anyway) {
   try {
     const label = PLACEMENT_STATES_[state].label;
     const name = (d.lastName || d.firstName)
       ? [d.lastName, d.firstName].filter(Boolean).join(', ') : (d.owner || '');
-    const subject = label + ': ' + (d.quoteNo || '') + ' \u2014 ' + (name || 'unknown owner') +
-      ' \u2014 ' + (d.unit || 'unit') + (anyway ? ' (PULLED ANYWAY)' : '');
+    const subject = label + ': ' + (d.quoteNo || '') + ' — ' + (name || 'unknown owner') +
+      ' — ' + (d.unit || 'unit') + (anyway ? ' (PULLED ANYWAY)' : '');
+    const when = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE MMM d, h:mm a');
+    const openUrl = QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || '');
+    const photosUrl = /^https:\/\//.test(String(d.photosUrl || '')) ? String(d.photosUrl) : '';
+    const alert = placementAlertOf_(d);
+    const anywayText = anyway ? 'PULLED ANYWAY — ' + anyway.missing + ' on file.' +
+      (anyway.note ? ' Note: ' + anyway.note : '') : '';
+
     const lines = [
-      label + ' \u2014 recorded by ' + by + ', ' +
-        Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'EEE MMM d, h:mm a') + '.',
+      label + ' — recorded by ' + by + ', ' + when + '.',
       '',
       'Quote #:     ' + (d.quoteNo || ''),
-      'Owner:       ' + (name || '\u2014'),
-      'Unit:        ' + (d.unit || '\u2014') + (d.ymm ? '  (' + d.ymm + ')' : ''),
-      'Storage tab: ' + (tabName || '\u2014')
+      'Owner:       ' + (name || '—'),
+      'Unit:        ' + (d.unit || '—') + (d.ymm ? '  (' + d.ymm + ')' : ''),
+      'Storage tab: ' + (tabName || '—')
     ];
-    if (anyway) lines.push('', 'PULLED ANYWAY \u2014 ' + anyway.missing + ' on file.' +
-      (anyway.note ? ' Note: ' + anyway.note : ''));
-    const alert = placementAlertOf_(d);
+    if (anyway) lines.push('', anywayText);
     if (alert && alert.text) lines.push('', 'Alert on this unit: ' + alert.text);
+    lines.push('', 'Open the quote (photos, "We have your unit"): ' + openUrl);
+    if (photosUrl) lines.push('Photo folder: ' + photosUrl);
     const body = lines.join('\n');
+
+    const row = function (k, v) {
+      return '<tr><td style="padding:7px 12px 7px 0;color:#5C7185;font-size:13px;white-space:nowrap;vertical-align:top">' +
+        k + '</td><td style="padding:7px 0;color:#1D2B38;font-size:15px;font-weight:bold">' + v + '</td></tr>';
+    };
+    const banner = function (bg, bd, fg, txt) {
+      return '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-left:5px solid ' + bd +
+        ';border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:14px;line-height:1.45;color:' + fg + '">' + txt + '</div>';
+    };
+    const html =
+      '<div style="font-family:Arial,Helvetica,sans-serif;background:#F2F5F8;padding:18px 10px">' +
+      '<div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #D5DEE7">' +
+        '<div style="background:#1D2B38;color:#ffffff;padding:14px 18px">' +
+          '<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.75">Quest Harbor Haul Out</div>' +
+          '<div style="font-size:22px;font-weight:bold;margin-top:2px">' + esc_(label) + ' — ' + esc_(d.quoteNo || '') + '</div>' +
+          '<div style="font-size:13px;opacity:.85;margin-top:4px">Recorded by ' + esc_(by) + ' · ' + esc_(when) + '</div>' +
+        '</div>' +
+        '<div style="padding:16px 18px 18px">' +
+          (anyway ? banner('#FDECEA', '#B3261E', '#6B1A14', '<b>PULLED ANYWAY</b> — ' + esc_(anyway.missing) +
+            ' on file.' + (anyway.note ? '<br>Note: ' + esc_(anyway.note) : '')) : '') +
+          (alert && alert.text ? banner('#FDF3E0', '#C08A22', '#5A431A', '<b>Alert:</b> ' + esc_(alert.text)) : '') +
+          '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 16px">' +
+            row('Owner', esc_(name || '—')) +
+            row('Unit', esc_(d.unit || '—') + (d.ymm ? ' <span style="font-weight:normal;color:#5C7185">(' + esc_(d.ymm) + ')</span>' : '')) +
+            row('Storage', esc_(tabName || '—')) +
+            row('Quote #', esc_(d.quoteNo || '')) +
+          '</table>' +
+          buttonHtml_(openUrl, 'Open quote', '#1F6FB2') +
+          (photosUrl ? buttonHtml_(esc_(photosUrl), 'Photo folder', '#2E7D5B') : '') +
+          '<p style="font-size:12px;color:#5C7185;line-height:1.5;margin:12px 0 0">Open quote signs you in with your PIN, then lands on this ' +
+            'quote — condition photos are on that screen, and <b>We have your unit</b> is under Customer emails.</p>' +
+        '</div>' +
+      '</div></div>';
+
+    const opts = { htmlBody: html, name: 'Quest Harbor Haul Out' };
     if (FROM_ALIAS) {
-      GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, { from: FROM_ALIAS, name: 'Quest Harbor Haul Out' });
+      opts.from = FROM_ALIAS;
+      GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts);
     } else {
-      MailApp.sendEmail(NOTIFY_EMAIL, subject, body, { name: 'Quest Harbor Haul Out' });
+      MailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts);
     }
   } catch (e) { console.error('Placement notice failed for ' + (d && d.quoteNo) + ': ' + e); }
 }

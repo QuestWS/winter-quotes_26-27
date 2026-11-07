@@ -543,6 +543,11 @@ when, plus the PULLED ANYWAY detail and the unit's alert when there is one.
   think the pull was not recorded.
 - **Stored and Undo send nothing** — `PLACEMENT_NOTIFY_STATES_` is the list.
   The ask was the arrival; a notice per shuffle would be ignored.
+- **It is formatted and it has a way in** (Chris, Nov 2026). An HTML card
+  with an **Open quote** button onto the console's `admin/?q=<quote#>` deep
+  link (PIN first if needed, then straight onto the quote, where the photos and
+  **We have your unit** are), plus **Photo folder** when `d.photosUrl` exists.
+  The plain-text body stays as the fallback and carries the same link.
 - `check-harbor-haul-out.js` holds all three.
 
 ## The alert

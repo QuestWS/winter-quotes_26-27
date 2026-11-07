@@ -366,7 +366,8 @@ system through the same keyed door (`trackerServe_`):
 
 - **`fn:'details'`** (`trackerDetails_`): every quote with detailing or a wash
   on it — Exterior detail, Wash & wax, Interior detail, Interior wipe-down,
-  Powerwash hull, Acid wash hull, Jetski detail (`DETAIL_TRACKER_WORDS_`) —
+  Powerwash hull, Acid wash hull, Jetski detail, and bottom paint (touch-up,
+  strip & reapply — Chris: "Bottom paint is detailing") (`DETAIL_TRACKER_WORDS_`) —
   with each line's state off `itemsToQuoteOf_`, the same rule as the printed
   Items to Quote list. Unlike the mechanics' feed it carries the price and the
   customer's phone and email: the detailer is the one who rings about a
@@ -386,8 +387,8 @@ system through the same keyed door (`trackerServe_`):
 - **Pricing and answers stay here.** A winter detail is priced in the console
   or Harbor Haul Out and answered on `service-quotes.html`, because its invoice
   and payments are here. The detailers' ticks come back as `winterTicks`, the
-  road the mechanics' always took. Washes and the jetski detail are now off
-  the mechanics' Winter work list along with the four detailing items.
+  road the mechanics' always took. Washes, the jetski detail and bottom paint
+  are now off the mechanics' Winter work list along with the four detailing items.
 - Guard: `tools/check-detail-tracker.js`.
 
 ## Opening fast: the list is on the phone

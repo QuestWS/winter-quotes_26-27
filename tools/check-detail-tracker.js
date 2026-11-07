@@ -5,8 +5,8 @@
    detailing or a wash on it, signs its staff in with THIS roster's PINs, and
    is pinged when a customer answers. What has to stay true:
 
-   1. WHICH LINES. Detailing and the two washes, nothing else — not
-      shrinkwrap, not bottom paint, not an impeller.
+   1. WHICH LINES. Detailing, the two washes and bottom paint, nothing
+      else — not shrinkwrap, not an impeller.
    2. THE PIN. The same roster and the same wrong-PIN pause as adminAuth, and
       no SESS_ session minted here.
    3. THE URL. Only a script.google.com /exec URL is ever remembered as the
@@ -33,9 +33,10 @@ const check = (l, c, d) => { console.log('  ' + (c ? 'PASS' : 'FAIL') + '  ' + l
 
 console.log('=== 1. which lines ===');
 const WORDS = new Function(decl('DETAIL_TRACKER_WORDS_') + '\nreturn DETAIL_TRACKER_WORDS_;')();
-['Exterior detail', 'Wash & wax', 'Interior detail', 'Interior wipe-down', "Powerwash hull (22')", 'Acid wash hull', 'Jetski detail × 2']
+['Exterior detail', 'Wash & wax', 'Interior detail', 'Interior wipe-down', "Powerwash hull (22')", 'Acid wash hull', 'Jetski detail × 2',
+  'Bottom paint touch-up', 'Strip bottom paint & reapply']
   .forEach((l) => check('"' + l + '" is the detailers\'', WORDS.test(l)));
-['Shrinkwrap package (standard)', 'Bottom paint touch-up', 'Impeller change', 'Full service — Inboard']
+['Shrinkwrap package (standard)', 'Impeller change', 'Propeller refurbishment', 'Full service — Inboard']
   .forEach((l) => check('"' + l + '" is not', !WORDS.test(l)));
 
 console.log('=== 2. the PIN ===');

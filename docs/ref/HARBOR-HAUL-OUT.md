@@ -357,6 +357,39 @@ state. Search matches the labels, so typing *acid* lists every acid wash.
   requests can be priced here — washes and jetski details are priced by the
   engine, not by hand.
 
+### The Detail Tracker — detailing moved off the mechanics' list
+
+Chris, Nov 7 2026: the mechanic marked jobs done while detail quotes, details
+and power washes were still to do. So detailing has its own app now — the
+**Detail Tracker**, `QuestWS/servicetracker` → `/d/` — and it reads this
+system through the same keyed door (`trackerServe_`):
+
+- **`fn:'details'`** (`trackerDetails_`): every quote with detailing or a wash
+  on it — Exterior detail, Wash & wax, Interior detail, Interior wipe-down,
+  Powerwash hull, Acid wash hull, Jetski detail (`DETAIL_TRACKER_WORDS_`) —
+  with each line's state off `itemsToQuoteOf_`, the same rule as the printed
+  Items to Quote list. Unlike the mechanics' feed it carries the price and the
+  customer's phone and email: the detailer is the one who rings about a
+  detail quote, and the board is behind a staff PIN. Read-only.
+- **`fn:'staffPin'`** (`trackerStaffPin_`): the Detail Tracker signs in with
+  **this roster's PINs** (Chris: "the same as the harbor haul out app"). Same
+  roster, same `pinfails` pause as `adminAuth`, and no `SESS_` session minted
+  here — the tracker seals its own twelve-hour token.
+- **The ping, the other way** (`pingDetailTracker_`): after a customer answers
+  on `service-quotes.html`, and after staff price or decide a request, this
+  quote's detail lines are posted to the tracker (`api:'detailPing'`, same
+  key), so its board moves and subscribed phones get a push notification. Best
+  effort — a lost ping is caught up by the tracker's hourly read. Its address
+  is whatever the tracker sent as `pingUrl` on its last keyed call
+  (`DETAIL_TRACKER_URL`, remembered by `rememberTrackerUrl_`), so nothing is
+  configured by hand and no second `/exec` URL lives in this file.
+- **Pricing and answers stay here.** A winter detail is priced in the console
+  or Harbor Haul Out and answered on `service-quotes.html`, because its invoice
+  and payments are here. The detailers' ticks come back as `winterTicks`, the
+  road the mechanics' always took. Washes and the jetski detail are now off
+  the mechanics' Winter work list along with the four detailing items.
+- Guard: `tools/check-detail-tracker.js`.
+
 ## Opening fast: the list is on the phone
 
 Chris, Sep 2026: *"It takes FOREVER for the Harbor Haul Out app to load.

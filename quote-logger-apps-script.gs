@@ -3575,7 +3575,7 @@ function adminAuth(pin) {
   if (!name) {
     cache.put('pinfails', String(fails + 1), 900);
     if (fails + 1 === 10) {
-      try { GmailApp.sendEmail(REPORT_EMAIL, '⚠️ Staff console: repeated wrong PINs', 'The staff console login has been paused for 15 minutes after 10 failed PIN attempts.'); } catch (e) {}
+      try { GmailApp.sendEmail(REPORT_EMAIL, 'Staff console: repeated wrong PINs', 'The staff console login has been paused for 15 minutes after 10 failed PIN attempts.'); } catch (e) {}
     }
     return { ok: 0, error: 'Wrong PIN.' };
   }
@@ -10961,7 +10961,7 @@ function notifyOfferDecisions_(ctx, done, note) {
     if (acc.length) parts.push(acc.length + ' accepted');
     if (dec.length) parts.push(dec.length + ' declined');
     if (calls.length) parts.push(calls.length + ' call');
-    const head = calls.length ? '📞 CALL REQUESTED' : '✅ Quotes answered';
+    const head = calls.length ? 'CALL REQUESTED' : 'Quotes answered';
     const subject = head + ' — ' + (d.quoteNo || '') + ' · ' + (name || '') + ' (' + parts.join(', ') + ')';
     const row = function (x) { return '  • ' + (x.pr.label || x.pr.rqLabel || '') + ' — ' + usd_(x.pr.amt); };
     const lines = [calls.length ? 'The customer answered their quotes online and asked us to call them. Please call.'
@@ -13370,7 +13370,7 @@ function balanceReportCheck() {
       ' · ' + (fmtPhone(x.phone) || 'no phone') + ' · ' + (x.email || 'no email') + ' · ' + x.status;
   });
   const totalOut = rows.reduce(function (a, x) { return a + x.bal; }, 0);
-  const subject = (isFeeDay ? '💰 LATE FEE DAY — ' : '⏰ Heads up — ') + rows.length +
+  const subject = (isFeeDay ? 'LATE FEE DAY — ' : 'Heads up — ') + rows.length +
     ' unpaid balance' + (rows.length > 1 ? 's' : '') + ' · ' + usd_(totalOut) + ' outstanding';
   const body = (isFeeDay
     ? 'It\'s the 15th — these balances are due for their fee. Use "Add late fee…" in the Quest Quotes menu for each (2%/month, min $5, per your terms).'
@@ -13810,7 +13810,7 @@ function sendNotification_(d, tabName, wasUpdate, pdfUrl) {
   const signing = (d.status || '').indexOf('Signed') === 0;
   /* A price disagreement between the page and this script leads the subject.
      It means a human should look at the quote before anything goes out. */
-  const subject = (d._driftNote ? '⚠️ PRICE DRIFT — ' : (signing ? '💰 SIGN & PAY — ' : '📋 New winter quote — ')) +
+  const subject = (d._driftNote ? 'PRICE DRIFT — ' : (signing ? 'SIGN & PAY — ' : 'New winter quote — ')) +
     (d.quoteNo || '') + ' · ' + (d.owner || 'Unknown') + ' · ' + (d.unit || '') +
     ' · $' + d.total;
 

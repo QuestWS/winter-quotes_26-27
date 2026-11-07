@@ -21,6 +21,15 @@ that builder — not to the send path directly.
 Email History.
 
 
+## No emoji in an email
+Chris, Nov 2026: "no emojis in professional emails" — none used for emphasis
+or decoration, in a subject or a body, to a customer or to staff. The words
+carry it: CALL REQUESTED, PRICE DRIFT, LATE FEE DAY. A symbol that does a job
+is fine in its lane: an arrow for was → now, a ✓ marking an item done, × for a
+quantity. Outlook on Windows also showed a phone emoji in a subject as
+"??????", which is reason enough on its own. `tools/check-no-email-emoji.js`
+fails on an emoji inside a send's subject.
+
 ## CC and a staff note from the preview window
 
 The console's preview window has a **CC service@** box and a free-text
@@ -134,7 +143,7 @@ us to call about — with its price, and one button, **Review my quotes**, to
   (`notifyOfferDecisions_`; Chris, Nov 2026: an email per quote "is
   maddening"). When any answered line is detailing, a wash or bottom paint,
   it is copied to `DETAIL_NOTIFY_EMAIL` (john@ — Chris, Nov 2026). It groups accepted / call me / declined — a
-  request leads its subject with 📞 CALL REQUESTED and carries their question
+  request leads its subject with CALL REQUESTED and carries their question
   and phone number. That is mail to Quest, never to the customer.
 
 ## The sign chase (`signreminder`)

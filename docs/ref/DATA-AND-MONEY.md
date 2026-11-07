@@ -57,7 +57,7 @@ test quote had a journal. Do not "optimise" this by trusting `d.lines` again.
 Anything the two engines disagree about becomes a **drift note**:
 `driftNoteFor_()` compares the browser's total with the server's, stores the
 warning in the payload as `_driftNote`, and leads the `service@` subject with
-⚠️ PRICE DRIFT. The server's figure is the one that gets stored. It fails open
+PRICE DRIFT. The server's figure is the one that gets stored. It fails open
 — a payload with no `state` (older quotes) keeps the old behavior exactly.
 
 **Any new staff-side mutation must journal itself**, or it will vanish on the

@@ -44,6 +44,10 @@
  ************************************************************************/
 
 const NOTIFY_EMAIL = 'service@questwatersports.com';
+// Also told when a customer accepts, declines or asks for a call about a
+// DETAIL line (detailing, washes, bottom paint) — John prices and does them.
+// Chris, Nov 2026. Copied on the office email, never the customer's.
+const DETAIL_NOTIFY_EMAIL = 'john@questwatersports.com';
 const DRIVE_FOLDER_NAME = 'Winter Quotes 2025-26';
 // OPTIONAL: after adding a "Send mail as" alias in this Google account's
 // Gmail settings (using your email host's SMTP details), put that address
@@ -10975,8 +10979,12 @@ function notifyOfferDecisions_(ctx, done, note) {
       'Total:    ' + usd_(Number(d.total || 0)),
       '', 'Open it: ' + QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || ''));
     const body = lines.join('\n');
-    if (FROM_ALIAS) GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, { from: FROM_ALIAS, name: 'Quest Winter Quotes' });
-    else MailApp.sendEmail(NOTIFY_EMAIL, subject, body, { name: 'Quest Winter Quotes' });
+    /* A detail line among the answers copies the detailer in (DETAIL_NOTIFY_EMAIL). */
+    const detail = done.some(function (x) { return DETAIL_TRACKER_WORDS_.test(String(x.pr.rqLabel || x.pr.label || '')); });
+    const opts = { name: 'Quest Winter Quotes' };
+    if (detail) opts.cc = DETAIL_NOTIFY_EMAIL;
+    if (FROM_ALIAS) { opts.from = FROM_ALIAS; GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts); }
+    else MailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts);
   } catch (e) { console.error('Offer notice failed for ' + (ctx && ctx.d && ctx.d.quoteNo) + ': ' + e); }
 }
 

@@ -9913,7 +9913,8 @@ function trackerMenu_() {
 
    Prices still change only here. Nothing the tracker sends writes a quote
    except the ticks, which take the road they always have (winterTicks). */
-const DETAIL_TRACKER_WORDS_ = /^(exterior detail|wash\s*&\s*wax|interior detail|interior wipe-?\s*down|power\s*wash|acid wash|jetski detail)/i;
+/* Bottom paint too — Chris, Nov 7 2026: "Bottom paint is detailing." */
+const DETAIL_TRACKER_WORDS_ = /^(exterior detail|wash\s*&\s*wax|interior detail|interior wipe-?\s*down|power\s*wash|acid wash|jetski detail|bottom paint touch-?\s*up|strip bottom paint)/i;
 
 function detailUnitOf_(qn, name, phone, email, unit, ymm, dims, pd) {
   const st = effectiveState_(pd) || pd.state || {};

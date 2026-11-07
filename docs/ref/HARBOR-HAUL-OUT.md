@@ -548,6 +548,11 @@ when, plus the PULLED ANYWAY detail and the unit's alert when there is one.
   link (PIN first if needed, then straight onto the quote, where the photos and
   **We have your unit** are), plus **Photo folder** when `d.photosUrl` exists.
   The plain-text body stays as the fallback and carries the same link.
+- **Built for Outlook desktop.** Outlook for Windows renders with Word and
+  ignores CSS backgrounds on `<div>` / `<a>`: the first version lost its dark
+  header (white text on nothing) and its button. Colours are `bgcolor` on
+  table cells and the buttons are a coloured `<td>` around the link — never
+  `buttonHtml_`'s styled anchor.
 - `check-harbor-haul-out.js` holds all three.
 
 ## The alert

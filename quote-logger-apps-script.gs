@@ -5513,38 +5513,56 @@ function placementNotify_(d, tabName, state, by, anyway) {
     if (photosUrl) lines.push('Photo folder: ' + photosUrl);
     const body = lines.join('\n');
 
+    /* OUTLOOK-SAFE, ON PURPOSE. Outlook for Windows renders mail with Word,
+       which ignores CSS backgrounds on <div>/<a> and inline-block: the first
+       version of this card lost its dark header (white text on nothing) and
+       its button entirely. So every colour is a bgcolor on a table cell,
+       every box is a table, and the buttons are bulletproof — a coloured
+       <td> with the link inside, not a styled <a>. */
+    const F = 'font-family:Arial,Helvetica,sans-serif;';
     const row = function (k, v) {
-      return '<tr><td style="padding:7px 12px 7px 0;color:#5C7185;font-size:13px;white-space:nowrap;vertical-align:top">' +
-        k + '</td><td style="padding:7px 0;color:#1D2B38;font-size:15px;font-weight:bold">' + v + '</td></tr>';
+      return '<tr><td style="' + F + 'padding:6px 14px 6px 0;color:#5C7185;font-size:13px;white-space:nowrap;vertical-align:top">' +
+        k + '</td><td style="' + F + 'padding:6px 0;color:#1D2B38;font-size:15px;font-weight:bold">' + v + '</td></tr>';
     };
     const banner = function (bg, bd, fg, txt) {
-      return '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-left:5px solid ' + bd +
-        ';border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:14px;line-height:1.45;color:' + fg + '">' + txt + '</div>';
+      return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px">' +
+        '<tr><td width="5" bgcolor="' + bd + '" style="background:' + bd + '">&nbsp;</td>' +
+        '<td bgcolor="' + bg + '" style="background:' + bg + ';' + F + 'padding:10px 14px;font-size:14px;line-height:1.45;color:' + fg + '">' +
+        txt + '</td></tr></table>';
+    };
+    const btn = function (url, text, bg) {
+      return '<td bgcolor="' + bg + '" style="background:' + bg + ';padding:12px 22px">' +
+        '<a href="' + url + '" style="' + F + 'color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px">' +
+        '<span style="color:#ffffff">' + text + '</span></a></td>';
     };
     const html =
-      '<div style="font-family:Arial,Helvetica,sans-serif;background:#F2F5F8;padding:18px 10px">' +
-      '<div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #D5DEE7">' +
-        '<div style="background:#1D2B38;color:#ffffff;padding:14px 18px">' +
-          '<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;opacity:.75">Quest Harbor Haul Out</div>' +
-          '<div style="font-size:22px;font-weight:bold;margin-top:2px">' + esc_(label) + ' — ' + esc_(d.quoteNo || '') + '</div>' +
-          '<div style="font-size:13px;opacity:.85;margin-top:4px">Recorded by ' + esc_(by) + ' · ' + esc_(when) + '</div>' +
-        '</div>' +
-        '<div style="padding:16px 18px 18px">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F2F5F8" style="background:#F2F5F8">' +
+      '<tr><td align="center" style="padding:18px 10px">' +
+      '<table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" ' +
+        'style="width:520px;max-width:100%;background:#ffffff;border:1px solid #D5DEE7">' +
+        '<tr><td bgcolor="#1D2B38" style="background:#1D2B38;padding:14px 18px;' + F + '">' +
+          '<div style="' + F + 'font-size:12px;letter-spacing:1px;color:#B9C6D3">QUEST HARBOR HAUL OUT</div>' +
+          '<div style="' + F + 'font-size:22px;font-weight:bold;color:#ffffff;margin-top:2px">' + esc_(label) + ' — ' + esc_(d.quoteNo || '') + '</div>' +
+          '<div style="' + F + 'font-size:13px;color:#D5DEE7;margin-top:4px">Recorded by ' + esc_(by) + ' · ' + esc_(when) + '</div>' +
+        '</td></tr>' +
+        '<tr><td style="padding:16px 18px 18px;' + F + '">' +
           (anyway ? banner('#FDECEA', '#B3261E', '#6B1A14', '<b>PULLED ANYWAY</b> — ' + esc_(anyway.missing) +
             ' on file.' + (anyway.note ? '<br>Note: ' + esc_(anyway.note) : '')) : '') +
           (alert && alert.text ? banner('#FDF3E0', '#C08A22', '#5A431A', '<b>Alert:</b> ' + esc_(alert.text)) : '') +
-          '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 16px">' +
+          '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px">' +
             row('Owner', esc_(name || '—')) +
             row('Unit', esc_(d.unit || '—') + (d.ymm ? ' <span style="font-weight:normal;color:#5C7185">(' + esc_(d.ymm) + ')</span>' : '')) +
             row('Storage', esc_(tabName || '—')) +
             row('Quote #', esc_(d.quoteNo || '')) +
           '</table>' +
-          buttonHtml_(openUrl, 'Open quote', '#1F6FB2') +
-          (photosUrl ? buttonHtml_(esc_(photosUrl), 'Photo folder', '#2E7D5B') : '') +
-          '<p style="font-size:12px;color:#5C7185;line-height:1.5;margin:12px 0 0">Open quote signs you in with your PIN, then lands on this ' +
+          '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>' +
+            btn(openUrl, 'Open quote', '#1F6FB2') +
+            (photosUrl ? '<td width="10">&nbsp;</td>' + btn(esc_(photosUrl), 'Photo folder', '#2E7D5B') : '') +
+          '</tr></table>' +
+          '<p style="' + F + 'font-size:12px;color:#5C7185;line-height:1.5;margin:14px 0 0">Open quote signs you in with your PIN, then lands on this ' +
             'quote — condition photos are on that screen, and <b>We have your unit</b> is under Customer emails.</p>' +
-        '</div>' +
-      '</div></div>';
+        '</td></tr>' +
+      '</table></td></tr></table>';
 
     const opts = { htmlBody: html, name: 'Quest Harbor Haul Out' };
     if (FROM_ALIAS) {

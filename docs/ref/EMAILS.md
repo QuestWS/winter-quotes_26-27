@@ -132,7 +132,8 @@ us to call about — with its price, and one button, **Review my quotes**, to
 - **Staff-clicked, one quote at a time.** Not in `BULK_KINDS_`, not automatic.
 - **One email to service@ per submission, not per quote**
   (`notifyOfferDecisions_`; Chris, Nov 2026: an email per quote "is
-  maddening"). It groups accepted / call me / declined — a
+  maddening"). When any answered line is detailing, a wash or bottom paint,
+  it is copied to `DETAIL_NOTIFY_EMAIL` (john@ — Chris, Nov 2026). It groups accepted / call me / declined — a
   request leads its subject with 📞 CALL REQUESTED and carries their question
   and phone number. That is mail to Quest, never to the customer.
 

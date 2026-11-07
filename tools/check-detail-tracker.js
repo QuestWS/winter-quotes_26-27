@@ -70,5 +70,10 @@ check('the door answers details and staffPin', /fn \|\| ''\) === 'details'/.test
 check('a ping never throws', /try \{[\s\S]*\} catch \(e\) \{\s*return false;/.test(fn('pingDetailTracker_')));
 check('a ping sends no mail', !/GmailApp|MailApp/.test(fn('pingDetailTracker_')));
 
+console.log('=== 5. John hears about detail answers ===');
+check('the office answer email copies DETAIL_NOTIFY_EMAIL when a detail line was answered',
+  /DETAIL_TRACKER_WORDS_\.test/.test(fn('notifyOfferDecisions_')) && /opts\.cc = DETAIL_NOTIFY_EMAIL/.test(fn('notifyOfferDecisions_')));
+check('and that address is John\'s', /const DETAIL_NOTIFY_EMAIL = 'john@questwatersports\.com';/.test(gas));
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -444,6 +444,12 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: service tracker feed broken"; sed 's/^/       /' "$TMP/tracker.txt"; FAIL=1
   fi
+  # No emoji in an email (Chris, Nov 2026).
+  if node tools/check-no-email-emoji.js > "$TMP/emoji.txt" 2>&1; then
+    echo "  OK   gate: no emoji in an email"
+  else
+    echo "  FAIL gate: an emoji in an email"; sed 's/^/       /' "$TMP/emoji.txt"; FAIL=1
+  fi
   # The Detail Tracker: which lines, the shared staff PIN, its URL, the ping.
   if node tools/check-detail-tracker.js > "$TMP/detail.txt" 2>&1; then
     echo "  OK   gate: Detail Tracker door holds"

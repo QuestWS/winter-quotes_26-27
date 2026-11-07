@@ -189,6 +189,7 @@ for it, which is the point — an inverted condition passes a grep.
 | `price-fixtures.js --check-baseline` | Nine quotes still price to the committed cent |
 | `check-bulk-targets.js` | A lead is never a send-to-all recipient; the picker can only narrow |
 | `check-haul-info.js` | Who gets asked for keys and slip, over every combination |
+| `check-detail-tracker.js` | The Detail Tracker's door: only detailing and wash lines, the shared staff PIN with the console's pause, its remembered URL, and the ping after every answer or price |
 | `check-tracker-feed.js` | The service tracker's feed: only pulled and dropped-off units, only the work lines, no money, phone or email, and no answer without the right key |
 | `check-service-menu.js` | A service added from the console reaches the engine through the journal, prices like the customer's own, follows a re-measure, comes off cleanly, and never touches `d.state` |
 | `check-hho-discount.js` | The slipholder discount is asked, never shown; nothing applies until staff approve; a tiered approval follows the services total down when a service comes off; a typed amount stays fixed |

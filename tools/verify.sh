@@ -444,6 +444,12 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: service tracker feed broken"; sed 's/^/       /' "$TMP/tracker.txt"; FAIL=1
   fi
+  # The Detail Tracker: which lines, the shared staff PIN, its URL, the ping.
+  if node tools/check-detail-tracker.js > "$TMP/detail.txt" 2>&1; then
+    echo "  OK   gate: Detail Tracker door holds"
+  else
+    echo "  FAIL gate: Detail Tracker door broken"; sed 's/^/       /' "$TMP/detail.txt"; FAIL=1
+  fi
   # The Inbox Review tab: matching, money, noise and the key -- both halves,
   # the backend's inboxRowFor_ and the scanner's extract(), run together.
   if node tools/check-inbox-scan.js > "$TMP/inbox.txt" 2>&1; then

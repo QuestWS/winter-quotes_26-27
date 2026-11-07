@@ -9883,11 +9883,132 @@ function trackerMenu_() {
   };
 }
 
+/* THE DETAIL TRACKER — detailing and washes, for the detailers' board.
+   ---------------------------------------------------------------------------
+   Chris, Nov 7 2026: a new Detail Tracker app (QuestWS/servicetracker, /d/)
+   where "anything on this detail menu lives" — details "pulled from winter
+   work" among them — with "push notifications and live updates when a
+   customer approves, declines, or wants a call back about a quote", and its
+   sign-ins "the same as the harbor haul out app".
+
+   Three things cross, all through this same keyed door:
+
+   - fn:'details' — every quote with detailing or a wash on it, and the state
+     of each such line (itemsToQuoteOf_, the same rule the printed Items to
+     Quote list and Harbor Haul Out use). Unlike the mechanics' feed this
+     carries the price and the customer's phone and email: the detailer is
+     the one who rings about a detail quote, and the board is behind a staff
+     PIN. Read-only.
+   - fn:'staffPin' — is this a staff PIN, and whose? The SAME roster, the same
+     wrong-PIN pause and the same counter as adminAuth, so a PIN reset in the
+     console is a PIN reset on the Detail Tracker too. It mints no session
+     here: the tracker seals its own token.
+   - THE PING, the other way. When a customer answers (offersServe_) or staff
+     price or decide a detail line, the tracker is told at once, carrying that
+     quote's detail lines, so its board moves and its phones buzz without
+     anybody re-reading the season. Best effort and never in the way: a failed
+     ping is caught up by the tracker's hourly read of fn:'details'. The URL
+     is the one the tracker itself sent on its last keyed call — nothing here
+     has to be configured, and no second /exec URL lives in this file.
+
+   Prices still change only here. Nothing the tracker sends writes a quote
+   except the ticks, which take the road they always have (winterTicks). */
+const DETAIL_TRACKER_WORDS_ = /^(exterior detail|wash\s*&\s*wax|interior detail|interior wipe-?\s*down|power\s*wash|acid wash|jetski detail)/i;
+
+function detailUnitOf_(qn, name, phone, email, unit, ymm, dims, pd) {
+  const st = effectiveState_(pd) || pd.state || {};
+  const items = itemsToQuoteOf_(pd, st).filter(function (x) { return DETAIL_TRACKER_WORDS_.test(String(x.l || '')); })
+    .map(function (x) { return { l: x.l, s: x.s, a: x.a }; });
+  const state = placementStateOf_(pd);
+  return { qn: qn, name: name, phone: String(phone || ''), email: String(email || ''), unit: unit, ymm: ymm, dims: dims,
+    loa: Number(st.loa) || null, beam: Number(st.beam) || null,
+    stateLabel: (PLACEMENT_STATES_[state] || {}).label || '', items: items };
+}
+
+function trackerDetails_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets().filter(function (sh) { return !isOffstageTab_(sh.getName()); });
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAYLOAD]]);
+  const units = [];
+  sheets.forEach(function (sh, si) {
+    let head = [], pays = [];
+    if (grids) {
+      if (!grids[si]) return;
+      head = grids[si][0].slice(1);
+      pays = grids[si][1].slice(1);
+    } else {
+      if (sh.getRange(1, COL.QN).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+      pays = sh.getRange(2, COL.PAYLOAD, last - 1, 1).getValues();
+    }
+    head.forEach(function (r, i) {
+      if (!r[COL.QN - 1]) return;
+      let pd;
+      try { pd = JSON.parse((pays[i] && pays[i][0]) || '{}') || {}; } catch (e) { return; }
+      const u = detailUnitOf_(String(r[COL.QN - 1]), [r[COL.LAST - 1], r[COL.FIRST - 1]].filter(Boolean).join(', '),
+        fmtPhone(String(r[COL.PHONE - 1] || '')), r[COL.EMAIL - 1], String(r[COL.UNIT - 1] || ''), String(r[COL.YMM - 1] || ''),
+        String(r[COL.DIMS - 1] || ''), pd);
+      if (u.items.length) units.push(u);
+    });
+  });
+  return { ok: 1, v: 1, units: units, at: new Date().toISOString() };
+}
+
+/* Whose PIN is this. Shares adminAuth's pause, so the tracker is not a way
+   round it. */
+function trackerStaffPin_(pin) {
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('pinfails') || 0);
+  if (fails >= 10) return { ok: 1, valid: false, error: 'Too many wrong PINs — sign-in is paused for a while. Try again later.' };
+  const roster = getStaff_();
+  const want = String(pin || '').trim();
+  const name = want ? Object.keys(roster).find(function (n) { return roster[n].pin === want; }) : '';
+  if (!name) {
+    cache.put('pinfails', String(fails + 1), 900);
+    return { ok: 1, valid: false, error: 'Wrong PIN.' };
+  }
+  cache.remove('pinfails');
+  return { ok: 1, valid: true, name: name, admin: !!roster[name].admin, quote: canQuote_(roster[name]) ? 1 : 0 };
+}
+
+/* Where the tracker said it lives, kept off its own keyed calls. */
+function rememberTrackerUrl_(url) {
+  const u = String(url || '');
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(u)) return;
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('DETAIL_TRACKER_URL') !== u) props.setProperty('DETAIL_TRACKER_URL', u);
+}
+
+/* Tell the Detail Tracker this quote's detail lines moved. Never throws, and
+   does nothing for a quote with no detail on it. `event` is one sentence for
+   a quote the board has not pulled in yet. */
+function pingDetailTracker_(d, event) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const url = props.getProperty('DETAIL_TRACKER_URL');
+    const key = props.getProperty('TRACKER_KEY');
+    if (!url || !key || !d) return false;
+    const unit = detailUnitOf_(String(d.quoteNo || ''), [d.lastName, d.firstName].filter(Boolean).join(', '),
+      fmtPhone(String(d.phone || '')), d.email, String(d.unit || ''), String(d.ymm || ''), '', d);
+    if (!unit.items.length) return false;
+    const res = UrlFetchApp.fetch(url, { method: 'post', contentType: 'text/plain', muteHttpExceptions: true,
+      followRedirects: true, payload: JSON.stringify({ api: 'detailPing', key: key, unit: unit, event: String(event || '') }) });
+    return res.getResponseCode() === 200;
+  } catch (e) {
+    return false;
+  }
+}
+
 function trackerServe_(p) {
   let out;
   try {
     if (!trackerKeyOk_(p && p.key)) out = { ok: 0, error: 'Not authorised.' };
+    else if ((rememberTrackerUrl_(p.pingUrl), false)) out = null;
     else if (String(p.fn || '') === 'winterWork') out = trackerFeed_();
+    else if (String(p.fn || '') === 'details') out = trackerDetails_();
+    else if (String(p.fn || '') === 'staffPin') out = trackerStaffPin_(p.pin);
     else if (String(p.fn || '') === 'winterTicks') out = trackerSetTicks_(p.ticks);
     else if (String(p.fn || '') === 'menu') out = trackerMenu_();
     else out = { ok: 0, error: 'Unknown function.' };
@@ -10578,6 +10699,7 @@ function adminPriceRequest(token, qn, rqLabel, amt, note) {
   recomputeTotals_(d);
   saveQuoteRow_(ctx);
   auditLog_(who.name, 'Quoted request "' + item + '" at ' + usd_(a) + ' on ' + d.quoteNo + ' — awaiting the customer');
+  pingDetailTracker_(d, '');
   return { ok: 1, msg: 'Quoted "' + item + '" at ' + usd_(a) + ' — waiting on the customer, not in the total yet. ' +
     'Send "Here are your quotes" when you are ready; nothing was emailed.' };
 }
@@ -10707,6 +10829,7 @@ function adminOfferDecision(token, qn, item, choice, note) {
   if (!r.changed) return { ok: 1, msg: '"' + label + '" was already ' + choice + '. Nothing changed.' };
   saveQuoteRow_(ctx);
   auditLog_(who.name, 'Quote "' + label + '" on ' + d.quoteNo + ': ' + r.was + ' → ' + r.now + ' (' + usd_(r.pr.amt) + ')');
+  pingDetailTracker_(d, '');
   const what = choice === 'accepted' ? 'Accepted "' + label + '" for the customer — added at ' + usd_(r.pr.amt) + '.'
     : choice === 'declined' ? 'Marked "' + label + '" declined' + (r.was === 'accepted' ? ' — line taken off.' : '.')
     : choice === 'pending' ? 'Re-opened "' + label + '" — waiting on the customer again' + (r.was === 'accepted' ? '; line taken off.' : '.')
@@ -10799,6 +10922,10 @@ function offersServe_(b) {
         auditLog_('Customer', 'Answered ' + done.length + ' quote(s) on ' + d.quoteNo + ': ' +
           done.map(function (x) { return '"' + x.pr.label + '" ' + x.was + ' → ' + x.choice + ' (' + usd_(x.pr.amt) + ')'; }).join('; '));
         notifyOfferDecisions_(ctx, done, String(b.note || '').trim());
+        const nm = [d.firstName, d.lastName].filter(Boolean).join(' ');
+        pingDetailTracker_(d, nm + ' answered: ' + done.map(function (x) {
+          return (x.pr.label || x.pr.rqLabel) + ' ' + ({ accepted: 'accepted', declined: 'declined', call: '— call me' })[x.choice];
+        }).join('; ') + ' (' + d.quoteNo + ')');
       }
       const n = function (c) { return done.filter(function (x) { return x.choice === c; }).length; };
       const bits = [];

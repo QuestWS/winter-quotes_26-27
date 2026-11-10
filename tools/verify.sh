@@ -583,6 +583,10 @@ if [ -f quote-logger-apps-script.gs ]; then
   if awk '/^function noticeHtml_/,/^}/' quote-logger-apps-script.gs | grep -qE 'surveyBase|done=now'; then
     echo "  FAIL trap: noticeHtml_ carries the season-done survey — 'we have your unit' would ask for a haul-out date"; FAIL=1
   else echo "  OK   trap: arrival/notice emails never ask for haul-out timing"; fi
+  # Nor may a quote/invoice ask once the unit is here or the question is answered.
+  if awk '/^function surveyBase_/,/^}/' quote-logger-apps-script.gs | grep -q "placementStateOf_(d) || seasonDoneAnswered_(d)"; then
+    echo "  OK   trap: season-done survey drops once pulled/stored or already answered"
+  else echo "  FAIL trap: surveyBase_ no longer drops the survey for a unit already here or an answered question"; FAIL=1; fi
   # The end-of-season note must not pitch detailing to someone who already asked.
   if awk "/if \(kind === 'fall'\)/,/^  }/" quote-logger-apps-script.gs | grep -q 'hasDetailing_'; then
     echo "  OK   trap: end-of-season note checks for an existing detail request"

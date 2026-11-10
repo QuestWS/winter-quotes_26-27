@@ -301,6 +301,13 @@ carries an optional customer/staff note. The console uses a real inline date
 field + live fee warning — **never a `prompt()`** (a raw prompt shipped once and
 looked unacceptable; all console inputs are inline UI now).
 
+**The survey also drops once the unit is here** (any placement state — pulled,
+dropped off, stored, picked up) **or once it has been answered**
+(`d.seasonDone.choice` is now / date / call, from the email or the console).
+`surveyBase_` returns `''` and every caller, the fall email included, leaves the
+question out. Chris, Nov 2026: an updated invoice for a boat already in storage
+was still asking when he'd be done. `verify.sh` guards both conditions.
+
 
 ## Heritage Harbor — asked, never priced
 The review step asks boats and jet skis one thing: *"I'm a Heritage Harbor

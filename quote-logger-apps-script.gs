@@ -13166,7 +13166,21 @@ function customerEmailHtml_(o) {
   '</div>';
 }
 
+/* No survey once the unit is here. "When will you be done for the season?"
+   is a haul-out question; a boat already pulled, dropped off, stored or
+   picked up has had its haul-out, and asking anyway (on an updated invoice
+   for a boat sitting in storage) reads as nobody having looked at the file.
+   Nor once they have answered it (online or by phone, via the console's
+   Season timing block): asking again implies the answer was lost. A change
+   of plan is a phone call, and staff can still edit the answer.
+   Every caller -- quote, update, invoice and the fall email -- already drops
+   the survey on an empty base, so this is the one place it is decided. */
+function seasonDoneAnswered_(d) {
+  const c = String((d && d.seasonDone && d.seasonDone.choice) || '');
+  return c === 'now' || c === 'date' || c === 'call';
+}
 function surveyBase_(d) {
+  if (placementStateOf_(d) || seasonDoneAnswered_(d)) return '';
   return WEB_APP_URL + '?action=seasondone&quote=' + encodeURIComponent(d.quoteNo || '') +
     '&ln=' + encodeURIComponent(d.lastName || '');
 }

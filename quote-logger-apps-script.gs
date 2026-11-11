@@ -386,6 +386,12 @@ PRICES.full.jet = PRICES.full.pwc;
 
 const RULES = {
   latePct:10,
+  /* After the late fee: a monthly service charge from SEASON.lateChargeStart,
+     never less than monthlyMin dollars. The invoice terms and the late-fee
+     emails both read these, so the dollar figure in an email is the one the
+     PDF's terms describe. */
+  monthlyPct:2,
+  monthlyMin:5,
   ccPct:3,
   depositTrailer:500,
   depositNoTrailer:1000,
@@ -12225,6 +12231,47 @@ function adminResetPin(token, name) {
   return { ok: 1, pin: pin };
 }
 
+/* THE NEXT LATE CHARGE, IN DOLLARS (Chris, Nov 2026: "note the penalty fee
+   for paying late in the exact dollar amount not just the flat percentage so
+   that people understand the cost without debate").
+   Which charge comes next depends on the date, exactly as the invoice terms
+   say (RULES + the quote's season stamp):
+     through the pay-by day           -> the latePct one-off on the balance
+     after it, before lateChargeStart -> the monthly charge, starting then
+     from lateChargeStart             -> the monthly charge, each month it stays open
+   monthly = monthlyPct of the balance, never less than monthlyMin.
+   `forceLate` keeps the one-off figure for callers that have already decided
+   the pay-by date has not passed (the balance box). Returns the sentence with
+   the figures in bold, and how to avoid it. */
+function latePenalty_(d, balance, now, forceLate) {
+  const sn = (d && d.season) || {};
+  const t = now ? new Date(now).getTime() : Date.now();
+  const bal = Math.max(0, Number(balance) || 0);
+  const r2 = function (x) { return Math.round(x * 100) / 100; };
+  const pct = Number(RULES.latePct) || 10;
+  const mp = Number(RULES.monthlyPct) || 2, mmin = Number(RULES.monthlyMin) || 5;
+  const payByShort = esc_(sn.payByShort || SEASON.payByShort);
+  const pb = new Date(String(sn.payBy || SEASON.payByDate));
+  const payEnd = isNaN(pb.getTime()) ? null : new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+  if (forceLate || payEnd === null || t < payEnd) {
+    const fee = r2(bal * pct / 100);
+    return { kind: 'late', amt: fee, total: r2(bal + fee),
+      text: 'After ' + payByShort + ', a ' + pct + '% late fee adds <b>' + usd_(fee) + '</b> — <b>' + usd_(bal + fee) + '</b> in total.',
+      avoid: 'Paying before then avoids it entirely' };
+  }
+  const monthly = r2(Math.max(bal * mp / 100, mmin));
+  const lsTxt = String(sn.lateStart || SEASON.lateChargeStart || '');
+  const ls = new Date(lsTxt);
+  if (!isNaN(ls.getTime()) && t < ls.getTime()) {
+    return { kind: 'monthly', amt: monthly,
+      text: 'Starting ' + esc_(lsTxt) + ', a ' + mp + '% monthly service charge adds <b>' + usd_(monthly) + '</b> a month until it\'s paid.',
+      avoid: 'Paying before then avoids it entirely' };
+  }
+  return { kind: 'monthly', amt: monthly,
+    text: 'A ' + mp + '% monthly service charge adds <b>' + usd_(monthly) + '</b> for every month the balance stays open.',
+    avoid: 'Paying now stops it' };
+}
+
 /* ============ LIFECYCLE: photos + seasonal notices ============ */
 /* What an open balance on a notice actually asks for. A bare "Open balance"
    on a "we have your boat" email read as a payment demand to customers whose
@@ -12259,11 +12306,14 @@ function noticeDueRows_(d, paid, balance) {
      the balance any time up to …". Still says WHEN; it no longer invites
      waiting until then. */
   const note = (depOwed <= 0.005 && !pastDue)
-    ? '<b>Settle up now</b> — balance due by ' + payByShort + '.' : '';
+    ? '<b>Settle up now</b> — balance due by ' + payByShort + '. ' + latePenalty_(d, balance, null, true).text : '';
   return { rows: rows, note: note };
 }
 
-function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
+/* opts.noDueNote: the email's own text already carries the "settle up now"
+   line and the late charge (the late fee warning) — saying it twice reads as
+   a form letter. */
+function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, opts) {
   const paid = paymentsTotal_(d);
   const balance = Number(d.total || 0) - paid;
   const logoTag = LOGO_URL
@@ -12279,7 +12329,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
     const due = noticeDueRows_(d, paid, balance);
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
-      (due.note ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
+      (due.note && !(opts && opts.noDueNote) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
       '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') +
       /* Wherever a payment option shows, Synchrony shows beside it (Chris,
          Nov 2026). financeOfferUrl_ decides; an error just leaves it off. */
@@ -13101,13 +13151,16 @@ function buildEmailFor_(d, kind, extra, photos) {
     const paid = paymentsTotal_(d);
     const bal = Number(d.total || 0) - paid;
     if (bal <= 0.005) return null;
-    const intro = 'Just a heads-up on your winter ' + docTerm_(d).toLowerCase() + ': there\'s still an open balance of <b>' + usd_(bal) + '</b>. ' +
-      'Per the storage terms on your ' + docTerm_(d).toLowerCase() + ', unpaid balances are subject to a late fee — the next one will be applied on <b>the 15th of this month</b>. ' +
-      'Settling up before then avoids it entirely; the payment button below takes about a minute. ' +
+    /* Chris, Nov 2026: "Settle up now", and the next late charge in dollars
+       (latePenalty_ — the one-off before the pay-by date, the monthly charge
+       after it), so the cost is not a matter of reading the terms. */
+    const pen = latePenalty_(d, bal);
+    const intro = '<b>Settle up now</b> — there\'s still an open balance of <b>' + usd_(bal) + '</b> on your winter ' +
+      docTerm_(d).toLowerCase() + '. ' + pen.text + ' ' + pen.avoid + ' — the buttons below take about a minute. ' +
       'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
     /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
-    return { subject: 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
-      html: noticeHtml_(d, intro, '', true), status: 'Late fee warning sent' };
+    return { subject: 'Settle up now: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
+      html: noticeHtml_(d, intro, '', true, { noDueNote: true }), status: 'Late fee warning sent' };
   }
   return null;
 }
@@ -14458,7 +14511,7 @@ function quoteHtml_(d) {
       const noStorage = !!(d.state && d.state.storage === 'none');
       return dueToday
         ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + (noStorage ? 'Payment is due when the work is completed' : 'Payment is due today') + '; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. ' + pickupTermsSentence_(d, sn) + provisionalTerms + '</p>'
-        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + esc_(pricesValidSentence(sn.payBy)) + ' Credit card payments are subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by 10%, and a 2% monthly service charge (min. $5) applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';
+        : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + esc_(pricesValidSentence(sn.payBy)) + ' Credit card payments are subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by ' + RULES.latePct + '%, and a ' + RULES.monthlyPct + '% monthly service charge (min. $' + RULES.monthlyMin + ') applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';
     })() +
     '</body></html>';
 }

@@ -38,7 +38,7 @@ const hasnt = (s, frag, what) => (String(s).indexOf(frag) < 0 ? ok(what) : fail(
 const eq = (got, want, what) => (got === want ? ok(what) : fail(what + ' — got ' + JSON.stringify(got) + ', expected ' + JSON.stringify(want)));
 
 const B = new Function(gasSrc + '\nreturn { buildEmailFor_, lastCallBlocker_, lastCallPastDeadline_, unbuildableMsg_,' +
-  ' staffExtras_, BULK_KINDS_, quoteLinkFor_, signUrlFor_, PAYMENT_URL, PRICES, RULES, SEASON, NOTIFY_EMAIL,' +
+  ' staffExtras_, BULK_KINDS_, quoteLinkFor_, signUrlFor_, PAYMENT_URL, PRICES, RULES, SEASON, NOTIFY_EMAIL, latePenalty_,' +
   ' seasonStamp, CC_TYPED_MAX_ };')();
 
 /* The builder reads today's date, so the fixtures carry a deadline far enough
@@ -197,6 +197,36 @@ console.log('=== typed CC addresses ===');
   else fail('the console preview does not send the typed CC box');
   has(html, 'onclick="sendKind(\'lastcall\')"', 'the console has a Last call button');
   has(html, '<option value="lastcall">', 'and a send-to-all option');
+}
+
+console.log('=== the late charge, in dollars ===');
+{
+  /* Chris, Nov 2026: the exact dollar amount, not just the percentage. Which
+     charge comes next depends on the date, as the invoice terms say. */
+  const live = { season: B.seasonStamp() };   // the real 2026–2027 dates
+  const at = (t) => B.latePenalty_(live, 986.40, new Date(t)).text;
+  has(at('2026-11-10T12:00'), '10% late fee adds <b>$98.64</b> — <b>$1,085.04</b> in total', 'before Nov 15: the 10% one-off, in dollars');
+  has(at('2026-11-15T22:00'), '$98.64', 'late on Nov 15 itself: still the 10%');
+  has(at('2026-11-16T09:00'), 'Starting Dec 1, 2026, a 2% monthly service charge adds <b>$19.73</b>', 'after Nov 15: the monthly charge, from Dec 1');
+  has(at('2026-12-05T09:00'), '2% monthly service charge adds <b>$19.73</b> for every month', 'from Dec 1: each month');
+  has(B.latePenalty_(live, 100, new Date('2026-12-05T09:00')).text, '<b>$5.00</b>', 'never less than the $5 minimum');
+  eq(JSON.stringify([B.RULES.latePct, B.RULES.monthlyPct, B.RULES.monthlyMin]), '[10,2,5]', 'the rates come from RULES');
+
+  const owed = quote({ payments: [{ amt: 200 }] });                  // $800 open, deadline 2099
+  const lw = B.buildEmailFor_(owed, 'latewarn', '', '');
+  has(lw && lw.html, '<b>Settle up now</b>', 'the late fee warning says "Settle up now"');
+  has(lw && lw.subject, 'Settle up now', '— in its subject too');
+  has(lw && lw.html, '10% late fee adds <b>$80.00</b> — <b>$880.00</b> in total', 'with the charge in dollars');
+  eq(((lw && lw.html) || '').split('Settle up now').length - 1, 1, 'once — the balance box does not repeat it');
+  /* The settle-up line shows once the deposit is in and only the dated
+     balance is left ($500 here). */
+  const st = B.buildEmailFor_(quote({ payments: [{ amt: 500 }] }), 'stored', '', '');
+  has(st && st.html, 'balance due by Nov 15. After Nov 15, a 10% late fee adds <b>$50.00</b>',
+    '"We have your unit": the settle-up line carries the dollar figure');
+  /* The PDF's terms read the same RULES, so the email and the paper agree. */
+  if (/increase by ' \+ RULES\.latePct \+ '%, and a ' \+ RULES\.monthlyPct \+ '% monthly service charge \(min\. \$' \+ RULES\.monthlyMin/.test(gasSrc))
+    ok('the PDF terms read RULES, not typed numbers');
+  else fail('the PDF terms still type the late percentages by hand');
 }
 
 if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the last-call email'); process.exit(1); }

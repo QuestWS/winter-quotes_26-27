@@ -45,7 +45,17 @@
 .plan .sub{font-size:13.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:10px}
 .plan .was{font-size:13px;color:var(--frost);font-weight:600;margin-top:4px}
 #goBar{position:sticky;bottom:0;background:#fff;padding:10px 0 12px;margin-top:6px;border-top:1px solid var(--line)}
-#goSum{font-size:14px;color:var(--muted);margin-bottom:7px;min-height:1.2em}
+#goSum{font-size:14px;color:var(--muted);margin-bottom:9px;min-height:1.2em}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:420px){.two{grid-template-columns:1fr}}
+.btn.alt{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}
+.panel{border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-top:12px;background:var(--paper)}
+.panel h2{font-size:19px;margin:0 0 6px}
+.panel .field{margin-bottom:10px}
+.agree{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45;margin:10px 0;cursor:pointer}
+.agree input{width:22px;height:22px;flex:0 0 22px;margin-top:2px}
+#sig{font-family:var(--mono);font-size:17px}
+.done{border-left:5px solid var(--ok);background:var(--ok-bg)}
 .disc{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:14px}
 .foot{font-size:14px;color:var(--muted);margin-top:16px}
 .foot a{color:var(--frost)}
@@ -83,8 +93,37 @@
     <div id="list" role="radiogroup" aria-label="Synchrony plans"></div>
     <div id="goBar" hidden>
       <div id="goSum"></div>
-      <button class="btn" id="goBtn" type="button" disabled>Apply with Synchrony</button>
+      <div class="two">
+        <button class="btn" id="haveBtn" type="button" disabled>I have a Synchrony account</button>
+        <button class="btn alt" id="applyBtn" type="button" disabled>Apply for Synchrony</button>
+      </div>
     </div>
+    <!-- Applying happens on Synchrony's site, in a new tab; they come back here. -->
+    <div class="panel" id="applyNote" hidden>
+      <h2>Applying in a new tab</h2>
+      <p>Finish your application with Synchrony. <b>Once you're approved, come back to this page</b>
+        (or open the link in our email again) and choose <b>I have a Synchrony account</b> to authorize the charge.</p>
+      <p><a id="applyAgain" href="#" target="_blank" rel="noopener">The application didn't open? Open it here.</a></p>
+    </div>
+    <!-- Their written OK for us to run it. Name and phone are what the
+         Synchrony Business Center looks an account up by — never an account
+         number, never an SSN. -->
+    <div class="panel" id="authBox" hidden>
+      <h2>Authorize the charge</h2>
+      <p class="msg" style="margin:0 0 10px">Enter your name and phone number <b>exactly as they are on your Synchrony
+        account</b> — that's how we find it. We never ask for your account number.</p>
+      <div class="two">
+        <div class="field"><label class="f" for="aFirst">First name</label><input id="aFirst" type="text" autocomplete="given-name"></div>
+        <div class="field"><label class="f" for="aLast">Last name</label><input id="aLast" type="text" autocomplete="family-name"></div>
+      </div>
+      <div class="field"><label class="f" for="aPhone">Phone number on the account</label>
+        <input id="aPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(815) 555-0123"></div>
+      <label class="agree"><input type="checkbox" id="aAgree"><span id="aText"></span></label>
+      <div class="field"><label class="f" for="sig">Type your full name to sign</label>
+        <input id="sig" type="text" autocomplete="name" spellcheck="false"></div>
+      <button class="btn" id="authBtn" type="button">Authorize</button>
+    </div>
+    <div class="panel done" id="doneBox" hidden></div>
     <div id="status" class="msg" role="status" aria-live="polite"></div>
     <div class="disc" id="disc" hidden></div>
     <div class="foot" id="foot" hidden>Rather pay another way?
@@ -108,11 +147,14 @@
    READ by GET (?action=finance — financeRead_ in the Apps Script). Every
    figure on this page comes from the SERVER, worked out on what is owed now
    with the engine's FINANCING table; the page only draws it.
-   CHOSEN by POST only (api:'finance' → financeServe_), so a mail scanner
-   following links can never pick a plan for anybody. The choice adds nothing
-   to the quote — staff add the admin fee when they run the charge. Then the
-   page sends the customer to Quest's Synchrony Sport application
-   (FINANCING.applyUrl in the engine).
+   Everything they DO goes by POST only (api:'finance' → financeServe_), so a
+   mail scanner following links can never act for anybody:
+     step 'apply'     — no account yet: Synchrony's application opens in a new
+                        tab, and they come back here once approved;
+     step 'authorize' — their written OK to charge the plan's total, with the
+                        name and phone the Business Center looks them up by.
+   Neither adds anything to the quote — staff record the charge, with the
+   admin fee, once they have run it in Synchrony.
 ============================================================================ */
 
 /* The one URL everything shares — CLAUDE.md §1. tools/verify.sh fails if this
@@ -179,16 +221,26 @@ function load(quote, ln) {
 }
 
 /* ---- painting ----------------------------------------------------------- */
+var MODE = '';   // '' | 'apply' | 'auth'
 function paint(res) {
   DATA = res;
-  PICKED = res.chosen || '';
+  PICKED = PICKED || res.chosen || '';
   $('find').hidden = true;
   $('title').textContent = res.firstName ? res.firstName + ', finance with Synchrony' : 'Finance with Synchrony';
   var ul = $('unitline');
   ul.textContent = [res.quoteNo, res.unit].filter(Boolean).join(' · ');
   ul.hidden = !ul.textContent;
+  $('applyAgain').href = res.applyUrl || '#';
+  var pf = res.prefill || {};
+  if (!$('aFirst').value) $('aFirst').value = pf.first || '';
+  if (!$('aLast').value) $('aLast').value = pf.last || '';
+  if (!$('aPhone').value) $('aPhone').value = pf.phone || '';
   var opts = res.options || [];
-  if (!(res.balance > 0.005) || !opts.length) {
+  if (res.charged) {
+    show('done', '<h2>Your Synchrony plan is set up</h2><p>We\'ve run it on your Synchrony account — your receipt is in your email. ' +
+      'Questions? Call us at (815) 433-2200.</p>' + discBtn(res));
+    $('owed').hidden = true; $('list').innerHTML = ''; $('goBar').hidden = true;
+  } else if (!(res.balance > 0.005) || !opts.length) {
     $('owed').hidden = true;
     $('list').innerHTML = '<div class="msg">There is no balance to finance on ' + esc(res.quoteNo) +
       ' — you\'re all paid up. Questions? Call us at (815) 433-2200.</div>';
@@ -202,10 +254,15 @@ function paint(res) {
         '<span class="dot" aria-hidden="true"></span>' +
         '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) + '</span></div>' +
         '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
-        (res.chosen === o.key ? '<div class="was">Your plan — continue below to apply.</div>' : '') +
+        (res.authorized && res.authorized.key === o.key ? '<div class="was">✓ You authorized this plan</div>' : '') +
         '</label>';
     }).join('');
     $('goBar').hidden = false;
+    if (res.authorized) {
+      show('done', '<h2>Thank you — you\'re all set</h2><p>You authorized <b>' + money(res.authorized.total) + '</b> on the ' +
+        esc(res.authorized.phrase || res.authorized.label) + ' plan. We\'ll run it on your Synchrony account and email your receipt. ' +
+        'Picked the wrong plan? Choose another above and authorize again.</p>' + discBtn(res));
+    }
   }
   $('disc').textContent = res.disclosure || '';
   $('disc').hidden = !res.disclosure;
@@ -213,7 +270,24 @@ function paint(res) {
   $('foot').hidden = false;
   sync();
 }
-function pick(key) { PICKED = key; sync(); }
+function discBtn(res) {
+  return res.disclosureUrl
+    ? '<p>You\'ll sign the Synchrony rate disclosure in person when you\'re next in. To get it on file now, you can ' +
+      'sign a digital copy:</p><a class="btn alt" href="' + esc(res.disclosureUrl) + '" target="_blank" rel="noopener">Sign the rate disclosure</a>'
+    : '<p>You\'ll sign the Synchrony rate disclosure in person when you\'re next in — no appointment needed.</p>';
+}
+function show(which, html) {
+  $('applyNote').hidden = which !== 'apply';
+  $('authBox').hidden = which !== 'auth';
+  $('doneBox').hidden = which !== 'done';
+  if (which === 'done') $('doneBox').innerHTML = html || '';
+  MODE = which;
+}
+function pick(key) {
+  PICKED = key;
+  if (MODE === 'done') show('');
+  sync();
+}
 function chosenOpt() {
   return ((DATA && DATA.options) || []).filter(function (o) { return o.key === PICKED; })[0] || null;
 }
@@ -223,10 +297,13 @@ function sync() {
     ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — total <b>' + money(o.total) + '</b> (includes the ' +
       esc((DATA.feeLabel || 'admin fee').toLowerCase()) + ' of ' + money(o.fee) + ')'
     : 'Pick a plan above.';
-  $('goBtn').disabled = !o || BUSY;
+  $('haveBtn').disabled = $('applyBtn').disabled = !o || BUSY;
+  if (o) $('aText').textContent = o.authText || '';
+  $('authBtn').disabled = BUSY;
+  $('authBtn').textContent = o ? 'Authorize ' + money(o.total) : 'Authorize';
 }
 
-/* ---- choosing ----------------------------------------------------------- */
+/* ---- sending -------------------------------------------------------------- */
 function post(body) {
   return fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify(body) })
     .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -234,41 +311,64 @@ function post(body) {
        the quote loader replies instead — that is a transport failure, not a no. */
     .then(function (res) { if (!res || res._api !== 'finance') throw new Error('not ours'); return res; });
 }
-function go() {
+/* No account yet: Synchrony's application in a NEW TAB, opened inside the tap
+   so no popup blocker stops it, and this page stays here to come back to. The
+   note to the office is quiet and best-effort — the application is what
+   matters. */
+function applyNow() {
+  var o = chosenOpt();
+  if (!o || !CUR || !DATA) return;
+  /* Not 'noopener' in the features: with it, window.open always returns
+     null and a blocked popup cannot be told from an open one. */
+  var w = window.open(DATA.applyUrl, '_blank');
+  if (w) { try { w.opener = null; } catch (e) {} }
+  show('apply');
+  if (!w) say('', 'If the application didn\'t open, use the link below.');
+  post({ api: 'finance', step: 'apply', quote: CUR.quote, ln: CUR.ln, term: o.key }).catch(function () {});
+}
+function haveAccount() {
+  if (!chosenOpt()) return;
+  show('auth');
+  sync();
+  try { $('authBox').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+}
+function authorize() {
   var o = chosenOpt();
   if (!o || BUSY || !CUR) return;
-  BUSY = true;
-  $('goBtn').disabled = true;
-  $('goBtn').textContent = 'Saving your plan…';
+  var body = { api: 'finance', step: 'authorize', quote: CUR.quote, ln: CUR.ln, term: o.key,
+    first: $('aFirst').value, last: $('aLast').value, phone: $('aPhone').value,
+    agree: $('aAgree').checked, sig: $('sig').value };
+  if (!body.agree) { say('warn', 'Tick the box to authorize the charge.'); return; }
+  if (!String(body.sig).trim()) { say('warn', 'Type your full name to sign.'); return; }
+  BUSY = true; sync();
+  $('authBtn').textContent = 'Saving…';
   say('', '');
-  var body = { api: 'finance', quote: CUR.quote, ln: CUR.ln, term: o.key };
   post(body).catch(function () {
-    /* The choice may have landed even though we could not read the reply
-       (Apps Script's redirect leg can fail on a slow phone). Ask before
-       sending it again; the server is idempotent either way. */
+    /* It may have landed even though the reply was lost (Apps Script's
+       redirect leg can fail on a slow phone). Ask before sending it again;
+       the server is idempotent either way. */
     return getJson(readUrl(CUR)).then(function (res) {
-      if (res && res.ok && res.chosen === o.key) return res;
+      if (res && res.ok && res.authorized && res.authorized.key === o.key) return res;
       return post(body);
     });
   }).then(function (res) {
     BUSY = false;
-    $('goBtn').textContent = 'Apply with Synchrony';
     if (!res) throw new Error('no answer');
     if (!res.ok) { if (res.options) paint(res); say('warn', esc(res.error || 'That did not save.')); sync(); return; }
-    var url = res.applyUrl || (DATA && DATA.applyUrl);
-    say('ok', 'Your plan is saved. Taking you to Synchrony… <a href="' + esc(url) + '">Continue</a> if nothing happens.');
-    window.location.href = url;
+    paint(res);
+    say('ok', esc(res.msg || 'Saved.'));
+    try { $('doneBox').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
   }).catch(function () {
-    BUSY = false;
-    $('goBtn').textContent = 'Apply with Synchrony';
-    sync();
-    say('warn', "We couldn't save your plan — please try again, or call us at (815) 433-2200.");
+    BUSY = false; sync();
+    say('warn', "We couldn't save that — please try again, or call us at (815) 433-2200.");
   });
 }
 
 /* ---- wiring ------------------------------------------------------------- */
 $('findBtn').addEventListener('click', function () { load($('qn').value, $('ln').value); });
-$('goBtn').addEventListener('click', go);
+$('haveBtn').addEventListener('click', haveAccount);
+$('applyBtn').addEventListener('click', applyNow);
+$('authBtn').addEventListener('click', authorize);
 ['qn', 'ln'].forEach(function (id) {
   $(id).addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') { ev.preventDefault(); load($('qn').value, $('ln').value); }

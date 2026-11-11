@@ -157,9 +157,12 @@ for (const batch of [true, false]) {
 /* The two writers stamp `at` and `by`, and the cache is dropped with the
    storage view's. Grepped, because both are one-line facts about the writers. */
 console.log('=== writers and cache ===');
+/* Every writer, however many there are (the Synchrony charge made it three,
+   Nov 2026): a payment with no who/when sorts and labels wrong on the list. */
+const writers = (gas.match(/\bd\.payments\.push\(\{/g) || []).length;
 const stamped = (gas.match(/d\.payments\.push\(\{[^}]*\n?[^}]*at: new Date\(\)\.toISOString\(\), by: /g) || []).length;
-if (stamped !== 2) fail('expected both payment writers to stamp at/by, found ' + stamped);
-else ok('both payment writers stamp at and by');
+if (writers < 2 || stamped !== writers) fail('expected every payment writer to stamp at/by, found ' + stamped + ' of ' + writers);
+else ok('every payment writer (' + writers + ') stamps at and by');
 if (!/function invalidateStorageView_\(\) \{[^}]*cacheDropBig_\('receivables'\)/.test(gas)) fail('a write no longer drops the receivables cache');
 else ok('every write drops the receivables cache');
 if (!/CONSOLE_GET_FNS_ = \{[\s\S]*?receivables: 1[\s\S]*?\};/.test(gas)) fail('receivables is not on the GET allow-list');

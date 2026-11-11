@@ -148,6 +148,21 @@ const FINANCING = {
   disclosure: 'Subject to credit approval by Synchrony Bank. Deferred interest: if the purchase is not ' +
     'paid in full within the promotional period, interest is charged from the purchase date. ' +
     'Minimum monthly payments required. The admin fee is added to your balance and financed with it.',
+  /* The customer's written OK for Quest to run the charge — shown above the
+     tick box, and stored word for word with what they ticked. {amount} and
+     {plan} are filled in from financeQuote. */
+  authText: 'I authorize Quest Watersports to charge {amount} to my Synchrony account on the {plan} plan. ' +
+    'I understand this includes the admin fee shown, and that I will sign the Synchrony rate disclosure ' +
+    'in person on my next visit.',
+  /* The rate disclosure as an Adobe Sign web form — a digital copy on file
+     until they sign in person. Empty hides the button everywhere, the way an
+     empty SIGNING.webFormUrl does. The field names must match the form's
+     fields EXACTLY (they pre-fill from the link; a mismatch is silently
+     blank, as with the agreement — docs/adobe-webform-field-map.md). */
+  disclosureForm: {
+    url: '',
+    fields: { quoteNo: 'Quote_Number', plan: 'Finance_Plan', amount: 'Finance_Amount' },
+  },
 };
 /* One term, priced for `amount` (what is still owed). null for an unknown key
    or nothing to finance — callers must treat null as "no such option". */
@@ -159,6 +174,24 @@ function financeQuote(amount, key){
   return { key: t.key, months: t.months, plan: t.plan, pct: t.pct,
            label: t.months + ' months — ' + t.plan,
            base: base, fee: Math.round((total - base) * 100) / 100, total: total };
+}
+/* The authorization sentence for one priced plan. */
+function financeAuthText(q){
+  if (!q) return '';
+  return FINANCING.authText.replace('{amount}', '$' + Number(q.total).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','))
+    .replace('{plan}', q.months + '-month ' + String(q.plan).toLowerCase());
+}
+/* The disclosure web form, pre-filled from the link like the agreement is. */
+function financeDisclosureUrl(o){
+  const f = FINANCING.disclosureForm || {};
+  const base = String(f.url || '').trim().split('#')[0];
+  const qn = String((o && o.quoteNo) || '').trim();
+  if (!base || !qn) return '';
+  const pair = (k, v) => encodeURIComponent(k) + '=' + encodeURIComponent(v);
+  const parts = [pair(f.fields.quoteNo, qn)];
+  if (o.plan) parts.push(pair(f.fields.plan, o.plan));
+  if (o.amount) parts.push(pair(f.fields.amount, Number(o.amount).toFixed(2)));
+  return base + '#' + parts.join('&');
 }
 function financeOptions(amount){
   return FINANCING.terms.map(function(t){ return financeQuote(amount, t.key); }).filter(Boolean);
@@ -937,7 +970,7 @@ function offersOf(manual){
                 FIRM_QUOTE_NO, FIRM_QUOTE_THROUGH, priceIsFirm_,
                 HHO_DISCOUNT_SEC, hhoDiscountFor, hhoServicesTotal, hhoDiscountLine, withHhoDiscount,
                 OFFER_STATES, offerStatus, offerOnQuote, offerOpen, offersOf,
-                FINANCING, financeQuote, financeOptions };
+                FINANCING, financeQuote, financeOptions, financeAuthText, financeDisclosureUrl };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

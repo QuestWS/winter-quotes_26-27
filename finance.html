@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finance with Synchrony — Quest Watersports</title>
-<!-- Reached from the "Finance with Synchrony" button in a customer email. It
+<title>Pay over time with Synchrony — Quest Watersports</title>
+<!-- Reached from the "Pay over time with Synchrony" button in a customer email. It
      is a customer's own balance, not a landing page. -->
 <meta name="robots" content="noindex, nofollow">
 <!-- One Quest mark for the whole site: favicon.png at the repo root. -->
@@ -72,7 +72,7 @@
 
 <div class="wrap">
   <div class="card">
-    <h1 id="title">Finance with Synchrony</h1>
+    <h1 id="title">Pay over time with Synchrony</h1>
     <p class="lead" id="lead">Pick a plan to see your total, then apply with Synchrony —
       it takes a couple of minutes.</p>
     <div class="unitline" id="unitline" hidden></div>
@@ -139,9 +139,9 @@
 <script src="pricing-engine.js"></script>
 <script>
 /* ============================================================================
-   FINANCE WITH SYNCHRONY — pick a term, see the admin fee, apply.
+   PAY OVER TIME WITH SYNCHRONY — pick a term, see the admin fee, apply.
    ----------------------------------------------------------------------------
-   Reached from the "Finance with Synchrony" button in a customer email, which
+   Reached from the "Pay over time with Synchrony" button in a customer email, which
    carries the quote number and last name.
 
    READ by GET (?action=finance — financeRead_ in the Apps Script). Every
@@ -227,7 +227,7 @@ function paint(res) {
   DATA = res;
   PICKED = PICKED || res.chosen || '';
   $('find').hidden = true;
-  $('title').textContent = res.firstName ? res.firstName + ', finance with Synchrony' : 'Finance with Synchrony';
+  $('title').textContent = res.firstName ? res.firstName + ', pay over time with Synchrony' : 'Pay over time with Synchrony';
   var ul = $('unitline');
   ul.textContent = [res.quoteNo, res.unit].filter(Boolean).join(' · ');
   ul.hidden = !ul.textContent;

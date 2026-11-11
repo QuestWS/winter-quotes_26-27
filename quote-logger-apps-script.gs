@@ -11016,7 +11016,7 @@ function adminOfferDecision(token, qn, item, choice, note) {
    Quest nets the true amount).
 
    How it runs (no Synchrony API — that is on the back burner):
-     1. The email's "Finance with Synchrony" button opens finance.html with the
+     1. The email's "Pay over time with Synchrony" button opens finance.html with the
         quote number and last name (financeLink_, the same pair as quoteLink_).
      2. The page reads the balance and every plan's admin fee and total
         (financeRead_), all worked out on the SERVER from what is owed now.
@@ -11043,7 +11043,7 @@ function financeLink_(quoteNo, lastName) {
 }
 function financeLinkFor_(d) { return isStartedQuote_(d) ? '' : financeLink_(d && d.quoteNo, d && d.lastName); }
 function financeBalance_(d) { return Math.round((Number(d.total || 0) - paymentsTotal_(d)) * 100) / 100; }
-/* The "Finance with Synchrony" button for an invoice email or a late fee
+/* The "Pay over time with Synchrony" button for an invoice email or a late fee
    warning: '' when there is nothing to finance (paid up, a credit), when the
    plan is already settled (charged, or authorized on today's balance — the
    page would only say "you're all set"), or when financing is off. One rule
@@ -11058,7 +11058,7 @@ function financeOfferUrl_(d) {
 }
 /* The button itself, worded the same everywhere. */
 function financeButtonHtml_(url) {
-  return url ? buttonHtml_(url, 'Finance with Synchrony', '#14293E') : '';
+  return url ? buttonHtml_(url, 'Pay over time with Synchrony', '#14293E') : '';
 }
 
 /* For the console: the plan, the customer's authorization, the charge and
@@ -13029,7 +13029,7 @@ function buildEmailFor_(d, kind, extra, photos) {
         steps += step('Prefer monthly payments?',
           'Apply and pay with Synchrony — plans from ' + lo + ' to ' + hi + ' months. Pick a plan to see ' +
           'your exact total, then apply in a couple of minutes.',
-          buttonHtml_(finUrl, 'Finance with Synchrony', '#14293E'));
+          buttonHtml_(finUrl, 'Pay over time with Synchrony', '#14293E'));
       }
     }
     steps += '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-bottom:4px">' +
@@ -13051,7 +13051,7 @@ function buildEmailFor_(d, kind, extra, photos) {
      then send ONE of two versions from the quote, `extra` saying which:
        'approved' — "your account is approved, one step left": a button
                     straight to the authorize step with their plan picked;
-       'notyet'   — "still want to finance?": the finance link, or pay another
+       'notyet'   — "still want to pay over time?": the finance link, or pay another
                     way. Never says they were declined: staff may not know, and
                     it is not ours to say.
      Plan, fee and total are priced on what is owed NOW. Sets no status (the
@@ -13082,11 +13082,11 @@ function buildEmailFor_(d, kind, extra, photos) {
     } else {
       intro = 'You started a Synchrony application for your winter ' + term + '. If you didn\'t get the chance to ' +
         'finish, you can pick up where you left off — or, if you\'d rather pay another way, that\'s easy too.';
-      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Finance with Synchrony', '#14293E') +
+      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Pay over time with Synchrony', '#14293E') +
         buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div>' +
         (quoteLinkFor_(d) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5">Need to change anything first? ' +
           '<a href="' + quoteLinkFor_(d) + '" style="color:#4A81A6">Review or adjust your ' + term + '</a>.</div>' : '');
-      subject = 'Still want to finance with Synchrony? · ' + (d.quoteNo || '');
+      subject = 'Still want to pay over time with Synchrony? · ' + (d.quoteNo || '');
     }
     return { subject: subject, html: noticeHtml_(d, intro, box + btns, false), status: '' };
   }
@@ -13101,7 +13101,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     /* Synchrony as a way to settle it before the fee lands. */
     const fin = financeOfferUrl_(d);
     const finHtml = fin ? '<div style="margin:0 0 4px;font-size:14px;color:#1D2B38">Prefer monthly payments? ' +
-      'Finance it with Synchrony — plans from 6 to 36 months.</div><div style="margin:0 0 6px">' + financeButtonHtml_(fin) + '</div>' : '';
+      'Pay over time with Synchrony — plans from 6 to 36 months.</div><div style="margin:0 0 6px">' + financeButtonHtml_(fin) + '</div>' : '';
     return { subject: 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
       html: noticeHtml_(d, intro, '', true, finHtml), status: 'Late fee warning sent' };
   }

@@ -464,16 +464,24 @@ const FINANCING = {
     { key:'syf12', months:12, plan:'Deferred interest',     pct:4.25 },
     { key:'syf18', months:18, plan:'Deferred interest',     pct:6.40 },
     { key:'syf24', months:24, plan:'Deferred interest',     pct:8.75 },
-    /* interest:true — Synchrony charges interest from day one, so the even
-       monthly split below is the BEFORE-interest figure, and says so. */
-    { key:'syf36', months:36, plan:'Fixed 9.99% interest',  pct:4.90, interest:true },
+    /* interest:true — Synchrony charges 9.99% from the purchase date.
+       paymentPct is Synchrony's OWN fixed-payment rule for this promotion,
+       from its "Important Promotional Information" disclosure (184-303-00,
+       Rev. 7/2025, DI/Fixed/Reduced APR 9.99%): "on 36 month promotion –
+       3.2262% of amount … The fixed monthly payment will be rounded up to the
+       next highest whole dollar." (The factor is exactly 9.99% amortized over
+       36 months; tools/check-finance.js holds all six published factors to
+       that.) So this plan's monthly figure is the real Synchrony payment,
+       interest included — not an estimate. */
+    { key:'syf36', months:36, plan:'Fixed 9.99% interest',  pct:4.90, interest:true, paymentPct:3.2262 },
   ],
   /* Under the plans, explaining the monthly figure (Chris, Nov 2026: "take
      the total with the fee added and divide it by the total number of months
      so that customers know what they'd be spending with even monthly
      payments"). */
-  monthlyNote: 'Monthly amounts are your total divided evenly over the plan. Synchrony\'s minimum payment may be ' +
-    'lower, but paying evenly is what clears a deferred-interest plan before any interest is charged.',
+  monthlyNote: 'Monthly amounts on the deferred-interest plans are your total divided evenly over the plan. ' +
+    'Synchrony\'s minimum payment may be lower, but paying evenly is what clears a deferred-interest plan before any ' +
+    'interest is charged. The 36-month plan shows Synchrony\'s fixed monthly payment, which includes the 9.99% interest.',
   disclosure: 'Subject to credit approval by Synchrony Bank. Deferred interest: if the purchase is not ' +
     'paid in full within the promotional period, interest is charged from the purchase date. ' +
     'Minimum monthly payments required. The admin fee is added to your balance and financed with it.',
@@ -504,11 +512,19 @@ function financeQuote(amount, key){
      so the advertised payments always cover the total ($3,121.52 / 6 is
      $520.2533 — $520.26, never $520.25 x 6 = 2 cents short). On the
      interest-bearing plan it is the before-interest figure (`interest`). */
-  const monthly = Math.ceil(Math.round(total * 100) / t.months) / 100;
+  let monthly = Math.ceil(Math.round(total * 100) / t.months) / 100;
+  /* A plan with Synchrony's own payment rule: paymentPct of the amount
+     charged, rounded UP to the next whole dollar (their words). The tiny
+     epsilon keeps an exact whole-dollar result from being bumped by float
+     noise. That payment includes the interest. */
+  if (t.paymentPct) monthly = Math.ceil(total * t.paymentPct / 100 - 1e-9);
   return { key: t.key, months: t.months, plan: t.plan, pct: t.pct,
            label: t.months + ' months — ' + t.plan,
            base: base, fee: Math.round((total - base) * 100) / 100, total: total,
-           monthly: monthly, interest: !!t.interest };
+           monthly: monthly, interest: !!t.interest,
+           /* true when `monthly` already includes the interest (Synchrony's
+              fixed payment); false when it is a plain even split. */
+           withInterest: !!(t.interest && t.paymentPct) };
 }
 /* The authorization sentence for one priced plan. */
 function financeAuthText(q){
@@ -11094,7 +11110,8 @@ function financeOut_(d) {
     dismissed: f.dismissed || null,
     /* Which follow-up emails can go: the same bar the builder uses. */
     canFollow: !finFollowBlocker_(d),
-    now: now ? { base: now.base, fee: now.fee, total: now.total, monthly: now.monthly, months: now.months, interest: now.interest } : null,
+    now: now ? { base: now.base, fee: now.fee, total: now.total, monthly: now.monthly, months: now.months,
+      interest: now.interest, withInterest: now.withInterest } : null,
     auth: au ? { first: au.first, last: au.last, phone: au.phone, sig: au.sig, at: au.at,
                  base: au.base, fee: au.fee, total: au.total, label: au.label, text: au.text } : null,
     /* The balance has moved since they authorized: charging the old figure
@@ -13142,7 +13159,9 @@ function buildEmailFor_(d, kind, extra, photos) {
       moneyRow_('Balance', usd_(q.base), false) +
       moneyRow_(esc_(FINANCING.feeLabel), usd_(q.fee), false) +
       moneyRow_('Total on Synchrony', usd_(q.total), true) +
-      moneyRow_('Even monthly payments', usd_(q.monthly) + ' × ' + q.months + (q.interest ? ' + interest' : ''), false) +
+      (q.withInterest
+        ? moneyRow_('Fixed monthly payment (incl. interest)', usd_(q.monthly), false)
+        : moneyRow_('Even monthly payments', usd_(q.monthly) + ' × ' + q.months + (q.interest ? ' + interest' : ''), false)) +
       '</table></div>';
     let intro, btns, subject;
     if (approved) {

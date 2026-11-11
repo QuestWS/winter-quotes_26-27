@@ -260,7 +260,8 @@ function paint(res) {
         /* Only when the server sent one — an older backend sends none, and a
            "$0.00/month" would be worse than no line. */
         (o.monthly > 0 ? '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +
-          (o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' : '') +
+          (o.withInterest ? ' <span class="pi">fixed payment, includes 9.99% interest</span>'
+            : o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' : '') +
         '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
         (res.authorized && res.authorized.key === o.key ? '<div class="was">✓ You authorized this plan</div>' : '') +
         '</label>';
@@ -310,7 +311,8 @@ function sync() {
   var o = chosenOpt();
   $('goSum').innerHTML = o
     ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — ' +
-      (o.monthly > 0 ? '<b>' + money(o.monthly) + '/month</b>' + (o.interest ? ' plus interest' : '') + ', ' : '') +
+      (o.monthly > 0 ? '<b>' + money(o.monthly) + '/month</b>' +
+        (o.withInterest ? ' (Synchrony\'s fixed payment, interest included)' : o.interest ? ' plus interest' : '') + ', ' : '') +
       'total <b>' + money(o.total) + '</b> (includes the ' +
       esc((DATA.feeLabel || 'admin fee').toLowerCase()) + ' of ' + money(o.fee) + ')'
     : 'Pick a plan above.';

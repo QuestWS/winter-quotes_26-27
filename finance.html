@@ -44,6 +44,9 @@
 .plan .tot{font-family:var(--mono);font-weight:600;font-size:17px;white-space:nowrap}
 .plan .sub{font-size:13.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:10px}
 .plan .was{font-size:13px;color:var(--frost);font-weight:600;margin-top:4px}
+.plan .mo{font-size:15px;color:var(--navy);margin-top:4px}
+.plan .mo b{font-family:var(--mono);font-weight:600}
+.plan .pi{font-size:13px;color:var(--muted)}
 #goBar{position:sticky;bottom:0;background:#fff;padding:10px 0 12px;margin-top:6px;border-top:1px solid var(--line)}
 #goSum{font-size:14px;color:var(--muted);margin-bottom:9px;min-height:1.2em}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -254,6 +257,8 @@ function paint(res) {
         (PICKED === o.key ? ' checked' : '') + ' onchange="pick(\'' + esc(o.key) + '\')">' +
         '<span class="dot" aria-hidden="true"></span>' +
         '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) + '</span></div>' +
+        '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +
+          (o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' +
         '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
         (res.authorized && res.authorized.key === o.key ? '<div class="was">✓ You authorized this plan</div>' : '') +
         '</label>';
@@ -265,7 +270,7 @@ function paint(res) {
         'Picked the wrong plan? Choose another above and authorize again.</p>' + discBtn(res));
     }
   }
-  $('disc').textContent = res.disclosure || '';
+  $('disc').textContent = [res.monthlyNote, res.disclosure].filter(Boolean).join(' ');
   $('disc').hidden = !res.disclosure;
   if (res.quoteUrl) $('quoteLink').href = res.quoteUrl;
   $('foot').hidden = false;
@@ -302,7 +307,8 @@ function chosenOpt() {
 function sync() {
   var o = chosenOpt();
   $('goSum').innerHTML = o
-    ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — total <b>' + money(o.total) + '</b> (includes the ' +
+    ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — <b>' + money(o.monthly) + '/month</b>' +
+      (o.interest ? ' plus interest' : '') + ', total <b>' + money(o.total) + '</b> (includes the ' +
       esc((DATA.feeLabel || 'admin fee').toLowerCase()) + ' of ' + money(o.fee) + ')'
     : 'Pick a plan above.';
   $('haveBtn').disabled = $('applyBtn').disabled = !o || BUSY;

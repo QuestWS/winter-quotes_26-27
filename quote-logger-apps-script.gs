@@ -464,8 +464,16 @@ const FINANCING = {
     { key:'syf12', months:12, plan:'Deferred interest',     pct:4.25 },
     { key:'syf18', months:18, plan:'Deferred interest',     pct:6.40 },
     { key:'syf24', months:24, plan:'Deferred interest',     pct:8.75 },
-    { key:'syf36', months:36, plan:'Fixed 9.99% interest',  pct:4.90 },
+    /* interest:true — Synchrony charges interest from day one, so the even
+       monthly split below is the BEFORE-interest figure, and says so. */
+    { key:'syf36', months:36, plan:'Fixed 9.99% interest',  pct:4.90, interest:true },
   ],
+  /* Under the plans, explaining the monthly figure (Chris, Nov 2026: "take
+     the total with the fee added and divide it by the total number of months
+     so that customers know what they'd be spending with even monthly
+     payments"). */
+  monthlyNote: 'Monthly amounts are your total divided evenly over the plan. Synchrony\'s minimum payment may be ' +
+    'lower, but paying evenly is what clears a deferred-interest plan before any interest is charged.',
   disclosure: 'Subject to credit approval by Synchrony Bank. Deferred interest: if the purchase is not ' +
     'paid in full within the promotional period, interest is charged from the purchase date. ' +
     'Minimum monthly payments required. The admin fee is added to your balance and financed with it.',
@@ -492,9 +500,15 @@ function financeQuote(amount, key){
   const base = Math.round(Number(amount || 0) * 100) / 100;
   if (!t || !(base > 0)) return null;
   const total = Math.round(base / (1 - t.pct / 100) * 100) / 100;
+  /* Even monthly payments: the total over the months, rounded UP to the cent
+     so the advertised payments always cover the total ($3,121.52 / 6 is
+     $520.2533 — $520.26, never $520.25 x 6 = 2 cents short). On the
+     interest-bearing plan it is the before-interest figure (`interest`). */
+  const monthly = Math.ceil(Math.round(total * 100) / t.months) / 100;
   return { key: t.key, months: t.months, plan: t.plan, pct: t.pct,
            label: t.months + ' months — ' + t.plan,
-           base: base, fee: Math.round((total - base) * 100) / 100, total: total };
+           base: base, fee: Math.round((total - base) * 100) / 100, total: total,
+           monthly: monthly, interest: !!t.interest };
 }
 /* The authorization sentence for one priced plan. */
 function financeAuthText(q){
@@ -11080,7 +11094,7 @@ function financeOut_(d) {
     dismissed: f.dismissed || null,
     /* Which follow-up emails can go: the same bar the builder uses. */
     canFollow: !finFollowBlocker_(d),
-    now: now ? { base: now.base, fee: now.fee, total: now.total } : null,
+    now: now ? { base: now.base, fee: now.fee, total: now.total, monthly: now.monthly, months: now.months, interest: now.interest } : null,
     auth: au ? { first: au.first, last: au.last, phone: au.phone, sig: au.sig, at: au.at,
                  base: au.base, fee: au.fee, total: au.total, label: au.label, text: au.text } : null,
     /* The balance has moved since they authorized: charging the old figure
@@ -11106,7 +11120,7 @@ function financeReply_(d) {
   return { ok: 1, quoteNo: d.quoteNo || '', firstName: d.firstName || '', unit: d.unit || '',
     term: docTerm_(d), balance: Math.max(0, bal), feeLabel: FINANCING.feeLabel,
     options: financeOptions(bal).map(function (o) { o.authText = financeAuthText(o); return o; }),
-    disclosure: FINANCING.disclosure,
+    disclosure: FINANCING.disclosure, monthlyNote: FINANCING.monthlyNote,
     applyUrl: FINANCING.applyUrl || '', chosen: f && f.key ? f.key : '',
     prefill: { first: d.firstName || '', last: d.lastName || '', phone: fmtPhone(String(d.phone || '')) },
     authorized: au && !(Math.abs(Number(au.base) - bal) > 0.005) ? { key: au.key, label: au.label, total: au.total, at: au.at,
@@ -13127,7 +13141,9 @@ function buildEmailFor_(d, kind, extra, photos) {
       moneyRow_('Plan', esc_(q.months + ' months — ' + q.plan), false) +
       moneyRow_('Balance', usd_(q.base), false) +
       moneyRow_(esc_(FINANCING.feeLabel), usd_(q.fee), false) +
-      moneyRow_('Total on Synchrony', usd_(q.total), true) + '</table></div>';
+      moneyRow_('Total on Synchrony', usd_(q.total), true) +
+      moneyRow_('Even monthly payments', usd_(q.monthly) + ' × ' + q.months + (q.interest ? ' + interest' : ''), false) +
+      '</table></div>';
     let intro, btns, subject;
     if (approved) {
       intro = 'Good news — your Synchrony account is approved. <b>There\'s one step left:</b> authorize the charge ' +

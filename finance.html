@@ -257,8 +257,10 @@ function paint(res) {
         (PICKED === o.key ? ' checked' : '') + ' onchange="pick(\'' + esc(o.key) + '\')">' +
         '<span class="dot" aria-hidden="true"></span>' +
         '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) + '</span></div>' +
-        '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +
-          (o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' +
+        /* Only when the server sent one — an older backend sends none, and a
+           "$0.00/month" would be worse than no line. */
+        (o.monthly > 0 ? '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +
+          (o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' : '') +
         '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
         (res.authorized && res.authorized.key === o.key ? '<div class="was">✓ You authorized this plan</div>' : '') +
         '</label>';
@@ -307,8 +309,9 @@ function chosenOpt() {
 function sync() {
   var o = chosenOpt();
   $('goSum').innerHTML = o
-    ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — <b>' + money(o.monthly) + '/month</b>' +
-      (o.interest ? ' plus interest' : '') + ', total <b>' + money(o.total) + '</b> (includes the ' +
+    ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — ' +
+      (o.monthly > 0 ? '<b>' + money(o.monthly) + '/month</b>' + (o.interest ? ' plus interest' : '') + ', ' : '') +
+      'total <b>' + money(o.total) + '</b> (includes the ' +
       esc((DATA.feeLabel || 'admin fee').toLowerCase()) + ' of ' + money(o.fee) + ')'
     : 'Pick a plan above.';
   $('haveBtn').disabled = $('applyBtn').disabled = !o || BUSY;

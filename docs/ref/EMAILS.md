@@ -355,9 +355,11 @@ human**: the 10-day reminder and the lead follow-up.
   balance."** A bare open-balance line on "We have your boat" read as chasing
   customers for money not due yet. `noticeDueRows_()` splits it: any unpaid
   part of the deposit is **Deposit due now**, the rest is **Balance due by
-  <pay-by date>**, and when only the dated balance is left it adds "Nothing is
-  due today." No-storage quotes say due when the work is completed; after the
-  pay-by date the row reads "was due" and the reassurance line goes.
+  <pay-by date>**, and when only the dated balance is left it adds "**Settle
+  up now** — balance due by <pay-by date>." (Chris, Nov 2026: assertive, not
+  the old "Nothing is due today — pay any time up to…", which invited waiting.)
+  No-storage quotes say due when the work is completed; after the pay-by date
+  the row reads "was due" and that line goes.
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

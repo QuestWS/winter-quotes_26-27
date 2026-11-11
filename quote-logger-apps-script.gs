@@ -12232,8 +12232,9 @@ function adminResetPin(token, name) {
      - the part of the deposit not yet paid  -> due now (holds the spot)
      - everything else                        -> due by the pay-by date
      - no storage bought                      -> due when the work is done
-   and, when nothing is due yet, says so in plain words. Once the pay-by date
-   has passed the balance row says it was due then -- no "nothing due" line. */
+   and, when only the dated balance is left, a short "settle up now — due by"
+   line. Once the pay-by date has passed the balance row says it was due then,
+   and the line goes. */
 function noticeDueRows_(d, paid, balance) {
   const noStorage = !!(d.state && d.state.storage === 'none');
   const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
@@ -12254,8 +12255,11 @@ function noticeDueRows_(d, paid, balance) {
       : (depOwed > 0.005 ? 'Remaining balance' : 'Balance') + ' due by ' + payByShort,
       usd_(rest), depOwed <= 0.005);
   }
+  /* Chris, Nov 2026: more assertive than the old "Nothing is due today — pay
+     the balance any time up to …". Still says WHEN; it no longer invites
+     waiting until then. */
   const note = (depOwed <= 0.005 && !pastDue)
-    ? 'Nothing is due today — pay the balance any time up to ' + payByShort + '.' : '';
+    ? '<b>Settle up now</b> — balance due by ' + payByShort + '.' : '';
   return { rows: rows, note: note };
 }
 

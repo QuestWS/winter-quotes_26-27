@@ -618,6 +618,11 @@ aside.ticket{position:sticky;top:18px}
         <div class="paybig"><div><div class="k" id="payAmtLabel">Amount to pay</div><div class="refline" style="margin:2px 0 0">Reference: <b id="payRef">—</b> <button type="button" class="copybtn" data-copy="payRef">Copy</button></div></div><div class="v" id="payAmt">$0.00</div><button type="button" class="copybtn" data-copy="payAmt" style="align-self:center">Copy amount</button></div>
         <p class="note" style="margin:4px 0 12px">On the payment page, enter the amount above and put your quote number in the memo/reference field so we can match your payment instantly. Card payments are subject to a 3% fee — cash, check, debit, Zelle &amp; ACH carry no surcharge.</p>
         <a class="btn gold" id="payLink" href="#" target="_blank" rel="noopener">Open secure payment page →</a>
+        <!-- Synchrony beside the payment page, whenever the payment page is
+             offered (finSync). It saves the quote first, then opens the plans. -->
+        <button type="button" class="btn primary" id="finLink" style="display:none;margin-top:8px">Pay over time with Synchrony →</button>
+        <p class="note" id="finNote" style="display:none;margin:8px 0 0">Monthly plans from 6 to 36 months through Synchrony —
+          you'll see the total for each plan before you apply.</p>
       </div>
     </div>
 
@@ -1157,8 +1162,12 @@ function logQuote(status, extra){
     ...(extra||{})
   };
   if(!INTEGRATIONS.quoteLogUrl){ console.log('Quote log (demo mode — set INTEGRATIONS.quoteLogUrl):', payload); return; }
+  /* Returned so a caller that must know the save has landed (the Synchrony
+     link, which opens a page that reads it back) can wait on it. Every other
+     caller ignores it, exactly as before. */
   try{
-    fetch(INTEGRATIONS.quoteLogUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+    return fetch(INTEGRATIONS.quoteLogUrl,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)})
+      .catch(e=>{ console.warn('Quote log failed', e); });
   }catch(e){ console.warn('Quote log failed', e); }
 }
 /* ============ LOAD A SAVED QUOTE ============ */
@@ -1421,6 +1430,7 @@ function renderSignPay(){
     $('#payAmt').textContent=t.credit?fmt(t.credit)+' — we\'ll settle up with you':'$0.00 — paid in full, thank you!';
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').style.display='none';
+    finSync();
     refresh();
     return;
   }
@@ -1433,6 +1443,7 @@ function renderSignPay(){
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').style.display='';
     $('#payLink').href=INTEGRATIONS.paymentPageUrl;
+    finSync();
     refresh();
     return;
   }
@@ -1445,6 +1456,7 @@ function renderSignPay(){
     $('#payAmt').textContent=fmt(t.total);
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').href=INTEGRATIONS.paymentPageUrl;
+    finSync();
     refresh();
     return;
   }
@@ -1460,7 +1472,22 @@ function renderSignPay(){
   $('#payAmt').textContent=fmt(amt);
   $('#payRef').textContent=S.quoteNo;
   $('#payLink').href=INTEGRATIONS.paymentPageUrl;
+  finSync();
   refresh();
+}
+
+/* The Synchrony link on the pay step: shown exactly when the payment page is
+   offered, financing is on (FINANCING.applyUrl) and the quote has the quote
+   number and last name finance.html looks it up by. */
+function finUrl(){
+  const F=(window.QuestPricing||{}).FINANCING;
+  if(!F||!F.applyUrl||!S.quoteNo||!String(S.lastName||'').trim()) return '';
+  return 'finance.html?quote='+encodeURIComponent(S.quoteNo)+'&ln='+encodeURIComponent(String(S.lastName).trim());
+}
+function finSync(){
+  const on=$('#payLink').style.display!=='none'&&!!finUrl();
+  $('#finLink').style.display=on?'':'none';
+  $('#finNote').style.display=on?'':'none';
 }
 
 /* ================= RENDER ================= */
@@ -1928,6 +1955,20 @@ function init(){
 
   $('#payLink').addEventListener('click',()=>{
     logQuote('Signed & paying — '+(S.payMode==='balance'?'balance':S.payMode==='full'?'pay in full':'deposit'));
+  });
+  /* Synchrony: save the quote and WAIT for it — finance.html reads the quote
+     back from the server, and an unsaved one would come up "not found". The
+     tab is opened inside the tap (so no popup blocker stops it) and pointed
+     at the plans once the save has landed; at most ~10 seconds. */
+  $('#finLink').addEventListener('click',async()=>{
+    const url=finUrl(); if(!url) return;
+    const b=$('#finLink'); b.disabled=true; const was=b.textContent; b.textContent='Saving your quote…';
+    const w=window.open('','_blank');
+    try{
+      await Promise.race([Promise.resolve(logQuote('Signed & paying — Synchrony')), new Promise(r=>setTimeout(r,10000))]);
+    }finally{ b.disabled=false; b.textContent=was; }
+    if(w){ try{ w.opener=null; w.location.href=url; }catch(e){ window.location.href=url; } }
+    else window.location.href=url;
   });
 
   document.addEventListener('click',e=>{

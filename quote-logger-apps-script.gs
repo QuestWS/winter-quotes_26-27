@@ -12259,9 +12259,7 @@ function noticeDueRows_(d, paid, balance) {
   return { rows: rows, note: note };
 }
 
-/* afterMoneyHtml (optional): goes BELOW the balance box — for a secondary
-   way to settle (Synchrony) that must not sit above "Pay online". */
-function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, afterMoneyHtml) {
+function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
   const paid = paymentsTotal_(d);
   const balance = Number(d.total || 0) - paid;
   const logoTag = LOGO_URL
@@ -12278,7 +12276,11 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, afterMoneyHtm
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
       (due.note ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
-      '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div></div>';
+      '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') +
+      /* Wherever a payment option shows, Synchrony shows beside it (Chris,
+         Nov 2026). financeOfferUrl_ decides; an error just leaves it off. */
+      (function () { try { return financeButtonHtml_(financeOfferUrl_(d)); } catch (e) { return ''; } })() +
+      '</div></div>';
   }
   /* A figure quoted at provisional rates is an estimate wherever it appears,
      including on an operational notice that happens to print one. Short form
@@ -12296,7 +12298,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, afterMoneyHtm
         '<p style="font-size:16px;color:#1D2B38;margin:0 0 6px">Hi ' + esc_(d.firstName || 'there') + ',</p>' +
         '<div style="font-size:15px;color:#1D2B38;line-height:1.55;margin:0 0 14px">' + introHtml + '</div>' +
         '<div style="font-family:Courier New,monospace;font-size:13px;color:#5C7185;margin-bottom:10px">' + docTerm_(d).toUpperCase() + '# ' + esc_(d.quoteNo) + ' &nbsp;·&nbsp; ' + esc_(d.unit) + (d.ymm ? ' &nbsp;·&nbsp; ' + esc_(d.ymm) : '') + '</div>' +
-        (extraButtonsHtml || '') + money + (afterMoneyHtml || '') +
+        (extraButtonsHtml || '') + money +
         '<p style="font-size:13px;color:#5C7185;line-height:1.5;margin:12px 0 0">Questions? Call us at (815) 433-2200.</p>' +
       '</div>' +
       '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200</div>' +
@@ -12602,7 +12604,8 @@ function buildEmailFor_(d, kind, extra, photos) {
           : 'Give us a call on (815) 433-2200 and we\'ll get your agreement to you.');
       const btns = (signLink ? buttonHtml_(signLink, 'Review &amp; sign my agreement', '#14293E') + signConfirmHtml_() : '') +
         (paidInFull ? '' : buttonHtml_(PAYMENT_URL,
-          (paid > 0.005 || noStorage) ? 'Pay online' : 'Pay my deposit online', '#C08A22'));
+          (paid > 0.005 || noStorage) ? 'Pay online' : 'Pay my deposit online', '#C08A22') +
+          financeButtonHtml_(financeOfferUrl_(d)));
       opt2 = choice(opt2N, opt2T, body, btns);
     }
 
@@ -13098,12 +13101,9 @@ function buildEmailFor_(d, kind, extra, photos) {
       'Per the storage terms on your ' + docTerm_(d).toLowerCase() + ', unpaid balances are subject to a late fee — the next one will be applied on <b>the 15th of this month</b>. ' +
       'Settling up before then avoids it entirely; the payment button below takes about a minute. ' +
       'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
-    /* Synchrony as a way to settle it before the fee lands. */
-    const fin = financeOfferUrl_(d);
-    const finHtml = fin ? '<div style="margin:0 0 4px;font-size:14px;color:#1D2B38">Prefer monthly payments? ' +
-      'Pay over time with Synchrony — plans from 6 to 36 months.</div><div style="margin:0 0 6px">' + financeButtonHtml_(fin) + '</div>' : '';
+    /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
     return { subject: 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
-      html: noticeHtml_(d, intro, '', true, finHtml), status: 'Late fee warning sent' };
+      html: noticeHtml_(d, intro, '', true), status: 'Late fee warning sent' };
   }
   return null;
 }

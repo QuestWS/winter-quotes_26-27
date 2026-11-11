@@ -279,6 +279,33 @@ console.log('=== invoice emails and the late fee warning ===');
   B.FINANCING.applyUrl = was;
 }
 
+console.log('=== everywhere a payment option shows ===');
+{
+  const owed = quote({ payments: [{ amt: 200 }] });
+  const count = (h) => (String(h || '').match(/Pay over time with Synchrony<\/a>/g) || []).length;
+  const st = B.buildEmailFor_(owed, 'stored', '', '');
+  eq(count(st && st.html), 1, '"We have your unit" with a balance owed: one Synchrony button, beside Pay online');
+  const stPaid = B.buildEmailFor_(quote({ payments: [{ amt: 1000 }] }), 'stored', '', '');
+  eq(count(stPaid && stPaid.html), 0, '"We have your unit", paid in full: none');
+  eq(count((B.buildEmailFor_(owed, 'latewarn', '', '') || {}).html), 1, 'the late fee warning: exactly one, not two');
+  /* Every Pay online button the builder writes has Synchrony with it — read
+     off the source, because some sit in emails that need a full priced quote
+     to build (the firm quote is executed in check-firm-quote.js). */
+  const payBtns = (gasSrc.match(/buttonHtml_\(PAYMENT_URL,[\s\S]{0,260}?\)/g) || []).length;
+  const withFin = (gasSrc.match(/buttonHtml_\(PAYMENT_URL,[\s\S]{0,400}?(financeButtonHtml_|financeUrl|finUrl)/g) || []).length;
+  /* The one Pay online with Synchrony BEFORE it, not after: the "still want
+     to pay over time?" follow-up, which leads with Synchrony on purpose. */
+  const leadsWithFin = /buttonHtml_\(link, 'Pay over time with Synchrony', '#14293E'\) \+\s*buttonHtml_\(PAYMENT_URL/.test(gasSrc);
+  eq([payBtns, withFin, leadsWithFin], [5, 4, true],
+    'every Pay online button in the emails has the Synchrony option beside it (4 after, and the follow-up\'s before)');
+  const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  has(idx, 'id="finLink"', 'the quote page\'s pay step has the Synchrony link');
+  has(idx, "$('#payLink').style.display!=='none'&&!!finUrl()", 'shown exactly when the payment page is offered and financing is on');
+  has(idx, "await Promise.race([Promise.resolve(logQuote('Signed & paying — Synchrony'))",
+    'it saves the quote and waits before opening the plans (an unsaved quote would be "not found")');
+  eq((idx.match(/finSync\(\);/g) || []).length, 4, 'every pay-step branch updates it');
+}
+
 console.log('=== the page ===');
 {
   hasnt(page, 'financeQuote(', 'the page never works out a fee itself — it draws the server\'s figures');

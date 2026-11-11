@@ -294,13 +294,23 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
      whenever suits them, so the flag lives on the screen whoever is at the
      counter opens. Not on the search list: that reads only the light columns,
      and reading every payload to tag it is what made the console slow.
-- **Where the *Pay over time with Synchrony* button appears:** the last-call email,
-  every invoice email (`customerEmailHtml_` — the console's re-send, every
-  quote/invoice/receipt the system sends, and the 10-day reminder), and the
-  late fee warning. All of them ask `financeOfferUrl_(d)`, so they agree: no
-  button when nothing is owed (paid up, a credit), when the plan is settled
-  (charged, or authorized on today's balance), for a lead, or with financing
-  off. Authorized on an *old* balance is offered again, to re-authorize.
+- **Wherever a payment option shows, Synchrony shows beside it** (Chris, Nov
+  2026; the button reads *Pay over time with Synchrony*):
+  - every invoice email (`customerEmailHtml_`: the console's re-send, every
+    quote/invoice/receipt the system sends, the 10-day reminder);
+  - every notice with a balance box (`noticeHtml_` — *We have your unit*, the
+    late fee warning, the signature reminder and the rest), beside *Pay online*;
+  - the firm quote, the last call, and the "still want to pay over time?"
+    follow-up;
+  - the quote page's pay step, beside *Open secure payment page* — that link
+    **saves the quote and waits** for the save before opening `finance.html`,
+    which reads the quote back and would otherwise say "not found".
+  All of them ask `financeOfferUrl_(d)` (the page: `finUrl()` + the same
+  visibility as the payment link), so they agree: no button when nothing is
+  owed (paid up, a credit), when the plan is settled (charged, or authorized
+  on today's balance), for a lead, or with financing off. Authorized on an
+  *old* balance is offered again, to re-authorize. An error working it out
+  leaves the button off; it never stops the email.
 - **Follow-ups: applied, never authorized** (Chris, Nov 2026). Our Synchrony
   access cannot see application status (sandbox only, no *Partner* APIs), so
   the follow-up is staff-informed:

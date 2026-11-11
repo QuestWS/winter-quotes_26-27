@@ -47,6 +47,7 @@
 .plan .mo{font-size:15px;color:var(--navy);margin-top:4px}
 .plan .mo b{font-family:var(--mono);font-weight:600}
 .plan .pi{font-size:13px;color:var(--muted)}
+.plan .tot .pi{font-family:var(--body);font-weight:600;letter-spacing:0}
 #goBar{position:sticky;bottom:0;background:#fff;padding:10px 0 12px;margin-top:6px;border-top:1px solid var(--line)}
 #goSum{font-size:14px;color:var(--muted);margin-bottom:9px;min-height:1.2em}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -256,7 +257,10 @@ function paint(res) {
       return '<label class="plan"><input type="radio" name="plan" value="' + esc(o.key) + '"' +
         (PICKED === o.key ? ' checked' : '') + ' onchange="pick(\'' + esc(o.key) + '\')">' +
         '<span class="dot" aria-hidden="true"></span>' +
-        '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) + '</span></div>' +
+        '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) +
+          /* Chris: the interest-bearing plan's total is what is charged, not
+             what it costs over time — say so beside the figure. */
+          (o.interest ? ' <span class="pi">+ interest</span>' : '') + '</span></div>' +
         /* Only when the server sent one — an older backend sends none, and a
            "$0.00/month" would be worse than no line. */
         (o.monthly > 0 ? '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +

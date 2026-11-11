@@ -269,6 +269,10 @@ if [ -f service-quotes.html ]; then
   extract_scripts service-quotes.html "$TMP/offers.js"; check_js "$TMP/offers.js" "service-quotes.html"
   sweep service-quotes.html "service-quotes" "API_URL" "action=offers" "api: 'offers'" "Call me" "STATE_TXT" "sendBtn" "answers: ch.map"
 fi
+if [ -f finance.html ]; then
+  extract_scripts finance.html "$TMP/finance.js"; check_js "$TMP/finance.js" "finance.html"
+  sweep finance.html "finance" "API_URL" "action=finance" "api: 'finance'" "res._api !== 'finance'" "applyUrl" "disclosure"
+fi
 
 echo "== Pricing engine parity =="
 if [ -f pricing-engine.js ]; then
@@ -489,6 +493,14 @@ if [ -f quote-logger-apps-script.gs ]; then
     echo "  OK   gate: firm-quote email refuses unless the price is really firm"
   else
     echo "  FAIL gate: firm-quote email"; sed 's/^/       /' "$TMP/firmquote.txt"; FAIL=1
+  fi
+  # Synchrony financing: the admin fee matches Chris's table to the cent, the
+  # server prices every plan, a plan is picked by POST only and changes nothing
+  # on the quote, and staff add the fee once.
+  if node tools/check-finance.js > "$TMP/finance.txt" 2>&1; then
+    echo "  OK   gate: Synchrony financing and the admin fee hold"
+  else
+    echo "  FAIL gate: Synchrony financing"; sed 's/^/       /' "$TMP/finance.txt"; FAIL=1
   fi
   # The last call for storage: only quotes missing a deposit or an agreement,
   # never after the deadline it announces, fees from the season, the right
@@ -908,7 +920,7 @@ if [ -f quote-logger-apps-script.gs ]; then
 fi
 
 echo "== Terms, privacy & lead capture =="
-for f in terms.html privacy.html terms-config.js legal.css quest.css sign.html service-quotes.html; do
+for f in terms.html privacy.html terms-config.js legal.css quest.css sign.html service-quotes.html finance.html; do
   if [ -f "$f" ]; then echo "  OK   present: $f"; else echo "  FAIL missing: $f"; FAIL=1; fi
 done
 if [ -f terms-config.js ]; then
@@ -1081,8 +1093,9 @@ U_ADM=$(grep -o 'AKfycb[A-Za-z0-9_-]*' admin/index.html 2>/dev/null | sort -u | 
 U_SIGN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' sign.html 2>/dev/null | sort -u | head -1)
 U_HHO=$(grep -o 'AKfycb[A-Za-z0-9_-]*' harbor-haul-out/index.html 2>/dev/null | sort -u | head -1)
 U_OFR=$(grep -o 'AKfycb[A-Za-z0-9_-]*' service-quotes.html 2>/dev/null | sort -u | head -1)
-echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  harbor-haul-out: ${U_HHO:-none}"; echo "  service-quotes: ${U_OFR:-none}"
-if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_HHO:-$U_GAS}" != "$U_GAS" ] || [ "${U_OFR:-$U_GAS}" != "$U_GAS" ]; }; then
+U_FIN=$(grep -o 'AKfycb[A-Za-z0-9_-]*' finance.html 2>/dev/null | sort -u | head -1)
+echo "  gas:   ${U_GAS:-none}"; echo "  page:  ${U_PAGE:-none}"; echo "  admin: ${U_ADM:-none}"; echo "  sign:  ${U_SIGN:-none}"; echo "  harbor-haul-out: ${U_HHO:-none}"; echo "  service-quotes: ${U_OFR:-none}"; echo "  finance: ${U_FIN:-none}"
+if [ -n "${U_GAS:-}" ] && { [ "${U_PAGE:-$U_GAS}" != "$U_GAS" ] || [ "${U_ADM:-$U_GAS}" != "$U_GAS" ] || [ "${U_SIGN:-$U_GAS}" != "$U_GAS" ] || [ "${U_HHO:-$U_GAS}" != "$U_GAS" ] || [ "${U_OFR:-$U_GAS}" != "$U_GAS" ] || [ "${U_FIN:-$U_GAS}" != "$U_GAS" ]; }; then
   echo "  FAIL: deployment URLs do not match across files"; FAIL=1
 else echo "  OK   all present URLs match"; fi
 

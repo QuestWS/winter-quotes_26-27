@@ -6,8 +6,6 @@ found and fixed the hard way. Skipping it reliably reintroduces them.
 
 ---
 
----
-
 ## 1. What this system is
 A complete seasonal quoting → signing → payment → storage → relaunch pipeline
 for a marine dealership's winter services program (boats, jetskis, golf carts,
@@ -23,6 +21,7 @@ Gmail — **not** Workspace; this constrains some options, see §7).
 | `pricing-engine.js` | GitHub Pages root | **The shared pricing rules** — loaded by the page, embedded in the Apps Script |
 | `sign.html` | GitHub Pages root | **Scan to sign** — the counter QR page: quote number in, pre-filled Adobe agreement out |
 | `service-quotes.html` | GitHub Pages root | Customer accepts / declines priced work |
+| `finance.html` | GitHub Pages root | Synchrony financing |
 | `quest.css` | GitHub Pages root | **The canonical Quest palette**; `check-design-tokens.js` holds every other copy to it |
 | `terms.html` / `privacy.html` | GitHub Pages root | Legal pages, reachable without submitting anything |
 | `terms-config.js` | GitHub Pages root | **`QuestTerms.version`, single source of truth** — read by the page *and* both legal pages |
@@ -59,13 +58,13 @@ icon; that one is outside the rule.
 https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec
 ```
 
-It appears in **seven places that must stay in sync**:
+It appears in **eight places that must stay in sync**:
 1. `quote-logger-apps-script.gs` → `const WEB_APP_URL`
 2. `index.html` → `INTEGRATIONS.quoteLogUrl`
 3. `admin/index.html` → `const API_URL`
 4. `sign.html` → `const API_URL`
 5. `harbor-haul-out/index.html` → `const API_URL`
-6. `service-quotes.html` → `var API_URL`
+6. `service-quotes.html`, `finance.html` → `var API_URL`
 7. `questws.github.io` repo → `desk/index.html` (unchecked; `docs/ref/STAFF-CONSOLE.md`)
 
 Same URL serves several behaviors: plain `/exec` (quote page lookups + console
@@ -73,8 +72,6 @@ API via POST), `?action=signlookup&...` (the scan-to-sign confirmation — a
 deliberately narrow, public read; see `docs/ref/QUOTE-PAGE.md` before widening
 what it returns), `?action=launchpref&...` (spring email buttons),
 `?page=admin` (legacy HtmlService console — kept as fallback, see §8).
-
----
 
 ---
 
@@ -148,8 +145,6 @@ serves the cached old version and you'll debug a ghost.
 
 ---
 
----
-
 ## 3. Editing discipline — the rule that matters most
 **Every string replacement must assert its anchor before writing.**
 
@@ -186,8 +181,6 @@ itself; absolute paths make it agree with reality. Confirm with
 
 Chris works from **files, not pasted code**. Pasted code blocks have arrived
 empty before. Always deliver the complete file.
-
----
 
 ---
 
@@ -241,8 +234,6 @@ Rules, non-negotiable:
 Remember the system emails **on its own** in exactly one place: the daily 9am
 auto-reminder trigger, which writes to real customers. It keeps running during
 any test window. Nothing else is automatic — `docs/ref/EMAILS.md`.
-
----
 
 ---
 
@@ -302,8 +293,6 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 
 ---
 
----
-
 ## 7. Known constraints and traps
 - **`ScriptApp.getService().getUrl()` returns the `/dev` URL** when called from
   a spreadsheet-menu context. `/dev` only works for the logged-in owner —
@@ -350,8 +339,6 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 
 ---
 
----
-
 ## 8. What's deliberately still open
 | Item | State | Notes |
 |---|---|---|
@@ -363,8 +350,6 @@ least-exercised and is where bugs hide (`docs/ref/EMAILS.md`).
 | 2026–2027 rates | **Loaded Oct 2026 — re-price + Firm quote left** | Console: Season re-price, then send the Firm quote. `docs/ref/DATA-AND-MONEY.md` § *The 2026–2027 rollover*. |
 | Roster add/remove beyond the seeded six | Script Properties edit | Add to the admin panel if staff churn proves real. |
 | Legacy `?page=admin` console | Kept as fallback | Shares sessions/permissions with the GitHub console. Harmless; useful if GitHub Pages ever hiccups. |
-
----
 
 ---
 

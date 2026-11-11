@@ -251,3 +251,44 @@ patches the flag to false in a copy of the source and asserts every trace of
 it is gone and the lock-in wording is back. It also fails if any surface grows
 its own copy of the wording — a hardcoded disclaimer would still be telling
 customers about 2025–2026 estimates next spring.
+
+## Synchrony financing and the admin fee
+
+Chris, Nov 2026: Quest is a **Synchrony Sport** merchant, and customers should
+be able to *"apply and pay from this email"*, with a fee per term — approved
+by the owner and **titled "Admin fee"** everywhere a customer sees it.
+
+- **One table, `FINANCING` in `pricing-engine.js`** (embedded in the `.gs` like
+  the rest of the engine): the apply link, the fee label, each term's months,
+  plan wording and percentage, and the disclosure printed under the options.
+  `financeQuote(amount, key)` / `financeOptions(amount)` are the only math.
+- **The fee is grossed up:** total = amount ÷ (1 − pct), so when Synchrony
+  takes its cut Quest nets the true amount. $1,000 at 12 months is $1,044.39.
+  `tools/check-finance.js` holds every row of Chris's table to the cent.
+- **The card fee is NOT grossed up, on purpose.** POS+ passes it straight to
+  the customer, so `RULES.ccPct` stays a true 3% on top ($1,030.00 on $1,000).
+  The older fee sheet that shows $1,030.93 predates POS+.
+- **`applyUrl` empty turns all of it off** — the email button, the page and the
+  POST — the same way an empty `SIGNING.webFormUrl` turns off signing.
+- **The flow (phase 1):** the last-call email's *Finance with Synchrony* button
+  (only when something is owed) → `finance.html?quote=…&ln=…` → the server
+  prices every term on the balance owed **now** (`financeRead_`) → the customer
+  picks one → POST `api:'finance'` (`financeServe_`) stores it as `d.finance`
+  and emails service@ once → the page sends them to the Synchrony Sport
+  application. Staff watch for the approval, run the charge in Synchrony, press
+  **Add the admin fee to the invoice** in the console's payment card
+  (`adminFinanceFee`), and record the payment with method *Synchrony*.
+- **Picking a plan changes nothing on the quote.** Many people will look and
+  then pay another way; their invoice must not move. Only the staff button
+  adds the fee — one Adjustments line in the manual journal, so a re-price
+  replays it — priced on the balance at that moment, and **never twice** (the
+  second press would charge the fee on the fee).
+- **Same safety as the quotes page:** read by GET with quote number + last
+  name (`offersCtx_`, one error for any miss), chosen by POST only (a link
+  scanner can never pick a plan), stamped `_api:'finance'`, idempotent (the
+  same plan again emails nobody). Once the fee is on the invoice, changing the
+  plan is a phone call.
+- **Phase 2, not built:** Synchrony's Digital Buy API would replace the hand-off
+  and the manual charge with an in-page apply-and-buy and a server-confirmed
+  payment. It needs their API docs (developer.syf.com refuses automated
+  readers) and Digital Buy enabled on the Synchrony Sport merchant number.

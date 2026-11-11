@@ -262,7 +262,7 @@ function paint(res) {
         (o.monthly > 0 ? '<div class="mo"><b>' + money(o.monthly) + '/month</b>' +
           (o.withInterest ? ' <span class="pi">fixed payment, includes 9.99% interest</span>'
             : o.interest ? ' <span class="pi">+ interest</span>' : '') + '</div>' : '') +
-        '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
+        '<div class="sub"><span>' + esc(o.plan) + '</span><span>Includes ' + esc((res.feeLabel || 'Admin fee').toLowerCase()) + ' ' + money(o.fee) + '</span></div>' +
         (res.authorized && res.authorized.key === o.key ? '<div class="was">✓ You authorized this plan</div>' : '') +
         '</label>';
     }).join('');

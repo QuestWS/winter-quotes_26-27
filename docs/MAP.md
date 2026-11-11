@@ -86,6 +86,7 @@ symptom.
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
+| Synchrony follow-ups: who applied and never authorized, the two follow-up emails, not financing | `adminFinanceFollowups`, `finIndexSet_`, `finIndexDrop_`, `finFollowBlocker_`, `adminFinanceDismiss` (kind `finfollow` in `buildEmailFor_`) · `loadFinFollow` | `.gs` · `admin/index.html` |
 | Synchrony financing: terms, admin fee math, apply link, authorization wording, disclosure form | `FINANCING`, `financeQuote`, `financeOptions`, `financeAuthText`, `financeDisclosureUrl` | `pricing-engine.js` |
 | The finance page's read, apply / authorize, READY TO CHARGE notice, recording the Synchrony charge, the rate-disclosure flag | `financeRead_`, `financeServe_`, `notifyFinanceAuth_`, `adminFinanceCharge`, `adminFinanceDisclosure`, `financeOut_`, `financeLinkFor_` · `renderFinance` | `.gs` · `finance.html` · `admin/index.html` |
 | Last call for storage (no deposit / agreement before the pay-by date) and who may get it | `lastCallBlocker_`, `lastCallPastDeadline_` (kind `lastcall` in `buildEmailFor_`) | `.gs` |

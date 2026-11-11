@@ -222,6 +222,7 @@ function load(quote, ln) {
 
 /* ---- painting ----------------------------------------------------------- */
 var MODE = '';   // '' | 'apply' | 'auth'
+var GO_AUTH = false;   // ?go=auth — open straight on the authorize step, once
 function paint(res) {
   DATA = res;
   PICKED = PICKED || res.chosen || '';
@@ -268,7 +269,14 @@ function paint(res) {
   $('disc').hidden = !res.disclosure;
   if (res.quoteUrl) $('quoteLink').href = res.quoteUrl;
   $('foot').hidden = false;
+  /* Only a plan this quote actually offers counts — a stale or edited link
+     must not leave the buttons pointing at nothing. */
+  if (PICKED && !chosenOpt()) PICKED = '';
   sync();
+  if (GO_AUTH) {
+    GO_AUTH = false;
+    if (chosenOpt() && !res.charged && !res.authorized) haveAccount();
+  }
 }
 function discBtn(res) {
   return res.disclosureUrl
@@ -380,6 +388,11 @@ $('authBtn').addEventListener('click', authorize);
   var dq = String(q.get('quote') || '').trim(), dl = String(q.get('ln') || '').trim();
   if (dq) $('qn').value = dq;
   if (dl) $('ln').value = dl;
+  /* The follow-up email adds &plan=…, and &go=auth for "you're approved":
+     their plan picked and the authorize step open, nothing to look for. */
+  var dp = String(q.get('plan') || ''), dg = String(q.get('go') || '');
+  if (dp) PICKED = dp;
+  if (dg === 'auth') GO_AUTH = true;
   if (dq && dl) load(dq, dl);
 })();
 </script>

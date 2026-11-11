@@ -294,6 +294,23 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
      whenever suits them, so the flag lives on the screen whoever is at the
      counter opens. Not on the search list: that reads only the light columns,
      and reading every payload to tag it is what made the console slow.
+- **Follow-ups: applied, never authorized** (Chris, Nov 2026). Our Synchrony
+  access cannot see application status (sandbox only, no *Partner* APIs), so
+  the follow-up is staff-informed:
+  - Clicking *Apply* puts the quote in a small index (Script Property
+    `FIN_APPLIED`: quote → name, phone, plan, when — customer details in
+    Script Properties, never in the repo). ☰ → **Synchrony follow-ups**
+    (`adminFinanceFollowups`) lists everyone in it for **a day or more**,
+    oldest first, reading only that index — never the quotes.
+  - Staff check the Business Center (Name & Phone Number), open the quote and
+    send one of two previewed emails (kind `finfollow`, `extra` picks):
+    **approved** — "one step left", straight to the authorize step with their
+    plan picked (`finance.html?…&plan=…&go=auth`); **notyet** — "still want to
+    finance?", the finance link or pay another way. Neither ever says
+    *declined*. No status set; `finFollowBlocker_` is the shared bar.
+  - Off the list on authorize, on a recorded charge, or **Not financing**
+    (`adminFinanceDismiss`); applying again puts them back. A corrupt index
+    reads as an empty list.
 - **Never an account number, never an SSN.** The Business Center's *Name &
   Phone Number* lookup is enough, so we hold no card data (and stay out of
   PCI scope). `tools/check-finance.js` fails a page that asks for either.

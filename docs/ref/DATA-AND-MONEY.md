@@ -270,8 +270,20 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
   is plain — Synchrony's own minimum may be lower; that is between them and
   Synchrony). `financeQuote` returns `monthly` = total ÷ months, **rounded up
   to the cent** so the payments always cover the total (never a few cents
-  short). The fixed-interest plan (`interest:true` on its term) is labelled
-  "+ interest": its split is the before-interest figure. Shown on each plan
+  short).
+- **The 36-month 9.99% plan shows Synchrony's real fixed payment.** Synchrony's
+  card disclosure *Important Promotional Information* (184-303-00, Rev.
+  7/2025, "DI/Fixed/Reduced APR 9.99%"): "Fixed monthly payments are required
+  … on 36 month promotion – 3.2262% of amount … The fixed monthly payment will
+  be rounded up to the next highest whole dollar." The term carries
+  `paymentPct:3.2262`; `financeQuote` sets `monthly` = ceil(total × 3.2262%)
+  and `withInterest:true`, labelled "fixed payment, includes 9.99% interest".
+  Its other published factors (12 / 24 / 30 / 48 / 60 months: 8.7911 /
+  4.6140 / 3.7807 / 2.5358 / 2.1242%) are all exactly 9.99% amortized — add
+  `paymentPct` to a new term from that table if one is offered. **No
+  lifetime-interest total is shown:** the disclosure fixes the payment, not the
+  day-to-day accrual, and the rounded-up payment makes the last one smaller —
+  a total would be an estimate. Shown on each plan
   row and the summary of `finance.html`, in the follow-up email's box and on
   the console; `FINANCING.monthlyNote` explains it under the plans.
 - **The card fee is NOT grossed up, on purpose.** POS+ passes it straight to

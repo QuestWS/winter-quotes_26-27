@@ -3366,14 +3366,16 @@ function renderFinance(P){
       '<b>'+esc(au.first)+' '+esc(au.last)+'</b> · <b>'+esc(QP&&QP.fmtPhone?QP.fmtPhone(au.phone):au.phone)+'</b><br>'+
       'Run a sale of <b>'+fmt$(au.total)+'</b> on the <b>'+esc(f.label.toLowerCase())+'</b> promotion '+
       '(balance '+fmt$(au.base)+' + admin fee '+fmt$(au.fee)+')'+
-      (n&&!f.stale?' — '+fmt$(n.monthly)+'/month × '+n.months+(n.interest?' + interest':'')+' if paid evenly':'')+'.</div>'+
+      (n&&!f.stale?' — '+(n.withInterest?fmt$(n.monthly)+'/month fixed payment, interest included'
+        :fmt$(n.monthly)+'/month × '+n.months+(n.interest?' + interest':'')+' if paid evenly'):'')+'.</div>'+
       (f.stale&&n?'<div class="msg" style="margin-top:4px">Today\'s balance is '+fmt$(n.base)+' → '+fmt$(n.total)+
         ' with the fee. Ask them to authorize again at the same link, or get their OK by phone.</div>':'');
   } else {
     h+='<div class="msg" style="margin:2px 0 6px">Picked online '+esc(f.at||'')+(f.applyAt?' · went to the Synchrony application '+esc(f.applyAt):'')+
       ' — <b>not authorized yet</b>'+(f.dismissed?' · marked not financing '+esc(f.dismissed.at||''):'')+'.</div>'+
       (n?'<div style="font-size:14px">On today\'s balance: '+fmt$(n.base)+' + admin fee '+fmt$(n.fee)+' = <b>'+fmt$(n.total)+'</b>'+
-        ' — '+fmt$(n.monthly)+'/month × '+n.months+(n.interest?' + interest':'')+'.</div>':'');
+        ' — '+(n.withInterest?fmt$(n.monthly)+'/month fixed payment, interest included'
+          :fmt$(n.monthly)+'/month × '+n.months+(n.interest?' + interest':''))+'.</div>':'');
   }
   if(!ch&&P.pay&&(au||n)){
     h+='<div class="row2" style="margin-top:8px"><div><label class="fld">Synchrony approval code</label>'+

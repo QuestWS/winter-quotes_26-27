@@ -86,6 +86,7 @@ symptom.
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
+| The next late charge in dollars (10% before the pay-by date, the monthly service charge after) | `latePenalty_` (in `noticeDueRows_` and `latewarn`), `RULES.latePct` / `monthlyPct` / `monthlyMin` | `.gs` · `pricing-engine.js` |
 | Which emails carry the Pay over time with Synchrony button, and when | `financeOfferUrl_`, `financeButtonHtml_` (in `customerEmailHtml_`, `latewarn`, `lastcall`) | `.gs` |
 | Synchrony follow-ups: who applied and never authorized, the two follow-up emails, not financing | `adminFinanceFollowups`, `finIndexSet_`, `finIndexDrop_`, `finFollowBlocker_`, `adminFinanceDismiss` (kind `finfollow` in `buildEmailFor_`) · `loadFinFollow` | `.gs` · `admin/index.html` |
 | Synchrony financing: terms, admin fee math, apply link, authorization wording, disclosure form | `FINANCING`, `financeQuote`, `financeOptions`, `financeAuthText`, `financeDisclosureUrl` | `pricing-engine.js` |

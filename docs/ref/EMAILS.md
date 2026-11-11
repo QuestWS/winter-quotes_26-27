@@ -356,10 +356,21 @@ human**: the 10-day reminder and the lead follow-up.
   customers for money not due yet. `noticeDueRows_()` splits it: any unpaid
   part of the deposit is **Deposit due now**, the rest is **Balance due by
   <pay-by date>**, and when only the dated balance is left it adds "**Settle
-  up now** — balance due by <pay-by date>." (Chris, Nov 2026: assertive, not
-  the old "Nothing is due today — pay any time up to…", which invited waiting.)
-  No-storage quotes say due when the work is completed; after the pay-by date
-  the row reads "was due" and that line goes.
+  up now** — balance due by <pay-by date>." followed by the late charge **in
+  dollars** ("After Nov 15, a 10% late fee adds $98.64 — $1,085.04 in total").
+  (Chris, Nov 2026: assertive, not the old "Nothing is due today — pay any time
+  up to…", which invited waiting; and the exact amount, "so that people
+  understand the cost without debate".) No-storage quotes say due when the
+  work is completed; after the pay-by date the row reads "was due" and that
+  line goes.
+- **Every late charge in an email is a dollar figure from `latePenalty_`.**
+  Which one depends on the date, as the invoice terms say: through the pay-by
+  day the `RULES.latePct` one-off; after it, the `RULES.monthlyPct` monthly
+  service charge (never under `RULES.monthlyMin`) — "starting <lateChargeStart>"
+  until then, "every month it stays open" after. The PDF terms read the same
+  `RULES`, so the email and the paper agree. The **late fee warning** opens
+  "**Settle up now**", carries that figure, and its subject starts "Settle up
+  now:"; it passes `noDueNote` so the balance box does not say it twice.
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

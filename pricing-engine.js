@@ -71,6 +71,12 @@ PRICES.full.jet = PRICES.full.pwc;
 
 const RULES = {
   latePct:10,
+  /* After the late fee: a monthly service charge from SEASON.lateChargeStart,
+     never less than monthlyMin dollars. The invoice terms and the late-fee
+     emails both read these, so the dollar figure in an email is the one the
+     PDF's terms describe. */
+  monthlyPct:2,
+  monthlyMin:5,
   ccPct:3,
   depositTrailer:500,
   depositNoTrailer:1000,

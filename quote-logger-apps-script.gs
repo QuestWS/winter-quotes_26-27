@@ -11016,7 +11016,7 @@ function adminOfferDecision(token, qn, item, choice, note) {
    Quest nets the true amount).
 
    How it runs (no Synchrony API — that is on the back burner):
-     1. The email's "Finance with Synchrony" button opens finance.html with the
+     1. The email's "Pay over time with Synchrony" button opens finance.html with the
         quote number and last name (financeLink_, the same pair as quoteLink_).
      2. The page reads the balance and every plan's admin fee and total
         (financeRead_), all worked out on the SERVER from what is owed now.
@@ -11043,6 +11043,23 @@ function financeLink_(quoteNo, lastName) {
 }
 function financeLinkFor_(d) { return isStartedQuote_(d) ? '' : financeLink_(d && d.quoteNo, d && d.lastName); }
 function financeBalance_(d) { return Math.round((Number(d.total || 0) - paymentsTotal_(d)) * 100) / 100; }
+/* The "Pay over time with Synchrony" button for an invoice email or a late fee
+   warning: '' when there is nothing to finance (paid up, a credit), when the
+   plan is already settled (charged, or authorized on today's balance — the
+   page would only say "you're all set"), or when financing is off. One rule
+   for every email that carries the button, so they cannot disagree. */
+function financeOfferUrl_(d) {
+  const url = financeLinkFor_(d);
+  if (!url || !(financeBalance_(d) > 0.005)) return '';
+  const f = d.finance;
+  if (f && (f.charged || f.feeApplied)) return '';
+  if (f && f.auth && Math.abs(Number(f.auth.base) - financeBalance_(d)) <= 0.005) return '';
+  return url;
+}
+/* The button itself, worded the same everywhere. */
+function financeButtonHtml_(url) {
+  return url ? buttonHtml_(url, 'Pay over time with Synchrony', '#14293E') : '';
+}
 
 /* For the console: the plan, the customer's authorization, the charge and
    the disclosure — and what the plan comes to on what is owed NOW, so staff
@@ -12242,7 +12259,9 @@ function noticeDueRows_(d, paid, balance) {
   return { rows: rows, note: note };
 }
 
-function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
+/* afterMoneyHtml (optional): goes BELOW the balance box — for a secondary
+   way to settle (Synchrony) that must not sit above "Pay online". */
+function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, afterMoneyHtml) {
   const paid = paymentsTotal_(d);
   const balance = Number(d.total || 0) - paid;
   const logoTag = LOGO_URL
@@ -12277,7 +12296,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney) {
         '<p style="font-size:16px;color:#1D2B38;margin:0 0 6px">Hi ' + esc_(d.firstName || 'there') + ',</p>' +
         '<div style="font-size:15px;color:#1D2B38;line-height:1.55;margin:0 0 14px">' + introHtml + '</div>' +
         '<div style="font-family:Courier New,monospace;font-size:13px;color:#5C7185;margin-bottom:10px">' + docTerm_(d).toUpperCase() + '# ' + esc_(d.quoteNo) + ' &nbsp;·&nbsp; ' + esc_(d.unit) + (d.ymm ? ' &nbsp;·&nbsp; ' + esc_(d.ymm) : '') + '</div>' +
-        (extraButtonsHtml || '') + money +
+        (extraButtonsHtml || '') + money + (afterMoneyHtml || '') +
         '<p style="font-size:13px;color:#5C7185;line-height:1.5;margin:12px 0 0">Questions? Call us at (815) 433-2200.</p>' +
       '</div>' +
       '<div style="background:#14293E;color:#B9CDDD;padding:14px 28px;font-size:12px">Quest Watersports · 1800 N 2871st Rd, Ottawa, IL 61350 · (815) 433-2200</div>' +
@@ -13010,7 +13029,7 @@ function buildEmailFor_(d, kind, extra, photos) {
         steps += step('Prefer monthly payments?',
           'Apply and pay with Synchrony — plans from ' + lo + ' to ' + hi + ' months. Pick a plan to see ' +
           'your exact total, then apply in a couple of minutes.',
-          buttonHtml_(finUrl, 'Finance with Synchrony', '#14293E'));
+          buttonHtml_(finUrl, 'Pay over time with Synchrony', '#14293E'));
       }
     }
     steps += '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-bottom:4px">' +
@@ -13032,7 +13051,7 @@ function buildEmailFor_(d, kind, extra, photos) {
      then send ONE of two versions from the quote, `extra` saying which:
        'approved' — "your account is approved, one step left": a button
                     straight to the authorize step with their plan picked;
-       'notyet'   — "still want to finance?": the finance link, or pay another
+       'notyet'   — "still want to pay over time?": the finance link, or pay another
                     way. Never says they were declined: staff may not know, and
                     it is not ours to say.
      Plan, fee and total are priced on what is owed NOW. Sets no status (the
@@ -13063,11 +13082,11 @@ function buildEmailFor_(d, kind, extra, photos) {
     } else {
       intro = 'You started a Synchrony application for your winter ' + term + '. If you didn\'t get the chance to ' +
         'finish, you can pick up where you left off — or, if you\'d rather pay another way, that\'s easy too.';
-      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Finance with Synchrony', '#14293E') +
+      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Pay over time with Synchrony', '#14293E') +
         buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div>' +
         (quoteLinkFor_(d) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5">Need to change anything first? ' +
           '<a href="' + quoteLinkFor_(d) + '" style="color:#4A81A6">Review or adjust your ' + term + '</a>.</div>' : '');
-      subject = 'Still want to finance with Synchrony? · ' + (d.quoteNo || '');
+      subject = 'Still want to pay over time with Synchrony? · ' + (d.quoteNo || '');
     }
     return { subject: subject, html: noticeHtml_(d, intro, box + btns, false), status: '' };
   }
@@ -13079,8 +13098,12 @@ function buildEmailFor_(d, kind, extra, photos) {
       'Per the storage terms on your ' + docTerm_(d).toLowerCase() + ', unpaid balances are subject to a late fee — the next one will be applied on <b>the 15th of this month</b>. ' +
       'Settling up before then avoids it entirely; the payment button below takes about a minute. ' +
       'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
+    /* Synchrony as a way to settle it before the fee lands. */
+    const fin = financeOfferUrl_(d);
+    const finHtml = fin ? '<div style="margin:0 0 4px;font-size:14px;color:#1D2B38">Prefer monthly payments? ' +
+      'Pay over time with Synchrony — plans from 6 to 36 months.</div><div style="margin:0 0 6px">' + financeButtonHtml_(fin) + '</div>' : '';
     return { subject: 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
-      html: noticeHtml_(d, intro, '', true), status: 'Late fee warning sent' };
+      html: noticeHtml_(d, intro, '', true, finHtml), status: 'Late fee warning sent' };
   }
   return null;
 }
@@ -13103,7 +13126,7 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
-      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
+      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
     /* (The object used to carry `html` twice, and the second -- without the
        note -- won, so this one preview never showed the staff note.) */
@@ -13640,6 +13663,9 @@ function customerEmailHtml_(o) {
   const signUrl = o.signed ? '' : o.signUrl;
   if (signUrl) buttons += buttonHtml_(signUrl, 'Review &amp; sign your agreement', '#14293E') + signConfirmHtml_();
   if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
+  /* Synchrony, next to paying — callers pass financeOfferUrl_(d), which is ''
+     whenever there is nothing to finance. */
+  if (!o.paidInFull && !o.creditDue && o.financeUrl) buttons += financeButtonHtml_(o.financeUrl);
   /* Their own quote, already filled in — no quote number to find, no last name
      to type. Secondary to signing and paying on purpose: those are what this
      email is for, this is the way back in if something needs changing. Built
@@ -13881,7 +13907,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
-      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d),
+      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
@@ -14084,6 +14110,11 @@ function dailyReminderCheck() {
       if (!(ts instanceof Date) || ts.getTime() > cutoff) return; // too recent
       try {
         const dueToday = Number(total) > 0 && Number(deposit) >= Number(total);
+        /* An optional button must never be the reason a reminder does not go:
+           anything wrong working it out just leaves it off. */
+        let finUrl = '';
+        try { finUrl = pdRow ? financeOfferUrl_(Object.assign({}, pdRow, { quoteNo: quoteNo, lastName: last })) : ''; }
+        catch (e) { finUrl = ''; }
         const html = customerEmailHtml_({
           firstName: first, quoteNo: quoteNo, unit: unit,
           total: total, deposit: deposit, dueToday: dueToday, noStorage: noStorage,
@@ -14091,7 +14122,10 @@ function dailyReminderCheck() {
           /* The whole point of this email is "come back and finish" — it is the
              one that most needs the one-tap way back in. Built from the row's
              own last name, the same halves quoteLinkFor_ takes off a payload. */
-          quoteUrl: quoteLink_(quoteNo, last), reminder: true
+          quoteUrl: quoteLink_(quoteNo, last), reminder: true,
+          /* No payment yet (the sweep skips anyone who has paid), so the plan
+             cannot be settled: the payload is enough to say whether to offer it. */
+          financeUrl: finUrl
         });
         /* pdRow steers which season folder is searched first; an unreadable
            payload just means we look in the default order and still find it. */

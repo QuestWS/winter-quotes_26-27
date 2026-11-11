@@ -1353,7 +1353,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       </div>
       <div class="msg" style="margin:6px 0 10px">Went to the Synchrony application a day or more ago and never authorized.
         Look each one up in the Business Center (<b>Name &amp; Phone Number</b>), then open the quote and send the
-        follow-up that fits — <b>approved</b> or <b>still want to finance?</b></div>
+        follow-up that fits — <b>approved</b> or <b>still want to pay over time?</b></div>
       <div id="finFollowBody"></div>
     </div>
     <!-- Receivables: read-only. Every tab and range re-renders one fetch. -->
@@ -3387,7 +3387,7 @@ function renderFinance(P){
       '<div class="msg" style="margin-bottom:6px">Follow up — check the Business Center first (Name &amp; Phone Number):</div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
       '<button class="btn gold sm" onclick="previewSend(\'finfollow\',\'approved\')">Email: approved — one step left</button>'+
-      '<button class="btn navy sm" onclick="previewSend(\'finfollow\',\'notyet\')">Email: still want to finance?</button>'+
+      '<button class="btn navy sm" onclick="previewSend(\'finfollow\',\'notyet\')">Email: still want to pay over time?</button>'+
       '<button class="btn ghost sm" id="finDismissBtn" onclick="dismissFinance()">Not financing</button></div></div>';
   }
   h+='<div class="msg" id="finMsg"></div>';

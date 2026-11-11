@@ -56,6 +56,7 @@ ContentService = { MimeType: { JSON: 'json' }, createTextOutput: function (t) { 
 return { financeQuote, financeOptions, financeAuthText, FINANCING, buildEmailFor_, financeReply_, financeServe_,
   adminFinanceCharge, adminFinanceDisclosure, financeOut_, financeLinkFor_, paymentsTotal_,
   adminFinanceFollowups, adminFinanceDismiss, finFollowBlocker_, unbuildableMsg_, FIN_FOLLOW_AFTER_MS_,
+  financeOfferUrl_, customerEmailHtml_,
   props: function () { return __PROPS; },
   setCtx: function (c) { __CTX = c; } };`)(SENT, SAVES);
 
@@ -84,15 +85,15 @@ const quote = (over) => Object.assign({
 }, over || {});
 {
   const e = B.buildEmailFor_(quote(), 'lastcall', '', '');
-  has(e && e.html, 'Finance with Synchrony', 'money owed: the email offers Synchrony');
+  has(e && e.html, 'Pay over time with Synchrony', 'money owed: the email offers Synchrony');
   has(e && e.html, 'finance.html?quote=QW-26-9201&amp;ln=Fixture'.replace('&amp;', '&'), 'the button opens their own finance page');
   hasnt(e && e.html, P.FINANCING.applyUrl, 'the email links our page, not Synchrony directly — the plan is picked first');
   const paid = B.buildEmailFor_(quote({ payments: [{ amt: 1000 }] }), 'lastcall', '', '');
-  hasnt(paid && paid.html, 'Finance with Synchrony', 'paid in full: no Synchrony button');
+  hasnt(paid && paid.html, 'Pay over time with Synchrony', 'paid in full: no Synchrony button');
   const was = B.FINANCING.applyUrl;
   B.FINANCING.applyUrl = '';
   const off = B.buildEmailFor_(quote(), 'lastcall', '', '');
-  hasnt(off && off.html, 'Finance with Synchrony', 'empty applyUrl: the button is gone');
+  hasnt(off && off.html, 'Pay over time with Synchrony', 'empty applyUrl: the button is gone');
   eq(B.financeLinkFor_(quote()), '', 'and there is no link to build');
   B.FINANCING.applyUrl = was;
   eq(B.financeLinkFor_(quote({ storageTab: 'Quote Started' })), '', 'a lead never gets a finance link');
@@ -217,7 +218,7 @@ console.log('=== follow-ups: applied, never authorized ===');
   has(ap && ap.html, '$1,044.39', 'with the total priced on what is owed now');
   eq(ap && ap.status, '', 'it sets no status');
   const ny = B.buildEmailFor_(d, 'finfollow', 'notyet', '');
-  has(ny && ny.html, 'Finance with Synchrony', '"still want to finance?" offers the finance link');
+  has(ny && ny.html, 'Pay over time with Synchrony', '"still want to pay over time?" offers the finance link');
   has(ny && ny.html, B.FINANCING && 'Pay online', 'and another way to pay');
   hasnt(ny && ny.html, 'go=auth', 'without jumping to the authorize step');
   hasnt(((ny && ny.html) || '') + ((ap && ap.html) || ''), 'declin', 'neither version ever says declined');
@@ -237,6 +238,45 @@ console.log('=== follow-ups: applied, never authorized ===');
   eq(Object.keys(JSON.parse(B.props().FIN_APPLIED)), ['QW-26-9302'], 'applying again puts them back');
   B.props().FIN_APPLIED = '{not json';
   eq(B.adminFinanceFollowups('t').due.length, 0, 'a corrupt index reads as an empty list, not an error');
+}
+
+console.log('=== invoice emails and the late fee warning ===');
+{
+  const owed = quote({ payments: [{ amt: 200 }] });
+  const url = B.financeOfferUrl_(owed);
+  has(url, 'finance.html?quote=QW-26-9201', 'money owed: the invoice emails offer Synchrony');
+  eq(B.financeOfferUrl_(quote({ payments: [{ amt: 1000 }] })), '', 'paid in full: no offer');
+  eq(B.financeOfferUrl_(quote({ payments: [{ amt: 1100 }] })), '', 'a credit: no offer');
+  eq(B.financeOfferUrl_(quote({ storageTab: 'Quote Started' })), '', 'a lead: no offer');
+  const authed = quote({ payments: [{ amt: 200 }], finance: { key: 'syf6', auth: { base: 800 } } });
+  eq(B.financeOfferUrl_(authed), '', 'already authorized on today\'s balance: no offer — nothing left to do');
+  const stale = quote({ payments: [{ amt: 200 }], finance: { key: 'syf6', auth: { base: 700 } } });
+  has(B.financeOfferUrl_(stale), 'finance.html', 'authorized on an old balance: offered again, to re-authorize');
+  eq(B.financeOfferUrl_(quote({ payments: [{ amt: 200 }], finance: { key: 'syf6', charged: { amt: 1 } } })), '',
+    'charged: no offer');
+
+  const base = { firstName: 'Pat', quoteNo: 'QW-26-9201', unit: 'Boat', total: 1000, deposit: 500, paid: 200,
+    balance: 800, paidInFull: false, creditDue: 0, payBy: 'Nov 15', quoteUrl: 'https://example.invalid/q' };
+  has(B.customerEmailHtml_(Object.assign({}, base, { financeUrl: url })), 'Pay over time with Synchrony',
+    'the invoice email carries the button');
+  hasnt(B.customerEmailHtml_(Object.assign({}, base, { financeUrl: url, paidInFull: true, balance: 0 })),
+    'Pay over time with Synchrony', 'never on a paid-in-full invoice');
+  hasnt(B.customerEmailHtml_(base), 'Pay over time with Synchrony', 'and not when the caller has no link');
+  /* Every caller passes the same rule — the three builders of invoice email. */
+  const calls = gasSrc.split('customerEmailHtml_({').length - 1;
+  const passing = (gasSrc.match(/customerEmailHtml_\(\{[\s\S]{0,1200}?financeUrl: [^\n]*financeOfferUrl_\(/g) || []).length;
+  const reminder = /finUrl = pdRow \? financeOfferUrl_\([\s\S]{0,400}?customerEmailHtml_\(\{[\s\S]{0,1200}?financeUrl: finUrl/.test(gasSrc);
+  eq([calls, passing, reminder], [3, 2, true],
+    're-send and every sent quote/invoice/receipt pass financeOfferUrl_; the 10-day reminder passes it too, guarded');
+
+  const lw = B.buildEmailFor_(owed, 'latewarn', '', '');
+  has(lw && lw.html, 'Pay over time with Synchrony', 'the late fee warning offers Synchrony');
+  const was = B.FINANCING.applyUrl;
+  B.FINANCING.applyUrl = '';
+  hasnt((B.buildEmailFor_(owed, 'latewarn', '', '') || {}).html, 'Pay over time with Synchrony', 'financing off: gone from the warning');
+  hasnt(B.customerEmailHtml_(Object.assign({}, base, { financeUrl: B.financeOfferUrl_(owed) })), 'Pay over time with Synchrony',
+    'and from the invoice');
+  B.FINANCING.applyUrl = was;
 }
 
 console.log('=== the page ===');

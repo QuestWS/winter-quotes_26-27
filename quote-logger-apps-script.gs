@@ -1590,6 +1590,8 @@ const CONSOLE_GET_FNS_ = {
   /* Read the Inbox Review tab (and GitHub's last run); change nothing. */
   inboxScanState: 1, inboxList: 1,
   listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
+  /* The Synchrony follow-up list: reads one Script Property, writes nothing. */
+  financeFollowups: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
      open so Apps Script has a warm container by the time the first real call
      arrives, and it is the cleanest reading of what an empty call costs. */
@@ -1647,6 +1649,8 @@ function consoleFns_(p) {
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
     financeCharge:     function (a) { return adminFinanceCharge(p.token, a[0], a[1], a[2], a[3]); },
     financeDisclosure: function (a) { return adminFinanceDisclosure(p.token, a[0], a[1]); },
+    financeDismiss:    function (a) { return adminFinanceDismiss(p.token, a[0]); },
+    financeFollowups:  function (a) { return adminFinanceFollowups(p.token); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2], a[3]); },
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
@@ -6933,6 +6937,7 @@ function unbuildableMsg_(kind, d) {
   if (kind === 'latewarn') return 'No unpaid balance — nothing to warn about.';
   if (kind === 'firmquote') return firmQuoteBlocker_(d) || 'Could not build the firm-quote email.';
   if (kind === 'lastcall') return lastCallBlocker_(d) || 'Could not build the last-call email.';
+  if (kind === 'finfollow') return finFollowBlocker_(d) || 'Could not build the Synchrony follow-up.';
   if (kind === 'offers') {
     if (isStartedQuote_(d)) return 'This is an unfinished quote — there is nothing to send yet.';
     if (!offersLinkFor_(d)) return 'This quote has no last name, so there is no link the customer could open.';
@@ -11049,6 +11054,9 @@ function financeOut_(d) {
   const au = f.auth || null;
   return { key: f.key, label: String(f.label || ''), pct: Number(f.pct) || 0, at: String(f.at || ''),
     applyAt: String(f.applyAt || ''),
+    dismissed: f.dismissed || null,
+    /* Which follow-up emails can go: the same bar the builder uses. */
+    canFollow: !finFollowBlocker_(d),
     now: now ? { base: now.base, fee: now.fee, total: now.total } : null,
     auth: au ? { first: au.first, last: au.last, phone: au.phone, sig: au.sig, at: au.at,
                  base: au.base, fee: au.fee, total: au.total, label: au.label, text: au.text } : null,
@@ -11136,12 +11144,18 @@ function financeServe_(b) {
       const nm = function (v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 60); };
 
       if (step === 'apply') {
-        const fresh = !f0 || !f0.applyAt || f0.key !== q.key;
+        const fresh = !f0 || !f0.applyAt || f0.key !== q.key || f0.dismissed;
         f.applyAt = f.applyAt || when;
+        f.applyIso = f.applyIso || new Date().toISOString();
+        /* Applying again after staff marked "not financing" puts them back. */
+        delete f.dismissed;
         if (fresh) {
           ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
           auditLog_('Customer', 'Went to the Synchrony application from ' + d.quoteNo + ' (' + q.label + ')');
         }
+        /* The follow-up list (adminFinanceFollowups) reads this index, never
+           the quotes themselves. */
+        if (!f.auth) finIndexSet_(d, f);
         return reply({ msg: 'Opening the Synchrony application.' });
       }
 
@@ -11165,6 +11179,7 @@ function financeServe_(b) {
           ' (' + FINANCING.feeLabel.toLowerCase() + ' ' + usd_(q.fee) + '), signed "' + sig + '"');
         notifyFinanceAuth_(ctx, f.auth, prev);
       }
+      finIndexDrop_(d.quoteNo);
       return reply({ msg: 'Thank you — you\'ve authorized ' + usd_(q.total) + ' on the ' + q.months + '-month plan. ' +
         'We\'ll run it on your Synchrony account and email your receipt.' });
     } finally { lock.releaseLock(); }
@@ -11270,6 +11285,7 @@ function adminFinanceCharge(token, qn, code, byPhone, sendReceipt) {
   const left = Number(d.total || 0) - paid;
   const status = left < -0.005 ? 'CREDIT DUE ' + usd_(-left) : left <= 0.005 ? 'Paid in full' : 'Payment received — balance ' + usd_(left);
   const pdfUrl = saveQuoteRow_(ctx, status);
+  finIndexDrop_(d.quoteNo);
   auditLog_(who.name, 'Synchrony charge ' + usd_(amt) + ' on ' + d.quoteNo + ' (' + f.label + ', approval ' + appr +
     (fee ? ', ' + FINANCING.feeLabel.toLowerCase() + ' ' + usd_(fee) : '') + ', authorized ' + f.charged.authorized + ') → ' + status);
   let receiptMsg = '';
@@ -11300,6 +11316,79 @@ function adminFinanceDisclosure(token, qn, state) {
   auditLog_(who.name, 'Synchrony rate disclosure on ' + d.quoteNo + ': ' + st);
   return { ok: 1, msg: st === 'inperson' ? 'Rate disclosure signed in person — done.'
     : st === 'digital' ? 'Digital copy on file. Still to sign in person.' : 'Marked as still to sign.' };
+}
+
+/* ============ SYNCHRONY FOLLOW-UPS ============
+   Who clicked "Apply for Synchrony" and has not authorized. Kept as one small
+   Script Property (FIN_APPLIED_KEY_) — quote number → name, phone, plan and
+   when — so the list never reads a quote payload: walking every payload is
+   what once made the console time out (CLAUDE.md §7). Customer details in a
+   Script Property, never in the repo. Added on 'apply'; removed on authorize,
+   on a recorded charge, and on "Not financing". */
+const FIN_APPLIED_KEY_ = 'FIN_APPLIED';
+const FIN_FOLLOW_AFTER_MS_ = 24 * 3600 * 1000;   // Chris: a day after applying
+function finIndexRead_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(FIN_APPLIED_KEY_) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function finIndexWrite_(m) { PropertiesService.getScriptProperties().setProperty(FIN_APPLIED_KEY_, JSON.stringify(m)); }
+function finIndexSet_(d, f) {
+  const m = finIndexRead_();
+  const qn = String(d.quoteNo || '');
+  if (!qn) return;
+  const was = m[qn];
+  m[qn] = { at: (was && was.at) || f.applyIso || new Date().toISOString(), plan: String(f.label || ''),
+    first: String(d.firstName || ''), last: String(d.lastName || ''), phone: fmtPhone(String(d.phone || '')) };
+  finIndexWrite_(m);
+}
+function finIndexDrop_(qn) {
+  const m = finIndexRead_();
+  if (!Object.prototype.hasOwnProperty.call(m, String(qn || ''))) return;
+  delete m[String(qn)];
+  finIndexWrite_(m);
+}
+/* Can the follow-up email go to this quote? '' when yes. */
+function finFollowBlocker_(d) {
+  const f = d && d.finance;
+  if (!d || isStartedQuote_(d)) return 'This is an unfinished quote.';
+  if (!f || !f.key) return 'They have not picked a Synchrony plan.';
+  if (f.charged) return 'The Synchrony charge is already recorded.';
+  if (f.auth && Math.abs(Number(f.auth.base) - financeBalance_(d)) <= 0.005) return 'They have already authorized it — nothing to chase.';
+  if (!(financeBalance_(d) > 0.005)) return 'Nothing is owed.';
+  if (!financeLinkFor_(d)) return 'No link to send them to (online financing off, or no last name on the quote).';
+  return '';
+}
+/* The console list: due (applied a day or more ago) oldest first, and how
+   many are still inside their first day. Reads the index only. */
+function adminFinanceFollowups(token) {
+  requireAuth_(token, 'view');
+  const m = finIndexRead_();
+  const now = Date.now();
+  const due = [];
+  let recent = 0;
+  Object.keys(m).forEach(function (qn) {
+    const e = m[qn] || {};
+    const t = Date.parse(e.at);
+    if (!isFinite(t)) return;
+    if (now - t < FIN_FOLLOW_AFTER_MS_) { recent++; return; }
+    due.push({ qn: qn, name: [e.last, e.first].filter(Boolean).join(', '), first: e.first || '', last: e.last || '',
+      phone: fmtPhone(String(e.phone || '')), plan: e.plan || '', at: e.at, days: Math.floor((now - t) / 86400000) });
+  });
+  due.sort(function (a, b) { return Date.parse(a.at) - Date.parse(b.at); });
+  return { ok: 1, due: due, recent: recent };
+}
+/* "Not financing": off the list, and the follow-up buttons go. Applying
+   again puts them back. */
+function adminFinanceDismiss(token, qn) {
+  const who = requireAuth_(token, 'email');
+  const ctx = findQuoteCtx_(qn);
+  if (ctx && ctx.d.finance) {
+    ctx.d.finance.dismissed = { at: new Date().toLocaleString(), by: who.name };
+    ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(ctx.d));
+  }
+  finIndexDrop_(qn);
+  auditLog_(who.name, 'Synchrony follow-up closed for ' + qn + ' — not financing');
+  return { ok: 1, msg: 'Off the Synchrony follow-up list.' };
 }
 
 /* The customer's quote, found by number and checked against the last name —
@@ -12936,6 +13025,51 @@ function buildEmailFor_(d, kind, extra, photos) {
       status: '',
       attachPdf: true
     };
+  }
+  /* SYNCHRONY FOLLOW-UP (`finfollow`) — Chris, Nov 2026: someone clicked
+     Apply for Synchrony and never came back to authorize. Staff check the
+     Business Center (Name & Phone lookup — we cannot see Synchrony's side),
+     then send ONE of two versions from the quote, `extra` saying which:
+       'approved' — "your account is approved, one step left": a button
+                    straight to the authorize step with their plan picked;
+       'notyet'   — "still want to finance?": the finance link, or pay another
+                    way. Never says they were declined: staff may not know, and
+                    it is not ours to say.
+     Plan, fee and total are priced on what is owed NOW. Sets no status (the
+     sign chase's reason); Email History records it. finFollowBlocker_ is the
+     whole bar, shared with the preview, the send and the console. */
+  if (kind === 'finfollow') {
+    if (finFollowBlocker_(d)) return null;
+    const f = d.finance;
+    const term = docTerm_(d).toLowerCase();
+    const q = financeQuote(financeBalance_(d), f.key);
+    const approved = extra === 'approved';
+    const plan = q.months + '-month ' + String(q.plan).toLowerCase();
+    const link = financeLinkFor_(d) + '&plan=' + encodeURIComponent(q.key) + (approved ? '&go=auth' : '');
+    const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
+      '<table width="100%" cellpadding="0" cellspacing="0">' +
+      moneyRow_('Plan', esc_(q.months + ' months — ' + q.plan), false) +
+      moneyRow_('Balance', usd_(q.base), false) +
+      moneyRow_(esc_(FINANCING.feeLabel), usd_(q.fee), false) +
+      moneyRow_('Total on Synchrony', usd_(q.total), true) + '</table></div>';
+    let intro, btns, subject;
+    if (approved) {
+      intro = 'Good news — your Synchrony account is approved. <b>There\'s one step left:</b> authorize the charge ' +
+        'so we can run it on your account. Your ' + plan + ' plan is already picked; it takes about a minute.';
+      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Finish with Synchrony', '#C08A22') + '</div>' +
+        '<div style="font-size:13px;color:#5C7185;line-height:1.5">Want a different plan? You can change it on the same page ' +
+        'before you authorize.</div>';
+      subject = 'One step left — authorize your Synchrony plan · ' + (d.quoteNo || '');
+    } else {
+      intro = 'You started a Synchrony application for your winter ' + term + '. If you didn\'t get the chance to ' +
+        'finish, you can pick up where you left off — or, if you\'d rather pay another way, that\'s easy too.';
+      btns = '<div style="margin:6px 0 10px">' + buttonHtml_(link, 'Finance with Synchrony', '#14293E') +
+        buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') + '</div>' +
+        (quoteLinkFor_(d) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5">Need to change anything first? ' +
+          '<a href="' + quoteLinkFor_(d) + '" style="color:#4A81A6">Review or adjust your ' + term + '</a>.</div>' : '');
+      subject = 'Still want to finance with Synchrony? · ' + (d.quoteNo || '');
+    }
+    return { subject: subject, html: noticeHtml_(d, intro, box + btns, false), status: '' };
   }
   if (kind === 'latewarn') {
     const paid = paymentsTotal_(d);

@@ -536,6 +536,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="linkbtn" id="quickOpen" onclick="navGo(toggleQuick)">Quick quote</button>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
       <button class="linkbtn" onclick="navGo(toggleReceivables)">Receivables</button>
+      <button class="linkbtn" onclick="navGo(toggleFinFollow)">Synchrony follow-ups</button>
       <button class="linkbtn" onclick="navGo(printBlankContract)">Print blank contract</button>
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
       <button class="linkbtn hide" id="adminOpen" onclick="navGo(toggleStaff)">Staff &amp; permissions</button>
@@ -583,6 +584,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile" onclick="navGo(toggleReceivables)"><b>Receivables</b>
         <span>The latest payments and refunds, and every customer by payment status — unpaid, part paid, paid, credit due.</span></button>
+      <button class="tile" onclick="navGo(toggleFinFollow)"><b>Synchrony follow-ups</b>
+        <span>Customers who went to the Synchrony application a day or more ago and never authorized the charge.</span></button>
       <button class="tile" onclick="printBlankContract()"><b>Print blank contract</b>
         <span>This season's Storage Terms, blank, for a customer who wants to sign on paper. Then scan it into their quote: Signed contract → Upload signed copy.</span></button>
       <button class="tile hide" id="bulkTile" onclick="navGo(toggleBulk)"><b>Send to all</b>
@@ -1338,6 +1341,21 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <div id="storageBody" style="margin-top:10px"><span class="msg">Loading…</span></div>
     </div>
 
+    <!-- Synchrony follow-ups: who applied a day or more ago and has not
+         authorized. Read-only list; the emails go from each quote. -->
+    <div class="card hide" id="finCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">Synchrony follow-ups</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn navy sm" onclick="loadFinFollow()">Refresh</button>
+          <button class="btn ghost sm" onclick="$('finCard').classList.add('hide')">✕ Close</button>
+        </div>
+      </div>
+      <div class="msg" style="margin:6px 0 10px">Went to the Synchrony application a day or more ago and never authorized.
+        Look each one up in the Business Center (<b>Name &amp; Phone Number</b>), then open the quote and send the
+        follow-up that fits — <b>approved</b> or <b>still want to finance?</b></div>
+      <div id="finFollowBody"></div>
+    </div>
     <!-- Receivables: read-only. Every tab and range re-renders one fetch. -->
     <div class="card hide" id="recvCard">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1443,7 +1461,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,draftList:1,photoInfo:1,hhListInfo:1,
+const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,financeFollowups:1,draftList:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,inboxScanState:1,inboxList:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1742,7 +1760,7 @@ function boot(){
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
 const HOME_PANELS=['resultsCard','quoteArea','quickCard','adminCard','pauseCard','inboxCard','importCard',
-  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard'];
+  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard','finCard'];
 /* PRINT BLANK CONTRACT (Oct 2026). For the customer who insists on paper: the
    same Storage Terms the Adobe web form carries, as a one-page PDF in the repo
    (storage-agreement-blank.pdf), so it opens on any phone or desk without a
@@ -3352,7 +3370,7 @@ function renderFinance(P){
         ' with the fee. Ask them to authorize again at the same link, or get their OK by phone.</div>':'');
   } else {
     h+='<div class="msg" style="margin:2px 0 6px">Picked online '+esc(f.at||'')+(f.applyAt?' · went to the Synchrony application '+esc(f.applyAt):'')+
-      ' — <b>not authorized yet</b>.</div>'+
+      ' — <b>not authorized yet</b>'+(f.dismissed?' · marked not financing '+esc(f.dismissed.at||''):'')+'.</div>'+
       (n?'<div style="font-size:14px">On today\'s balance: '+fmt$(n.base)+' + admin fee '+fmt$(n.fee)+' = <b>'+fmt$(n.total)+'</b>.</div>':'');
   }
   if(!ch&&P.pay&&(au||n)){
@@ -3361,6 +3379,16 @@ function renderFinance(P){
       '<label class="chk"><input type="checkbox" id="finPhone"'+(au&&!f.stale?'':' checked')+'> Authorized by phone (they gave me the OK)</label>'+
       '<label class="chk"><input type="checkbox" id="finReceipt" checked> Email receipt to customer</label>'+
       '<button class="btn gold sm" id="finChargeBtn" onclick="recordFinanceCharge()">Record the Synchrony charge</button>';
+  }
+  /* Follow-up: they applied and never authorized. Staff check the Business
+     Center first, then pick the version that fits. Previewed like any email. */
+  if(!ch&&f.applyAt&&f.canFollow&&!f.dismissed&&(!au||f.stale)&&P.email){
+    h+='<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">'+
+      '<div class="msg" style="margin-bottom:6px">Follow up — check the Business Center first (Name &amp; Phone Number):</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn gold sm" onclick="previewSend(\'finfollow\',\'approved\')">Email: approved — one step left</button>'+
+      '<button class="btn navy sm" onclick="previewSend(\'finfollow\',\'notyet\')">Email: still want to finance?</button>'+
+      '<button class="btn ghost sm" id="finDismissBtn" onclick="dismissFinance()">Not financing</button></div></div>';
   }
   h+='<div class="msg" id="finMsg"></div>';
   b.innerHTML=h;b.classList.remove('hide');
@@ -3397,6 +3425,33 @@ async function recordFinanceCharge(){
     '\nAdds the admin fee line and the payment'+($('finReceipt').checked?', and emails the receipt.':'.')))return;
   await act('finChargeBtn','finMsg','financeCharge',[QN,code,$('finPhone').checked,$('finReceipt').checked]);
 }
+async function dismissFinance(){
+  if(!confirm('Take '+QN+' off the Synchrony follow-up list?\n\nIf they apply again they come back on.'))return;
+  await act('finDismissBtn','finMsg','financeDismiss',[QN]);
+}
+/* The follow-up list: one read of a small index on the server, never the
+   quotes themselves. Tapping a row opens the quote, where the emails are. */
+function toggleFinFollow(){
+  const c=$('finCard');
+  if(c.classList.contains('hide')) loadFinFollow(); else c.classList.add('hide');
+}
+async function loadFinFollow(){
+  const c=$('finCard'), b=$('finFollowBody');
+  c.classList.remove('hide');
+  b.innerHTML='<span class="msg">Loading…</span>';
+  try{
+    const r=await api('financeFollowups',[]);
+    if(!r.ok){b.innerHTML='<span class="msg err">'+esc(r.error)+'</span>';return;}
+    const rows=(r.due||[]).map(x=>
+      '<div class="lnrow" style="cursor:pointer" onclick="openFinFollow(\''+esc(x.qn)+'\')">'+
+        '<div class="ll"><b>'+esc(x.name||'(no name)')+'</b> · '+esc(x.phone||'no phone')+
+        '<div class="sec">'+esc(x.qn)+' · '+esc(x.plan)+' · applied '+(x.days===1?'1 day':x.days+' days')+' ago</div></div>'+
+        '<span class="amt">Open ›</span></div>').join('');
+    b.innerHTML=(rows||'<div class="msg">Nobody to follow up right now.</div>')+
+      (r.recent?'<div class="msg" style="margin-top:8px">'+r.recent+' more applied within the last day — they show here tomorrow.</div>':'');
+  }catch(e){b.innerHTML='<span class="msg err">'+esc(e.message)+'</span>';}
+}
+function openFinFollow(qn){ $('finCard').classList.add('hide'); doLookup(qn); }
 async function setFinanceDisclosure(state){
   try{const r=await api('financeDisclosure',[QN,state],{withQuote:QN});
     if(!r.ok){setMsg('finDiscMsg',r.error,false);return;}

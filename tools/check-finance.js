@@ -48,10 +48,15 @@ sendCustomerEmail_ = function () {}; recordEmail_ = function () {}; sendNotifica
 var __CTX = null;
 offersCtx_ = function () { return __CTX; };
 findQuoteCtx_ = function () { return __CTX; };
+var __PROPS = {};
+PropertiesService = { getScriptProperties: function () { return {
+  getProperty: function (k) { return __PROPS[k] || null; }, setProperty: function (k, v) { __PROPS[k] = v; } }; } };
 LockService = { getScriptLock: function () { return { tryLock: function () { return true; }, releaseLock: function () {} }; } };
 ContentService = { MimeType: { JSON: 'json' }, createTextOutput: function (t) { return { setMimeType: function () { return JSON.parse(t); } }; } };
 return { financeQuote, financeOptions, financeAuthText, FINANCING, buildEmailFor_, financeReply_, financeServe_,
   adminFinanceCharge, adminFinanceDisclosure, financeOut_, financeLinkFor_, paymentsTotal_,
+  adminFinanceFollowups, adminFinanceDismiss, finFollowBlocker_, unbuildableMsg_, FIN_FOLLOW_AFTER_MS_,
+  props: function () { return __PROPS; },
   setCtx: function (c) { __CTX = c; } };`)(SENT, SAVES);
 
 console.log('=== the fee table, to the cent ===');
@@ -188,6 +193,52 @@ console.log('=== by phone, without an online authorization ===');
   eq(d.payments[0].amt, P.financeQuote(1000, 'syf6').total, 'for the plan priced on what was owed');
 }
 
+console.log('=== follow-ups: applied, never authorized ===');
+{
+  B.props().FIN_APPLIED = '{}';
+  const d = quote({ quoteNo: 'QW-26-9301', phone: '8155550100', payments: [], lines: [{ sec: 'Storage', label: 'Inside', amt: 1000 }] });
+  B.setCtx(ctxFor(d));
+  eq(B.buildEmailFor_(d, 'finfollow', 'approved', ''), null, 'no plan picked: no follow-up');
+  eq(B.unbuildableMsg_('finfollow', d), B.finFollowBlocker_(d), 'and preview/send give the blocker\'s reason');
+  B.financeServe_({ quote: d.quoteNo, ln: 'fixture', step: 'apply', term: 'syf12' });
+  const idx = JSON.parse(B.props().FIN_APPLIED);
+  eq(Object.keys(idx), ['QW-26-9301'], 'clicking Apply puts them in the follow-up index');
+  eq(B.adminFinanceFollowups('t').due.length, 0, 'not on the list inside the first day');
+  eq(B.adminFinanceFollowups('t').recent, 1, '— counted as applied recently');
+  idx['QW-26-9301'].at = new Date(Date.now() - B.FIN_FOLLOW_AFTER_MS_ - 60000).toISOString();
+  B.props().FIN_APPLIED = JSON.stringify(idx);
+  const due = B.adminFinanceFollowups('t').due;
+  eq(due.length === 1 && due[0].qn, 'QW-26-9301', 'a day later they are on the list');
+  eq(!!(due[0].first && due[0].phone), true, 'with the name and phone the Business Center lookup needs');
+
+  const ap = B.buildEmailFor_(d, 'finfollow', 'approved', '');
+  has(ap && ap.html, 'one step left', '"approved" says one step left');
+  has(ap && ap.html, 'plan=syf12&go=auth', 'and links straight to the authorize step with their plan picked');
+  has(ap && ap.html, '$1,044.39', 'with the total priced on what is owed now');
+  eq(ap && ap.status, '', 'it sets no status');
+  const ny = B.buildEmailFor_(d, 'finfollow', 'notyet', '');
+  has(ny && ny.html, 'Finance with Synchrony', '"still want to finance?" offers the finance link');
+  has(ny && ny.html, B.FINANCING && 'Pay online', 'and another way to pay');
+  hasnt(ny && ny.html, 'go=auth', 'without jumping to the authorize step');
+  hasnt(((ny && ny.html) || '') + ((ap && ap.html) || ''), 'declin', 'neither version ever says declined');
+
+  B.financeServe_(AUTH({ quote: d.quoteNo }));
+  eq(Object.keys(JSON.parse(B.props().FIN_APPLIED)).length, 0, 'authorizing takes them off the list');
+  eq(B.buildEmailFor_(d, 'finfollow', 'approved', ''), null, 'and there is nothing left to chase');
+
+  const d2 = quote({ quoteNo: 'QW-26-9302', payments: [] });
+  B.setCtx(ctxFor(d2));
+  B.financeServe_({ quote: d2.quoteNo, ln: 'fixture', step: 'apply', term: 'syf6' });
+  eq(Object.keys(JSON.parse(B.props().FIN_APPLIED)), ['QW-26-9302'], 'a second applicant goes on');
+  B.adminFinanceDismiss('t', d2.quoteNo);
+  eq(Object.keys(JSON.parse(B.props().FIN_APPLIED)).length, 0, '"Not financing" takes them off');
+  eq(!!B.financeOut_(d2).dismissed, true, 'and the console shows it');
+  B.financeServe_({ quote: d2.quoteNo, ln: 'fixture', step: 'apply', term: 'syf6' });
+  eq(Object.keys(JSON.parse(B.props().FIN_APPLIED)), ['QW-26-9302'], 'applying again puts them back');
+  B.props().FIN_APPLIED = '{not json';
+  eq(B.adminFinanceFollowups('t').due.length, 0, 'a corrupt index reads as an empty list, not an error');
+}
+
 console.log('=== the page ===');
 {
   hasnt(page, 'financeQuote(', 'the page never works out a fee itself — it draws the server\'s figures');
@@ -198,6 +249,7 @@ console.log('=== the page ===');
   if (/\bSSN\b|social security|id="aAcct|id="aSsn/i.test(page.replace(/never ask for your account number|never an SSN|never an account number/gi, '')))
     fail('the page asks for an SSN or an account number');
   else ok('the page never asks for an SSN or an account number');
+  has(page, "q.get('go')", 'the page opens on the authorize step when the email asks it to');
   has(page, "window.open(DATA.applyUrl, '_blank')", 'the application opens in a new tab, so this page is still here to come back to');
 }
 

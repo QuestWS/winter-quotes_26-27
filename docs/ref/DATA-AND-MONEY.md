@@ -270,25 +270,54 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
   The older fee sheet that shows $1,030.93 predates POS+.
 - **`applyUrl` empty turns all of it off** — the email button, the page and the
   POST — the same way an empty `SIGNING.webFormUrl` turns off signing.
-- **The flow (phase 1):** the last-call email's *Finance with Synchrony* button
-  (only when something is owed) → `finance.html?quote=…&ln=…` → the server
-  prices every term on the balance owed **now** (`financeRead_`) → the customer
-  picks one → POST `api:'finance'` (`financeServe_`) stores it as `d.finance`
-  and emails service@ once → the page sends them to the Synchrony Sport
-  application. Staff watch for the approval, run the charge in Synchrony, press
-  **Add the admin fee to the invoice** in the console's payment card
-  (`adminFinanceFee`), and record the payment with method *Synchrony*.
-- **Picking a plan changes nothing on the quote.** Many people will look and
-  then pay another way; their invoice must not move. Only the staff button
-  adds the fee — one Adjustments line in the manual journal, so a re-price
-  replays it — priced on the balance at that moment, and **never twice** (the
-  second press would charge the fee on the fee).
+- **The flow** (no Synchrony API; that is on the back burner — Chris, Nov 2026):
+  1. The last-call email's *Finance with Synchrony* button (only when something
+     is owed) opens `finance.html?quote=…&ln=…`; the server prices every plan
+     on the balance owed **now** (`financeRead_`).
+  2. The customer picks a plan. **No account yet:** *Apply for Synchrony* opens
+     the Synchrony Sport application in a **new tab** (step `apply`, noted
+     quietly — Synchrony tells the dealer about approvals itself); they come
+     back to the same link once approved.
+  3. **Have an account:** they **authorize** — name and phone as on the account,
+     a tick box over the exact sentence (`FINANCING.authText` via
+     `financeAuthText`: amount, plan, admin fee, disclosure to sign in person)
+     and their typed name. Stored word for word as `d.finance.auth`; service@
+     gets **READY TO CHARGE** with the lookup details (`notifyFinanceAuth_`).
+  4. Staff look them up in the Business Center by **Name & Phone Number**, run
+     the sale, and enter the **approval code** in the console's payment card:
+     `adminFinanceCharge` adds the admin fee line, records the payment
+     (method `Synchrony 12 months — approval …`), saves once, emails the
+     receipt.
+  5. The **rate disclosure** is then flagged at the top of the quote
+     (`d.finance.disclosure`: `needed` → `digital` → `inperson`,
+     `adminFinanceDisclosure`) until they sign in person — customers come in
+     whenever suits them, so the flag lives on the screen whoever is at the
+     counter opens. Not on the search list: that reads only the light columns,
+     and reading every payload to tag it is what made the console slow.
+- **Never an account number, never an SSN.** The Business Center's *Name &
+  Phone Number* lookup is enough, so we hold no card data (and stay out of
+  PCI scope). `tools/check-finance.js` fails a page that asks for either.
+- **The disclosure form** (`FINANCING.disclosureForm.url`) is an Adobe
+  Sign web form for a digital copy on file until the in-person signature;
+  empty hides it everywhere. It pre-fills `Quote_Number`, `Finance_Plan`,
+  `Finance_Amount` from the link — those names must match the form's fields
+  exactly, or the fields are silently blank.
+- **The charge refuses rather than guesses:** no approval code; the balance
+  moved since the authorization (the console marks it *stale* — they
+  re-authorize at the same link, or staff tick **Authorized by phone**, which
+  is recorded as such); or already recorded (a second press would double the
+  payment).
+- **Picking a plan or authorizing changes nothing on the quote.** Only the
+  recorded charge adds the fee — one Adjustments line in the manual journal,
+  so a re-price replays it. Once charged, changing plans is a phone call.
 - **Same safety as the quotes page:** read by GET with quote number + last
   name (`offersCtx_`, one error for any miss), chosen by POST only (a link
-  scanner can never pick a plan), stamped `_api:'finance'`, idempotent (the
-  same plan again emails nobody). Once the fee is on the invoice, changing the
-  plan is a phone call.
-- **Phase 2, not built:** Synchrony's Digital Buy API would replace the hand-off
-  and the manual charge with an in-page apply-and-buy and a server-confirmed
-  payment. It needs their API docs (developer.syf.com refuses automated
-  readers) and Digital Buy enabled on the Synchrony Sport merchant number.
+  scanner can never act for anybody), stamped `_api:'finance'`, idempotent
+  (the same authorization again emails nobody).
+- **The API, on the back burner:** the developer portal's Getting Started
+  pages (Nov 2026) show OAuth client credentials against `api.syf.com`, 60-minute
+  tokens, staging at `api-stg.syf.com`, and a production certification review;
+  no client certificate or fixed IP. Still unknown until Synchrony grants
+  *Partner* API visibility: whether Digital Buy is available for the Synchrony
+  Sport merchant number, and whether its calls need JWE encryption (Apps
+  Script has no RSA-OAEP built in).

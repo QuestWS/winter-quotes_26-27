@@ -463,6 +463,21 @@ const FINANCING = {
   disclosure: 'Subject to credit approval by Synchrony Bank. Deferred interest: if the purchase is not ' +
     'paid in full within the promotional period, interest is charged from the purchase date. ' +
     'Minimum monthly payments required. The admin fee is added to your balance and financed with it.',
+  /* The customer's written OK for Quest to run the charge — shown above the
+     tick box, and stored word for word with what they ticked. {amount} and
+     {plan} are filled in from financeQuote. */
+  authText: 'I authorize Quest Watersports to charge {amount} to my Synchrony account on the {plan} plan. ' +
+    'I understand this includes the admin fee shown, and that I will sign the Synchrony rate disclosure ' +
+    'in person on my next visit.',
+  /* The rate disclosure as an Adobe Sign web form — a digital copy on file
+     until they sign in person. Empty hides the button everywhere, the way an
+     empty SIGNING.webFormUrl does. The field names must match the form's
+     fields EXACTLY (they pre-fill from the link; a mismatch is silently
+     blank, as with the agreement — docs/adobe-webform-field-map.md). */
+  disclosureForm: {
+    url: '',
+    fields: { quoteNo: 'Quote_Number', plan: 'Finance_Plan', amount: 'Finance_Amount' },
+  },
 };
 /* One term, priced for `amount` (what is still owed). null for an unknown key
    or nothing to finance — callers must treat null as "no such option". */
@@ -474,6 +489,24 @@ function financeQuote(amount, key){
   return { key: t.key, months: t.months, plan: t.plan, pct: t.pct,
            label: t.months + ' months — ' + t.plan,
            base: base, fee: Math.round((total - base) * 100) / 100, total: total };
+}
+/* The authorization sentence for one priced plan. */
+function financeAuthText(q){
+  if (!q) return '';
+  return FINANCING.authText.replace('{amount}', '$' + Number(q.total).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','))
+    .replace('{plan}', q.months + '-month ' + String(q.plan).toLowerCase());
+}
+/* The disclosure web form, pre-filled from the link like the agreement is. */
+function financeDisclosureUrl(o){
+  const f = FINANCING.disclosureForm || {};
+  const base = String(f.url || '').trim().split('#')[0];
+  const qn = String((o && o.quoteNo) || '').trim();
+  if (!base || !qn) return '';
+  const pair = (k, v) => encodeURIComponent(k) + '=' + encodeURIComponent(v);
+  const parts = [pair(f.fields.quoteNo, qn)];
+  if (o.plan) parts.push(pair(f.fields.plan, o.plan));
+  if (o.amount) parts.push(pair(f.fields.amount, Number(o.amount).toFixed(2)));
+  return base + '#' + parts.join('&');
 }
 function financeOptions(amount){
   return FINANCING.terms.map(function(t){ return financeQuote(amount, t.key); }).filter(Boolean);
@@ -1612,7 +1645,8 @@ function consoleFns_(p) {
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
-    financeFee:  function (a) { return adminFinanceFee(p.token, a[0]); },
+    financeCharge:     function (a) { return adminFinanceCharge(p.token, a[0], a[1], a[2], a[3]); },
+    financeDisclosure: function (a) { return adminFinanceDisclosure(p.token, a[0], a[1]); },
     sendEmail:   function (a) { return adminSendEmail(p.token, a[0], a[1], a[2], a[3]); },
     search:      function (a) { return adminSearch(p.token, a[0]); },
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
@@ -10976,22 +11010,26 @@ function adminOfferDecision(token, qn, item, choice, note) {
    email", with an ADMIN FEE per term (FINANCING in the engine; grossed up so
    Quest nets the true amount).
 
-   Phase 1 — what this is:
+   How it runs (no Synchrony API — that is on the back burner):
      1. The email's "Finance with Synchrony" button opens finance.html with the
         quote number and last name (financeLink_, the same pair as quoteLink_).
-     2. The page reads the balance and every term's admin fee and total
+     2. The page reads the balance and every plan's admin fee and total
         (financeRead_), all worked out on the SERVER from what is owed now.
-     3. The customer picks a term. That POST (financeServe_) stores it on the
-        quote as d.finance and emails service@ once — then the page sends them
-        to Quest's Synchrony Sport apply link.
-     4. Staff run the charge in Synchrony as they do at the counter, press
-        "Add the admin fee" in the console (adminFinanceFee — one adjustment
-        line, priced on the balance at that moment, never twice), and record
-        the payment as usual.
-   The choice adds NOTHING to the quote by itself: plenty of people will look
-   at the options and pay another way, and their invoice must not move.
-   Phase 2 (Synchrony's Digital Buy API) would replace step 3's hand-off and
-   step 4's manual charge; it needs their API docs and Digital Buy enabled. */
+     3. The customer picks a plan. No account yet: the Synchrony Sport
+        application opens in a new tab (step 'apply'), and they come back to
+        the same link once approved.
+     4. They AUTHORIZE: name and phone as on the account (what the Business
+        Center's "Name & Phone Number" lookup takes), a tick box over the exact
+        amount and plan, and their typed name (step 'authorize'). service@ gets
+        READY TO CHARGE. We never take an account number or an SSN.
+     5. Staff run the sale in the Business Center and enter the approval code
+        in the console (adminFinanceCharge): admin fee line + payment +
+        receipt in one step, and the rate disclosure flagged.
+     6. The disclosure is signed in person whenever they next come in — an
+        Adobe digital copy can be on file meanwhile (FINANCING.disclosureForm)
+        — and staff mark it (adminFinanceDisclosure).
+   Picking a plan or authorizing adds NOTHING to the quote: only the recorded
+   charge does, so somebody who looks and then pays another way is untouched. */
 const FINANCE_PAGE_URL = QUOTE_PAGE_URL + 'finance.html';
 function financeLink_(quoteNo, lastName) {
   const qn = String(quoteNo || '').trim(), ln = String(lastName || '').trim();
@@ -11001,23 +11039,50 @@ function financeLink_(quoteNo, lastName) {
 function financeLinkFor_(d) { return isStartedQuote_(d) ? '' : financeLink_(d && d.quoteNo, d && d.lastName); }
 function financeBalance_(d) { return Math.round((Number(d.total || 0) - paymentsTotal_(d)) * 100) / 100; }
 
-/* What the customer chose, priced on what they owe now. */
+/* For the console: the plan, the customer's authorization, the charge and
+   the disclosure — and what the plan comes to on what is owed NOW, so staff
+   can see when a re-price has moved the balance since they authorized. */
 function financeOut_(d) {
   const f = d && d.finance;
   if (!f || !f.key) return null;
   const now = financeQuote(financeBalance_(d), f.key);
+  const au = f.auth || null;
   return { key: f.key, label: String(f.label || ''), pct: Number(f.pct) || 0, at: String(f.at || ''),
-    chosenOn: { base: Number(f.base) || 0, fee: Number(f.fee) || 0, total: Number(f.total) || 0 },
+    applyAt: String(f.applyAt || ''),
     now: now ? { base: now.base, fee: now.fee, total: now.total } : null,
-    feeApplied: f.feeApplied || null };
+    auth: au ? { first: au.first, last: au.last, phone: au.phone, sig: au.sig, at: au.at,
+                 base: au.base, fee: au.fee, total: au.total, label: au.label, text: au.text } : null,
+    /* The balance has moved since they authorized: charging the old figure
+       would be wrong, charging a new one is not what they agreed to. */
+    stale: !!(au && Math.abs(Number(au.base) - financeBalance_(d)) > 0.005 && !f.charged),
+    charged: f.charged || null,
+    feeApplied: f.feeApplied || null,
+    disclosure: f.disclosure || null,
+    disclosureUrl: f.charged || au ? financeDisclosureUrlFor_(d) : '' };
 }
+function financeDisclosureUrlFor_(d) {
+  const f = (d && d.finance) || {};
+  const amt = (f.charged && f.charged.amt) || (f.auth && f.auth.total) || 0;
+  return financeDisclosureUrl({ quoteNo: d.quoteNo, plan: f.label || '', amount: amt });
+}
+/* What the customer's page needs, and nothing more. The name and phone are
+   offered back to pre-fill the authorization — the same details the quote
+   page already returns to anyone holding this quote number and last name. */
 function financeReply_(d) {
   const bal = financeBalance_(d);
   const f = d.finance || null;
+  const au = f && f.auth;
   return { ok: 1, quoteNo: d.quoteNo || '', firstName: d.firstName || '', unit: d.unit || '',
     term: docTerm_(d), balance: Math.max(0, bal), feeLabel: FINANCING.feeLabel,
-    options: financeOptions(bal), disclosure: FINANCING.disclosure,
+    options: financeOptions(bal).map(function (o) { o.authText = financeAuthText(o); return o; }),
+    disclosure: FINANCING.disclosure,
     applyUrl: FINANCING.applyUrl || '', chosen: f && f.key ? f.key : '',
+    prefill: { first: d.firstName || '', last: d.lastName || '', phone: fmtPhone(String(d.phone || '')) },
+    authorized: au && !(Math.abs(Number(au.base) - bal) > 0.005) ? { key: au.key, label: au.label, total: au.total, at: au.at,
+      /* "12-month deferred interest" — the way the authorization sentence says it. */
+      phrase: String(au.label || '').replace(/^(\d+) months — (.*)$/, function (m, n, p) { return n + '-month ' + p.toLowerCase(); }) } : null,
+    charged: !!(f && f.charged),
+    disclosureUrl: au || (f && f.charged) ? financeDisclosureUrlFor_(d) : '',
     feeApplied: !!(f && f.feeApplied), quoteUrl: quoteLinkFor_(d) };
 }
 function financeRead_(quote, ln) {
@@ -11026,10 +11091,19 @@ function financeRead_(quote, ln) {
   return ctx ? financeReply_(ctx.d) : { ok: 0, error: OFFERS_MISS_ };
 }
 
-/* The customer's pick. POST only (doPost routes api:'finance' here), stamped
-   _api:'finance' like the offers page, idempotent: the same term again changes
-   nothing and emails nobody. Once staff have put the admin fee on the invoice
-   the plan is settled, and changing it is a phone call. */
+/* The customer's two actions on finance.html, both POST only (doPost routes
+   api:'finance' here), stamped _api:'finance', idempotent:
+     step 'apply'     — they picked a plan and are off to the Synchrony
+                        application. Recorded quietly (Activity Log only):
+                        Synchrony tells the dealer about approvals itself.
+     step 'authorize' — their written OK for Quest to charge the plan's total
+                        to their Synchrony account. Stored word for word, with
+                        the name and phone the Business Center looks them up
+                        by ("Name & Phone Number"), and service@ is told once:
+                        READY TO CHARGE.
+   Never an account number, never an SSN: the Business Center finds them by
+   name and phone, so we never hold card data. Once the charge is recorded the
+   plan is settled — changing it is a phone call. */
 function financeServe_(b) {
   const json = function (o) {
     o._api = 'finance';
@@ -11037,6 +11111,8 @@ function financeServe_(b) {
   };
   try {
     if (!FINANCING.applyUrl) return json({ ok: 0, error: 'Online financing isn\'t open yet — please call us at (815) 433-2200.' });
+    const step = String((b && b.step) || 'apply');
+    if (step !== 'apply' && step !== 'authorize') return json({ ok: 0, error: 'Unknown request.' });
     const key = String((b && b.term) || '');
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) return json({ ok: 0, error: 'We\'re busy for a moment — please try again.' });
@@ -11044,92 +11120,186 @@ function financeServe_(b) {
       const ctx = offersCtx_(b.quote, b.ln);
       if (!ctx) return json({ ok: 0, error: OFFERS_MISS_ });
       const d = ctx.d;
-      const bal = financeBalance_(d);
-      if (!(bal > 0.005)) return json(Object.assign(financeReply_(d), { ok: 0, error: 'There is no balance left to finance on this ' + docTerm_(d).toLowerCase() + '.' }));
-      const q = financeQuote(bal, key);
-      if (!q) return json(Object.assign(financeReply_(d), { ok: 0, error: 'Pick one of the plans above.' }));
-      const f = d.finance || null;
-      if (f && f.feeApplied && f.key !== key) {
-        return json(Object.assign(financeReply_(d), { ok: 0, error: 'Your plan is already set up on your ' +
-          docTerm_(d).toLowerCase() + '. To change it, please call us at (815) 433-2200.' }));
+      const f0 = d.finance || null;
+      const reply = function (extra) { return json(Object.assign(financeReply_(d), extra || {})); };
+      if (f0 && (f0.charged || f0.feeApplied)) {
+        return reply({ ok: 0, error: 'Your Synchrony plan is already set up on your ' + docTerm_(d).toLowerCase() +
+          '. To change anything, please call us at (815) 433-2200.' });
       }
-      const same = f && f.key === key && Math.abs(Number(f.base) - q.base) < 0.005;
+      const bal = financeBalance_(d);
+      if (!(bal > 0.005)) return reply({ ok: 0, error: 'There is no balance left to finance on this ' + docTerm_(d).toLowerCase() + '.' });
+      const q = financeQuote(bal, key);
+      if (!q) return reply({ ok: 0, error: 'Pick one of the plans above.' });
+      const when = new Date().toLocaleString();
+      const f = d.finance = Object.assign({}, f0 || {}, { key: q.key, label: q.label, pct: q.pct, base: q.base,
+        fee: q.fee, total: q.total, at: (f0 && f0.key === q.key && f0.at) || when });
+      const nm = function (v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 60); };
+
+      if (step === 'apply') {
+        const fresh = !f0 || !f0.applyAt || f0.key !== q.key;
+        f.applyAt = f.applyAt || when;
+        if (fresh) {
+          ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+          auditLog_('Customer', 'Went to the Synchrony application from ' + d.quoteNo + ' (' + q.label + ')');
+        }
+        return reply({ msg: 'Opening the Synchrony application.' });
+      }
+
+      /* authorize */
+      const first = nm(b.first), last = nm(b.last), sig = nm(b.sig);
+      const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
+      if (!first || !last) return reply({ ok: 0, error: 'Enter your first and last name as they appear on your Synchrony account.' });
+      if (phone.length !== 10) return reply({ ok: 0, error: 'Enter the 10-digit phone number on your Synchrony account.' });
+      if (b.agree !== true) return reply({ ok: 0, error: 'Tick the box to authorize the charge.' });
+      if (!sig) return reply({ ok: 0, error: 'Type your full name to sign.' });
+      const text = financeAuthText(q);
+      const prev = f0 && f0.auth;
+      const same = prev && prev.key === q.key && Math.abs(Number(prev.base) - q.base) < 0.005 &&
+        prev.first === first && prev.last === last && prev.phone === phone && prev.sig === sig;
       if (!same) {
-        d.finance = { key: q.key, label: q.label, pct: q.pct, base: q.base, fee: q.fee, total: q.total,
-          at: new Date().toLocaleString(), was: f && f.key && f.key !== key ? f.label : '',
-          feeApplied: (f && f.feeApplied) || null };
-        /* The payload only: nothing on the quote moved, so no PDF rebuild and
-           no status change. */
+        f.auth = { key: q.key, label: q.label, base: q.base, fee: q.fee, total: q.total, first: first, last: last,
+          phone: phone, sig: sig, agree: true, text: text, at: when };
         ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
         invalidateStorageView_();
-        auditLog_('Customer', 'Chose Synchrony ' + q.label + ' on ' + d.quoteNo + ' — ' + FINANCING.feeLabel.toLowerCase() +
-          ' ' + usd_(q.fee) + ' on ' + usd_(q.base) + ' = ' + usd_(q.total));
-        notifyFinanceChoice_(ctx, q, d.finance.was);
+        auditLog_('Customer', 'Authorized a Synchrony charge on ' + d.quoteNo + ': ' + usd_(q.total) + ', ' + q.label +
+          ' (' + FINANCING.feeLabel.toLowerCase() + ' ' + usd_(q.fee) + '), signed "' + sig + '"');
+        notifyFinanceAuth_(ctx, f.auth, prev);
       }
-      return json(Object.assign(financeReply_(d), { msg: 'Saved — taking you to Synchrony.' }));
+      return reply({ msg: 'Thank you — you\'ve authorized ' + usd_(q.total) + ' on the ' + q.months + '-month plan. ' +
+        'We\'ll run it on your Synchrony account and email your receipt.' });
     } finally { lock.releaseLock(); }
   } catch (err) {
-    console.error('Finance choice failed: ' + err);
+    console.error('Finance request failed: ' + err);
     return json({ ok: 0, error: 'Something went wrong saving that — please call us at (815) 433-2200.' });
   }
 }
 
-/* One email to the office per choice (never the customer). */
-function notifyFinanceChoice_(ctx, q, was) {
+/* One email to the office per authorization (never the customer): everything
+   staff need to find the account in the Business Center and run it. */
+function notifyFinanceAuth_(ctx, au, prev) {
   try {
     const d = ctx.d;
     const name = [d.firstName, d.lastName].filter(Boolean).join(' ');
-    const subject = 'Synchrony — ' + (d.quoteNo || '') + ' · ' + (name || '') + ' chose ' + q.months + ' months';
+    const subject = 'READY TO CHARGE — Synchrony ' + usd_(au.total) + ' · ' + (d.quoteNo || '') + ' · ' + (name || '');
     const body = [
-      'The customer picked a Synchrony plan online and was sent to the Synchrony Sport application.',
-      was ? '(They had picked ' + was + ' before.)' : '',
+      'The customer authorized a Synchrony charge online.' + (prev ? ' (This replaces their earlier authorization.)' : ''),
       '',
-      'Plan:       ' + q.label,
-      'Balance:    ' + usd_(q.base),
-      FINANCING.feeLabel + ':  ' + usd_(q.fee) + ' (' + q.pct + '%, grossed up)',
-      'To charge:  ' + usd_(q.total),
+      'Look them up in the Business Center by NAME & PHONE NUMBER:',
+      '  First name: ' + au.first,
+      '  Last name:  ' + au.last,
+      '  Phone:      ' + fmtPhone(au.phone),
       '',
-      'Next: watch for the approval in Synchrony, run the charge for the amount above, then in the console',
-      'press "Add the admin fee" on this quote and record the payment as Synchrony.',
+      'Plan:        ' + au.label,
+      'Balance:     ' + usd_(au.base),
+      FINANCING.feeLabel + ':   ' + usd_(au.fee),
+      'CHARGE:      ' + usd_(au.total),
+      '',
+      'They agreed: "' + au.text + '"',
+      'Signed (typed): ' + au.sig + ' — ' + au.at,
+      '',
+      'Then in the console: open the quote, enter the Synchrony approval code, and press "Record the Synchrony charge".',
+      'That adds the admin fee, records the payment and emails their receipt. The rate disclosure is then flagged',
+      'until they sign it in person.',
       '',
       'Quote #:  ' + (d.quoteNo || ''),
-      'Customer: ' + (name || '—'),
-      'Phone:    ' + (fmtPhone(String(d.phone || ctxCell_(ctx, COL.PHONE) || '')) || '—'),
       'Email:    ' + (d.email || '—'),
       '', 'Open it: ' + QUOTE_PAGE_URL + 'admin/?q=' + encodeURIComponent(d.quoteNo || '')
-    ].filter(function (x, i) { return x !== '' || i !== 1; }).join('\n');
+    ].join('\n');
     const opts = { name: 'Quest Winter Quotes' };
     if (FROM_ALIAS) { opts.from = FROM_ALIAS; GmailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts); }
     else MailApp.sendEmail(NOTIFY_EMAIL, subject, body, opts);
   } catch (e) { console.error('Finance notice failed for ' + (ctx && ctx.d && ctx.d.quoteNo) + ': ' + e); }
 }
 
-/* Staff: put the admin fee for the customer's chosen term on the invoice, as
-   one Adjustments line (the same journal entry adminAdjust writes, so a
-   re-price replays it). Priced on the balance NOW — after a re-price or a
-   payment the fee follows. Never twice: a second press is refused, because
-   the fee would then be charged on the fee. */
-function adminFinanceFee(token, qn) {
-  const who = requireAuth_(token, 'adjust');
+/* Staff, after running the sale in the Synchrony Business Center: ONE step
+   that adds the admin fee line, records the payment (method names the plan
+   and the approval code), saves once, emails the receipt and flags the rate
+   disclosure for signing in person.
+
+   It refuses rather than guess:
+     - no approval code (it is the only link between our payment and theirs);
+     - the balance has moved since the customer authorized — they agreed to a
+       figure, and this would charge a different one. They re-authorize at the
+       same link, or staff take it by phone (byPhone);
+     - already recorded (a second press would double the payment).
+   byPhone: the customer gave the OK on the phone instead of online. Staff
+   tick it; it is recorded with their name. */
+function adminFinanceCharge(token, qn, code, byPhone, sendReceipt) {
+  const who = requireAuth_(token, 'pay');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   const f = d.finance;
   if (!f || !f.key) return { ok: 0, error: 'The customer has not picked a Synchrony plan.' };
-  if (f.feeApplied) return { ok: 0, error: 'The admin fee is already on this ' + docTerm_(d).toLowerCase() + ' (' +
-    usd_(f.feeApplied.amt) + ', ' + (f.feeApplied.at || '') + '). Remove that line first if it is wrong.' };
-  const q = financeQuote(financeBalance_(d), f.key);
-  if (!q || !(q.fee > 0.005)) return { ok: 0, error: 'Nothing is owed, so there is no admin fee to add.' };
-  const label = FINANCING.feeLabel + ' — Synchrony ' + q.label.toLowerCase();
-  d.lines = d.lines || [];
-  d.lines.push({ sec: 'Adjustments', label: label, calc: '', amt: q.fee, desc: '' });
-  ensureManual_(d).adjustments.push({ label: label, amt: q.fee });
-  recomputeTotals_(d);
-  f.feeApplied = { amt: q.fee, base: q.base, total: q.total, at: new Date().toLocaleString(), by: who.name };
-  saveQuoteRow_(ctx);
-  auditLog_(who.name, FINANCING.feeLabel + ' +' + usd_(q.fee) + ' (Synchrony ' + q.label + ') on ' + d.quoteNo);
-  return { ok: 1, msg: FINANCING.feeLabel + ' ' + usd_(q.fee) + ' added. Charge ' + usd_(q.total) +
-    ' in Synchrony, then record it as a payment. No email sent.' };
+  if (f.charged) return { ok: 0, error: 'Already recorded: ' + usd_(f.charged.amt) + ', approval ' + f.charged.code +
+    ' (' + f.charged.at + '). Nothing was added.' };
+  const appr = String(code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9-]{3,20}$/.test(appr)) return { ok: 0, error: 'Enter the approval code from the Synchrony sale.' };
+  const bal = financeBalance_(d);
+  const au = f.auth || null;
+  if (!au && !byPhone) return { ok: 0, error: 'They have not authorized it online. If they gave you the OK on the phone, tick "Authorized by phone".' };
+  if (au && !byPhone && Math.abs(Number(au.base) - bal) > 0.005) {
+    return { ok: 0, error: 'The balance has changed since they authorized (' + usd_(au.base) + ' then, ' + usd_(bal) +
+      ' now). Ask them to authorize again at the same link, or get their OK by phone and tick "Authorized by phone".' };
+  }
+  /* The old fee-only button may already have put the fee on: then the
+     balance already includes it and is the amount charged. */
+  let fee = 0, amt;
+  if (f.feeApplied) {
+    amt = bal;
+  } else {
+    const q = financeQuote(bal, f.key);
+    if (!q) return { ok: 0, error: 'Nothing is owed, so there is nothing to charge.' };
+    fee = q.fee; amt = q.total;
+    const label = FINANCING.feeLabel + ' — Synchrony ' + q.label.toLowerCase();
+    d.lines = d.lines || [];
+    d.lines.push({ sec: 'Adjustments', label: label, calc: '', amt: fee, desc: '' });
+    ensureManual_(d).adjustments.push({ label: label, amt: fee });
+    recomputeTotals_(d);
+    f.feeApplied = { amt: fee, base: q.base, total: q.total, at: new Date().toLocaleString(), by: who.name };
+  }
+  const method = 'Synchrony ' + (f.label || '').split(' — ')[0] + ' — approval ' + appr;
+  d.payments = d.payments || [];
+  d.payments.push({ amt: amt, method: method, date: new Date().toLocaleDateString(),
+                    at: new Date().toISOString(), by: who.name });
+  f.charged = { amt: amt, fee: fee, code: appr, at: new Date().toLocaleString(), by: who.name,
+                authorized: au && !byPhone ? 'online' : 'phone' };
+  /* Signed digitally already? Keep it; the in-person copy is still owed. */
+  f.disclosure = f.disclosure && f.disclosure.state === 'digital' ? f.disclosure : { state: 'needed', at: f.charged.at };
+  const paid = paymentsTotal_(d);
+  const left = Number(d.total || 0) - paid;
+  const status = left < -0.005 ? 'CREDIT DUE ' + usd_(-left) : left <= 0.005 ? 'Paid in full' : 'Payment received — balance ' + usd_(left);
+  const pdfUrl = saveQuoteRow_(ctx, status);
+  auditLog_(who.name, 'Synchrony charge ' + usd_(amt) + ' on ' + d.quoteNo + ' (' + f.label + ', approval ' + appr +
+    (fee ? ', ' + FINANCING.feeLabel.toLowerCase() + ' ' + usd_(fee) : '') + ', authorized ' + f.charged.authorized + ') → ' + status);
+  let receiptMsg = '';
+  if (sendReceipt && d.email) {
+    sendCustomerEmail_(d, '', false, { amt: amt, method: method });
+    recordEmail_(ctx.sh, ctx.rowNum, d, 'receipt', who.name);
+    receiptMsg = ' Receipt emailed to ' + d.email + '.';
+  }
+  sendNotification_(d, ctx.sh.getName(), true, pdfUrl);
+  return { ok: 1, msg: 'Recorded the Synchrony charge of ' + usd_(amt) + (fee ? ' (includes the ' + usd_(fee) + ' admin fee)' : '') +
+    ' — ' + status + '.' + receiptMsg + ' Rate disclosure flagged until they sign it in person.' };
+}
+
+/* The rate disclosure: 'digital' (they signed the Adobe copy), 'inperson'
+   (signed at the counter — done), or 'needed' (undo). Shown at the top of the
+   quote in the console until it is signed in person. */
+function adminFinanceDisclosure(token, qn, state) {
+  const who = requireAuth_(token, 'pay');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const f = d.finance;
+  if (!f || !f.key) return { ok: 0, error: 'No Synchrony plan on this quote.' };
+  const st = String(state || '');
+  if (['needed', 'digital', 'inperson'].indexOf(st) < 0) return { ok: 0, error: 'Unknown disclosure state.' };
+  f.disclosure = { state: st, at: new Date().toLocaleString(), by: who.name };
+  ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
+  auditLog_(who.name, 'Synchrony rate disclosure on ' + d.quoteNo + ': ' + st);
+  return { ok: 1, msg: st === 'inperson' ? 'Rate disclosure signed in person — done.'
+    : st === 'digital' ? 'Digital copy on file. Still to sign in person.' : 'Marked as still to sign.' };
 }
 
 /* The customer's quote, found by number and checked against the last name —

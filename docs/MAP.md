@@ -86,8 +86,8 @@ symptom.
 | The pause switch | `autoPauseState_`, `autoEmailsPaused_`, `adminSetAutoPause` | `.gs` |
 | Send to all | `bulkTargets_`, `bulkFilterTargets_`, `bulkSendKind_` | `.gs` |
 | The firm quote (rates final) and whether a quote may get it | `firmQuoteBlocker_`, `priceStampStale_` (kind `firmquote` in `buildEmailFor_`) | `.gs` |
-| Synchrony financing: terms, admin fee math, apply link | `FINANCING`, `financeQuote`, `financeOptions` | `pricing-engine.js` |
-| The finance page's read, the customer's plan choice, the office notice, the console's admin-fee button | `financeRead_`, `financeServe_`, `notifyFinanceChoice_`, `adminFinanceFee`, `financeOut_`, `financeLinkFor_` · `renderFinance` | `.gs` · `finance.html` · `admin/index.html` |
+| Synchrony financing: terms, admin fee math, apply link, authorization wording, disclosure form | `FINANCING`, `financeQuote`, `financeOptions`, `financeAuthText`, `financeDisclosureUrl` | `pricing-engine.js` |
+| The finance page's read, apply / authorize, READY TO CHARGE notice, recording the Synchrony charge, the rate-disclosure flag | `financeRead_`, `financeServe_`, `notifyFinanceAuth_`, `adminFinanceCharge`, `adminFinanceDisclosure`, `financeOut_`, `financeLinkFor_` · `renderFinance` | `.gs` · `finance.html` · `admin/index.html` |
 | Last call for storage (no deposit / agreement before the pay-by date) and who may get it | `lastCallBlocker_`, `lastCallPastDeadline_` (kind `lastcall` in `buildEmailFor_`) | `.gs` |
 | Typed CC addresses in the email preview | `staffExtras_` (`ccTo`, `badCc`, `CC_TYPED_MAX_`) · `pvStaff` / `pvCcTo` | `.gs` · `admin/index.html` |
 | Drafts instead of sends, and the 6:30pm sweep that records them | `adminBulkDraft`, `draftOpts_`, `openDraftFor_`, `draftSweep_`, `draftWasSent_`, `draftSweepCheck`, `adminDraftSweep` | `.gs` (console: `doBulkSend`, `runDraftSweep`) |

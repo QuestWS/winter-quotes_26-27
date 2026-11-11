@@ -646,6 +646,10 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
             <!-- Not storing this season: shown to everyone who opens the
                  quote, so nobody chases a customer who already said no. -->
             <div class="nsbox hide" id="qNotStoring"></div>
+            <!-- Synchrony rate disclosure still to sign in person. Customers come
+                 in whenever suits them, so this sits at the top of their quote —
+                 the screen whoever is at the counter opens — until it is signed. -->
+            <div class="hide" id="qFinDisc" style="border:2px solid var(--gold);border-radius:8px;padding:10px 12px;margin-top:10px;background:var(--gold-soft)"></div>
             <div class="custnote hide" id="qCustNote"></div>
             <div class="hide" id="custNoteEdit" style="margin-top:10px">
               <label class="fld">Customer note — prints on the quote PDF and shows on their quote page</label>
@@ -3321,35 +3325,83 @@ async function delLine(i){
   }catch(e){toast(e.message);}
 }
 
-/* ---- Synchrony: the plan the customer picked, and the admin fee ----
-   Everything here comes from the server (financeOut_): the fee is worked out
-   on what they owe NOW, so after a payment or a re-price it follows. The
-   button adds it once (adminFinanceFee refuses a second press). */
+/* ---- Synchrony: plan, authorization, charge, rate disclosure ----
+   Everything comes from the server (financeOut_). The charge is ONE step:
+   staff run the sale in the Synchrony Business Center, type the approval code
+   here, and adminFinanceCharge adds the admin fee line, records the payment
+   and emails the receipt. Then the disclosure is flagged at the top of the
+   quote until it is signed in person. */
 function renderFinance(P){
-  const b=$('finBox'); if(!b) return;
+  const b=$('finBox'), top=$('qFinDisc'); if(!b) return;
   const f=window._finance;
-  if(!f){b.classList.add('hide');b.innerHTML='';return;}
-  const n=f.now;
-  let h='<div style="font-weight:700;color:var(--navy)">Synchrony — '+esc(f.label)+'</div>'+
-    '<div class="msg" style="margin:2px 0 6px">Picked online '+esc(f.at||'')+'</div>';
-  if(f.feeApplied){
-    h+='<div style="font-size:14px">Admin fee <b>'+fmt$(f.feeApplied.amt)+'</b> is on the invoice ('+esc(f.feeApplied.at||'')+
-      (f.feeApplied.by?', '+esc(f.feeApplied.by):'')+'). Charge <b>'+fmt$(f.feeApplied.total)+'</b> in Synchrony, '+
-      'then record it below with method <b>Synchrony</b>.</div>';
-  } else if(n){
-    h+='<div style="font-size:14px">On today\'s balance of <b>'+fmt$(n.base)+'</b>: admin fee <b>'+fmt$(n.fee)+'</b> ('+
-      f.pct+'%) — charge <b>'+fmt$(n.total)+'</b> in Synchrony.</div>'+
-      (P.adjust?'<button class="btn gold sm" id="finFeeBtn" style="margin-top:8px" onclick="addFinanceFee()">Add the admin fee to the invoice</button>':'')+
-      '<div class="msg" id="finMsg"></div>';
+  if(!f){b.classList.add('hide');b.innerHTML='';if(top){top.classList.add('hide');top.innerHTML='';}return;}
+  const au=f.auth, n=f.now, ch=f.charged;
+  let h='<div style="font-weight:700;color:var(--navy)">Synchrony — '+esc(f.label)+'</div>';
+  if(ch){
+    h+='<div style="font-size:14px;margin-top:4px">Charged <b>'+fmt$(ch.amt)+'</b>'+(ch.fee?' (incl. admin fee '+fmt$(ch.fee)+')':'')+
+      ' — approval <b>'+esc(ch.code)+'</b>, '+esc(ch.at||'')+(ch.by?', '+esc(ch.by):'')+
+      ' · authorized '+(ch.authorized==='online'?'online':'by phone')+'.</div>';
+  } else if(au){
+    h+='<div class="msg" style="margin:2px 0 6px">'+(f.stale?'<b style="color:var(--red)">The balance has changed since they authorized.</b> ':'')+
+      'Authorized online '+esc(au.at||'')+' — signed “'+esc(au.sig)+'”.</div>'+
+      '<div style="font-size:14px;line-height:1.5">Business Center → lookup by <b>Name &amp; Phone Number</b>:<br>'+
+      '<b>'+esc(au.first)+' '+esc(au.last)+'</b> · <b>'+esc(QP&&QP.fmtPhone?QP.fmtPhone(au.phone):au.phone)+'</b><br>'+
+      'Run a sale of <b>'+fmt$(au.total)+'</b> on the <b>'+esc(f.label.toLowerCase())+'</b> promotion '+
+      '(balance '+fmt$(au.base)+' + admin fee '+fmt$(au.fee)+').</div>'+
+      (f.stale&&n?'<div class="msg" style="margin-top:4px">Today\'s balance is '+fmt$(n.base)+' → '+fmt$(n.total)+
+        ' with the fee. Ask them to authorize again at the same link, or get their OK by phone.</div>':'');
   } else {
-    h+='<div style="font-size:14px">Nothing is owed now, so there is no admin fee to add.</div>';
+    h+='<div class="msg" style="margin:2px 0 6px">Picked online '+esc(f.at||'')+(f.applyAt?' · went to the Synchrony application '+esc(f.applyAt):'')+
+      ' — <b>not authorized yet</b>.</div>'+
+      (n?'<div style="font-size:14px">On today\'s balance: '+fmt$(n.base)+' + admin fee '+fmt$(n.fee)+' = <b>'+fmt$(n.total)+'</b>.</div>':'');
   }
+  if(!ch&&P.pay&&(au||n)){
+    h+='<div class="row2" style="margin-top:8px"><div><label class="fld">Synchrony approval code</label>'+
+      '<input class="txt" id="finCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="from the Business Center sale"></div></div>'+
+      '<label class="chk"><input type="checkbox" id="finPhone"'+(au&&!f.stale?'':' checked')+'> Authorized by phone (they gave me the OK)</label>'+
+      '<label class="chk"><input type="checkbox" id="finReceipt" checked> Email receipt to customer</label>'+
+      '<button class="btn gold sm" id="finChargeBtn" onclick="recordFinanceCharge()">Record the Synchrony charge</button>';
+  }
+  h+='<div class="msg" id="finMsg"></div>';
   b.innerHTML=h;b.classList.remove('hide');
+  /* The disclosure, at the top of the quote, until signed in person. */
+  const dz=f.disclosure;
+  if(top){
+    if(ch&&(!dz||dz.state!=='inperson')){
+      const digital=dz&&dz.state==='digital';
+      top.innerHTML='<b>✍ Synchrony rate disclosure — sign in person</b><div style="font-size:14px;margin-top:2px">'+
+        esc(f.label)+', '+fmt$(ch.amt)+'. '+(digital?'Digital copy on file ('+esc(dz.at||'')+'). ':'Not signed yet. ')+
+        'Print it from the Business Center when they\'re in.</div>'+
+        (P.pay?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
+          '<button class="btn gold sm" onclick="setFinanceDisclosure(\'inperson\')">Signed in person</button>'+
+          (digital?'':'<button class="btn ghost sm" onclick="setFinanceDisclosure(\'digital\')">Digital copy signed</button>')+
+          (f.disclosureUrl?'<button class="btn ghost sm" onclick="copyFinDisc()">Copy digital-copy link</button>':'')+
+          '</div>':'')+'<div class="msg" id="finDiscMsg"></div>';
+      top.classList.remove('hide');
+    } else { top.classList.add('hide'); top.innerHTML=''; }
+  }
 }
-async function addFinanceFee(){
-  const f=window._finance; if(!f||!f.now) return;
-  if(!confirm('Add the admin fee of '+fmt$(f.now.fee)+' to '+QN+'?\n\nSynchrony '+f.label+' — the new balance will be '+fmt$(f.now.total)+'.'))return;
-  await act('finFeeBtn','finMsg','financeFee',[QN]);
+/* The Adobe digital-copy link, to text or email to a customer by hand. Kept
+   out of the onclick so no character in the URL can break the handler. */
+async function copyFinDisc(){
+  const u=window._finance&&window._finance.disclosureUrl; if(!u) return;
+  try{ await navigator.clipboard.writeText(u); toast('Link copied — paste it into a text or email'); }
+  catch(e){ setMsg('finDiscMsg','Copy this link: '+u,true); }
+}
+async function recordFinanceCharge(){
+  const f=window._finance; if(!f) return;
+  const code=$('finCode').value.trim();
+  if(!code){setMsg('finMsg','Enter the approval code from the Synchrony sale.',false);return;}
+  const amt=f.auth&&!$('finPhone').checked?f.auth.total:(f.now?f.now.total:0);
+  if(!confirm('Record a Synchrony charge of '+fmt$(amt)+' on '+QN+'?\n\n'+f.label+' — approval '+code+
+    '\nAdds the admin fee line and the payment'+($('finReceipt').checked?', and emails the receipt.':'.')))return;
+  await act('finChargeBtn','finMsg','financeCharge',[QN,code,$('finPhone').checked,$('finReceipt').checked]);
+}
+async function setFinanceDisclosure(state){
+  try{const r=await api('financeDisclosure',[QN,state],{withQuote:QN});
+    if(!r.ok){setMsg('finDiscMsg',r.error,false);return;}
+    toast(r.msg);await afterWrite_(r);
+  }catch(e){setMsg('finDiscMsg',e.message,false);}
 }
 
 /* ---- preview-before-send ---- */

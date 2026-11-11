@@ -117,6 +117,54 @@ const PRICING = {
 };
 
 /* ----------------------------------------------------------------------------
+   SYNCHRONY FINANCING — Synchrony Sport, and the admin fee per term.
+   ----------------------------------------------------------------------------
+   Chris, Nov 2026: customers apply and pay with Synchrony from the email, and
+   the term they pick carries an ADMIN FEE (that is the approved name — never
+   "processing fee" or "surcharge" on anything a customer sees).
+
+   The fee is GROSSED UP, not added on: the total is amount / (1 - pct), so
+   when Synchrony takes its percentage off the top Quest is left with the true
+   amount. $1,000 at 12 months (4.25%) is $1,044.39, not $1,042.50.
+   tools/check-finance.js holds every row of Chris's table to the cent.
+
+   `applyUrl` is Quest's Synchrony Sport apply link (Business Center). Empty it
+   and every finance button disappears — page and email — the way an empty
+   SIGNING.webFormUrl turns off signing. `disclosure` sits under every list of
+   terms: deferred-interest offers have to say what happens if the balance is
+   not paid in time. Replace it with Synchrony's own approved wording if they
+   give you some. Terms change here, once, for the page AND the server. */
+const FINANCING = {
+  applyUrl: 'https://www.synchrony.com/mmc/GP179454200?sitecode=ac0qr00e1',
+  feeLabel: 'Admin fee',
+  terms: [
+    { key:'syf6',  months:6,  plan:'Deferred interest',     pct:1.50 },
+    { key:'syf9',  months:9,  plan:'Deferred interest',     pct:2.95 },
+    { key:'syf12', months:12, plan:'Deferred interest',     pct:4.25 },
+    { key:'syf18', months:18, plan:'Deferred interest',     pct:6.40 },
+    { key:'syf24', months:24, plan:'Deferred interest',     pct:8.75 },
+    { key:'syf36', months:36, plan:'Fixed 9.99% interest',  pct:4.90 },
+  ],
+  disclosure: 'Subject to credit approval by Synchrony Bank. Deferred interest: if the purchase is not ' +
+    'paid in full within the promotional period, interest is charged from the purchase date. ' +
+    'Minimum monthly payments required. The admin fee is added to your balance and financed with it.',
+};
+/* One term, priced for `amount` (what is still owed). null for an unknown key
+   or nothing to finance — callers must treat null as "no such option". */
+function financeQuote(amount, key){
+  const t = FINANCING.terms.filter(function(x){ return x.key === key; })[0];
+  const base = Math.round(Number(amount || 0) * 100) / 100;
+  if (!t || !(base > 0)) return null;
+  const total = Math.round(base / (1 - t.pct / 100) * 100) / 100;
+  return { key: t.key, months: t.months, plan: t.plan, pct: t.pct,
+           label: t.months + ' months — ' + t.plan,
+           base: base, fee: Math.round((total - base) * 100) / 100, total: total };
+}
+function financeOptions(amount){
+  return FINANCING.terms.map(function(t){ return financeQuote(amount, t.key); }).filter(Boolean);
+}
+
+/* ----------------------------------------------------------------------------
    ADOBE SIGN WEB FORM — the signing hand-off.
    ----------------------------------------------------------------------------
    `webFormUrl` is the published web form URL. Empty it and the quote page
@@ -888,7 +936,8 @@ function offersOf(manual){
                 depositBaseFor, lwtFromOverhang, rateOverride_, seasonStamp,
                 FIRM_QUOTE_NO, FIRM_QUOTE_THROUGH, priceIsFirm_,
                 HHO_DISCOUNT_SEC, hhoDiscountFor, hhoServicesTotal, hhoDiscountLine, withHhoDiscount,
-                OFFER_STATES, offerStatus, offerOnQuote, offerOpen, offersOf };
+                OFFER_STATES, offerStatus, offerOnQuote, offerOpen, offersOf,
+                FINANCING, financeQuote, financeOptions };
   root.QuestPricing = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

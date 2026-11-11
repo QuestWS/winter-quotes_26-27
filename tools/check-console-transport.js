@@ -71,7 +71,7 @@ Object.keys(ctx).forEach((k) => {
 const WRITES = ['pay', 'adjust', 'lateFee', 'editLine', 'penalty', 'servicesApply', 'hho', 'keysApply', 'dimsApply',
   'staffNote', 'sendEmail', 'setSeasonDone', 'priceRequest', 'offerDecision', 'uploadPhoto', 'uploadContract',
   'setPerm', 'resetPin', 'addStaff', 'removeStaff', 'setAutoPause', 'backupRestore',
-  'bulkSend', 'repriceApply', 'importApply', 'deleteQuote'];
+  'bulkSend', 'repriceApply', 'importApply', 'deleteQuote', 'financeFee'];
 
 let leaked = [];
 WRITES.forEach((fn) => {

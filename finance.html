@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finance with Synchrony — Quest Watersports</title>
+<!-- Reached from the "Finance with Synchrony" button in a customer email. It
+     is a customer's own balance, not a landing page. -->
+<meta name="robots" content="noindex, nofollow">
+<!-- One Quest mark for the whole site: favicon.png at the repo root. -->
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<!-- The shared Quest palette and control shapes; this page declares none of its own. -->
+<link rel="stylesheet" href="quest.css">
+<style>
+/* Only what is specific to this page. */
+.wrap{max-width:620px;margin:0 auto;padding:22px 20px 0}
+@media(max-width:640px){.wrap{padding:16px 0 0}}
+.field{margin-bottom:14px}
+#qn{font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;font-size:17px}
+#ln{font-size:17px}
+#find .btn{margin-top:4px}
+#status{margin:14px 0 0}
+#status:empty{display:none}
+.unitline{font-family:var(--mono);font-size:13px;color:var(--muted);margin:-12px 0 16px;letter-spacing:.02em}
+.owed{display:flex;justify-content:space-between;align-items:baseline;border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;background:var(--paper)}
+.owed b{font-family:var(--mono);font-size:19px;color:var(--navy)}
+/* One plan = one box; the whole box is the tap target, the radio underneath
+   keeps it working with a keyboard and a screen reader. */
+.plan{position:relative;display:block;border:1.5px solid var(--line);border-radius:var(--radius);
+  padding:12px 14px 12px 46px;margin-bottom:10px;background:#fff;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+.plan input{position:absolute;opacity:0;width:1px;height:1px}
+.plan .dot{position:absolute;left:14px;top:15px;width:20px;height:20px;border:2px solid var(--line);
+  border-radius:50%;background:#fff}
+.plan input:checked ~ .dot{border:6px solid var(--gold)}
+.plan:has(input:checked){border-color:var(--gold);background:var(--gold-soft)}
+.plan input:focus-visible ~ .dot{outline:3px solid var(--frost-soft);outline-offset:2px}
+.plan .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.plan .what{font-weight:700;color:var(--navy);font-size:17px}
+.plan .tot{font-family:var(--mono);font-weight:600;font-size:17px;white-space:nowrap}
+.plan .sub{font-size:13.5px;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between;gap:10px}
+.plan .was{font-size:13px;color:var(--frost);font-weight:600;margin-top:4px}
+#goBar{position:sticky;bottom:0;background:#fff;padding:10px 0 12px;margin-top:6px;border-top:1px solid var(--line)}
+#goSum{font-size:14px;color:var(--muted);margin-bottom:7px;min-height:1.2em}
+.disc{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:14px}
+.foot{font-size:14px;color:var(--muted);margin-top:16px}
+.foot a{color:var(--frost)}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="site-inner">
+    <div class="brand"><img src="Quest%20wet%20rect.png" alt="Quest Watersports"></div>
+    <div class="season">Winter Services</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h1 id="title">Finance with Synchrony</h1>
+    <p class="lead" id="lead">Pick a plan to see your total, then apply with Synchrony —
+      it takes a couple of minutes.</p>
+    <div class="unitline" id="unitline" hidden></div>
+
+    <div id="find">
+      <div class="field">
+        <label class="f" for="qn">Quote number</label>
+        <input id="qn" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="QW-26-1234">
+      </div>
+      <div class="field">
+        <label class="f" for="ln">Last name</label>
+        <input id="ln" type="text" autocomplete="family-name" spellcheck="false" placeholder="Last name">
+      </div>
+      <button class="btn" id="findBtn" type="button">Show my plans</button>
+    </div>
+
+    <div class="owed" id="owed" hidden><span>Your balance</span><b id="bal"></b></div>
+    <div id="list" role="radiogroup" aria-label="Synchrony plans"></div>
+    <div id="goBar" hidden>
+      <div id="goSum"></div>
+      <button class="btn" id="goBtn" type="button" disabled>Apply with Synchrony</button>
+    </div>
+    <div id="status" class="msg" role="status" aria-live="polite"></div>
+    <div class="disc" id="disc" hidden></div>
+    <div class="foot" id="foot" hidden>Rather pay another way?
+      <a id="quoteLink" href="index.html">See your full quote</a> — or call us at (815) 433-2200.</div>
+  </div>
+</div>
+
+<footer class="site">
+  Questions? Call us at <a href="tel:+18154332200">(815)&nbsp;433-2200</a>.<br>
+  <a href="terms.html">Terms</a> &middot; <a href="privacy.html">Privacy</a>
+</footer>
+
+<script src="pricing-engine.js"></script>
+<script>
+/* ============================================================================
+   FINANCE WITH SYNCHRONY — pick a term, see the admin fee, apply.
+   ----------------------------------------------------------------------------
+   Reached from the "Finance with Synchrony" button in a customer email, which
+   carries the quote number and last name.
+
+   READ by GET (?action=finance — financeRead_ in the Apps Script). Every
+   figure on this page comes from the SERVER, worked out on what is owed now
+   with the engine's FINANCING table; the page only draws it.
+   CHOSEN by POST only (api:'finance' → financeServe_), so a mail scanner
+   following links can never pick a plan for anybody. The choice adds nothing
+   to the quote — staff add the admin fee when they run the charge. Then the
+   page sends the customer to Quest's Synchrony Sport application
+   (FINANCING.applyUrl in the engine).
+============================================================================ */
+
+/* The one URL everything shares — CLAUDE.md §1. tools/verify.sh fails if this
+   ever disagrees with the others. */
+var API_URL = 'https://script.google.com/macros/s/AKfycbxv8kqGKXU_4-9TytfWzdrv-QqqmyrYLxRwd8FDfA8b47sX3NlEBNDlIwIHRuQObZbL9w/exec';
+
+var E = window.QuestPricing || {};
+var $ = function (id) { return document.getElementById(id); };
+var CUR = null;            // { quote, ln } that last loaded
+var DATA = null;           // the server's last answer
+var PICKED = '';
+var BUSY = false;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function money(n) { return '$' + Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function say(kind, html) { var m = $('status'); m.className = 'msg' + (kind ? ' ' + kind : ''); m.innerHTML = html || ''; }
+
+/* ---- reading ------------------------------------------------------------ */
+function getJson(url) {
+  return fetch(url, { method: 'GET', redirect: 'follow' })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(function () { return jsonp(url); });
+}
+var jsonpSeq = 0;
+function jsonp(url) {
+  return new Promise(function (resolve) {
+    var name = '__qwFinance' + (++jsonpSeq);
+    var sc = document.createElement('script');
+    var t = setTimeout(function () { done(null); }, 20000);
+    function done(res) {
+      clearTimeout(t);
+      try { delete window[name]; } catch (e) { window[name] = undefined; }
+      if (sc.parentNode) sc.parentNode.removeChild(sc);
+      resolve(res);
+    }
+    window[name] = done;
+    sc.onerror = function () { done(null); };
+    sc.src = url + '&callback=' + name;
+    document.body.appendChild(sc);
+  });
+}
+function readUrl(c) {
+  return API_URL + '?action=finance&quote=' + encodeURIComponent(c.quote) +
+    '&ln=' + encodeURIComponent(c.ln) + '&t=' + Date.now();
+}
+
+function load(quote, ln) {
+  var q = E.normalizeQuoteNo ? (E.normalizeQuoteNo(quote) || String(quote || '').trim().toUpperCase()) : String(quote || '').trim().toUpperCase();
+  ln = String(ln || '').trim();
+  if (!q || !ln) { say('warn', 'Enter your quote number and last name.'); return; }
+  CUR = { quote: q, ln: ln };
+  $('findBtn').disabled = true;
+  say('', 'Looking up your balance…');
+  getJson(readUrl(CUR)).then(function (res) {
+    $('findBtn').disabled = false;
+    if (!res) { say('warn', "We couldn't reach our quote system. Please try again, or call us at (815) 433-2200."); return; }
+    if (!res.ok) { say('warn', esc(res.error || "We couldn't find that quote.")); return; }
+    paint(res);
+    say('', '');
+  });
+}
+
+/* ---- painting ----------------------------------------------------------- */
+function paint(res) {
+  DATA = res;
+  PICKED = res.chosen || '';
+  $('find').hidden = true;
+  $('title').textContent = res.firstName ? res.firstName + ', finance with Synchrony' : 'Finance with Synchrony';
+  var ul = $('unitline');
+  ul.textContent = [res.quoteNo, res.unit].filter(Boolean).join(' · ');
+  ul.hidden = !ul.textContent;
+  var opts = res.options || [];
+  if (!(res.balance > 0.005) || !opts.length) {
+    $('owed').hidden = true;
+    $('list').innerHTML = '<div class="msg">There is no balance to finance on ' + esc(res.quoteNo) +
+      ' — you\'re all paid up. Questions? Call us at (815) 433-2200.</div>';
+    $('goBar').hidden = true;
+  } else {
+    $('bal').textContent = money(res.balance);
+    $('owed').hidden = false;
+    $('list').innerHTML = opts.map(function (o) {
+      return '<label class="plan"><input type="radio" name="plan" value="' + esc(o.key) + '"' +
+        (PICKED === o.key ? ' checked' : '') + ' onchange="pick(\'' + esc(o.key) + '\')">' +
+        '<span class="dot" aria-hidden="true"></span>' +
+        '<div class="top"><span class="what">' + o.months + ' months</span><span class="tot">' + money(o.total) + '</span></div>' +
+        '<div class="sub"><span>' + esc(o.plan) + '</span><span>' + esc(res.feeLabel || 'Admin fee') + ' ' + money(o.fee) + '</span></div>' +
+        (res.chosen === o.key ? '<div class="was">Your plan — continue below to apply.</div>' : '') +
+        '</label>';
+    }).join('');
+    $('goBar').hidden = false;
+  }
+  $('disc').textContent = res.disclosure || '';
+  $('disc').hidden = !res.disclosure;
+  if (res.quoteUrl) $('quoteLink').href = res.quoteUrl;
+  $('foot').hidden = false;
+  sync();
+}
+function pick(key) { PICKED = key; sync(); }
+function chosenOpt() {
+  return ((DATA && DATA.options) || []).filter(function (o) { return o.key === PICKED; })[0] || null;
+}
+function sync() {
+  var o = chosenOpt();
+  $('goSum').innerHTML = o
+    ? esc(o.months + ' months, ' + o.plan.toLowerCase()) + ' — total <b>' + money(o.total) + '</b> (includes the ' +
+      esc((DATA.feeLabel || 'admin fee').toLowerCase()) + ' of ' + money(o.fee) + ')'
+    : 'Pick a plan above.';
+  $('goBtn').disabled = !o || BUSY;
+}
+
+/* ---- choosing ----------------------------------------------------------- */
+function post(body) {
+  return fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify(body) })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    /* Only OUR answer counts. A POST that lost its body arrives at doGet and
+       the quote loader replies instead — that is a transport failure, not a no. */
+    .then(function (res) { if (!res || res._api !== 'finance') throw new Error('not ours'); return res; });
+}
+function go() {
+  var o = chosenOpt();
+  if (!o || BUSY || !CUR) return;
+  BUSY = true;
+  $('goBtn').disabled = true;
+  $('goBtn').textContent = 'Saving your plan…';
+  say('', '');
+  var body = { api: 'finance', quote: CUR.quote, ln: CUR.ln, term: o.key };
+  post(body).catch(function () {
+    /* The choice may have landed even though we could not read the reply
+       (Apps Script's redirect leg can fail on a slow phone). Ask before
+       sending it again; the server is idempotent either way. */
+    return getJson(readUrl(CUR)).then(function (res) {
+      if (res && res.ok && res.chosen === o.key) return res;
+      return post(body);
+    });
+  }).then(function (res) {
+    BUSY = false;
+    $('goBtn').textContent = 'Apply with Synchrony';
+    if (!res) throw new Error('no answer');
+    if (!res.ok) { if (res.options) paint(res); say('warn', esc(res.error || 'That did not save.')); sync(); return; }
+    var url = res.applyUrl || (DATA && DATA.applyUrl);
+    say('ok', 'Your plan is saved. Taking you to Synchrony… <a href="' + esc(url) + '">Continue</a> if nothing happens.');
+    window.location.href = url;
+  }).catch(function () {
+    BUSY = false;
+    $('goBtn').textContent = 'Apply with Synchrony';
+    sync();
+    say('warn', "We couldn't save your plan — please try again, or call us at (815) 433-2200.");
+  });
+}
+
+/* ---- wiring ------------------------------------------------------------- */
+$('findBtn').addEventListener('click', function () { load($('qn').value, $('ln').value); });
+$('goBtn').addEventListener('click', go);
+['qn', 'ln'].forEach(function (id) {
+  $(id).addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter') { ev.preventDefault(); load($('qn').value, $('ln').value); }
+  });
+});
+/* ?quote=QW-26-1234&ln=Smith — what the email's button carries. */
+(function deepLink() {
+  var q = new URLSearchParams(window.location.search);
+  var dq = String(q.get('quote') || '').trim(), dl = String(q.get('ln') || '').trim();
+  if (dq) $('qn').value = dq;
+  if (dl) $('ln').value = dl;
+  if (dq && dl) load(dq, dl);
+})();
+</script>
+</body>
+</html>

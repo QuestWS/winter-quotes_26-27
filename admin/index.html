@@ -746,6 +746,10 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 
           <div class="card hide" id="payCard">
             <h2>Record payment / deposit</h2>
+            <!-- The Synchrony plan the customer picked on finance.html, and the
+                 admin fee it comes to on what they owe now. Shown only when
+                 they have picked one (renderFinance). -->
+            <div class="hide" id="finBox" style="border:1px solid var(--line);border-left:5px solid var(--gold);border-radius:8px;padding:10px 12px;margin:0 0 12px;background:var(--gold-soft)"></div>
             <div class="row2">
               <div><label class="fld">Amount (negative = refund)</label><input class="txt" id="payAmt" inputmode="decimal" placeholder="500"></div>
               <div><label class="fld">Method</label><input class="txt" id="payMethod" placeholder="Cash / Check #1042 / Zelle"></div>
@@ -2625,6 +2629,8 @@ function renderQuote(r){
   renderLines();
   window._rq=r.rqList||[];window._seasonDone=r.seasonDone||null;
   window._offers=r.offers||[];
+  window._finance=r.finance||null;
+  renderFinance(myPerms_());
   const canAdj2=ME.admin||((ME.perms||{}).adjust);
   /* Pricing a request is `quote` (canQuote_), not adjust. */
   renderRequests(!!myPerms_().quote);
@@ -3313,6 +3319,37 @@ async function delLine(i){
     toast(r.msg);
     await afterWrite_(r);
   }catch(e){toast(e.message);}
+}
+
+/* ---- Synchrony: the plan the customer picked, and the admin fee ----
+   Everything here comes from the server (financeOut_): the fee is worked out
+   on what they owe NOW, so after a payment or a re-price it follows. The
+   button adds it once (adminFinanceFee refuses a second press). */
+function renderFinance(P){
+  const b=$('finBox'); if(!b) return;
+  const f=window._finance;
+  if(!f){b.classList.add('hide');b.innerHTML='';return;}
+  const n=f.now;
+  let h='<div style="font-weight:700;color:var(--navy)">Synchrony — '+esc(f.label)+'</div>'+
+    '<div class="msg" style="margin:2px 0 6px">Picked online '+esc(f.at||'')+'</div>';
+  if(f.feeApplied){
+    h+='<div style="font-size:14px">Admin fee <b>'+fmt$(f.feeApplied.amt)+'</b> is on the invoice ('+esc(f.feeApplied.at||'')+
+      (f.feeApplied.by?', '+esc(f.feeApplied.by):'')+'). Charge <b>'+fmt$(f.feeApplied.total)+'</b> in Synchrony, '+
+      'then record it below with method <b>Synchrony</b>.</div>';
+  } else if(n){
+    h+='<div style="font-size:14px">On today\'s balance of <b>'+fmt$(n.base)+'</b>: admin fee <b>'+fmt$(n.fee)+'</b> ('+
+      f.pct+'%) — charge <b>'+fmt$(n.total)+'</b> in Synchrony.</div>'+
+      (P.adjust?'<button class="btn gold sm" id="finFeeBtn" style="margin-top:8px" onclick="addFinanceFee()">Add the admin fee to the invoice</button>':'')+
+      '<div class="msg" id="finMsg"></div>';
+  } else {
+    h+='<div style="font-size:14px">Nothing is owed now, so there is no admin fee to add.</div>';
+  }
+  b.innerHTML=h;b.classList.remove('hide');
+}
+async function addFinanceFee(){
+  const f=window._finance; if(!f||!f.now) return;
+  if(!confirm('Add the admin fee of '+fmt$(f.now.fee)+' to '+QN+'?\n\nSynchrony '+f.label+' — the new balance will be '+fmt$(f.now.total)+'.'))return;
+  await act('finFeeBtn','finMsg','financeFee',[QN]);
 }
 
 /* ---- preview-before-send ---- */

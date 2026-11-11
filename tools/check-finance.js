@@ -71,6 +71,17 @@ Object.keys(TABLE).forEach((k) => {
   eq(g && [g.fee, g.total], TABLE[k], k + ' — and the engine embedded in the .gs agrees');
 });
 eq(P.financeOptions(1000).length, 6, 'six plans');
+/* Chris: "take the total with the fee added and divide it by the total number
+   of months" — rounded UP to the cent, so n even payments always cover it. */
+eq(P.financeQuote(1000, 'syf6').monthly, 169.21, '6 months on $1,000: $1,015.23 / 6 = $169.21 a month (rounded up)');
+eq(P.financeQuote(3074.70, 'syf6').monthly, 520.26, '$3,121.52 / 6 = $520.26, not $520.25 (which would leave 2 cents short)');
+[1000, 3074.70, 486.33, 12345.67].forEach((amt) => P.financeOptions(amt).forEach((q) => {
+  const cents = Math.round(q.monthly * 100) * q.months - Math.round(q.total * 100);
+  if (cents < 0 || cents >= q.months) fail(q.key + ' on ' + amt + ': ' + q.months + ' x ' + q.monthly + ' misses ' + q.total + ' by ' + cents + ' cents');
+}));
+ok('every plan: the even payments cover the total, never short, over by less than a cent a month');
+eq(P.financeQuote(1000, 'syf36').interest, true, 'the fixed-interest plan is flagged, so its split is labelled "+ interest"');
+eq(P.financeOptions(1000).filter((q) => q.interest).length, 1, 'and only that one — the deferred plans cost no interest when paid evenly');
 eq(P.financeQuote(1000, 'nope'), null, 'an unknown plan prices as nothing');
 eq(P.financeQuote(0, 'syf12'), null, 'nothing owed prices as nothing');
 eq(P.FINANCING.feeLabel, 'Admin fee', 'the fee is called "Admin fee"');
@@ -317,6 +328,8 @@ console.log('=== the page ===');
     fail('the page asks for an SSN or an account number');
   else ok('the page never asks for an SSN or an account number');
   has(page, "q.get('go')", 'the page opens on the authorize step when the email asks it to');
+  has(page, "money(o.monthly) + '/month</b>'", 'each plan shows its even monthly payment');
+  has(page, "(o.interest ? ' <span class=\"pi\">+ interest</span>' : '')", 'with "+ interest" on the fixed-interest plan');
   has(page, "window.open(DATA.applyUrl, '_blank')", 'the application opens in a new tab, so this page is still here to come back to');
 }
 

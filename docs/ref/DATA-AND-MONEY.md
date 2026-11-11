@@ -265,6 +265,15 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
 - **The fee is grossed up:** total = amount ÷ (1 − pct), so when Synchrony
   takes its cut Quest nets the true amount. $1,000 at 12 months is $1,044.39.
   `tools/check-finance.js` holds every row of Chris's table to the cent.
+- **Every plan shows an even monthly payment** (Chris, Nov 2026: so customers
+  "know what they'd be spending with even monthly payments" and the true cost
+  is plain — Synchrony's own minimum may be lower; that is between them and
+  Synchrony). `financeQuote` returns `monthly` = total ÷ months, **rounded up
+  to the cent** so the payments always cover the total (never a few cents
+  short). The fixed-interest plan (`interest:true` on its term) is labelled
+  "+ interest": its split is the before-interest figure. Shown on each plan
+  row and the summary of `finance.html`, in the follow-up email's box and on
+  the console; `FINANCING.monthlyNote` explains it under the plans.
 - **The card fee is NOT grossed up, on purpose.** POS+ passes it straight to
   the customer, so `RULES.ccPct` stays a true 3% on top ($1,030.00 on $1,000).
   The older fee sheet that shows $1,030.93 predates POS+.

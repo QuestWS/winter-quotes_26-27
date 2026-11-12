@@ -3345,7 +3345,8 @@ async function delLine(i){
 
 /* ---- Synchrony: plan, authorization, charge, rate disclosure ----
    Everything comes from the server (financeOut_). The charge is ONE step:
-   staff run the sale in the Synchrony Business Center, type the approval code
+   staff run the sale in the Synchrony Business Center, type its authorization
+   code and reconciliation number
    here, and adminFinanceCharge adds the admin fee line, records the payment
    and emails the receipt. Then the disclosure is flagged at the top of the
    quote until it is signed in person. */
@@ -3357,7 +3358,8 @@ function renderFinance(P){
   let h='<div style="font-weight:700;color:var(--navy)">Synchrony — '+esc(f.label)+'</div>';
   if(ch){
     h+='<div style="font-size:14px;margin-top:4px">Charged <b>'+fmt$(ch.amt)+'</b>'+(ch.fee?' (incl. admin fee '+fmt$(ch.fee)+')':'')+
-      ' — approval <b>'+esc(ch.code)+'</b>, '+esc(ch.at||'')+(ch.by?', '+esc(ch.by):'')+
+      ' — authorization <b>'+esc(ch.code)+'</b>'+(ch.recon?', reconciliation <b>'+esc(ch.recon)+'</b>':'')+
+      ', '+esc(ch.at||'')+(ch.by?', '+esc(ch.by):'')+
       ' · authorized '+(ch.authorized==='online'?'online':'by phone')+'.</div>';
   } else if(au){
     h+='<div class="msg" style="margin:2px 0 6px">'+(f.stale?'<b style="color:var(--red)">The balance has changed since they authorized.</b> ':'')+
@@ -3379,8 +3381,10 @@ function renderFinance(P){
           :fmt$(n.monthly)+'/month × '+n.months+(n.interest?' + interest':''))+'.</div>':'');
   }
   if(!ch&&P.pay&&(au||n)){
-    h+='<div class="row2" style="margin-top:8px"><div><label class="fld">Synchrony approval code</label>'+
-      '<input class="txt" id="finCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="from the Business Center sale"></div></div>'+
+    h+='<div class="row2" style="margin-top:8px"><div><label class="fld">Authorization code</label>'+
+      '<input class="txt" id="finCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="from the Synchrony sale"></div>'+
+      '<div><label class="fld">Reconciliation number</label>'+
+      '<input class="txt" id="finRecon" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="from the Synchrony sale"></div></div>'+
       '<label class="chk"><input type="checkbox" id="finPhone"'+(au&&!f.stale?'':' checked')+'> Authorized by phone (they gave me the OK)</label>'+
       '<label class="chk"><input type="checkbox" id="finReceipt" checked> Email receipt to customer</label>'+
       '<button class="btn gold sm" id="finChargeBtn" onclick="recordFinanceCharge()">Record the Synchrony charge</button>';
@@ -3423,12 +3427,13 @@ async function copyFinDisc(){
 }
 async function recordFinanceCharge(){
   const f=window._finance; if(!f) return;
-  const code=$('finCode').value.trim();
-  if(!code){setMsg('finMsg','Enter the approval code from the Synchrony sale.',false);return;}
+  const code=$('finCode').value.trim(), recon=$('finRecon').value.trim();
+  if(!code){setMsg('finMsg','Enter the authorization code from the Synchrony sale.',false);return;}
+  if(!recon){setMsg('finMsg','Enter the reconciliation number from the Synchrony sale.',false);return;}
   const amt=f.auth&&!$('finPhone').checked?f.auth.total:(f.now?f.now.total:0);
-  if(!confirm('Record a Synchrony charge of '+fmt$(amt)+' on '+QN+'?\n\n'+f.label+' — approval '+code+
+  if(!confirm('Record a Synchrony charge of '+fmt$(amt)+' on '+QN+'?\n\n'+f.label+'\nAuthorization '+code+' · reconciliation '+recon+
     '\nAdds the admin fee line and the payment'+($('finReceipt').checked?', and emails the receipt.':'.')))return;
-  await act('finChargeBtn','finMsg','financeCharge',[QN,code,$('finPhone').checked,$('finReceipt').checked]);
+  await act('finChargeBtn','finMsg','financeCharge',[QN,code,$('finPhone').checked,$('finReceipt').checked,recon]);
 }
 async function dismissFinance(){
   if(!confirm('Take '+QN+' off the Synchrony follow-up list?\n\nIf they apply again they come back on.'))return;

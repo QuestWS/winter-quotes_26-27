@@ -11,7 +11,8 @@
      - 'apply' is recorded quietly; 'authorize' needs a name, a 10-digit
        phone, the tick and a typed signature, stores the exact sentence they
        agreed to, emails the office ONCE, and changes nothing on the quote;
-     - the staff charge (adminFinanceCharge) needs an approval code, refuses
+     - the staff charge (adminFinanceCharge) needs Synchrony's authorization
+       code and reconciliation number, refuses
        a balance that moved since the authorization, adds the admin fee line
        AND the payment in one save, and never runs twice;
      - the rate disclosure is flagged after the charge until signed in person;
@@ -191,21 +192,25 @@ console.log('=== staff record the Synchrony charge ===');
 {
   const d = quote({ payments: [{ amt: 200 }], lines: [{ sec: 'Storage', label: 'Inside', amt: 1000 }] });
   B.setCtx(ctxFor(d));
-  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true).ok, 0, 'no plan picked: nothing to record');
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true, 'R998877').ok, 0, 'no plan picked: nothing to record');
   B.financeServe_(AUTH());
   const q = P.financeQuote(800, 'syf12');
-  eq(B.adminFinanceCharge('t', d.quoteNo, '', false, true).ok, 0, 'no approval code: refused');
+  eq(B.adminFinanceCharge('t', d.quoteNo, '', false, true, 'R998877').ok, 0, 'no authorization code: refused');
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true, '').ok, 0, 'no reconciliation number: refused');
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true).ok, 0,
+    'a console tab from before the change (no 6th argument) is refused, not misread');
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true, true).ok, 0, '— nor a tick box read as the number');
 
   /* The balance moves after they authorized (a re-price, a payment). */
   d.payments.push({ amt: 50 });
-  const moved = B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true);
+  const moved = B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true, 'R998877');
   eq(moved.ok, 0, 'the balance moved since they authorized: refused, not guessed');
   eq(B.financeOut_(d).stale, true, 'and the console says so');
   d.payments.pop();
   eq(B.financeOut_(d).stale, false, 'back to the authorized balance: not stale');
 
   const savesBefore = SAVES.length;
-  const r = B.adminFinanceCharge('t', d.quoteNo, 'a12345', false, true);
+  const r = B.adminFinanceCharge('t', d.quoteNo, 'a12345', false, true, 'r998877');
   eq(r.ok, 1, 'with the code and the authorized balance, it records');
   eq(SAVES.length - savesBefore, 1, 'in ONE save (one PDF rebuild)');
   const fee = (d.lines || []).filter((l) => /^Admin fee/.test(l.label));
@@ -214,10 +219,12 @@ console.log('=== staff record the Synchrony charge ===');
     'and in the manual journal, so a re-price replays it');
   const pay = d.payments[d.payments.length - 1];
   eq(pay.amt, q.total, 'the payment is exactly the authorized total');
-  eq(/^Synchrony 12 months — approval A12345$/.test(pay.method), true, 'labelled with the plan and the approval code');
+  eq(pay.method, 'Synchrony 12 months — auth A12345, recon R998877',
+    'labelled with the plan, the authorization code and the reconciliation number');
+  eq([d.finance.charged.code, d.finance.charged.recon], ['A12345', 'R998877'], 'both are kept on the charge');
   eq(Math.abs(Number(d.total) - B.paymentsTotal_(d)) < 0.005, true, 'which leaves nothing owing');
   eq(d.finance.disclosure && d.finance.disclosure.state, 'needed', 'the rate disclosure is flagged to sign');
-  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true).ok, 0, 'a second press is refused — no double payment');
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'A12345', false, true, 'R998877').ok, 0, 'a second press is refused — no double payment');
   eq(B.financeServe_(AUTH({ term: 'syf6' })).ok, 0, 'once charged, the customer cannot change plans online');
 
   eq(B.adminFinanceDisclosure('t', d.quoteNo, 'digital').ok, 1, 'a digital copy can be marked');
@@ -231,8 +238,8 @@ console.log('=== by phone, without an online authorization ===');
   const d = quote({ payments: [], lines: [{ sec: 'Storage', label: 'Inside', amt: 1000 }] });
   B.setCtx(ctxFor(d));
   B.financeServe_({ quote: d.quoteNo, ln: 'fixture', step: 'apply', term: 'syf6' });
-  eq(B.adminFinanceCharge('t', d.quoteNo, 'B777', false, false).ok, 0, 'not authorized online and not by phone: refused');
-  const r = B.adminFinanceCharge('t', d.quoteNo, 'B777', true, false);
+  eq(B.adminFinanceCharge('t', d.quoteNo, 'B777', false, false, 'R1234').ok, 0, 'not authorized online and not by phone: refused');
+  const r = B.adminFinanceCharge('t', d.quoteNo, 'B777', true, false, 'R1234');
   eq(r.ok, 1, 'staff tick "authorized by phone": recorded');
   eq(d.finance.charged.authorized, 'phone', 'and it says so');
   eq(d.payments[0].amt, P.financeQuote(1000, 'syf6').total, 'for the plan priced on what was owed');

@@ -309,9 +309,11 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
      for word as `d.finance.auth`; service@
      gets **READY TO CHARGE** with the lookup details (`notifyFinanceAuth_`).
   4. Staff look them up in the Business Center by **Name & Phone Number**, run
-     the sale, and enter the **approval code** in the console's payment card:
+     the sale, and enter its **authorization code** and **reconciliation
+     number** (Synchrony's two references — it has no "approval number") in
+     the console's payment card:
      `adminFinanceCharge` adds the admin fee line, records the payment
-     (method `Synchrony 12 months — approval …`), saves once, emails the
+     (method `Synchrony 12 months — auth …, recon …`), saves once, emails the
      receipt.
   5. The **rate disclosure** is then flagged at the top of the quote
      (`d.finance.disclosure`: `needed` → `digital` → `inperson`,
@@ -361,7 +363,8 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
   empty hides it everywhere. It pre-fills `Quote_Number`, `Finance_Plan`,
   `Finance_Amount` from the link — those names must match the form's fields
   exactly, or the fields are silently blank.
-- **The charge refuses rather than guesses:** no approval code; the balance
+- **The charge refuses rather than guesses:** no authorization code or
+  reconciliation number; the balance
   moved since the authorization (the console marks it *stale* — they
   re-authorize at the same link, or staff tick **Authorized by phone**, which
   is recorded as such); or already recorded (a second press would double the

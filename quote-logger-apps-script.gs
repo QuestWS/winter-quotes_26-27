@@ -1688,7 +1688,7 @@ function consoleFns_(p) {
     placementAlert:   function (a) { return adminSetPlacementAlert(p.token, a[0], a[1]); },
     pay:         function (a) { return adminRecordPayment(p.token, a[0], a[1], a[2], a[3]); },
     adjust:      function (a) { return adminAdjust(p.token, a[0], a[1], a[2], a[3]); },
-    financeCharge:     function (a) { return adminFinanceCharge(p.token, a[0], a[1], a[2], a[3]); },
+    financeCharge:     function (a) { return adminFinanceCharge(p.token, a[0], a[1], a[2], a[3], a[4]); },
     financeDisclosure: function (a) { return adminFinanceDisclosure(p.token, a[0], a[1]); },
     financeDismiss:    function (a) { return adminFinanceDismiss(p.token, a[0]); },
     financeFollowups:  function (a) { return adminFinanceFollowups(p.token); },
@@ -11068,7 +11068,8 @@ function adminOfferDecision(token, qn, item, choice, note) {
         Center's "Name & Phone Number" lookup takes), a tick box over the exact
         amount and plan, and their typed name (step 'authorize'). service@ gets
         READY TO CHARGE. We never take an account number or an SSN.
-     5. Staff run the sale in the Business Center and enter the approval code
+     5. Staff run the sale in the Business Center and enter its authorization
+        code and reconciliation number
         in the console (adminFinanceCharge): admin fee line + payment +
         receipt in one step, and the rate disclosure flagged.
      6. The disclosure is signed in person whenever they next come in — an
@@ -11299,7 +11300,8 @@ function notifyFinanceAuth_(ctx, au, prev) {
       'They agreed: "' + au.text + '"',
       'Signed (typed): ' + au.sig + ' — ' + au.at,
       '',
-      'Then in the console: open the quote, enter the Synchrony approval code, and press "Record the Synchrony charge".',
+      'Then in the console: open the quote, enter the Synchrony authorization code and reconciliation number,',
+      'and press "Record the Synchrony charge".',
       'That adds the admin fee, records the payment and emails their receipt. The rate disclosure is then flagged',
       'until they sign it in person.',
       '',
@@ -11315,28 +11317,35 @@ function notifyFinanceAuth_(ctx, au, prev) {
 
 /* Staff, after running the sale in the Synchrony Business Center: ONE step
    that adds the admin fee line, records the payment (method names the plan
-   and the approval code), saves once, emails the receipt and flags the rate
+   and Synchrony's authorization code), saves once, emails the receipt and flags the rate
    disclosure for signing in person.
 
    It refuses rather than guess:
-     - no approval code (it is the only link between our payment and theirs);
+     - no authorization code or reconciliation number — Synchrony's two
+       references for the sale, and the only link between our payment and
+       theirs (Chris, Nov 2026: Synchrony has no "approval number");
      - the balance has moved since the customer authorized — they agreed to a
        figure, and this would charge a different one. They re-authorize at the
        same link, or staff take it by phone (byPhone);
      - already recorded (a second press would double the payment).
    byPhone: the customer gave the OK on the phone instead of online. Staff
    tick it; it is recorded with their name. */
-function adminFinanceCharge(token, qn, code, byPhone, sendReceipt) {
+/* `recon` is last, after the older arguments, so a console tab opened before
+   it existed sends nothing there and is refused with a clear message rather
+   than having its tick boxes read as the number. */
+function adminFinanceCharge(token, qn, code, byPhone, sendReceipt, recon) {
   const who = requireAuth_(token, 'pay');
   const ctx = findQuoteCtx_(qn);
   if (!ctx) return { ok: 0, error: 'Quote not found.' };
   const d = ctx.d;
   const f = d.finance;
   if (!f || !f.key) return { ok: 0, error: 'The customer has not picked a Synchrony plan.' };
-  if (f.charged) return { ok: 0, error: 'Already recorded: ' + usd_(f.charged.amt) + ', approval ' + f.charged.code +
+  if (f.charged) return { ok: 0, error: 'Already recorded: ' + usd_(f.charged.amt) + ', authorization ' + f.charged.code +
     ' (' + f.charged.at + '). Nothing was added.' };
   const appr = String(code || '').trim().toUpperCase();
-  if (!/^[A-Z0-9-]{3,20}$/.test(appr)) return { ok: 0, error: 'Enter the approval code from the Synchrony sale.' };
+  if (!/^[A-Z0-9-]{3,20}$/.test(appr)) return { ok: 0, error: 'Enter the authorization code from the Synchrony sale.' };
+  const rec = typeof recon === 'string' ? recon.trim().toUpperCase() : '';
+  if (!/^[A-Z0-9-]{3,30}$/.test(rec)) return { ok: 0, error: 'Enter the reconciliation number from the Synchrony sale.' };
   const bal = financeBalance_(d);
   const au = f.auth || null;
   if (!au && !byPhone) return { ok: 0, error: 'They have not authorized it online. If they gave you the OK on the phone, tick "Authorized by phone".' };
@@ -11360,11 +11369,11 @@ function adminFinanceCharge(token, qn, code, byPhone, sendReceipt) {
     recomputeTotals_(d);
     f.feeApplied = { amt: fee, base: q.base, total: q.total, at: new Date().toLocaleString(), by: who.name };
   }
-  const method = 'Synchrony ' + (f.label || '').split(' — ')[0] + ' — approval ' + appr;
+  const method = 'Synchrony ' + (f.label || '').split(' — ')[0] + ' — auth ' + appr + ', recon ' + rec;
   d.payments = d.payments || [];
   d.payments.push({ amt: amt, method: method, date: new Date().toLocaleDateString(),
                     at: new Date().toISOString(), by: who.name });
-  f.charged = { amt: amt, fee: fee, code: appr, at: new Date().toLocaleString(), by: who.name,
+  f.charged = { amt: amt, fee: fee, code: appr, recon: rec, at: new Date().toLocaleString(), by: who.name,
                 authorized: au && !byPhone ? 'online' : 'phone' };
   /* Signed digitally already? Keep it; the in-person copy is still owed. */
   f.disclosure = f.disclosure && f.disclosure.state === 'digital' ? f.disclosure : { state: 'needed', at: f.charged.at };
@@ -11373,7 +11382,7 @@ function adminFinanceCharge(token, qn, code, byPhone, sendReceipt) {
   const status = left < -0.005 ? 'CREDIT DUE ' + usd_(-left) : left <= 0.005 ? 'Paid in full' : 'Payment received — balance ' + usd_(left);
   const pdfUrl = saveQuoteRow_(ctx, status);
   finIndexDrop_(d.quoteNo);
-  auditLog_(who.name, 'Synchrony charge ' + usd_(amt) + ' on ' + d.quoteNo + ' (' + f.label + ', approval ' + appr +
+  auditLog_(who.name, 'Synchrony charge ' + usd_(amt) + ' on ' + d.quoteNo + ' (' + f.label + ', authorization ' + appr + ', reconciliation ' + rec +
     (fee ? ', ' + FINANCING.feeLabel.toLowerCase() + ' ' + usd_(fee) : '') + ', authorized ' + f.charged.authorized + ') → ' + status);
   let receiptMsg = '';
   if (sendReceipt && d.email) {

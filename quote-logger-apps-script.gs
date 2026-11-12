@@ -275,6 +275,8 @@ const HEADERS = [
    "your quote is waiting" nudge ten days after they poked at the pricing.
    The row still moves onto a real tab by the normal duplicate sweep once the
    quote is completed, so completing a quote never leaves a second row.
+   When the OFFICE completes it instead (dimension editor, payment, a send),
+   leaveLeadTab_ moves it -- see there; QW-26-1651 was stranded without it.
 --------------------------------------------------------------------------- */
 const STARTED_TAB = 'Quote Started';
 const STARTED_STATUS = 'Quote started';
@@ -3547,7 +3549,7 @@ function sendUpdate_(ctx, noteDefault) {
   if (noteResp.getSelectedButton() !== ui.Button.OK) return;
   const note = String(noteResp.getResponseText()).trim() || (noteDefault || '');
   sendCustomerEmail_(d, note, true);
-  recordEmail_(ctx.sh, ctx.rowNum, d, 'updated', 'Sheet menu');
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'updated', 'Sheet menu'));
   const newStatus = String(sh_status_(ctx)).indexOf('after signing') > -1 ? 'Adjusted after signing & emailed' : 'Adjusted & emailed';
   ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(newStatus);
   d.status = newStatus;
@@ -6688,7 +6690,10 @@ function adminDimsApply(token, qn, changes, note) {
      what moves it (recordEmail_ -> leaveImportTab_). This read isStartedTab_
      alone, so fixing an imported quote's dimensions from the console published
      it straight onto the crew's haul-out list. IMPORT_TAB. */
-  if (toTab !== fromTab && !isOffstageTab_(fromTab)) {
+  /* A lead IS released here (Nov 2026): the office pricing it is what makes
+     it a quote, and leaving it on the lead tab hid a paid boat from Harbor
+     Haul Out -- see leaveLeadTab_. Never onto an offstage tab. */
+  if (toTab !== fromTab && !isImportTab_(fromTab) && !isOffstageTab_(toTab)) {
     moveQuoteRow_(ctx, toTab);
     moved = ' Moved from ' + fromTab + ' to ' + toTab + '.';
   }
@@ -6991,8 +6996,11 @@ function adminRecordPayment(token, qn, amt, method, sendReceipt) {
   ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
   writeMoneyCols_(ctx.sh, ctx.rowNum, d);
   auditLog_(who.name, 'Payment ' + usd_(a) + ' (' + method + ') on ' + d.quoteNo + ' → ' + d.status);
+  /* Money taken on a lead row the office priced: it is a real quote. */
+  const off = leaveLeadTab_(ctx.sh, ctx.rowNum, d);
+  if (off) { ctx.sh = off.sh; ctx.rowNum = off.rowNum; }
   let receiptMsg = '';
-  if (sendReceipt && d.email) { sendCustomerEmail_(d, '', false, { amt: a, method: method }); recordEmail_(ctx.sh, ctx.rowNum, d, 'receipt', who.name); receiptMsg = 'Receipt emailed to ' + d.email + '.'; }
+  if (sendReceipt && d.email) { sendCustomerEmail_(d, '', false, { amt: a, method: method }); followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'receipt', who.name)); receiptMsg = 'Receipt emailed to ' + d.email + '.'; }
   sendNotification_(d, ctx.sh.getName(), true, pdfUrl);
   return { ok: 1, msg: 'Recorded ' + usd_(a) + ' — ' + d.status + '. ' + receiptMsg };
 }
@@ -7016,7 +7024,7 @@ function adminAdjust(token, qn, amt, desc, emailNow) {
     sendCustomerEmail_(d, label + ' (' + (a < 0 ? '-' : '+') + usd_(Math.abs(a)) + ')', true);
     const st = 'Adjusted & emailed';
     ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(st); d.status = st;
-    recordEmail_(ctx.sh, ctx.rowNum, d, 'updated', who.name);
+    followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'updated', who.name));
     mailMsg = 'Updated copy emailed to ' + d.email + '.';
   }
   return { ok: 1, msg: 'New total ' + usd_(d.total) + '. ' + mailMsg };
@@ -7225,6 +7233,15 @@ function adminQuoteHistory(token, qn) {
     now: { total: Number(d.total || 0), paid: paid, balance: Math.round((Number(d.total || 0) - paid) * 100) / 100 } };
 }
 
+/* recordEmail_ can move the row (off the Import tab, or off the lead tab --
+   leaveImportTab_ / leaveLeadTab_). A caller that writes to the row, or names
+   its tab, after a send must follow it there: the old row number now belongs
+   to whichever quote slid up into it. */
+function followRow_(ctx, at) {
+  if (ctx && at && at.sh) { ctx.sh = at.sh; ctx.rowNum = at.rowNum; }
+  return ctx;
+}
+
 function recordEmail_(sh, rowNum, d, kind, by) {
   d.emailLog = d.emailLog || [];
   d.emailLog.push({ ts: new Date().toLocaleString(), kind: kind, to: d.email || '', by: by || '' });
@@ -7235,7 +7252,7 @@ function recordEmail_(sh, rowNum, d, kind, by) {
   releaseImportHold_(sh, rowNum);
   /* Where the row is NOW. Callers that keep working with it after a send have
      to follow it off the Import tab; the ones that don't simply ignore this. */
-  return leaveImportTab_(sh, rowNum, d) || { sh: sh, rowNum: rowNum };
+  return leaveImportTab_(sh, rowNum, d) || leaveLeadTab_(sh, rowNum, d) || { sh: sh, rowNum: rowNum };
 }
 
 /* Emailing the customer is the moment a bulk-imported draft becomes a real
@@ -7272,6 +7289,80 @@ function leaveImportTab_(sh, rowNum, d) {
   }
 }
 
+/* A LEAD THE OFFICE FINISHED IS NOT A LEAD.
+   ---------------------------------------------------------------------------
+   A lead row only ever left STARTED_TAB through the customer's own save. When
+   staff finished the quote instead -- the dimension editor gave it a storage
+   area, then emails, a contract and a payment followed -- every one of those
+   wrote the row where it sat, and the dimension editor's guard (written for the
+   Import tab) refused to move it. QW-26-1651, Nov 2026: paid in full, signed,
+   slip on file, and on no Harbor Haul Out list, because the whole lead tab is
+   skipped there, as it is by the storage view, the haul-out sheets and the
+   balance report.
+
+   The test is the quote's own storageTab. The quote page logs a lead with
+   storageTab 'Quote Started'; only the engine (rebuildLinesFromState_) ever
+   writes a real area onto it, and on a lead row only a staff edit runs the
+   engine. So a lead row whose payload names a real tab has been priced by the
+   office, and that is where it belongs. A row whose payload still says
+   'Quote Started' is a lead and stays exactly where it is. The Import tab is
+   NOT released here: sending is its one release (leaveImportTab_).
+
+   Same contract as leaveImportTab_: returns the new { sh, rowNum } or null,
+   and never throws -- bookkeeping must not fail an email or a payment that
+   has already happened. */
+function leadReleaseTab_(tabName, d) {
+  if (!isStartedTab_(tabName)) return '';
+  const dest = String((d && d.storageTab) || '').trim();
+  if (!dest || isOffstageTab_(dest)) return '';
+  return dest;
+}
+function leaveLeadTab_(sh, rowNum, d) {
+  if (!sh || !rowNum || !d) return null;
+  try {
+    const dest = leadReleaseTab_(sh.getName(), d);
+    if (!dest) return null;
+    const ctx = { sh: sh, rowNum: rowNum, d: d };
+    moveQuoteRow_(ctx, dest);                    // rewrites ctx.sh / ctx.rowNum
+    invalidateStorageView_();
+    auditLog_('System', 'Moved ' + d.quoteNo + ' off ' + STARTED_TAB + ' to ' + dest +
+      ' — the quote has been priced, so it is no longer a lead');
+    return { sh: ctx.sh, rowNum: ctx.rowNum };
+  } catch (e) {
+    console.error('leaveLeadTab_ failed for ' + (d && d.quoteNo) + ': ' + e);
+    return null;
+  }
+}
+
+/* Repair: move every lead row the office has already finished. Run once from
+   the editor to release the rows stranded before leaveLeadTab_ existed
+   (QW-26-1651, QW-26-6412 as of Nov 12, 2026), and also run at the top of
+   leadFollowUpCheck every day so one that slips past the write paths is
+   released within a day. Moves rows only: no email, no re-price, no PDF.
+   Idempotent -- a second run finds nothing. Bottom-up, so deleting a row
+   never shifts one not yet visited. */
+function releaseStrandedLeads() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(STARTED_TAB);
+  const moved = [];
+  if (sh && sh.getLastRow() >= 2) {
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, HEADERS.length).getValues();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const qn = String(rows[i][COL.QN - 1] || '').trim();
+      if (!qn) continue;
+      let d = null;
+      try { d = JSON.parse(rows[i][COL.PAYLOAD - 1] || 'null'); } catch (e) { d = null; }
+      if (!d || !leadReleaseTab_(STARTED_TAB, d)) continue;
+      d.quoteNo = d.quoteNo || qn;
+      const to = leaveLeadTab_(sh, i + 2, d);
+      if (to) moved.push(qn + ' → ' + to.sh.getName());
+    }
+  }
+  console.log(moved.length ? 'Moved off ' + STARTED_TAB + ': ' + moved.join(', ')
+                           : 'No finished quotes on ' + STARTED_TAB + ' — nothing to move.');
+  return { ok: 1, moved: moved };
+}
+
 function adminSendEmail(token, qn, kind, extra, staff) {
   const who = requireAuth_(token, 'email');
   const sx = staffExtras_(staff);
@@ -7303,7 +7394,7 @@ function adminSendEmail(token, qn, kind, extra, staff) {
        (the sign chase) must leave the money/placement status alone rather than
        overwrite it. The send is still recorded in Email History below. */
     if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
-    recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
+    followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name));
     auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email + ccTxt + (sx.note ? ' with a staff note' : ''));
     return { ok: 1, msg: 'Sent to ' + d.email + ccTxt + '.' };
   }
@@ -7313,7 +7404,7 @@ function adminSendEmail(token, qn, kind, extra, staff) {
     statusVal = 'Adjusted & emailed';
   } else return { ok: 0, error: 'Unknown email type.' };
   if (statusVal) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(statusVal);
-  recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name);
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name));
   auditLog_(who.name, 'Email "' + kind + '" sent for ' + d.quoteNo + ' to ' + d.email + ccTxt + (sx.note ? ' with a staff note' : ''));
   return { ok: 1, msg: 'Sent to ' + d.email + ccTxt + '.' };
 }
@@ -7581,7 +7672,7 @@ function adminLateFee(token, qn, amt, label, emailNow) {
   let mailMsg = 'Customer not emailed yet.';
   if (emailNow && d.email) {
     sendCustomerEmail_(d, feeLabel + ' (+' + usd_(a) + ')', true);
-    recordEmail_(ctx.sh, ctx.rowNum, d, 'late fee applied', who.name);
+    followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'late fee applied', who.name));
     mailMsg = 'Updated invoice emailed to ' + d.email + '.';
   }
   sendNotification_(d, ctx.sh.getName(), true, ctx.sh.getRange(ctx.rowNum, COL.PDF).getValue());
@@ -11438,7 +11529,7 @@ function adminFinanceCharge(token, qn, code, byPhone, sendReceipt, recon) {
   let receiptMsg = '';
   if (sendReceipt && d.email) {
     sendCustomerEmail_(d, '', false, { amt: amt, method: method });
-    recordEmail_(ctx.sh, ctx.rowNum, d, 'receipt', who.name);
+    followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'receipt', who.name));
     receiptMsg = ' Receipt emailed to ' + d.email + '.';
   }
   sendNotification_(d, ctx.sh.getName(), true, pdfUrl);
@@ -13426,7 +13517,7 @@ function sendStoredEmail() {
   const buttons = photos ? '<div style="margin:6px 0 2px">' + buttonHtml_(photos, 'View arrival photos', '#14293E') + '</div>' : '';
   sendCustomerNotice_(d, 'We have your ' + d.unit + ' — Quest Watersports', intro, buttons, true);
   ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Stored — customer notified');
-  recordEmail_(ctx.sh, ctx.rowNum, d, 'stored', 'Sheet menu');
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'stored', 'Sheet menu'));
   ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
@@ -13447,7 +13538,7 @@ function menuSendKind_(ctx, kind, extra) {
   if (FROM_ALIAS) opts.from = FROM_ALIAS;
   GmailApp.sendEmail(d.email, built.subject, built.subject, opts);
   if (built.status) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(built.status);
-  recordEmail_(ctx.sh, ctx.rowNum, d, kind, 'Sheet menu');
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, kind, 'Sheet menu'));
   return true;
 }
 
@@ -13540,7 +13631,7 @@ function sendSplashEmail() {
   const buttons = photos ? '<div style="margin:6px 0 2px">' + buttonHtml_(photos, 'View ' + photoWord, '#14293E') + '</div>' : '';
   sendCustomerNotice_(d, headline + ' · ' + d.quoteNo, intro, buttons, true);
   ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Relaunched — customer notified');
-  recordEmail_(ctx.sh, ctx.rowNum, d, 'splash', 'Sheet menu');
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'splash', 'Sheet menu'));
   ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
@@ -13575,7 +13666,7 @@ function recordPayment() {
   d.ts = new Date().toISOString();
 
   const pdfUrl = savePdf_(d);
-  const sh = ctx.sh, rowNum = ctx.rowNum;
+  let sh = ctx.sh, rowNum = ctx.rowNum;
   sh.getRange(rowNum, COL.STATUS).setValue(d.status);
   sh.getRange(rowNum, COL.PDF).setValue(pdfUrl);
   sh.getRange(rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
@@ -13589,7 +13680,7 @@ function recordPayment() {
       ui.ButtonSet.YES_NO);
     if (conf === ui.Button.YES) {
       sendCustomerEmail_(d, '', false, { amt: amt, method: method });
-      recordEmail_(sh, rowNum, d, 'receipt', 'Sheet menu');
+      { const at = recordEmail_(sh, rowNum, d, 'receipt', 'Sheet menu'); if (at && at.sh) { sh = at.sh; rowNum = at.rowNum; } }
       sentMsg = 'Receipt emailed to ' + d.email;
     }
   } else sentMsg = 'No customer email on file — hand them the updated PDF';
@@ -13617,7 +13708,7 @@ function sendLateFeeWarning() {
     'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
   sendCustomerNotice_(d, 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo, intro, '', true);
   ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Late fee warning sent');
-  recordEmail_(ctx.sh, ctx.rowNum, d, 'latewarn', 'Sheet menu');
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'latewarn', 'Sheet menu'));
   ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
@@ -13653,7 +13744,7 @@ function addLateFee() {
   notePriceChange_(d, ctx.sh.getRange(ctx.rowNum, COL.TOTAL).getValue(), d.status + ' (sheet menu)');
 
   const pdfUrl = savePdf_(d);
-  const sh = ctx.sh, rowNum = ctx.rowNum;
+  let sh = ctx.sh, rowNum = ctx.rowNum;
   sh.getRange(rowNum, COL.STATUS).setValue(d.status);
   sh.getRange(rowNum, COL.TOTAL).setValue(Number(d.total));
   sh.getRange(rowNum, COL.ITEMS).setValue(d.items).setWrap(true);
@@ -13666,7 +13757,7 @@ function addLateFee() {
     const conf = ui.alert('Email updated quote with the late fee to ' + d.email + '?', '', ui.ButtonSet.YES_NO);
     if (conf === ui.Button.YES) {
       sendCustomerEmail_(d, 'Late payment fee applied — balance was unpaid after ' + payBy, true);
-      recordEmail_(sh, rowNum, d, 'late fee applied', 'Sheet menu');
+      { const at = recordEmail_(sh, rowNum, d, 'late fee applied', 'Sheet menu'); if (at && at.sh) { sh = at.sh; rowNum = at.rowNum; } }
       sentMsg = 'Updated quote emailed to ' + d.email;
     }
   }
@@ -14365,6 +14456,10 @@ function leadFollowUpCheck() {
      would otherwise be nudged at once on resume morning. */
   const coolingLead = autoPauseCooldown_(LEAD_FOLLOWUP_AFTER_HOURS * 60 * 60 * 1000);
   if (coolingLead) { console.log('No lead follow-ups: ' + coolingLead); return; }
+  /* Before anything reads the lead tab: a quote the office already priced is
+     not a lead, must not be told to "pick your quote back up", and moving it
+     mid-loop would shift every row below it. See leaveLeadTab_. */
+  try { releaseStrandedLeads(); } catch (e) { console.error('releaseStrandedLeads failed: ' + e); }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(STARTED_TAB);
   if (!sh) return;
@@ -14386,6 +14481,7 @@ function leadFollowUpCheck() {
       let d = {};
       try { d = JSON.parse(r[COL.PAYLOAD - 1] || '{}'); } catch (e2) {}
       if (notStoringActive_(d)) return;                           // not storing this season
+      if (leadReleaseTab_(STARTED_TAB, d)) return;                // priced by the office — not a lead (leaveLeadTab_)
       d.quoteNo = quoteNo; d.email = email;
       d.firstName = d.firstName || String(r[COL.FIRST - 1] || '');
       d.lastName = d.lastName || lastName;

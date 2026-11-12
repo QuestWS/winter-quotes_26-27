@@ -141,6 +141,7 @@ console.log('=== leadFollowUpCheck ===');
     "function buildEmailFor_(d){return {subject:'s',html:'h'};}", 'function getLogoBlob_(){return null;}',
     'const FROM_ALIAS="", REPLY_TO="service@example.com";',
     'function recordEmail_(){}', 'function auditLog_(){}',
+    'function releaseStrandedLeads(){}', fn('leadReleaseTab_'),
     fn('leadFollowUpCheck'), 'leadFollowUpCheck();'
   ]).join('\n'))(ssOf([sh]), { sendEmail: (to) => sent.push(to) });
   if (sent.indexOf('marked@x.com') > -1) fail('the lead follow-up emailed a customer marked not storing');

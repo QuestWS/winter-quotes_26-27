@@ -60,6 +60,7 @@ const env = {
     insertSheet: n => (book[n] = new Sheet(n, [])),
   })},
   auditLog_: () => {},
+  invalidateStorageView_: () => {},
   console,
 };
 
@@ -68,7 +69,7 @@ const src = [
   decl('IMPORT_HOLD_MARK'), decl('IMPORT_SENT_MARK'),
   fn('isImportTab_'), fn('isStartedTab_'), fn('isOffstageTab_'),
   fn('isImportHoldMark_'), fn('releaseImportHold_'),
-  fn('moveQuoteRow_'), fn('leaveImportTab_'), fn('recordEmail_'),
+  fn('moveQuoteRow_'), fn('leaveImportTab_'), fn('leadReleaseTab_'), fn('leaveLeadTab_'), fn('recordEmail_'),
   'return { recordEmail_, HEADERS, COL, IMPORT_HOLD_MARK, isImportSentMark_: null };'
 ].join('\n');
 const api = new Function(...Object.keys(env), src)(...Object.values(env));

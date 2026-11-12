@@ -302,7 +302,11 @@ by the owner and **titled "Admin fee"** everywhere a customer sees it.
   3. **Have an account:** they **authorize** — name and phone as on the account,
      a tick box over the exact sentence (`FINANCING.authText` via
      `financeAuthText`: amount, plan, admin fee, disclosure to sign in person)
-     and their typed name. Stored word for word as `d.finance.auth`; service@
+     and their typed name — plus their **driver's license state and expiration
+     date**, which Synchrony asks for to verify the sale (Chris, Nov 2026; the
+     state list is `FINANCING.idStates`, shared with the page; an expired or
+     impossible date is refused; **never the license number**). Stored word
+     for word as `d.finance.auth`; service@
      gets **READY TO CHARGE** with the lookup details (`notifyFinanceAuth_`).
   4. Staff look them up in the Business Center by **Name & Phone Number**, run
      the sale, and enter the **approval code** in the console's payment card:

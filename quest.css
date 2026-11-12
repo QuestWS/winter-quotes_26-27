@@ -90,7 +90,7 @@ header.site .season{font-family:var(--mono);font-size:13px;color:var(--muted);le
 /* ===== Form controls — one shape for every input on every Quest page ===== */
 label.f{display:block;font-weight:600;font-size:14px;margin-bottom:5px;color:var(--navy)}
 label.f small{font-weight:400;color:var(--muted)}
-input[type=text],input[type=tel],input[type=email],input[type=number],textarea,select{
+input[type=text],input[type=tel],input[type=email],input[type=number],input[type=date],textarea,select{
   width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:7px;
   font-family:var(--body);font-size:15.5px;background:#fff;color:var(--ink)}
 input:focus-visible,textarea:focus-visible,select:focus-visible{

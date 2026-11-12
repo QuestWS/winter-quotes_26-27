@@ -122,6 +122,14 @@
       </div>
       <div class="field"><label class="f" for="aPhone">Phone number on the account</label>
         <input id="aPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(815) 555-0123"></div>
+      <!-- Synchrony verifies the sale against the driver's license: the
+           issuing state and the expiration date. Never the license number. -->
+      <div class="two">
+        <div class="field"><label class="f" for="aDlState">Driver's license state</label>
+          <select id="aDlState"><option value="">Choose…</option></select></div>
+        <div class="field"><label class="f" for="aDlExp">License expiration date</label>
+          <input id="aDlExp" type="date"></div>
+      </div>
       <label class="agree"><input type="checkbox" id="aAgree"><span id="aText"></span></label>
       <div class="field"><label class="f" for="sig">Type your full name to sign</label>
         <input id="sig" type="text" autocomplete="name" spellcheck="false"></div>
@@ -360,7 +368,10 @@ function authorize() {
   if (!o || BUSY || !CUR) return;
   var body = { api: 'finance', step: 'authorize', quote: CUR.quote, ln: CUR.ln, term: o.key,
     first: $('aFirst').value, last: $('aLast').value, phone: $('aPhone').value,
+    dlState: $('aDlState').value, dlExp: $('aDlExp').value,
     agree: $('aAgree').checked, sig: $('sig').value };
+  if (!body.dlState) { say('warn', 'Choose the state that issued your driver\'s license.'); return; }
+  if (!body.dlExp) { say('warn', 'Enter your driver\'s license expiration date.'); return; }
   if (!body.agree) { say('warn', 'Tick the box to authorize the charge.'); return; }
   if (!String(body.sig).trim()) { say('warn', 'Type your full name to sign.'); return; }
   BUSY = true; sync();
@@ -388,6 +399,10 @@ function authorize() {
 }
 
 /* ---- wiring ------------------------------------------------------------- */
+/* The license-state list comes from the engine, the same one the server checks. */
+(((E.FINANCING || {}).idStates) || []).forEach(function (st) {
+  var op = document.createElement('option'); op.value = st; op.textContent = st; $('aDlState').appendChild(op);
+});
 $('findBtn').addEventListener('click', function () { load($('qn').value, $('ln').value); });
 $('haveBtn').addEventListener('click', haveAccount);
 $('applyBtn').addEventListener('click', applyNow);

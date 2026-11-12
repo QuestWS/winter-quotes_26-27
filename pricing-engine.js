@@ -176,6 +176,11 @@ const FINANCING = {
   authText: 'I authorize Quest Watersports to charge {amount} to my Synchrony account on the {plan} plan. ' +
     'I understand this includes the admin fee shown, and that I will sign the Synchrony rate disclosure ' +
     'in person on my next visit.',
+  /* Driver's license STATE and EXPIRATION — Synchrony asks for them to
+     verify a card-not-present sale (Chris, Nov 2026). Never the license
+     number: we take only what the Business Center asks for. The page's
+     dropdown and the server's check both read this list. */
+  idStates: 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' '),
   /* The rate disclosure as an Adobe Sign web form — a digital copy on file
      until they sign in person. Empty hides the button everywhere, the way an
      empty SIGNING.webFormUrl does. The field names must match the form's

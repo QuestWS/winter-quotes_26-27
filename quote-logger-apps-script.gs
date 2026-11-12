@@ -2226,7 +2226,7 @@ function doGet(e) {
     }
   }
   try {
-    const qn = String(p.quote || '').trim().toUpperCase();
+    let qn = String(p.quote || '').trim().toUpperCase();
     const ln = String(p.ln || '').trim().toLowerCase();
     if (!qn || !ln) return out({ ok: 0, error: 'Enter both your quote number and last name.' });
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2237,6 +2237,7 @@ function doGet(e) {
        per-tab reads below stay as the fallback and must land on the same row
        (tools/check-fast-reads.js compares the two answers). */
     const grids = quoteTabGrids_(ss, sheets, [[COL.LAST, COL.QN]]);
+    qn = resolveShortQn_(qn, ln, grids);
     for (let i = 0; i < sheets.length; i++) {
       const sh = sheets[i];
       let rowNum = -1;
@@ -2292,7 +2293,10 @@ function doGet(e) {
          reload — otherwise their page renders their original selections, shows
          a total that no longer matches their invoice, and posts a state that
          disagrees with the server on the next save. */
-      return out({ ok: 1, state: effectiveState_(d) || d.state, manual: d.manual || null, payments: d.payments || [],
+      /* quoteNo: the full number, because the customer may have typed only its
+         last digits (resolveShortQn_) and the page saves back onto whatever
+         number it holds. */
+      return out({ ok: 1, quoteNo: qn, state: effectiveState_(d) || d.state, manual: d.manual || null, payments: d.payments || [],
                    official: { total: d.total, deposit: d.deposit } });
     }
     return out({ ok: 0, error: 'Quote not found. Check the quote number and last name.' });
@@ -2461,6 +2465,32 @@ function uniqueQuoteNo_(proposed) {
   } finally {
     if (locked) { try { lock.releaseLock(); } catch (e) {} }
   }
+}
+
+/* The customer quote-loader takes the last digits of a quote number with the
+   last name: "1255" + "White" opens QW-26-1255. The year is not guessed — the
+   digits are matched against the end of every quote number on the quote tabs
+   whose last name is the one typed, and the newest season wins if two share
+   them. No match (or no batch read) falls back to normalizeQuoteNo's
+   current-year guess, and the lookup below still demands the last name, so
+   this opens nothing the full number plus the last name did not already open:
+   the "QW-26-" prefix was never a secret. A full number passes through as
+   typed, merely tidied ("qw261255" -> QW-26-1255). */
+function resolveShortQn_(raw, ln, grids) {
+  const s = String(raw || '').trim().toUpperCase();
+  const digits = s.replace(/[\s\-]/g, '');
+  if (!/^\d{3,6}$/.test(digits)) return normalizeQuoteNo(s) || s;
+  let best = '';
+  (grids || []).forEach(function (t) {
+    if (!t) return;
+    const g = t[0];
+    for (let r = 1; r < g.length; r++) {
+      const cellQn = String(g[r][COL.QN - COL.LAST] || '').trim();
+      if (String(g[r][0] || '').trim().toLowerCase() !== ln) continue;
+      if (qnEndsWith_(cellQn, digits) && cellQn > best) best = cellQn;
+    }
+  });
+  return best || normalizeQuoteNo(digits) || s;
 }
 
 function findQuoteRow_(sh, quoteNo) {
@@ -4030,11 +4060,28 @@ function findQuoteCtx_(qn) {
    and phone punctuation is a phone number and is matched on digits alone, so
    "815-555-0101", "(815) 555 0101" and "5550101" agree with however the
    cell was typed. Every column used is inside 1..DIMS, which adminSearch
-   already reads; nothing here adds a read. */
+   already reads; nothing here adds a read.
+
+   THE LAST DIGITS OF A QUOTE NUMBER. Chris, Nov 2026: staff read "1255" off a
+   printed quote and want to type just that. Three to six bare digits are
+   therefore tried as the END of a quote number first ("1255" finds QW-26-1255,
+   and QW-25-1255 too if last season's tab is still here, so the year is never
+   guessed). The matcher marks those hits 'qn'; adminSearch keeps only them
+   when there are any, so a phone that happens to contain 1255 cannot turn a
+   one-quote answer into a picker. With no quote ending that way it falls back
+   to the phone match, which is what those digits meant before. */
+function qnEndsWith_(qnCell, digits) {
+  const d = String(qnCell || '').replace(/\D/g, '');
+  return d.length >= digits.length && d.slice(-digits.length) === digits;
+}
 function searchMatcher_(q) {
   const digits = q.replace(/\D/g, '');
   if (/^[\d\s()+.\-]+$/.test(q) && digits.length >= 3) {
-    return function (r) { return String(r[COL.PHONE - 1] || '').replace(/\D/g, '').indexOf(digits) !== -1; };
+    const tryQn = /^\d{3,6}$/.test(q);
+    return function (r) {
+      if (tryQn && qnEndsWith_(r[COL.QN - 1], digits)) return 'qn';
+      return String(r[COL.PHONE - 1] || '').replace(/\D/g, '').indexOf(digits) !== -1;
+    };
   }
   const words = q.split(/[\s,]+/).filter(Boolean);
   return function (r) {
@@ -4072,9 +4119,10 @@ function adminSearch(token, query) {
     }
     body.forEach(function (r) {
       if (!String(r[COL.QN - 1] || '').trim()) return;
-      if (!match(r)) return;
+      const m = match(r);
+      if (!m) return;
       const bal = Number(r[COL.BAL - 1] || 0);
-      hits.push({ quoteNo: r[COL.QN - 1],
+      hits.push({ _byQn: m === 'qn', quoteNo: r[COL.QN - 1],
         name: [r[COL.FIRST - 1], r[COL.LAST - 1]].filter(Boolean).join(' '),
         unit: r[COL.UNIT - 1], ymm: r[COL.YMM - 1] || '',
         status: r[COL.STATUS - 1] || '',
@@ -4086,8 +4134,11 @@ function adminSearch(token, query) {
         tab: sh.getName() });
     });
   });
-  hits.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-  return { ok: 1, hits: hits.slice(0, 25), truncated: hits.length > 25 };
+  /* The last digits of a quote number beat a phone fragment (searchMatcher_). */
+  const byQn = hits.filter(function (h) { return h._byQn; });
+  const keep = (byQn.length ? byQn : hits).map(function (h) { delete h._byQn; return h; });
+  keep.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  return { ok: 1, hits: keep.slice(0, 25), truncated: keep.length > 25 };
 }
 
 /* Printable copy of the quote/invoice, for the console's Print button.

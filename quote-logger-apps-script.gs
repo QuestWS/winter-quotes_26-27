@@ -12434,7 +12434,7 @@ function noticeDueRows_(d, paid, balance) {
   return { rows: rows, note: note };
 }
 
-/* opts.noDueNote: the email's own text already carries the "settle up now"
+/* opts.noDueNote: the email's own text already carries the due-by
    line and the late charge (the late fee warning) — saying it twice reads as
    a form letter. */
 function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, opts) {
@@ -13279,13 +13279,18 @@ function buildEmailFor_(d, kind, extra, photos) {
     const paid = paymentsTotal_(d);
     const bal = Number(d.total || 0) - paid;
     if (bal <= 0.005) return null;
-    /* Chris, Nov 2026: "Settle up now", and the next late charge in dollars
-       (latePenalty_ — the one-off before the pay-by date, the monthly charge
-       after it), so the cost is not a matter of reading the terms. */
+    /* Chris, Nov 2026: the body opens as a friendly reminder, not a demand
+       ("the customers who store are important to us"); "Settle up now" stays
+       in the subject only. It keeps the message: the
+       open balance, and the next late charge in dollars (latePenalty_ — the
+       one-off before the pay-by date, the monthly charge after it), so the
+       cost is not a matter of reading the terms. */
     const pen = latePenalty_(d, bal);
-    const intro = '<b>Settle up now</b> — there\'s still an open balance of <b>' + usd_(bal) + '</b> on your winter ' +
-      docTerm_(d).toLowerCase() + '. ' + pen.text + ' ' + pen.avoid + ' — the buttons below take about a minute. ' +
-      'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
+    const intro = '<b>Just a friendly reminder</b> — your winter ' + docTerm_(d).toLowerCase() +
+      ' still shows an open balance of <b>' + usd_(bal) + '</b>, and we wanted to make sure it doesn\'t catch you by surprise. ' +
+      pen.text + ' ' + pen.avoid + ' — the buttons below take about a minute. ' +
+      'If a payment is already on the way or you\'d like to talk it through, just give us a call — we\'re always happy to work with you. ' +
+      'Thank you for trusting us with your winter storage.';
     /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
     return { subject: 'Settle up now: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
       html: noticeHtml_(d, intro, '', true, { noDueNote: true }), status: 'Late fee warning sent' };

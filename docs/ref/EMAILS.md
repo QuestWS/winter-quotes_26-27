@@ -368,9 +368,12 @@ human**: the 10-day reminder and the lead follow-up.
   day the `RULES.latePct` one-off; after it, the `RULES.monthlyPct` monthly
   service charge (never under `RULES.monthlyMin`) — "starting <lateChargeStart>"
   until then, "every month it stays open" after. The PDF terms read the same
-  `RULES`, so the email and the paper agree. The **late fee warning** opens
-  "**Settle up now**", carries that figure, and its subject starts "Settle up
-  now:"; it passes `noDueNote` so the balance box does not say it twice.
+  `RULES`, so the email and the paper agree. The **late fee warning**'s
+  subject starts "Settle up now:", but its body opens "**Just a friendly
+  reminder**" — never "Settle up now" in the body, where it read as cold and
+  demanding to customers who store with us (Chris, Nov 2026). It carries that
+  figure, thanks them for storing, and passes `noDueNote` so the balance box
+  does not say it twice.
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

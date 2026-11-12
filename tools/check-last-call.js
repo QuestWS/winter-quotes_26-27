@@ -214,10 +214,11 @@ console.log('=== the late charge, in dollars ===');
 
   const owed = quote({ payments: [{ amt: 200 }] });                  // $800 open, deadline 2099
   const lw = B.buildEmailFor_(owed, 'latewarn', '', '');
-  has(lw && lw.html, '<b>Settle up now</b>', 'the late fee warning says "Settle up now"');
-  has(lw && lw.subject, 'Settle up now', '— in its subject too');
+  has(lw && lw.html, '<b>Just a friendly reminder</b>', 'the late fee warning opens as a friendly reminder');
+  has(lw && lw.subject, 'Settle up now:', '"Settle up now" stays in the subject');
+  eq(/settle up now/i.test((lw && lw.html) || ''), false, 'but never in the body, where it reads as a demand');
   has(lw && lw.html, '10% late fee adds <b>$80.00</b> — <b>$880.00</b> in total', 'with the charge in dollars');
-  eq(((lw && lw.html) || '').split('Settle up now').length - 1, 1, 'once — the balance box does not repeat it');
+  eq(((lw && lw.html) || '').split('late fee adds').length - 1, 1, 'the late charge once — the balance box does not repeat it');
   /* The settle-up line shows once the deposit is in and only the dated
      balance is left ($500 here). */
   const st = B.buildEmailFor_(quote({ payments: [{ amt: 500 }] }), 'stored', '', '');

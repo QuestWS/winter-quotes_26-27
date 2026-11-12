@@ -222,6 +222,37 @@ panel over the list they were working down. The guard asserts both.
 Lead rows never appear on any list. A quote nobody finished is not a unit we
 are holding.
 
+### A lead the office finished is not a lead
+
+QW-26-1651, Nov 2026: paid in full, signed, slip on file, and on **no** list.
+The customer had got past the contact gate (a lead row on `Quote Started`)
+and never finished; the office finished it from the console instead —
+storage from the dimension editor, then emails, the contract and the payment.
+Every one of those wrote the row where it sat, the dimension editor's move was
+guarded off the lead tab (a rule written for the Import tab), and this app
+skips the whole lead group. QW-26-6412 was stranded the same way.
+
+The test is the quote's own `storageTab`. The quote page logs a lead as
+`'Quote Started'`; only the engine writes a real area onto it, and on a lead
+row only a staff edit runs the engine. So a lead row whose payload names a real
+tab has been priced by the office, and that is where it goes
+(`leaveLeadTab_`):
+
+- **The dimension editor** moves it, as it moves any re-measured quote. Import
+  drafts are still held — sending stays their one release.
+- **A payment** moves it before the receipt and the service@ notice go out.
+- **Any send** moves it (`recordEmail_`, next to the Import release). Every
+  caller that writes to the row after a send follows it (`followRow_`): the
+  old row number belongs to whichever quote slid up into it.
+- **`releaseStrandedLeads()`** moves every one at once — run from the editor
+  for the rows stranded before this, and at the top of the daily lead
+  follow-up, so one that slips past the write paths is out within a day. It
+  moves rows only: no email, no re-price, no PDF. The follow-up also refuses
+  to send *"pick your quote back up"* to one.
+
+A lead whose payload still says `Quote Started` stays exactly where it is.
+`check-lead-release.js` runs all of it against a fake spreadsheet.
+
 ## The service tracker reads To store
 
 Chris, Sep 2026: *"Can we have the service tracker pull winterize jobs from

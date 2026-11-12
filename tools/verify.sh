@@ -251,6 +251,14 @@ if [ -f harbor-haul-out/index.html ]; then
   else
     echo "  FAIL gate: Import release"; sed 's/^/       /' "$TMP/imprel.txt"; FAIL=1
   fi
+  # A lead the office finished is a quote: it leaves the lead tab, which Harbor
+  # Haul Out, the storage view and the balance report all skip. QW-26-1651 was
+  # paid, signed and on no list. Run, not read.
+  if node tools/check-lead-release.js > "$TMP/leadrel.txt" 2>&1; then
+    echo "  OK   gate: a lead the office priced leaves the lead tab; a real lead stays"
+  else
+    echo "  FAIL gate: lead release"; sed 's/^/       /' "$TMP/leadrel.txt"; FAIL=1
+  fi
   # The pull rule belongs to the server. Three surfaces ask it; one answers.
   if node tools/check-harbor-haul-out.js > "$TMP/hhoapp.txt" 2>&1; then
     echo "  OK   gate: Harbor Haul Out renders the server's verdict and degrades safely"

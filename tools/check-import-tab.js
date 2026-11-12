@@ -171,8 +171,11 @@ MUST_EXCLUDE.forEach(function (pair) {
     fail('recordEmail_ no longer releases the Import tab — every send site loses it at once');
   }
   const dims = fn('adminDimsApply');
-  if (/!isOffstageTab_\(fromTab\)/.test(dims)) {
-    ok('a re-measure does not drag a draft (or a lead) off its own tab');
+  /* Nov 2026: a LEAD is released by a re-measure on purpose -- the office
+     pricing it is what makes it a quote (leaveLeadTab_, check-lead-release.js).
+     An Import draft is still held: sending is its one release. */
+  if (/!isImportTab_\(fromTab\)/.test(dims)) {
+    ok('a re-measure does not drag a draft off the Import tab');
   } else {
     fail('adminDimsApply moves a row off whatever tab it is on — re-measuring an imported ' +
          'quote would publish a draft the same way');

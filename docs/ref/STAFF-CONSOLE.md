@@ -1844,7 +1844,13 @@ PIN if nobody is signed in and then takes itself off the address).
   somewhere in first name, last name, email, quote number or year/make/model;
   a query of only digits and phone punctuation is matched on the phone's
   digits. All of it is inside columns 1..DIMS, so it costs no extra read. The
-  console sends six digits or fewer to the quote lookup and seven or more to
-  the search, as a phone number.
+  console sends a full `QW-…` number to the quote lookup and everything else to
+  the search. **Three to six bare digits are tried as the end of a quote number
+  first** — `1255` opens `QW-26-1255`, and two seasons sharing the digits give
+  a pick, so the year is never guessed — and only when no quote ends that way
+  are they matched against phones. A quote-number hit drops the phone hits, so
+  a phone that happens to contain the digits cannot turn one answer into a
+  picker. The customer page's *load my quote* box takes the same last digits
+  (with the last name), resolved on the server by `resolveShortQn_`.
 - **The winter `/exec` URL is written into that page** — the sixth place in
   CLAUDE.md §1. The tracker's is imported from its own `assets/lib/config.js`.

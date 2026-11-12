@@ -1863,9 +1863,11 @@ function pillClass(st){
 async function doSearch(){
   const q=$('qn').value.trim();if(!q)return;
   $('resultsCard').classList.add('hide');
-  /* Up to six bare digits is a quote number; seven or more is a phone number,
-     which the search matches on its digits. */
-  if(/^qw[- ]?\d/i.test(q)||/^\d{3,6}$/.test(q)){ doLookup(q.toUpperCase().replace(/\s+/g,'')); return; }
+  /* A full number (QW-26-1255) opens directly. Bare digits go to the search,
+     which tries them as the END of a quote number first — "1255" opens
+     QW-26-1255 without the prefix, and offers a pick if two seasons share the
+     digits — then as part of a phone number (searchMatcher_). */
+  if(/^qw[- ]?\d/i.test(q)){ doLookup(q.toUpperCase().replace(/\s+/g,'')); return; }
   setMsg('lookupMsg','Searching for "'+q+'"…');
   try{const r=await api('search',[q]);
     if(!r.ok){setMsg('lookupMsg',r.error,false);return;}

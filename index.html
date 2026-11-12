@@ -340,7 +340,7 @@ aside.ticket{position:sticky;top:18px}
     <div id="loadBox" style="border:1.5px dashed var(--line);border-radius:10px;padding:12px 15px;margin-bottom:18px">
       <div style="font-weight:700;color:var(--navy);margin-bottom:6px">Already have a quote? Load it to make changes.</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div><label class="f" for="loadQn">Quote number</label><input type="text" id="loadQn" placeholder="QW-26-1234" style="max-width:160px"></div>
+        <div><label class="f" for="loadQn">Quote number</label><input type="text" id="loadQn" placeholder="QW-26-1234 or 1234" style="max-width:160px"></div>
         <div><label class="f" for="loadLn">Last name</label><input type="text" id="loadLn" placeholder="Last name" style="max-width:180px"></div>
         <button class="btn ghost" type="button" onclick="loadQuote()" id="loadBtn"><span class="spin" id="loadSpin" hidden aria-hidden="true"></span><span id="loadBtnLabel">Load my quote</span></button>
       </div>
@@ -1214,6 +1214,11 @@ let loadTimer=null;
 function handleLoadResult(res, qn){
   loadBusy(false);
   if(!res||!res.ok){ loadMsg((res&&res.error)||'Quote not found. Check the quote number and last name.'); return; }
+  /* The customer may have typed only the last digits ("1255"); the server
+     answers with the full number, and that is what every later save must
+     carry, so it replaces what was typed — in the box too. */
+  qn=(res.quoteNo&&String(res.quoteNo).trim())||QuestPricing.normalizeQuoteNo(qn)||qn;
+  const qBox=$('#loadQn'); if(qBox) qBox.value=qn;
   try{
     MANUAL=res.manual||null; PAYMENTS=res.payments||[];
     LOCKED=PAYMENTS.length>0;

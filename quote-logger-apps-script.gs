@@ -491,6 +491,11 @@ const FINANCING = {
   authText: 'I authorize Quest Watersports to charge {amount} to my Synchrony account on the {plan} plan. ' +
     'I understand this includes the admin fee shown, and that I will sign the Synchrony rate disclosure ' +
     'in person on my next visit.',
+  /* Driver's license STATE and EXPIRATION — Synchrony asks for them to
+     verify a card-not-present sale (Chris, Nov 2026). Never the license
+     number: we take only what the Business Center asks for. The page's
+     dropdown and the server's check both read this list. */
+  idStates: 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' '),
   /* The rate disclosure as an Adobe Sign web form — a digital copy on file
      until they sign in person. Empty hides the button everywhere, the way an
      empty SIGNING.webFormUrl does. The field names must match the form's
@@ -11112,7 +11117,8 @@ function financeOut_(d) {
     canFollow: !finFollowBlocker_(d),
     now: now ? { base: now.base, fee: now.fee, total: now.total, monthly: now.monthly, months: now.months,
       interest: now.interest, withInterest: now.withInterest } : null,
-    auth: au ? { first: au.first, last: au.last, phone: au.phone, sig: au.sig, at: au.at,
+    auth: au ? { first: au.first, last: au.last, phone: au.phone, dlState: au.dlState || '', dlExp: au.dlExp || '',
+                 sig: au.sig, at: au.at,
                  base: au.base, fee: au.fee, total: au.total, label: au.label, text: au.text } : null,
     /* The balance has moved since they authorized: charging the old figure
        would be wrong, charging a new one is not what they agreed to. */
@@ -11218,15 +11224,38 @@ function financeServe_(b) {
       const phone = String(b.phone || '').replace(/\D/g, '').slice(-10);
       if (!first || !last) return reply({ ok: 0, error: 'Enter your first and last name as they appear on your Synchrony account.' });
       if (phone.length !== 10) return reply({ ok: 0, error: 'Enter the 10-digit phone number on your Synchrony account.' });
+      /* Driver's license state + expiration: Synchrony verifies the sale
+         against them. Never the number. An expired license is refused here —
+         Synchrony would decline it, and it is better the customer hears now. */
+      const dlState = String(b.dlState || '').trim().toUpperCase();
+      if ((FINANCING.idStates || []).indexOf(dlState) < 0) {
+        return reply({ ok: 0, error: 'Choose the state that issued your driver\'s license.' });
+      }
+      const dlExp = String(b.dlExp || '').trim();
+      const em = dlExp.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const ey = em ? Number(em[1]) : 0, emo = em ? Number(em[2]) - 1 : 0, ed = em ? Number(em[3]) : 0;
+      const expDay = new Date(ey, emo, ed);
+      /* A real calendar date (no Feb 30), in a sane range. */
+      const realDate = !!em && expDay.getFullYear() === ey && expDay.getMonth() === emo && expDay.getDate() === ed &&
+        ey >= 2000 && ey <= 2100;
+      const expEnd = realDate ? new Date(ey, emo, ed + 1) : null;   // valid through the whole expiry day
+      if (!expEnd) {
+        return reply({ ok: 0, error: 'Enter your driver\'s license expiration date.' });
+      }
+      if (expEnd.getTime() <= Date.now()) {
+        return reply({ ok: 0, error: 'That driver\'s license has expired — Synchrony needs a current one. ' +
+          'Questions? Call us at (815) 433-2200.' });
+      }
       if (b.agree !== true) return reply({ ok: 0, error: 'Tick the box to authorize the charge.' });
       if (!sig) return reply({ ok: 0, error: 'Type your full name to sign.' });
       const text = financeAuthText(q);
       const prev = f0 && f0.auth;
       const same = prev && prev.key === q.key && Math.abs(Number(prev.base) - q.base) < 0.005 &&
-        prev.first === first && prev.last === last && prev.phone === phone && prev.sig === sig;
+        prev.first === first && prev.last === last && prev.phone === phone && prev.sig === sig &&
+        prev.dlState === dlState && prev.dlExp === dlExp;
       if (!same) {
         f.auth = { key: q.key, label: q.label, base: q.base, fee: q.fee, total: q.total, first: first, last: last,
-          phone: phone, sig: sig, agree: true, text: text, at: when };
+          phone: phone, dlState: dlState, dlExp: dlExp, sig: sig, agree: true, text: text, at: when };
         ctx.sh.getRange(ctx.rowNum, COL.PAYLOAD).setValue(JSON.stringify(d));
         invalidateStorageView_();
         auditLog_('Customer', 'Authorized a Synchrony charge on ' + d.quoteNo + ': ' + usd_(q.total) + ', ' + q.label +
@@ -11257,6 +11286,10 @@ function notifyFinanceAuth_(ctx, au, prev) {
       '  First name: ' + au.first,
       '  Last name:  ' + au.last,
       '  Phone:      ' + fmtPhone(au.phone),
+      '',
+      'Driver\'s license (Synchrony verifies the sale against it):',
+      '  State:      ' + (au.dlState || '—'),
+      '  Expires:    ' + (au.dlExp || '—'),
       '',
       'Plan:        ' + au.label,
       'Balance:     ' + usd_(au.base),

@@ -3364,6 +3364,7 @@ function renderFinance(P){
       'Authorized online '+esc(au.at||'')+' — signed “'+esc(au.sig)+'”.</div>'+
       '<div style="font-size:14px;line-height:1.5">Business Center → lookup by <b>Name &amp; Phone Number</b>:<br>'+
       '<b>'+esc(au.first)+' '+esc(au.last)+'</b> · <b>'+esc(QP&&QP.fmtPhone?QP.fmtPhone(au.phone):au.phone)+'</b><br>'+
+      'Driver\'s license: <b>'+esc(au.dlState||'—')+'</b>, expires <b>'+esc(au.dlExp||'—')+'</b><br>'+
       'Run a sale of <b>'+fmt$(au.total)+'</b> on the <b>'+esc(f.label.toLowerCase())+'</b> promotion '+
       '(balance '+fmt$(au.base)+' + admin fee '+fmt$(au.fee)+')'+
       (n&&!f.stale?' — '+(n.withInterest?fmt$(n.monthly)+'/month fixed payment, interest included'

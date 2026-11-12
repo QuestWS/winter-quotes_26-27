@@ -137,7 +137,8 @@ const ctxFor = (d) => {
     getRange: (r, c) => ({ setValue: (v) => { WRITES.push(c); cells[c] = v; }, getValue: () => cells[c] || '' }) } };
 };
 const AUTH = (over) => Object.assign({ quote: 'QW-26-9201', ln: 'fixture', step: 'authorize', term: 'syf12',
-  first: 'Pat', last: 'Fixture', phone: '(815) 555-0100', agree: true, sig: 'Pat Fixture' }, over || {});
+  first: 'Pat', last: 'Fixture', phone: '(815) 555-0100', dlState: 'IL', dlExp: '2031-06-30',
+  agree: true, sig: 'Pat Fixture' }, over || {});
 {
   const d = quote({ payments: [{ amt: 200 }] });   // owes $800
   const totalBefore = d.total;
@@ -149,7 +150,11 @@ const AUTH = (over) => Object.assign({ quote: 'QW-26-9201', ln: 'fixture', step:
 
   for (const [bad, why] of [[{ first: '' }, 'no name'], [{ phone: '555-0100' }, 'a short phone number'],
                             [{ agree: false }, 'no tick'], [{ agree: 'true' }, 'a tick that is not a real true'],
-                            [{ sig: '  ' }, 'no signature'], [{ term: 'syf99' }, 'an unknown plan']]) {
+                            [{ sig: '  ' }, 'no signature'], [{ term: 'syf99' }, 'an unknown plan'],
+                            [{ dlState: '' }, 'no license state'], [{ dlState: 'ZZ' }, 'a state that is not one'],
+                            [{ dlExp: '' }, 'no license expiration'], [{ dlExp: '2031-02-30' }, 'a date that does not exist'],
+                            [{ dlExp: '06/30/2031' }, 'a date in the wrong shape'],
+                            [{ dlExp: '2020-01-01' }, 'an EXPIRED license — Synchrony would decline it']]) {
     eq(B.financeServe_(AUTH(bad)).ok, 0, 'refused: ' + why);
   }
   eq(SENT.length, 0, 'no refused attempt reached the office');
@@ -161,6 +166,7 @@ const AUTH = (over) => Object.assign({ quote: 'QW-26-9201', ln: 'fixture', step:
   const au = d.finance.auth;
   eq([au.total, au.base, au.fee], [q.total, q.base, q.fee], 'for the plan priced on what is owed now ($800)');
   eq(au.phone, '8155550100', 'the phone is kept as digits — the Business Center lookup');
+  eq([au.dlState, au.dlExp], ['IL', '2031-06-30'], 'the license state and expiration are kept for Synchrony\'s verification');
   eq(au.text, P.financeAuthText(q), 'the exact sentence they agreed to is stored');
   eq(au.text.indexOf('$835.51') > -1 && au.text.indexOf('12-month deferred interest') > -1, true,
     'and it names the exact amount ($835.51 = $800 at 4.25%) and the plan');
@@ -170,6 +176,13 @@ const AUTH = (over) => Object.assign({ quote: 'QW-26-9201', ln: 'fixture', step:
   B.financeServe_(AUTH());
   eq(SENT.length, 1, 'the same authorization again emails nobody');
   eq(!!B.financeReply_(d).authorized, true, 'the page shows it as authorized');
+  eq(B.financeServe_(AUTH({ dlState: 'il' })).ok, 1, 'a lower-case state is accepted (and stored upper-case)');
+  eq(d.finance.auth.dlState, 'IL', '— as IL');
+  eq(Object.keys(au).some((k) => /number|dlNo|license(?!State)/i.test(k)), false, 'and never a license number');
+  const todayIso = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
+    String(new Date().getDate()).padStart(2, '0');
+  eq(B.financeServe_(AUTH({ dlExp: todayIso })).ok, 1, 'a license that expires today is still good today');
+  B.financeServe_(AUTH());   // back to the fixture's own authorization for what follows
   B.setCtx(null);
   eq(B.financeServe_(AUTH()).ok, 0, 'no matching quote: refused');
 }
@@ -348,6 +361,12 @@ console.log('=== the page ===');
     fail('the page asks for an SSN or an account number');
   else ok('the page never asks for an SSN or an account number');
   has(page, "q.get('go')", 'the page opens on the authorize step when the email asks it to');
+  has(page, 'id="aDlState"', 'the authorize step asks for the license state');
+  has(page, 'id="aDlExp" type="date"', 'and the expiration date');
+  has(page, "(E.FINANCING || {}).idStates", 'its state list is the engine\'s, the same one the server checks');
+  if (/id="aDl(No|Num)|license number"/i.test(page)) fail('the page asks for the license NUMBER');
+  else ok('the page never asks for the license number');
+  eq(P.FINANCING.idStates.length, 51, '50 states and DC');
   has(page, "money(o.monthly) + '/month</b>'", 'each plan shows its even monthly payment');
   has(page, "fixed payment, includes 9.99% interest", 'the fixed-interest plan says its payment includes the interest');
   has(page, "window.open(DATA.applyUrl, '_blank')", 'the application opens in a new tab, so this page is still here to come back to');

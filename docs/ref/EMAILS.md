@@ -398,6 +398,12 @@ human**: the 10-day reminder and the lead follow-up.
   undated `'Balance due'` label. It passes `noDueNote` so the balance box
   does not say it twice. The other notices' balance-box line reads "A quick
   heads-up: the remaining balance is due by …", not "Settle up now".
+  **"We have your unit" is gentler still** (`noticeHtml_` with `gentle`):
+  it is good news sent the day a unit comes out, often right around the
+  pay-by date, so its box is one dated row — "Remaining balance — due Nov
+  15" — and a "Just for your records" line with no late-fee figure and no
+  "due now". After the date it thanks them if a payment is on its way and
+  invites a reply. The late fee warning is the email that talks about fees.
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

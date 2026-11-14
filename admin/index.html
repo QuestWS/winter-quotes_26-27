@@ -456,6 +456,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
   .ysub{color:#444;font-size:10.5px}
   .ybal{white-space:nowrap;font-family:monospace}
   .pgFoot{font-size:9.5px;color:#555;margin-top:8px}
+  .psum{font-size:11px;margin:0 0 6px}
   /* Items to Quote: the item list in each row, and the price state in words. */
   ul.tq{list-style:none;margin:0;padding:0}
   ul.tq li{margin:0 0 3px;display:flex;gap:6px;align-items:flex-start}
@@ -1360,8 +1361,10 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
     <div class="card hide" id="recvCard">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <h2 style="margin:0">Receivables</h2>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn navy sm" onclick="loadReceivables(true)">Refresh</button>
+          <button class="btn ghost sm" onclick="printReceivables(false)" title="Print the list on screen">🖨 Print</button>
+          <button class="btn ghost sm" onclick="printReceivables(true)" title="Every list, one page each">🖨 Print all</button>
           <button class="btn ghost sm" onclick="$('recvCard').classList.add('hide')">✕ Close</button>
         </div>
       </div>
@@ -4210,11 +4213,35 @@ function renderReceivables(){
   const asOf=r.builtAt?' Figures as of '+esc(new Date(r.builtAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))+
     (r.cached?' (saved copy — Refresh for the sheet as it is now)':'')+'.':'';
   if(RTAB==='tx'){ $('recvBody').innerHTML=renderRecvTx_()+`<div class="msg" style="margin-top:8px">${asOf}</div>`; return; }
-  const list=cs.filter(c=>c.bucket===RTAB);
+  const v=recvView_(RTAB), list=v.list, head=v.head;
+  const rows=list.map(function(c){
+    const owe=c.bal>0.005, cr=c.bal<-0.005;
+    const bl=cr?'CREDIT '+fmt$(-c.bal):owe?fmt$(c.bal):'Paid';
+    const last=c.lastAt?new Date(c.lastAt).toLocaleDateString():c.lastDate;
+    const nc=recvTag_(c,RTAB);
+    return `<div class="srow" onclick="fromRecv('${esc(c.qn)}')">
+      <span class="nm">${esc(c.name||'(no name)')}${nc?'<span class="tagmute">'+nc+'</span>':''}</span>
+      <span class="un">${esc(c.qn)} · ${esc(c.unit)}${c.ymm?' · '+esc(c.ymm):''} · paid ${fmt$(c.paid)} of ${fmt$(c.total)}`+
+      `${last?' · last payment '+esc(last):''}${c.phone?' · '+esc(c.phone):''}</span>
+      <span class="bl ${cr||!owe?'paid':'owe'}">${esc(bl)}</span></div>`;
+  }).join('');
+  $('recvBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
+    (rows||'<div class="msg" style="padding:6px">— nobody in this list —</div>')+
+    `<div class="msg" style="margin-top:8px">Tap a row to open the quote.${asOf}</div>`;
+}
+/* One customer list and its heading, for the screen AND the printout — so the
+   paper can never sort, count or sum differently from what staff just saw. */
+function recvTag_(c,tab){
+  return (tab==='partial'||tab==='paid')&&!c.contract?'no contract':
+    tab==='unpaid'?(c.committed?'contract signed':'not committed'):'';
+}
+function recvView_(tab){
+  const r=window._rv, cs=r.customers||[];
+  const list=cs.filter(c=>c.bucket===tab);
   /* Whoever owes the most, or is owed the most, first — that is the call to
      make next. Paid in full and not storing read best alphabetically. */
-  if(RTAB==='unpaid'||RTAB==='partial') list.sort((a,b)=>b.bal-a.bal);
-  else if(RTAB==='credit') list.sort((a,b)=>a.bal-b.bal);
+  if(tab==='unpaid'||tab==='partial') list.sort((a,b)=>b.bal-a.bal);
+  else if(tab==='credit') list.sort((a,b)=>a.bal-b.bal);
   const sum=list.reduce((s,c)=>s+c.bal,0);
   /* Outstanding counts committed quotes only (a deposit or a signed contract)
      — the server decides that and sends both sums. Here, unpaid quotes are
@@ -4230,36 +4257,13 @@ function renderReceivables(){
     credit:`<b>${list.length}</b> customer${list.length===1?' is':'s are'} owed money back — <b>${fmt$(-sum)}</b> in credits. `+
       'Record a refund as a negative payment on the quote.',
     notstoring:`<b>${list.length}</b> marked not storing this season. They owe nothing for it, so none of this is in the outstanding total.`
-  }[RTAB];
-  const rows=list.map(function(c){
-    const owe=c.bal>0.005, cr=c.bal<-0.005;
-    const bl=cr?'CREDIT '+fmt$(-c.bal):owe?fmt$(c.bal):'Paid';
-    const last=c.lastAt?new Date(c.lastAt).toLocaleDateString():c.lastDate;
-    const nc=(RTAB==='partial'||RTAB==='paid')&&!c.contract?'<span class="tagmute">no contract</span>':
-      RTAB==='unpaid'?(c.committed?'<span class="tagmute">contract signed</span>':'<span class="tagmute">not committed</span>'):'';
-    return `<div class="srow" onclick="fromRecv('${esc(c.qn)}')">
-      <span class="nm">${esc(c.name||'(no name)')}${nc}</span>
-      <span class="un">${esc(c.qn)} · ${esc(c.unit)}${c.ymm?' · '+esc(c.ymm):''} · paid ${fmt$(c.paid)} of ${fmt$(c.total)}`+
-      `${last?' · last payment '+esc(last):''}${c.phone?' · '+esc(c.phone):''}</span>
-      <span class="bl ${cr||!owe?'paid':'owe'}">${esc(bl)}</span></div>`;
-  }).join('');
-  $('recvBody').innerHTML=`<div class="msg" style="margin:0 0 4px">${head}</div>`+
-    (rows||'<div class="msg" style="padding:6px">— nobody in this list —</div>')+
-    `<div class="msg" style="margin-top:8px">Tap a row to open the quote.${asOf}</div>`;
+  }[tab];
+  return {list:list, head:head};
 }
 function renderRecvTx_(){
-  const r=window._rv, list=recvTx_();
+  const v=recvTxView_(), list=v.list, head=v.head;
   const rng=[[7,'Last 7 days'],[30,'Last 30 days'],[0,'All']].map(([d,l])=>
     `<button class="btn ${RRANGE===d?'navy':'ghost'} sm" onclick="setRecvRange(${d})">${l}</button>`).join(' ');
-  const net=list.reduce((s,t)=>s+t.amt,0);
-  const refunds=list.filter(t=>t.amt<0).length;
-  /* The server sends the newest RECEIVABLES_TX_MAX_; say so rather than let
-     "All" quietly mean "all of the newest few hundred". */
-  const capped=(r.tx||[]).length<(r.txCount||0)&&!RRANGE
-    ? ` Showing the newest ${(r.tx||[]).length} of ${r.txCount}.`:'';
-  const head=`<b>${list.length}</b> transaction${list.length===1?'':'s'}`+
-    (RRANGE?` in the last ${RRANGE} days`:'')+` · <b>${sfmt$(net)}</b> net`+
-    (refunds?` (includes ${refunds} refund${refunds===1?'':'s'})`:'')+'.'+capped;
   const rows=list.map(function(t){
     const ref=t.amt<0;
     return `<div class="srow" onclick="fromRecv('${esc(t.qn)}')">
@@ -4271,6 +4275,90 @@ function renderRecvTx_(){
   return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">${rng}</div>`+
     `<div class="msg" style="margin:0 0 4px">${head}</div>`+
     (rows||'<div class="msg" style="padding:6px">— no payments recorded in this window —</div>');
+}
+function recvTxView_(){
+  const r=window._rv, list=recvTx_();
+  const net=list.reduce((s,t)=>s+t.amt,0);
+  const refunds=list.filter(t=>t.amt<0).length;
+  /* The server sends the newest RECEIVABLES_TX_MAX_; say so rather than let
+     "All" quietly mean "all of the newest few hundred". */
+  const capped=(r.tx||[]).length<(r.txCount||0)&&!RRANGE
+    ? ` Showing the newest ${(r.tx||[]).length} of ${r.txCount}.`:'';
+  const head=`<b>${list.length}</b> transaction${list.length===1?'':'s'}`+
+    (RRANGE?` in the last ${RRANGE} days`:'')+` · <b>${sfmt$(net)}</b> net`+
+    (refunds?` (includes ${refunds} refund${refunds===1?'':'s'})`:'')+'.'+capped;
+  return {list:list, head:head};
+}
+/* ---------------------------------------------------------------------------
+   PRINT RECEIVABLES (Chris, Nov 2026: "make the various receivables lists
+   printable"). "Print" is the list on screen; "Print all" is every list that
+   has anyone in it, one page each. Built from the same recvView_ /
+   recvTxView_ the screen uses, so the paper sorts, counts and sums exactly
+   as staff just saw. Like the storage sheets, every page NAMES its list, the
+   range and when the figures are from — a partial list that looks like the
+   whole picture is how a balance gets missed. Black-and-white safe: credits
+   and refunds are said in words, never only in colour. The collections lists
+   carry a tick box and a notes column for working the phone. */
+async function printReceivables(all){
+  if(!window._rv){ await loadReceivables(); if(!window._rv) return; }
+  const r=window._rv;
+  const today=new Date().toLocaleDateString();
+  const asOf=r.builtAt?new Date(r.builtAt).toLocaleString([], {month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  const meta=(sub)=>`Receivables · printed ${today}${asOf?'<br>figures as of '+esc(asOf):''}<br>${sub}`;
+  const totals=`<div class="rule">Outstanding ${esc(fmt$(r.totals.outstanding))} · Collected ${esc(sfmt$(r.totals.collected))} · Credits due ${esc(fmt$(r.totals.credit))}</div>`;
+  const tabs=all?Object.keys(RTAB_LABEL):[RTAB];
+  const pages=[];
+  tabs.forEach(function(tab){
+    if(tab==='tx'){
+      const v=recvTxView_(), rng=RRANGE?'last '+RRANGE+' days':'all';
+      if(all&&!v.list.length) return;
+      pages.push(`<div class="pg">
+        <div class="pgHead"><h1>QUEST WATERSPORTS — RECENT TRANSACTIONS</h1>
+          <div class="meta">${meta(v.list.length+' transaction'+(v.list.length===1?'':'s')+' · '+rng)}</div></div>
+        ${totals}<div class="psum">${v.head}</div>
+        <table class="printsheet">
+          <tr><th>When</th><th>Customer</th><th>Unit</th><th>Method</th><th>Recorded by</th><th style="text-align:right">Amount</th></tr>
+          ${v.list.map(t=>{const ref=t.amt<0;return `<tr>
+            <td>${esc(recvWhen_(t))}</td>
+            <td><span class="yn">${esc(t.name||'(no name)')}</span><br><span class="ysub">${esc(t.qn)}</span></td>
+            <td>${esc(t.unit||'')}</td>
+            <td>${esc(t.method||'Payment')}${ref&&!/refund/i.test(t.method||'')?' (refund)':''}</td>
+            <td>${esc(t.by||'—')}</td>
+            <td class="ybal" style="text-align:right">${esc(sfmt$(t.amt))}${ref?' REFUND':''}</td></tr>`;}).join('')||
+            '<tr><td colspan="6">— no payments recorded in this window —</td></tr>'}
+        </table>
+        <div class="pgFoot">Quest Watersports · (815) 433-2200</div></div>`);
+      return;
+    }
+    const v=recvView_(tab);
+    if(all&&!v.list.length) return;
+    const work=tab==='unpaid'||tab==='partial'||tab==='credit';
+    pages.push(`<div class="pg">
+      <div class="pgHead"><h1>QUEST WATERSPORTS — ${esc(RTAB_LABEL[tab]).toUpperCase()}</h1>
+        <div class="meta">${meta(v.list.length+' quote'+(v.list.length===1?'':'s'))}</div></div>
+      ${totals}<div class="psum">${v.head}</div>
+      <table class="printsheet">
+        <tr>${work?'<th style="width:38px">Done</th>':''}<th>Customer</th><th>Unit</th><th>Phone</th><th>Paid / total</th><th>Last payment</th>`+
+        `<th style="text-align:right">Balance</th>${work?'<th style="width:22%">Notes</th>':''}</tr>
+        ${v.list.map(c=>{
+          const owe=c.bal>0.005, cr=c.bal<-0.005;
+          const last=c.lastAt?new Date(c.lastAt).toLocaleDateString():(c.lastDate||'—');
+          const tag=recvTag_(c,tab);
+          return `<tr>${work?'<td><span class="cb"></span></td>':''}
+          <td><span class="yn">${esc(c.name||'(no name)')}</span><br><span class="ysub">${esc(c.qn)}${tag?' · '+esc(tag):''}</span></td>
+          <td>${esc(c.unit||'')}${c.ymm?'<br><span class="ysub">'+esc(c.ymm)+'</span>':''}</td>
+          <td style="white-space:nowrap">${esc(c.phone||'—')}</td>
+          <td style="white-space:nowrap">${esc(fmt$(c.paid))} / ${esc(fmt$(c.total))}</td>
+          <td>${esc(last)}</td>
+          <td class="ybal" style="text-align:right">${esc(cr?'CREDIT '+fmt$(-c.bal):owe?fmt$(c.bal):'Paid')}</td>
+          ${work?'<td></td>':''}</tr>`;}).join('')||
+          `<tr><td colspan="${work?8:6}">— nobody in this list —</td></tr>`}
+      </table>
+      <div class="pgFoot">Quest Watersports · (815) 433-2200</div></div>`);
+  });
+  if(!pages.length){ toast('Nothing to print — every list is empty.'); return; }
+  $('printArea').innerHTML=pages.join('');
+  window.print();
 }
 async function printStorage(){
   if(!window._sg){await loadStorage();}

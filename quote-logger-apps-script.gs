@@ -12534,21 +12534,27 @@ function noticeDueRows_(d, paid, balance, gentle) {
     return { rows: moneyRow_('Balance due when the work is completed', usd_(balance), true), note: '' };
   }
   /* GENTLE — the "We have your unit" email (Chris, Nov 2026). It is good news
-     sent the day a boat comes out, often right around the pay-by date, and a
-     "due now" row or a late-fee figure under it reads as "pay us now". So it
-     is one row, still dated (every balance owed carries its date), and a
-     for-your-records line with no late charge in it: the late fee warning is
-     the email that talks about fees. */
+     sent the day a unit comes out, often right around the pay-by date, and a
+     "due now" row or a late-fee figure under it reads as "pay us now" — a
+     threat. But it is not just for their records either: the balance IS due
+     and needs addressing. So: one dated row, then a plain, warm sentence in
+     ordinary body text that says it is due, how to take care of it, and that
+     more time is a reply away. No late charge: the late fee warning is the
+     email that talks about fees. */
   if (gentle) {
     let finOn = false;
     try { finOn = !!financeOfferUrl_(d); } catch (e) {}
-    const how = 'you can take care of it online' + (finOn ? ' or spread it out with Synchrony' : '');
+    const how = 'online in about a minute' + (finOn ? ', or spread it out with Synchrony,' : '') + ' using the buttons below';
+    const amt = '<b>' + usd_(balance) + '</b>';
     return {
+      strong: true,
       rows: moneyRow_('Remaining balance — due ' + payByShort, usd_(balance), true),
       note: pastDue
-        ? 'Just for your records. If it\'s already on its way, thank you! If not, ' + how +
-          ' below, or reply and let us know what works for you.'
-        : 'Just for your records — whenever it\'s convenient before then, ' + how + ' below.' };
+        ? 'Your remaining balance of ' + amt + ' was due on <b>' + payByShort + '</b>. If it\'s already on its way, thank you! ' +
+          'If not, please take care of it as soon as you\'re able — ' + how + '. If you need a little more time, just reply ' +
+          'or call and let us know when you\'ll be able to, and we\'ll work it out with you.'
+        : 'Your remaining balance of ' + amt + ' is due by <b>' + payByShort + '</b>. You can take care of it ' + how + '. ' +
+          'If you need a little more time, just reply or call and let us know when works for you.' };
   }
   const dep = Math.min(Number(d.deposit || 0), Number(d.total || 0));
   const depOwed = Math.min(balance, Math.max(0, dep - paid));
@@ -12587,7 +12593,8 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, opts) {
     const due = noticeDueRows_(d, paid, balance, !!(opts && opts.gentle));
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
-      (due.note && !(opts && opts.noDueNote) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
+      (due.note && !(opts && opts.noDueNote)
+        ? '<div style="' + (due.strong ? 'font-size:15px;color:#1D2B38;line-height:1.55;margin-top:8px' : 'font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px') + '">' + due.note + '</div>' : '') +
       '<div style="margin-top:8px">' + buttonHtml_(PAYMENT_URL, 'Pay online', '#C08A22') +
       /* Wherever a payment option shows, Synchrony shows beside it (Chris,
          Nov 2026). financeOfferUrl_ decides; an error just leaves it off. */

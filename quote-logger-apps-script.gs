@@ -648,6 +648,22 @@ function pricesValidSentence(payBy){
     : 'Prices shown are valid when balances are settled in full by ' + by + ' by cash, check, debit card, Zelle, or ACH.';
 }
 
+/* Every balance owed says WHEN it is due (Chris, Nov 2026: "any reference to
+   a balance owed needs a due date on it" — customers said they never got
+   another bill). One wording for the page, the PDF and every email.
+   o: { noStorage, dueToday, payBy (long date), payByShort, now }. Once the
+   pay-by day is over it reads "was due", never a bare "Balance". */
+function balanceDueLabel(o){
+  o = o || {};
+  if (o.noStorage) return 'Balance due when the work is completed';
+  if (o.dueToday) return 'Balance due now';
+  const short = o.payByShort || SEASON.payByShort;
+  const pb = new Date(String(o.payBy || SEASON.payByDate));
+  const t = o.now ? new Date(o.now).getTime() : Date.now();
+  const past = !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+  return past ? 'Balance (was due ' + short + ')' : 'Balance due by ' + short;
+}
+
 /* Every phrase that promises a customer something is being locked in. While
    pricing is provisional a deposit buys a SPACE, not a price, and each of
    these says so; flipping the flag restores the ordinary wording. Page, PDF
@@ -12497,6 +12513,16 @@ function latePenalty_(d, balance, now, forceLate) {
    and, when only the dated balance is left, a short "heads-up — due by"
    line. Once the pay-by date has passed the balance row says it was due then,
    and the line goes. */
+/* The dated "Balance due …" label for a quote (balanceDueLabel, the engine's
+   one wording), escaped for an email or the PDF. */
+function balanceDueLabel_(d) {
+  const sn = (d && d.season) || {};
+  return esc_(balanceDueLabel({
+    noStorage: !!(d && d.state && d.state.storage === 'none'),
+    dueToday: Number(d && d.total || 0) > 0 && Number(d && d.deposit || 0) >= Number(d && d.total || 0),
+    payBy: sn.payBy || '', payByShort: sn.payByShort || '' }));
+}
+
 function noticeDueRows_(d, paid, balance) {
   const noStorage = !!(d.state && d.state.storage === 'none');
   const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
@@ -12775,7 +12801,7 @@ function buildEmailFor_(d, kind, extra, photos) {
       (paid > 0
         ? (bal < -0.005
             ? row('Credit due to you', usd_(-bal))
-            : row('Balance due', usd_(Math.max(0, bal))))
+            : row(balanceDueLabel_(d), usd_(Math.max(0, bal))))
         : '') +
       '</table></div>';
 
@@ -12838,7 +12864,7 @@ function buildEmailFor_(d, kind, extra, photos) {
       (paid > 0.005
         ? moneyRow_('Payments received', '\u2212' + usd_(paid), false) +
           (bal < -0.005 ? moneyRow_('Credit due to you', usd_(-bal), true)
-            : moneyRow_('Balance due' + (noStorage ? ' when the work is completed' : ' by ' + payBy), usd_(Math.max(0, bal)), true))
+            : moneyRow_(balanceDueLabel_(d), usd_(Math.max(0, bal)), true))
         : (noStorage ? '' : moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false)));
     const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table></div>';
@@ -13378,7 +13404,16 @@ function buildEmailFor_(d, kind, extra, photos) {
        three equally fine ways forward — pay, finance with Synchrony (only
        when it is offered), or just tell us when. The late charge is still
        there in dollars (latePenalty_), kept small and last, framed as
-       "so it's never a surprise". "Settle up now" stays in the subject only. */
+       "so it's never a surprise". "Settle up now" stays in the subject only.
+
+       AFTER the pay-by date (Chris, Nov 2026) it says what was due and that
+       settling now OR reaching out with when they can lets us waive the 10%
+       — but that with no payment and no word, the 10% and then the 2% monthly
+       charge will have to be applied. Calling is a way to agree a short
+       timeline, not a way out of paying: "flexible within reason if they
+       communicate with us". If staff have already added the late fee
+       (adminLateFee — an Adjustments line naming "late"), nothing is promised
+       about it; the same offer is made about the monthly charge instead. */
     const pen = latePenalty_(d, bal);
     const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
     const pb = new Date(String((d.season && d.season.payBy) || SEASON.payByDate));
@@ -13388,21 +13423,51 @@ function buildEmailFor_(d, kind, extra, photos) {
     const P = '<p style="margin:0 0 12px">';
     const LI = '<li style="margin:0 0 6px">';
     const term = docTerm_(d).toLowerCase();
-    const intro =
-      P + 'Thank you for storing with Quest this winter — we really appreciate you sticking with us.</p>' +
-      P + 'This is just a <b>friendly reminder</b> that your winter ' + term + ' has a remaining balance of <b>' + usd_(bal) + '</b>, ' +
-        (pastDue ? 'which was due on <b>' + payByShort + '</b>. ' : 'due by <b>' + payByShort + '</b>. ') +
-        'That date is on your quote and we mention it when deposits are taken, but with everything going on this time of year ' +
-        'it\'s easy for it to slip by — so we wanted to make sure it reached you.</p>' +
-      P + 'Whatever works best for you is fine with us:</p>' +
-      '<ul style="margin:0 0 12px;padding-left:20px">' +
+    const thanks = P + 'Thank you for storing with Quest this winter — we really appreciate you sticking with us.</p>';
+    const seen = 'That date is on your quote and we mention it when deposits are taken, but with everything going on this time of year ' +
+      'it\'s easy for it to slip by';
+    const options = function (timeLi) {
+      return '<ul style="margin:0 0 12px;padding-left:20px">' +
         LI + '<b>Pay online</b> — the button below takes about a minute.</li>' +
-        (finOn ? LI + '<b>Finance it with Synchrony</b> — your ' + term + ' is settled right away, and you pay it off over time on a schedule that suits you.</li>' : '') +
-        LI + '<b>Need a little time?</b> Just reply to this email or call us at (815) 433-2200 and let us know when you expect to take care of it. That\'s all we need — we\'re happy to work with you.</li>' +
-      '</ul>' +
-      '<p style="margin:0 0 12px;font-size:13px;color:#5C7185;line-height:1.5">So it\'s never a surprise: ' + pen.text + ' ' +
-        pen.avoid + (finOn ? ', and so does financing.' : '.') + '</p>' +
-      '<p style="margin:0">If a payment is already on its way, thank you — please disregard this note.</p>';
+        (finOn ? LI + '<b>Finance it with Synchrony</b> — your ' + term + ' is settled right away, and you get the flexibility of paying it off over time.</li>' : '') +
+        LI + timeLi + '</li></ul>';
+    };
+    const bye = '<p style="margin:0">If a payment is already on its way, thank you — please disregard this note.</p>';
+    let intro;
+    if (!pastDue) {
+      intro = thanks +
+        P + 'This is just a <b>friendly reminder</b> that your winter ' + term + ' has a remaining balance of <b>' + usd_(bal) + '</b>, ' +
+          'due by <b>' + payByShort + '</b>. ' + seen + ' — so we wanted to make sure it reached you.</p>' +
+        P + 'Whatever works best for you is fine with us:</p>' +
+        options('<b>Need a little time?</b> Just reply to this email or call us at (815) 433-2200 and let us know when you expect to take care of it. That\'s all we need — we\'re happy to work with you.') +
+        '<p style="margin:0 0 12px;font-size:13px;color:#5C7185;line-height:1.5">So it\'s never a surprise: ' + pen.text + ' ' +
+          pen.avoid + (finOn ? ', and so does financing.' : '.') + '</p>' + bye;
+    } else {
+      const r2 = function (x) { return Math.round(x * 100) / 100; };
+      const pct = Number(RULES.latePct) || 10;
+      const mp = Number(RULES.monthlyPct) || 2, mmin = Number(RULES.monthlyMin) || 5;
+      const feeOn = ((d.manual && d.manual.adjustments) || []).some(function (x) {
+        return x && Number(x.amt) > 0 && /late/i.test(String(x.label || '')) && !/retriev/i.test(String(x.label || ''));
+      });
+      const fee = feeOn ? 0 : r2(bal * pct / 100);
+      const monthly = r2(Math.max((bal + fee) * mp / 100, mmin));
+      const lsTxt = String((d.season && d.season.lateStart) || SEASON.lateChargeStart || '');
+      const ls = new Date(lsTxt);
+      const monthlyWhen = (!isNaN(ls.getTime()) && Date.now() < ls.getTime())
+        ? 'a ' + mp + '% monthly service charge of <b>' + usd_(monthly) + '</b> a month starting ' + esc_(lsTxt)
+        : 'a ' + mp + '% monthly service charge of <b>' + usd_(monthly) + '</b> for each month it stays open';
+      const timeLi = '<b>Need a little time?</b> Reply to this email or call us at (815) 433-2200 and let us know when you\'ll be able to take care of it — we\'ll work out a short timeline with you.';
+      intro = thanks +
+        P + 'This is a <b>friendly reminder</b> that the remaining balance of <b>' + usd_(bal) + '</b> on your winter ' + term +
+          ' was due on <b>' + payByShort + '</b>' + (feeOn ? ', and the ' + pct + '% late fee has been added per the storage terms' : '') + '. ' +
+          seen + ', so we wanted to reach out ' + (feeOn ? 'before anything more is added.' : 'before any late charges are added.') + '</p>' +
+        P + (feeOn
+          ? '<b>If you settle up now, or reach out and let us know when you\'ll be able to, we can hold off on the monthly service charge.</b> Any of these works:'
+          : '<b>If you settle up now, or reach out and let us know when you\'ll be able to, we can waive the ' + pct + '% late fee.</b> Any of these works:') + '</p>' +
+        options(timeLi) +
+        P + 'We\'re glad to be flexible when we hear from you. If we don\'t receive a payment or hear from you, though, we\'ll have to apply the storage terms: ' +
+          (feeOn ? monthlyWhen + '.' : 'the ' + pct + '% late fee of <b>' + usd_(fee) + '</b>, and then ' + monthlyWhen + '.') + '</p>' + bye;
+    }
     /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
     return { subject: 'Settle up now: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
       html: noticeHtml_(d, intro, '', true, { noDueNote: true }), status: 'Late fee warning sent' };
@@ -13427,7 +13492,7 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
     const html = customerEmailHtml_({ firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
-      payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
+      payBy: (d.season && d.season.payByShort) || '', payByLong: (d.season && d.season.payBy) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
       reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
     /* (The object used to carry `html` twice, and the second -- without the
@@ -13722,14 +13787,10 @@ function sendLateFeeWarning() {
   if (bal <= 0.005) { ctx.ui.alert('No unpaid balance on ' + ctx.quoteNo + '.'); return; }
   const conf = ctx.ui.alert('Send the late-fee warning to ' + d.email + '?', 'Open balance: ' + usd_(bal), ctx.ui.ButtonSet.YES_NO);
   if (conf !== ctx.ui.Button.YES) return;
-  const payBy = (d.season && d.season.payByShort) || 'Nov 15';
-  const intro = 'Just a heads-up on your winter ' + docTerm_(d).toLowerCase() + ': there\'s still an open balance of <b>' + usd_(bal) + '</b>. ' +
-    'Per the storage terms on your ' + docTerm_(d).toLowerCase() + ', unpaid balances are subject to a late fee — the next one will be applied on <b>the 15th of this month</b>. ' +
-    'Settling up before then avoids it entirely; the payment button below takes about a minute. ' +
-    'If a payment is already on the way or you\'d like to talk it through, just call us — we\'re happy to work with you.';
-  sendCustomerNotice_(d, 'Heads-up: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo, intro, '', true);
-  ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue('Late fee warning sent');
-  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'latewarn', 'Sheet menu'));
+  /* Same email the console sends (menuSendKind_ -> buildEmailFor_). This menu
+     item used to hand-build its own "the next one will be applied on the
+     15th" body, which the console's wording had long since moved past. */
+  if (!menuSendKind_(ctx, 'latewarn', '')) return;
   ctx.ui.alert('Sent to ' + d.email + '.');
 }
 
@@ -13956,7 +14017,8 @@ function customerEmailHtml_(o) {
       ? '<tr><td style="padding:6px 0;font-size:15px;font-weight:bold;color:#1E6B3A">CREDIT DUE TO YOU — we\'ll settle up</td><td align="right" style="padding:6px 0;font-size:18px;font-weight:bold;color:#1E6B3A">' + usd_(o.creditDue) + '</td></tr>'
       : o.paidInFull
       ? '<tr><td style="padding:6px 0;font-size:15px;font-weight:bold;color:#1E6B3A">PAID IN FULL — thank you!</td><td align="right" style="padding:6px 0;font-size:18px;font-weight:bold;color:#1E6B3A">$0.00</td></tr>'
-      : moneyRow_('Balance due', usd_(o.balance), true);
+      : moneyRow_(esc_(balanceDueLabel({ noStorage: o.noStorage, dueToday: o.dueToday,
+          payBy: o.payByLong || '', payByShort: o.payBy || '' })), usd_(o.balance), true);
   }
   let buttons = '';
   /* A signed contract already on file (o.signed, from d.contractUrl -- the same
@@ -14208,7 +14270,7 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage,
       paid: paid, balance: balance, paidInFull: paid > 0 && Math.abs(balance) <= 0.005,
       creditDue: balance < -0.005 ? -balance : 0,
-      payBy: (d.season && d.season.payByShort) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
+      payBy: (d.season && d.season.payByShort) || '', payByLong: (d.season && d.season.payBy) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
@@ -14741,7 +14803,7 @@ function quoteHtml_(d) {
         } else if (bal <= 0.005) {
           t += '<tr class="grand"><td style="color:#1E6B3A">PAID IN FULL — thank you</td><td class="r" style="color:#1E6B3A">$0.00</td></tr>';
         } else {
-          t += '<tr class="grand"><td>Balance due — Cash, Check, Debit, Zelle or ACH' + (dueToday ? '' : ' by ' + esc_(sn.payByShort || '')) + '</td><td class="r">' + usd_(bal) + '</td></tr>';
+          t += '<tr class="grand"><td>' + balanceDueLabel_(d) + ' — Cash, Check, Debit, Zelle or ACH</td><td class="r">' + usd_(bal) + '</td></tr>';
           t += '<tr><td>Balance by credit card (+3% fee)</td><td class="r">' + usd_(bal * (1 + ADJ_CC_PCT / 100)) + '</td></tr>';
           if (!dueToday) {
             t += '<tr><td>If unpaid after ' + esc_(sn.payByShort || '') + ' (+' + ADJ_LATE_PCT + '%) — cash / card</td><td class="r">' + usd_(bal * (1 + ADJ_LATE_PCT / 100)) + ' / ' + usd_(bal * (1 + ADJ_LATE_PCT / 100) * (1 + ADJ_CC_PCT / 100)) + '</td></tr>';

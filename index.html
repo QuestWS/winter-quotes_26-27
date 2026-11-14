@@ -1443,7 +1443,7 @@ function renderSignPay(){
     S.payMode='balance';
     $('#payStepTitle').textContent='Pay your balance';
     $('#payChoices').innerHTML='';
-    $('#payAmtLabel').textContent='Balance due';
+    $('#payAmtLabel').textContent=balanceDueLabel({noStorage:S.storage==='none', dueToday:t.dueToday});
     $('#payAmt').textContent=fmt(t.balance);
     $('#payRef').textContent=S.quoteNo;
     $('#payLink').style.display='';
@@ -1578,7 +1578,7 @@ function refresh(){
     $('#tPaidRow').style.display='flex';
     $('#tPaid').textContent='−'+fmt(t.paid);
     $('#tBalRow').style.display='flex';
-    $('#tBalLabel').textContent=t.credit?'CREDIT DUE TO YOU':t.paidInFull?'PAID IN FULL — thank you!':'Balance due';
+    $('#tBalLabel').textContent=t.credit?'CREDIT DUE TO YOU':t.paidInFull?'PAID IN FULL — thank you!':balanceDueLabel({noStorage:S.storage==='none', dueToday:t.dueToday});
     $('#tBal').textContent=t.credit?fmt(t.credit):fmt(Math.max(0,t.balance));
   } else { $('#tPaidRow').style.display='none'; $('#tBalRow').style.display='none'; }
   $('#mAmt').textContent=fmt(t.total);

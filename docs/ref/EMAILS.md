@@ -355,7 +355,11 @@ human**: the 10-day reminder and the lead follow-up.
   balance."** A bare open-balance line on "We have your boat" read as chasing
   customers for money not due yet. `noticeDueRows_()` splits it: any unpaid
   part of the deposit is **Deposit due now**, the rest is **Balance due by
-  <pay-by date>**, and when only the dated balance is left it adds "**Settle
+  <pay-by date>** — **but only before the pay-by date, and never on the late
+  fee warning.** Those show one row, the whole balance (`balanceDueLabel_`):
+  a split under a body asking for the whole amount read as "he only needs to
+  pay $63.20 by 11/15" (Chris, Nov 2026), and once the date has passed there
+  is no "deposit now, rest later" left to describe. Before the date, and when only the dated balance is left it adds "**Settle
   up now** — balance due by <pay-by date>." followed by the late charge **in
   dollars** ("After Nov 15, a 10% late fee adds $98.64 — $1,085.04 in total").
   (Chris, Nov 2026: assertive, not the old "Nothing is due today — pay any time

@@ -272,6 +272,24 @@ console.log('=== every balance owed carries a due date ===');
     'no undated "Balance due" label in the backend or on the quote page');
 }
 
+console.log('=== the late fee warning box matches the figure it asks for ===');
+{
+  /* Chris, Nov 2026: nothing paid, $563.20 asked for in the body, and a box
+     reading "Deposit due now $500.00 / Remaining balance due by Nov 15 $63.20"
+     — read as "he only needs to pay $63.20 by 11/15". One row, whole balance. */
+  const none = ((B.buildEmailFor_(quote({ season: FUTURE }), 'latewarn', '', '') || {}).html) || '';
+  has(none, 'remaining balance of <b>$1,000.00</b>', 'nothing paid: the body asks for the whole balance');
+  has(none, 'Balance due by Nov 15', '— and the box says the same date');
+  hasnt(none, 'Deposit due now', '— with no deposit/balance split under it');
+  hasnt(none, 'Remaining balance due by', '— and no part-balance row');
+  eq((none.match(/\$1,000\.00/g) || []).length >= 2, true, '— the box carries the same $1,000.00 as the body');
+  /* Past the date, every notice shows the whole balance, not a split. */
+  const PASTB = Object.assign(B.seasonStamp(), { payBy: 'November 15, 2020', payByShort: 'Nov 15' });
+  const sp = ((B.buildEmailFor_(quote({ season: PASTB }), 'upnext', '', '') || {}).html) || '';
+  if (sp) { hasnt(sp, 'Deposit due now', 'past the date, other notices: no deposit split either');
+            has(sp, 'Balance (was due Nov 15)', '— one row, was due'); }
+}
+
 console.log('=== the late fee warning after the due date ===');
 {
   /* Chris, Nov 2026: say what was due; settling now or reaching out lets us

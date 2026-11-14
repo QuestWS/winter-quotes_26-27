@@ -13447,7 +13447,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const P = '<p style="margin:0 0 12px">';
     const LI = '<li style="margin:0 0 6px">';
     const term = docTerm_(d).toLowerCase();
-    const thanks = P + 'Thank you for storing with Quest this winter — we really appreciate you sticking with us.</p>';
+    const thanks = P + 'Thank you for storing with Quest this winter — we really appreciate your business.</p>';  // not "sticking with us": many are first-time customers (Chris, Nov 2026)
     const seen = 'That date is on your quote and we mention it when deposits are taken, but with everything going on this time of year ' +
       'it\'s easy for it to slip by';
     const options = function (timeLi) {

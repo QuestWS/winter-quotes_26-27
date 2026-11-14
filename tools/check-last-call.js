@@ -226,8 +226,19 @@ console.log('=== the late charge, in dollars ===');
   /* The settle-up line shows once the deposit is in and only the dated
      balance is left ($500 here). */
   const st = B.buildEmailFor_(quote({ payments: [{ amt: 500 }] }), 'stored', '', '');
-  has(st && st.html, 'A quick heads-up: the remaining balance is due by Nov 15. After Nov 15, a 10% late fee adds <b>$50.00</b>',
-    '"We have your unit": the settle-up line carries the dollar figure');
+  /* Chris, Nov 2026: "We have your unit" is good news, often sent around the
+     pay-by date — no "due now", no late-fee figure, but still dated. */
+  has(st && st.html, 'Remaining balance — due Nov 15', '"We have your unit": the balance is still dated');
+  has(st && st.html, 'Just for your records', '— and framed as for their records');
+  hasnt(st && st.html, 'late fee', '— with no late fee in it');
+  hasnt(st && st.html, 'due now', '— and no "due now"');
+  const PASTS = Object.assign(B.seasonStamp(), { payBy: 'November 15, 2020', payByShort: 'Nov 15', lateStart: 'December 1, 2020' });
+  const stp = ((B.buildEmailFor_(quote({ payments: [{ amt: 500 }], season: PASTS }), 'stored', '', '') || {}).html) || '';
+  has(stp, 'If it\'s already on its way, thank you!', 'pulled after Nov 15: still gentle');
+  hasnt(stp, 'late fee', '— still no late fee');
+  hasnt(stp, 'was due', '— and no "was due"');
+  const stn = ((B.buildEmailFor_(quote({ season: FUTURE }), 'stored', '', '') || {}).html) || '';
+  hasnt(stn, 'due now', 'no deposit yet: still no "due now" row');
   /* The PDF's terms read the same RULES, so the email and the paper agree. */
   if (/increase by ' \+ RULES\.latePct \+ '%, and a ' \+ RULES\.monthlyPct \+ '% monthly service charge \(min\. \$' \+ RULES\.monthlyMin/.test(gasSrc))
     ok('the PDF terms read RULES, not typed numbers');

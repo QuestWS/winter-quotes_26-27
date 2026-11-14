@@ -12523,7 +12523,7 @@ function balanceDueLabel_(d) {
     payBy: sn.payBy || '', payByShort: sn.payByShort || '' }));
 }
 
-function noticeDueRows_(d, paid, balance) {
+function noticeDueRows_(d, paid, balance, gentle) {
   const noStorage = !!(d.state && d.state.storage === 'none');
   const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
   const payByLong = (d.season && d.season.payBy) || SEASON.payByDate;
@@ -12532,6 +12532,23 @@ function noticeDueRows_(d, paid, balance) {
   const pastDue = !isNaN(cutoff.getTime()) && Date.now() > cutoff.getTime() + 36 * 3600 * 1000;
   if (noStorage) {
     return { rows: moneyRow_('Balance due when the work is completed', usd_(balance), true), note: '' };
+  }
+  /* GENTLE — the "We have your unit" email (Chris, Nov 2026). It is good news
+     sent the day a boat comes out, often right around the pay-by date, and a
+     "due now" row or a late-fee figure under it reads as "pay us now". So it
+     is one row, still dated (every balance owed carries its date), and a
+     for-your-records line with no late charge in it: the late fee warning is
+     the email that talks about fees. */
+  if (gentle) {
+    let finOn = false;
+    try { finOn = !!financeOfferUrl_(d); } catch (e) {}
+    const how = 'you can take care of it online' + (finOn ? ' or spread it out with Synchrony' : '');
+    return {
+      rows: moneyRow_('Remaining balance — due ' + payByShort, usd_(balance), true),
+      note: pastDue
+        ? 'Just for your records. If it\'s already on its way, thank you! If not, ' + how +
+          ' below, or reply and let us know what works for you.'
+        : 'Just for your records — whenever it\'s convenient before then, ' + how + ' below.' };
   }
   const dep = Math.min(Number(d.deposit || 0), Number(d.total || 0));
   const depOwed = Math.min(balance, Math.max(0, dep - paid));
@@ -12567,7 +12584,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, opts) {
       '<tr><td style="padding:4px 0;font-weight:bold;color:#1E6B3A">Credit on your account — we\'ll settle up with you</td>' +
       '<td align="right" style="padding:4px 0;font-weight:bold;color:#1E6B3A">' + usd_(-balance) + '</td></tr></table></div>';
   } else if (includeMoney && balance > 0.005) {
-    const due = noticeDueRows_(d, paid, balance);
+    const due = noticeDueRows_(d, paid, balance, !!(opts && opts.gentle));
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
       (due.note && !(opts && opts.noDueNote) ? '<div style="font-size:13px;color:#5C7185;line-height:1.5;margin-top:6px">' + due.note + '</div>' : '') +
@@ -13012,7 +13029,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const intro = 'Good news — your ' + esc_(d.unit) + ' is safely with us for the winter. We photograph every unit as it arrives so you have a record of its condition' + (photos ? ' — you can view your photos any time using the button below.' : '.') + ' We\'ll see you in the spring, and we\'ll be in touch before ' + (land ? 'your ' + esc_(d.unit).toLowerCase() + '\'s return.' : 'relaunch.');
     const btn = photos ? '<div style="margin:6px 0 2px">' + buttonHtml_(photos, 'View arrival photos', '#14293E') + '</div>' : '';
     return { subject: 'We have your ' + d.unit + ' — Quest Watersports',
-      html: noticeHtml_(d, intro, btn, true), status: 'Stored — customer notified' };
+      html: noticeHtml_(d, intro, btn, true, { gentle: true }), status: 'Stored — customer notified' };
   }
   /* END-OF-SEASON NOTE. The autumn counterpart to the spring alert: a gentle
      nudge that the season is closing, a last opening to add detailing or other

@@ -281,6 +281,8 @@ console.log('=== the late fee warning after the due date ===');
   const lw = B.buildEmailFor_(quote({ payments: [{ amt: 200 }], season: PAST }), 'latewarn', '', '');
   const h = (lw && lw.html) || '';
   has(h, 'Thank you for storing with Quest', 'still opens with a thank-you');
+  has(h, 'we really appreciate your business', '— that fits first-time customers too');
+  hasnt(h, 'sticking with us', '— never "sticking with us": not everyone is returning');
   has(h, 'remaining balance of <b>$800.00</b> on your winter invoice was due on <b>Nov 15</b>', 'says what was due, and when');
   has(h, 'That date is on your quote', 'and that the date was given before');
   has(h, 'or reach out and let us know when you\'ll be able to, we can waive the 10% late fee', 'pay now or reach out: the 10% is waived');

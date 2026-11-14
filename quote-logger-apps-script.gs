@@ -12523,7 +12523,7 @@ function balanceDueLabel_(d) {
     payBy: sn.payBy || '', payByShort: sn.payByShort || '' }));
 }
 
-function noticeDueRows_(d, paid, balance, gentle) {
+function noticeDueRows_(d, paid, balance, gentle, oneRow) {
   const noStorage = !!(d.state && d.state.storage === 'none');
   const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
   const payByLong = (d.season && d.season.payBy) || SEASON.payByDate;
@@ -12555,6 +12555,18 @@ function noticeDueRows_(d, paid, balance, gentle) {
           'or call and let us know when you\'ll be able to, and we\'ll work it out with you.'
         : 'Your remaining balance of ' + amt + ' is due by <b>' + payByShort + '</b>. You can take care of it ' + how + '. ' +
           'If you need a little more time, just reply or call and let us know when works for you.' };
+  }
+  /* ONE ROW, the whole balance, when the deposit/balance split stops making
+     sense (Chris, Nov 2026, on a real late fee warning: "Deposit due now
+     $500.00 / Remaining balance due by Nov 15 $63.20" under a body asking for
+     $563.20 read as "he only needs to pay $63.20 by 11/15"):
+       - the late fee warning (oneRow) asks for the whole balance by the date,
+         so its box must show that same figure, not a split that seems to
+         contradict it;
+       - once the pay-by date has passed, all of it is owed — there is no
+         "deposit now, rest later" left to describe. */
+  if (oneRow || pastDue) {
+    return { rows: moneyRow_(balanceDueLabel_(d), usd_(balance), true), note: '' };
   }
   const dep = Math.min(Number(d.deposit || 0), Number(d.total || 0));
   const depOwed = Math.min(balance, Math.max(0, dep - paid));
@@ -12590,7 +12602,7 @@ function noticeHtml_(d, introHtml, extraButtonsHtml, includeMoney, opts) {
       '<tr><td style="padding:4px 0;font-weight:bold;color:#1E6B3A">Credit on your account — we\'ll settle up with you</td>' +
       '<td align="right" style="padding:4px 0;font-weight:bold;color:#1E6B3A">' + usd_(-balance) + '</td></tr></table></div>';
   } else if (includeMoney && balance > 0.005) {
-    const due = noticeDueRows_(d, paid, balance, !!(opts && opts.gentle));
+    const due = noticeDueRows_(d, paid, balance, !!(opts && opts.gentle), !!(opts && opts.oneRow));
     money = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:16px 0">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + due.rows + '</table>' +
       (due.note && !(opts && opts.noDueNote)
@@ -13494,7 +13506,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     }
     /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
     return { subject: 'Settle up now: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
-      html: noticeHtml_(d, intro, '', true, { noDueNote: true }), status: 'Late fee warning sent' };
+      html: noticeHtml_(d, intro, '', true, { noDueNote: true, oneRow: true }), status: 'Late fee warning sent' };
   }
   return null;
 }

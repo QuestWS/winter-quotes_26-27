@@ -401,9 +401,11 @@ human**: the 10-day reminder and the lead follow-up.
   **"We have your unit" is gentler still** (`noticeHtml_` with `gentle`):
   it is good news sent the day a unit comes out, often right around the
   pay-by date, so its box is one dated row — "Remaining balance — due Nov
-  15" — and a "Just for your records" line with no late-fee figure and no
-  "due now". After the date it thanks them if a payment is on its way and
-  invites a reply. The late fee warning is the email that talks about fees.
+  15" — and a sentence in ordinary body text that says plainly the balance
+  is due (never "just for your records": it needs addressing), how to pay
+  or finance it, and that more time is a reply away. No late-fee figure, no
+  "due now". After the date it says it was due, thanks them if a payment is
+  on its way, and asks them to take care of it as soon as they're able. The late fee warning is the email that talks about fees.
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

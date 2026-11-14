@@ -227,16 +227,20 @@ console.log('=== the late charge, in dollars ===');
      balance is left ($500 here). */
   const st = B.buildEmailFor_(quote({ payments: [{ amt: 500 }] }), 'stored', '', '');
   /* Chris, Nov 2026: "We have your unit" is good news, often sent around the
-     pay-by date — no "due now", no late-fee figure, but still dated. */
+     pay-by date — no "due now", no late-fee figure, but still dated, and it
+     says plainly the balance is due: not "just for your records". */
   has(st && st.html, 'Remaining balance — due Nov 15', '"We have your unit": the balance is still dated');
-  has(st && st.html, 'Just for your records', '— and framed as for their records');
+  has(st && st.html, 'Your remaining balance of <b>$500.00</b> is due by <b>Nov 15</b>', '— says plainly that it is due');
+  has(st && st.html, 'let us know when works for you', '— and that more time is a reply away');
+  hasnt(st && st.html, 'for your records', '— never "just for your records": it needs addressing');
   hasnt(st && st.html, 'late fee', '— with no late fee in it');
   hasnt(st && st.html, 'due now', '— and no "due now"');
   const PASTS = Object.assign(B.seasonStamp(), { payBy: 'November 15, 2020', payByShort: 'Nov 15', lateStart: 'December 1, 2020' });
   const stp = ((B.buildEmailFor_(quote({ payments: [{ amt: 500 }], season: PASTS }), 'stored', '', '') || {}).html) || '';
   has(stp, 'If it\'s already on its way, thank you!', 'pulled after Nov 15: still gentle');
+  has(stp, 'please take care of it as soon as you\'re able', '— but asks for it');
   hasnt(stp, 'late fee', '— still no late fee');
-  hasnt(stp, 'was due', '— and no "was due"');
+  hasnt(stp, 'Balance (was due', '— and no "was due" row');
   const stn = ((B.buildEmailFor_(quote({ season: FUTURE }), 'stored', '', '') || {}).html) || '';
   hasnt(stn, 'due now', 'no deposit yet: still no "due now" row');
   /* The PDF's terms read the same RULES, so the email and the paper agree. */

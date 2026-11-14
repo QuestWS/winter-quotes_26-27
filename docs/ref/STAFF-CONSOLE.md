@@ -248,6 +248,15 @@ records nothing; a payment or refund is still recorded on the quote.
 - Payments recorded before Oct 2026 have no time or staff name (only the day);
   they show the day and sort by it. `tools/check-receivables.js` runs the
   builder over a fake sheet covering every bucket and both read routes.
+- **Printable** (Chris, Nov 2026). **Print** prints the list on screen
+  (with the 7 / 30 / All range for transactions); **Print all** prints every
+  list that has anyone in it, one page each (`printReceivables`). The paper is
+  built from the same `recvView_` / `recvTxView_` as the screen, so it sorts,
+  counts and sums identically. Every page names its list, the range, when it
+  was printed and when the figures are from, and carries the Outstanding /
+  Collected / Credits line. Black-and-white safe: credits and refunds are
+  said in words. Unpaid, Partly paid and Credit due get a tick box and a
+  Notes column for working the phone.
 
 ## Payments received (console)
 

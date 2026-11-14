@@ -131,7 +131,7 @@ symptom.
 | Emails sent card (the quote's Email history, newest first) | `recordEmail_` (`emailLog` on `adminLookup`) | `emailKindLabel_`, `renderQuote` |
 | Payments received card (the ledger alone, newest first) | `paymentsOut_` (`payments` on `adminLookup`) | `renderPayList_` |
 | Quote history: every total, payment and email on one quote, and "where did this amount come from" | `adminQuoteHistory`, `notePriceChange_`, `historyFigures_`, `quoteNoRe_` | `loadHistory`, `renderHistory_`, `histMatchable_`, `resetHistory_` |
-| Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_` |
+| Receivables: recent payments and customers by payment status | `adminReceivables`, `receivablesBuild_`, `paymentWhen_` | `toggleReceivables`, `loadReceivables`, `renderReceivables`, `renderRecvTx_`, `recvView_`, `recvTxView_`, `printReceivables` |
 | Working down the storage list: ‹ Prev · Next › · List bar on a quote opened from it, ✓ on rows opened, instant return to your place | — (the overview's own `storageView`, no new call) | `fromStorage`, `WALK`, `walkStep`, `walkBack`, `renderWalkBar_`, `syncWalkBar_`, `srowAttrs_`, `STORAGE_HERE`, `renderStorageKeepPlace_`, `storageFresh_` |
 | Storage overview grouped by unit type (jet skis first) | — | `setStorageGroup`, `SGROUP`, `unitKind_`, `UNIT_ORDER_`, `storageGroups_` |
 | Items to Quote print (details, quoted-on-request work, jetski details, power and acid washes) | `itemsToQuoteOf_`, `TQ_WASH_RE_` (`tq` on every `adminStorageView` row) | `printItemsToQuote`, `tqStateTxt_` |

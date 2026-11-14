@@ -39,7 +39,7 @@ const eq = (got, want, what) => (got === want ? ok(what) : fail(what + ' — got
 
 const B = new Function(gasSrc + '\nreturn { buildEmailFor_, lastCallBlocker_, lastCallPastDeadline_, unbuildableMsg_,' +
   ' staffExtras_, BULK_KINDS_, quoteLinkFor_, signUrlFor_, PAYMENT_URL, PRICES, RULES, SEASON, NOTIFY_EMAIL, latePenalty_,' +
-  ' seasonStamp, CC_TYPED_MAX_ };')();
+  ' seasonStamp, CC_TYPED_MAX_, customerEmailHtml_, balanceDueLabel };')();
 
 /* The builder reads today's date, so the fixtures carry a deadline far enough
    out that this guard does not start failing on Nov 16. The real 2026 stamp is
@@ -232,6 +232,59 @@ console.log('=== the late charge, in dollars ===');
   if (/increase by ' \+ RULES\.latePct \+ '%, and a ' \+ RULES\.monthlyPct \+ '% monthly service charge \(min\. \$' \+ RULES\.monthlyMin/.test(gasSrc))
     ok('the PDF terms read RULES, not typed numbers');
   else fail('the PDF terms still type the late percentages by hand');
+}
+
+console.log('=== every balance owed carries a due date ===');
+{
+  /* Chris, Nov 2026: "Any reference to a balance owed needs a due date on it."
+     Customers said they never got another bill after the deposit. */
+  const L = (o, now) => B.balanceDueLabel(Object.assign({ payBy: 'November 15, 2026', payByShort: 'Nov 15', now: now }, o));
+  eq(L({}, '2026-11-10T12:00'), 'Balance due by Nov 15', 'before the date: due by');
+  eq(L({}, '2026-11-15T22:00'), 'Balance due by Nov 15', 'all of Nov 15 still counts');
+  eq(L({}, '2026-11-16T09:00'), 'Balance (was due Nov 15)', 'after it: was due');
+  eq(L({ noStorage: true }, '2026-11-10T12:00'), 'Balance due when the work is completed', 'no storage: when the work is done');
+  eq(L({ dueToday: true }, '2026-11-10T12:00'), 'Balance due now', 'paid in full at sign-up: now');
+
+  /* The deposit receipt — the email customers said had no date on it. */
+  const rc = B.customerEmailHtml_({ firstName: 'Pat', quoteNo: 'QW-26-9101', unit: 'Boat', total: 1000, deposit: 500,
+    paid: 500, balance: 500, paidInFull: false, creditDue: 0, payBy: 'Nov 15', payByLong: 'November 15, 2099',
+    receipt: { amt: 500, method: 'Cash' } });
+  has(rc, 'Balance due by Nov 15', 'the deposit receipt says when the balance is due');
+
+  /* No bare "Balance due" label left anywhere a customer reads. */
+  const pageSrc = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  eq((gasSrc.match(/['"]Balance due['"]/g) || []).length + (pageSrc.match(/['"]Balance due['"]/g) || []).length, 0,
+    'no undated "Balance due" label in the backend or on the quote page');
+}
+
+console.log('=== the late fee warning after the due date ===');
+{
+  /* Chris, Nov 2026: say what was due; settling now or reaching out lets us
+     waive the 10%; with no payment and no word, the 10% and then the 2% will
+     have to be applied. Calling agrees a short timeline, it is not a way out. */
+  const PAST = Object.assign(B.seasonStamp(), { payBy: 'November 15, 2020', payByShort: 'Nov 15', lateStart: 'December 1, 2020' });
+  const lw = B.buildEmailFor_(quote({ payments: [{ amt: 200 }], season: PAST }), 'latewarn', '', '');
+  const h = (lw && lw.html) || '';
+  has(h, 'Thank you for storing with Quest', 'still opens with a thank-you');
+  has(h, 'remaining balance of <b>$800.00</b> on your winter invoice was due on <b>Nov 15</b>', 'says what was due, and when');
+  has(h, 'That date is on your quote', 'and that the date was given before');
+  has(h, 'or reach out and let us know when you\'ll be able to, we can waive the 10% late fee', 'pay now or reach out: the 10% is waived');
+  has(h, 'we\'ll work out a short timeline with you', 'reaching out agrees a timeline — not a way out of paying');
+  has(h, 'If we don\'t receive a payment or hear from you, though, we\'ll have to apply the storage terms', 'no payment and no word: the terms apply');
+  has(h, 'the 10% late fee of <b>$80.00</b>', '— the 10%, in dollars');
+  has(h, '2% monthly service charge of <b>$17.60</b> for each month it stays open', '— then the 2% on balance plus fee');
+  has(h, 'Balance (was due Nov 15)', 'the balance box says it was due');
+  hasnt(h, 'due by <b>', 'never "due by" a date that has passed');
+  has(lw && lw.subject, 'Settle up now:', 'the subject is unchanged');
+
+  /* Staff already added the late fee: nothing is promised about it. */
+  const fq = quote({ total: 1080, payments: [{ amt: 200 }], season: PAST,
+    manual: { adjustments: [{ label: 'Late payment fee — balance unpaid after Nov 15', amt: 80 }] } });
+  const f = ((B.buildEmailFor_(fq, 'latewarn', '', '') || {}).html) || '';
+  has(f, 'and the 10% late fee has been added per the storage terms', 'fee already on: says so plainly');
+  has(f, 'we can hold off on the monthly service charge', 'and offers to hold off on the monthly charge instead');
+  hasnt(f, 'waive', 'and never offers to waive a fee already applied');
+  has(f, '2% monthly service charge of <b>$17.60</b>', 'the monthly charge on what is owed now');
 }
 
 if (bad) { console.error('FAIL: ' + bad + ' problem(s) with the last-call email'); process.exit(1); }

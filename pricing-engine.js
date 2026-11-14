@@ -331,6 +331,22 @@ function pricesValidSentence(payBy){
     : 'Prices shown are valid when balances are settled in full by ' + by + ' by cash, check, debit card, Zelle, or ACH.';
 }
 
+/* Every balance owed says WHEN it is due (Chris, Nov 2026: "any reference to
+   a balance owed needs a due date on it" — customers said they never got
+   another bill). One wording for the page, the PDF and every email.
+   o: { noStorage, dueToday, payBy (long date), payByShort, now }. Once the
+   pay-by day is over it reads "was due", never a bare "Balance". */
+function balanceDueLabel(o){
+  o = o || {};
+  if (o.noStorage) return 'Balance due when the work is completed';
+  if (o.dueToday) return 'Balance due now';
+  const short = o.payByShort || SEASON.payByShort;
+  const pb = new Date(String(o.payBy || SEASON.payByDate));
+  const t = o.now ? new Date(o.now).getTime() : Date.now();
+  const past = !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+  return past ? 'Balance (was due ' + short + ')' : 'Balance due by ' + short;
+}
+
 /* Every phrase that promises a customer something is being locked in. While
    pricing is provisional a deposit buys a SPACE, not a price, and each of
    these says so; flipping the flag restores the ordinary wording. Page, PDF
@@ -1004,7 +1020,7 @@ function offersOf(manual){
 // ENGINE-END
 
   const API = { SEASON, PRICES, RULES, PRICING, SIGNING, LEVEL_DESC, BOAT_ENGINES, QUOTE_ITEMS, SERVICE_MENU, DIM_FIELDS,
-                pricingNotice, lockinCopy, pricesValidSentence, signUrlFor, normalizeQuoteNo,
+                pricingNotice, lockinCopy, pricesValidSentence, balanceDueLabel, signUrlFor, normalizeQuoteNo,
                 wrapAuto, computeQuote, fmtMoney_, storageTabFor, dimsString,
                 fmtPhone, fmtPhonePartial, fmtFtIn, ftInToDecimal, fullDelta,
                 depositBaseFor, lwtFromOverhang, rateOverride_, seasonStamp,

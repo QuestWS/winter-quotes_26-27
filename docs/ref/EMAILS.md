@@ -377,8 +377,25 @@ human**: the 10-day reminder and the lead follow-up.
   when deposits are taken, without blame; gives three equally fine ways
   forward — pay online, finance with Synchrony (only when `financeOfferUrl_`
   offers it), or just reply/call with when they will; and puts the late charge
-  last, small, as "so it's never a surprise". Before vs. after the pay-by date
-  it says "due by" vs. "was due on". It passes `noDueNote` so the balance box
+  last, small, as "so it's never a surprise".
+  **After the pay-by date** it says what was due and that settling now *or
+  reaching out with when they can* lets us waive the `RULES.latePct` fee —
+  but that with no payment and no word, the late fee and then the monthly
+  service charge (both in dollars) will have to be applied. Reaching out
+  agrees "a short timeline", never an open-ended pass: flexible within
+  reason, for people who communicate. If staff already added the late fee
+  (an Adjustments line naming "late"), it says so and makes the same offer
+  about the monthly charge instead — it never offers to waive a fee already
+  applied. The spreadsheet-menu "Send late-fee warning" sends this same
+  email (`menuSendKind_`).
+- **Every balance owed carries a due date** (Chris, Nov 2026: "any reference
+  to a balance owed needs a due date on it" — customers said they never got
+  another bill after the deposit). `balanceDueLabel()` in the engine is the
+  one wording — "due by Nov 15", "was due Nov 15" after the date, "due when
+  the work is completed" with no storage, "due now" when paid in full at
+  sign-up — used by the receipt and invoice emails, the update notice, the
+  firm quote, the PDF and the quote page. `check-last-call.js` fails on any
+  undated `'Balance due'` label. It passes `noDueNote` so the balance box
   does not say it twice. The other notices' balance-box line reads "A quick
   heads-up: the remaining balance is due by …", not "Settle up now".
 - **The `fall` email is the autumn counterpart to `spring`** — season winding

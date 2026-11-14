@@ -369,11 +369,18 @@ human**: the 10-day reminder and the lead follow-up.
   service charge (never under `RULES.monthlyMin`) — "starting <lateChargeStart>"
   until then, "every month it stays open" after. The PDF terms read the same
   `RULES`, so the email and the paper agree. The **late fee warning**'s
-  subject starts "Settle up now:", but its body opens "**Just a friendly
-  reminder**" — never "Settle up now" in the body, where it read as cold and
-  demanding to customers who store with us (Chris, Nov 2026). It carries that
-  figure, thanks them for storing, and passes `noDueNote` so the balance box
-  does not say it twice.
+  subject starts "Settle up now:", but its body is a thank-you and a
+  "**friendly reminder**" — never "Settle up now" in the body, where it drew
+  negative reactions from storage customers (Chris, Nov 2026; storing numbers
+  are down and the ones who stayed matter). It must still prevent "I had no
+  idea" in April, so it: says the due date is on their quote and is mentioned
+  when deposits are taken, without blame; gives three equally fine ways
+  forward — pay online, finance with Synchrony (only when `financeOfferUrl_`
+  offers it), or just reply/call with when they will; and puts the late charge
+  last, small, as "so it's never a surprise". Before vs. after the pay-by date
+  it says "due by" vs. "was due on". It passes `noDueNote` so the balance box
+  does not say it twice. The other notices' balance-box line reads "A quick
+  heads-up: the remaining balance is due by …", not "Settle up now".
 - **The `fall` email is the autumn counterpart to `spring`** — season winding
   down, a last opening for detailing or other winter work, and the haul-out
   timing poll (the same three buttons, so answers land in the existing

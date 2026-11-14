@@ -214,7 +214,11 @@ console.log('=== the late charge, in dollars ===');
 
   const owed = quote({ payments: [{ amt: 200 }] });                  // $800 open, deadline 2099
   const lw = B.buildEmailFor_(owed, 'latewarn', '', '');
-  has(lw && lw.html, '<b>Just a friendly reminder</b>', 'the late fee warning opens as a friendly reminder');
+  has(lw && lw.html, 'Thank you for storing with Quest', 'the late fee warning opens with a thank-you');
+  has(lw && lw.html, '<b>friendly reminder</b>', '— and calls itself a friendly reminder');
+  has(lw && lw.html, 'That date is on your quote', 'says the due date has been given before, without blame');
+  has(lw && lw.html, 'let us know when you expect to take care of it', 'offers "just tell us when" as a real option');
+  has(lw && lw.html, 'Finance it with Synchrony', 'offers Synchrony as a way to settle now and pay over time');
   has(lw && lw.subject, 'Settle up now:', '"Settle up now" stays in the subject');
   eq(/settle up now/i.test((lw && lw.html) || ''), false, 'but never in the body, where it reads as a demand');
   has(lw && lw.html, '10% late fee adds <b>$80.00</b> — <b>$880.00</b> in total', 'with the charge in dollars');
@@ -222,7 +226,7 @@ console.log('=== the late charge, in dollars ===');
   /* The settle-up line shows once the deposit is in and only the dated
      balance is left ($500 here). */
   const st = B.buildEmailFor_(quote({ payments: [{ amt: 500 }] }), 'stored', '', '');
-  has(st && st.html, 'balance due by Nov 15. After Nov 15, a 10% late fee adds <b>$50.00</b>',
+  has(st && st.html, 'A quick heads-up: the remaining balance is due by Nov 15. After Nov 15, a 10% late fee adds <b>$50.00</b>',
     '"We have your unit": the settle-up line carries the dollar figure');
   /* The PDF's terms read the same RULES, so the email and the paper agree. */
   if (/increase by ' \+ RULES\.latePct \+ '%, and a ' \+ RULES\.monthlyPct \+ '% monthly service charge \(min\. \$' \+ RULES\.monthlyMin/.test(gasSrc))

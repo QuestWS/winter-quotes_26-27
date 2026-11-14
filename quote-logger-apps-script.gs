@@ -12494,7 +12494,7 @@ function latePenalty_(d, balance, now, forceLate) {
      - the part of the deposit not yet paid  -> due now (holds the spot)
      - everything else                        -> due by the pay-by date
      - no storage bought                      -> due when the work is done
-   and, when only the dated balance is left, a short "settle up now — due by"
+   and, when only the dated balance is left, a short "heads-up — due by"
    line. Once the pay-by date has passed the balance row says it was due then,
    and the line goes. */
 function noticeDueRows_(d, paid, balance) {
@@ -12517,11 +12517,11 @@ function noticeDueRows_(d, paid, balance) {
       : (depOwed > 0.005 ? 'Remaining balance' : 'Balance') + ' due by ' + payByShort,
       usd_(rest), depOwed <= 0.005);
   }
-  /* Chris, Nov 2026: more assertive than the old "Nothing is due today — pay
-     the balance any time up to …". Still says WHEN; it no longer invites
-     waiting until then. */
+  /* Chris, Nov 2026: says WHEN (the old "Nothing is due today — pay any time
+     up to …" invited waiting) — but as a heads-up, not "Settle up now", which
+     drew negative reactions from storage customers. */
   const note = (depOwed <= 0.005 && !pastDue)
-    ? '<b>Settle up now</b> — balance due by ' + payByShort + '. ' + latePenalty_(d, balance, null, true).text : '';
+    ? 'A quick heads-up: the remaining balance is due by ' + payByShort + '. ' + latePenalty_(d, balance, null, true).text : '';
   return { rows: rows, note: note };
 }
 
@@ -13370,18 +13370,39 @@ function buildEmailFor_(d, kind, extra, photos) {
     const paid = paymentsTotal_(d);
     const bal = Number(d.total || 0) - paid;
     if (bal <= 0.005) return null;
-    /* Chris, Nov 2026: the body opens as a friendly reminder, not a demand
-       ("the customers who store are important to us"); "Settle up now" stays
-       in the subject only. It keeps the message: the
-       open balance, and the next late charge in dollars (latePenalty_ — the
-       one-off before the pay-by date, the monthly charge after it), so the
-       cost is not a matter of reading the terms. */
+    /* Chris, Nov 2026, after customers reacted badly to the earlier wording:
+       storing customers are few this year and every one matters, so this is a
+       thank-you and a reminder, never a threat. It still has to do its job:
+       nobody pays in April saying they had no idea. So it (1) says the date
+       has been in front of them before, without blaming anyone, and (2) gives
+       three equally fine ways forward — pay, finance with Synchrony (only
+       when it is offered), or just tell us when. The late charge is still
+       there in dollars (latePenalty_), kept small and last, framed as
+       "so it's never a surprise". "Settle up now" stays in the subject only. */
     const pen = latePenalty_(d, bal);
-    const intro = '<b>Just a friendly reminder</b> — your winter ' + docTerm_(d).toLowerCase() +
-      ' still shows an open balance of <b>' + usd_(bal) + '</b>, and we wanted to make sure it doesn\'t catch you by surprise. ' +
-      pen.text + ' ' + pen.avoid + ' — the buttons below take about a minute. ' +
-      'If a payment is already on the way or you\'d like to talk it through, just give us a call — we\'re always happy to work with you. ' +
-      'Thank you for trusting us with your winter storage.';
+    const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
+    const pb = new Date(String((d.season && d.season.payBy) || SEASON.payByDate));
+    const pastDue = !isNaN(pb.getTime()) && Date.now() >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+    let finOn = false;
+    try { finOn = !!financeOfferUrl_(d); } catch (e) {}
+    const P = '<p style="margin:0 0 12px">';
+    const LI = '<li style="margin:0 0 6px">';
+    const term = docTerm_(d).toLowerCase();
+    const intro =
+      P + 'Thank you for storing with Quest this winter — we really appreciate you sticking with us.</p>' +
+      P + 'This is just a <b>friendly reminder</b> that your winter ' + term + ' has a remaining balance of <b>' + usd_(bal) + '</b>, ' +
+        (pastDue ? 'which was due on <b>' + payByShort + '</b>. ' : 'due by <b>' + payByShort + '</b>. ') +
+        'That date is on your quote and we mention it when deposits are taken, but with everything going on this time of year ' +
+        'it\'s easy for it to slip by — so we wanted to make sure it reached you.</p>' +
+      P + 'Whatever works best for you is fine with us:</p>' +
+      '<ul style="margin:0 0 12px;padding-left:20px">' +
+        LI + '<b>Pay online</b> — the button below takes about a minute.</li>' +
+        (finOn ? LI + '<b>Finance it with Synchrony</b> — your ' + term + ' is settled right away, and you pay it off over time on a schedule that suits you.</li>' : '') +
+        LI + '<b>Need a little time?</b> Just reply to this email or call us at (815) 433-2200 and let us know when you expect to take care of it. That\'s all we need — we\'re happy to work with you.</li>' +
+      '</ul>' +
+      '<p style="margin:0 0 12px;font-size:13px;color:#5C7185;line-height:1.5">So it\'s never a surprise: ' + pen.text + ' ' +
+        pen.avoid + (finOn ? ', and so does financing.' : '.') + '</p>' +
+      '<p style="margin:0">If a payment is already on its way, thank you — please disregard this note.</p>';
     /* Synchrony rides in the balance box beside Pay online (noticeHtml_). */
     return { subject: 'Settle up now: open balance on your Quest winter ' + docTerm_(d).toLowerCase() + ' · ' + d.quoteNo,
       html: noticeHtml_(d, intro, '', true, { noDueNote: true }), status: 'Late fee warning sent' };

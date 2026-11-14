@@ -325,6 +325,7 @@ console.log('=== invoice emails and the late fee warning ===');
   const was = B.FINANCING.applyUrl;
   B.FINANCING.applyUrl = '';
   hasnt((B.buildEmailFor_(owed, 'latewarn', '', '') || {}).html, 'Pay over time with Synchrony', 'financing off: gone from the warning');
+  hasnt((B.buildEmailFor_(owed, 'latewarn', '', '') || {}).html, 'Synchrony', '— its wording too, not just the button');
   hasnt(B.customerEmailHtml_(Object.assign({}, base, { financeUrl: B.financeOfferUrl_(owed) })), 'Pay over time with Synchrony',
     'and from the invoice');
   B.FINANCING.applyUrl = was;

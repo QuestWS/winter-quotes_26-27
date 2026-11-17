@@ -493,36 +493,67 @@ async function read_(res){
   try{ return await res.json(); }
   catch(e){ throw terr_('The server’s reply could not be read.',res.status); }
 }
-async function post_(body){
-  let res;
-  try{ res=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify(body)}); }
-  catch(e){ throw terr_('Could not reach the server.',0); }
+/* Every request here has a clock. 17 Nov 2026: Google's front door dropped
+   about one request in three for an afternoon — zero bytes, no error, for as
+   long as anyone would wait — and the next one answered in under a second. A
+   request with no limit was a spinner that never ended. Stopping the wait
+   does not stop work that did arrive (Apps Script runs it to the end); for a
+   write, the rid is what makes asking about it, and re-sending it when the
+   server has never seen it, safe. Same numbers and reasons as the console
+   (API_WRITE_TIMEOUT_MS in admin/index.html). */
+const WRITE_MS=25000, READ_MS=30000, STATUS_MS=15000, NO_LIMIT_BYTES=65536;
+async function timed_(url,opts,ms){
+  let timer=null,ctl=null;
+  if(ms&&typeof AbortController==='function'){
+    ctl=new AbortController(); opts.signal=ctl.signal;
+    timer=setTimeout(function(){ ctl.abort(); },ms);
+  }
+  try{ return await fetch(url,opts); }
+  catch(e){
+    if(ctl&&ctl.signal.aborted){ const t=terr_('The server took too long to answer.',0); t.timedOut=true; throw t; }
+    throw terr_('Could not reach the server.',0);
+  }
+  finally{ if(timer!==null) clearTimeout(timer); }
+}
+async function post_(body,ms){
+  const txt=JSON.stringify(body);
+  const res=await timed_(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:txt},(txt.length>NO_LIMIT_BYTES)?0:ms);
   return read_(res);
 }
-async function get_(body){
+async function get_(body,ms){
   const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
     '&token='+encodeURIComponent(body.token||'')+
     '&args='+encodeURIComponent(JSON.stringify(body.args||[]))+'&t='+Date.now();
   if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
-  let res;
-  try{ res=await fetch(u,{method:'GET',redirect:'follow'}); }
-  catch(e){ throw terr_('Could not reach the server.',0); }
+  const res=await timed_(u,{method:'GET',redirect:'follow'},ms);
   return read_(res);
 }
-/* A write whose answer went missing. Never re-send it — the reply cannot prove
-   whether it ran. Ask instead, over GET, because POST is the route that broke. */
-async function settle_(rid){
+/* A write whose answer went missing. Ask, over GET, because POST is the route
+   that broke. `running` or `done` is never re-sent. Only when the server keeps
+   saying it has never heard of the rid is it sent again — with the SAME rid,
+   so if the first copy turns up after all the server does the work once and
+   answers the other copy with "still running" or the stored answer. Twice at
+   most. */
+async function settle_(body){
+  const rid=body.rid;
   toast('Connection dropped — checking whether that saved…');
-  let unknown=0;
-  for(let i=0;i<10;i++){
+  let unknown=0, resent=0;
+  for(let i=0;i<24;i++){
     await wait_(i?2500:1500);
     let s=null;
-    try{ s=await get_({fn:'jobStatus',token:T,args:[rid]}); }catch(e){ continue; }
+    try{ s=await get_({fn:'jobStatus',token:T,args:[rid]},STATUS_MS); }catch(e){ continue; }
     if(!s||!s._api||Number(s.ok)!==1) continue;
     if(s.state==='done') return {reply:s.reply};
     if(s.state==='running'){ unknown=0; continue; }
-    if(++unknown>=4) return {never:true};
+    if(++unknown<3) continue;
+    if(resent>=2) return {never:true};
+    resent++; unknown=0;
+    toast('That didn’t reach the server — sending it again…');
+    try{
+      const j=await post_(body,WRITE_MS);
+      if(j&&!lost_(j)&&!j.pending) return {reply:j};
+    }catch(e){ if(!isTerr_(e)) throw e; }
   }
   return {};
 }
@@ -535,7 +566,8 @@ async function settle_(rid){
    exactly the wait Chris recorded. Now a read that has not answered in
    HEDGE_MS is also asked over GET, and the first real answer wins; the other
    is ignored when it lands. Only READS: a write is sent once and, if its
-   answer goes missing, asked about (settle_), never re-sent. Every read here
+   answer goes missing, asked about (settle_) — re-sent only under its own rid,
+   and only when the server says it never arrived. Every read here
    is idempotent and the storage view is cached on the server, so the second
    execution costs nothing that matters. */
 const HEDGE_MS=6000;
@@ -546,7 +578,7 @@ function readHedged_(body){
     const fireGet=function(){
       if(getFired||settled) return;
       getFired=true;
-      get_(body).then(take,fail);
+      get_(body,READ_MS).then(take,fail);
     };
     const fail=function(e){
       if(settled) return;
@@ -555,7 +587,7 @@ function readHedged_(body){
       fireGet();                                   // one road failed: ask the other now
     };
     const take=function(j){ if(lost_(j)) fail(terr_('The request never reached the console API.',0)); else done(j); };
-    post_(body).then(take,function(e){
+    post_(body,READ_MS).then(take,function(e){
       if(!isTerr_(e)){ if(!settled){ settled=true; reject(e); } return; }
       fail(e);
     });
@@ -569,14 +601,14 @@ async function api(fn,args){
   body.rid=rid_();
   let dropped=null;
   try{
-    const j=await post_(body);
+    const j=await post_(body,WRITE_MS);
     if(!lost_(j)) return j;
     dropped=terr_('The request never reached the console API.',0);
   }catch(e){
     if(!isTerr_(e)) throw e;
     dropped=e;
   }
-  const out=await settle_(body.rid);
+  const out=await settle_(body);
   if(out.reply) return out.reply;
   /* `lost` marks both: the server never answered this. Only a caller for whom
      asking again is harmless may act on it (uploadOne_, for an upload session,

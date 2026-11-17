@@ -1527,6 +1527,29 @@ async function apiRead_(res){
    storage view) are left out too: a GET would only start the same long run
    over again. */
 const API_POST_TIMEOUT_MS=12000;
+/* A WRITE's POST gets this long, then the console stops waiting for it and
+   asks the server what became of it (settleWrite_). This used to be "no
+   limit, ever", on the grounds that a write still running must not be
+   abandoned. 17 Nov 2026 showed the other half: Google's front door dropped
+   roughly one request in three for an afternoon — zero bytes, no error, for
+   as long as anyone would wait — and the very next request answered in under
+   a second. A payment sat on "Working…" through two phone calls while the
+   server, when it got the work at all, needed 0.7s. Waiting longer could not
+   help: that request was never going to answer.
+   Stopping the wait does not stop a write that DID arrive — Apps Script runs
+   it to the end regardless — and the request id is what makes asking about
+   it, and if the server has never heard of it sending it again, safe: the
+   server claims a rid once, under a lock, and answers every later copy with
+   "still running" or the stored answer. Twenty-five seconds is well past a
+   payment's PDF and two emails on a normal day. Big bodies (a photo or a
+   contract as base64) are left unlimited: on harbor signal the upload itself
+   can honestly take longer than that. */
+const API_WRITE_TIMEOUT_MS=25000;
+const API_WRITE_NO_LIMIT_BYTES=65536;
+/* A GET is the fallback route and the status check's route, and it hangs the
+   same way a POST does. Fifteen seconds, for quick reads and jobStatus only:
+   a heavy read's GET is its real work and is left alone. */
+const API_GET_TIMEOUT_MS=15000;
 const API_QUICK_READ={auth:1,ping:1,lookup:1,quoteHtml:1,search:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,inboxScanState:1,inboxList:1,draftList:1,jobStatus:1,bulkImpState:1};
 async function apiPost_(body,timeoutMs){
@@ -1544,7 +1567,7 @@ async function apiPost_(body,timeoutMs){
   finally{ if(timer!==null) clearTimeout(timer); }
   return apiRead_(res);
 }
-async function apiGet_(body){
+async function apiGet_(body,timeoutMs){
   const u=API_URL+'?api=console&fn='+encodeURIComponent(body.fn)+
     '&token='+encodeURIComponent(body.token||'')+
     '&args='+encodeURIComponent(JSON.stringify(body.args||[]))+'&t='+Date.now();
@@ -1552,9 +1575,17 @@ async function apiGet_(body){
      Anything this big belongs on a POST, and saying so beats a truncated
      request that fails in a way nobody can read. */
   if(u.length>6000) throw new Error('Too much data for the fallback route — try again in a moment.');
-  let res;
-  try{ res=await fetch(u,{method:'GET',redirect:'follow'}); }
-  catch(e){ throw transportErr_('Could not reach the server.',0); }
+  let res,timer=null,ctl=null;
+  if(timeoutMs&&typeof AbortController==='function'){
+    ctl=new AbortController();
+    timer=setTimeout(function(){ ctl.abort(); },timeoutMs);
+  }
+  try{ res=await fetch(u,{method:'GET',redirect:'follow',signal:ctl?ctl.signal:undefined}); }
+  catch(e){
+    if(ctl&&ctl.signal.aborted){ const t=transportErr_('The server took too long to answer.',0); t.timedOut=true; throw t; }
+    throw transportErr_('Could not reach the server.',0);
+  }
+  finally{ if(timer!==null) clearTimeout(timer); }
   return apiRead_(res);
 }
 /* A write whose answer went missing. The request id makes asking again safe —
@@ -1562,22 +1593,35 @@ async function apiGet_(body){
    twice — so ask, over GET, because POST is the route that just failed.
    Roughly half a minute of asking, which is long enough for a payment to
    finish rebuilding its PDF and sending its two emails. */
-async function settleWrite_(rid){
+async function settleWrite_(body){
+  const rid=body.rid;
   /* Half a minute of "Working…" with no explanation is its own kind of alarming,
      and the button stays disabled throughout — which is the point, nobody
      should be tapping it again. Say what the wait is for. */
   try{ toast('Connection dropped — checking whether that went through…'); }catch(e){}
-  let unknown=0;
-  for(let i=0;i<12;i++){
+  /* `unknown` several times in a row means the request never reached the
+     script — the front-door drop of 17 Nov 2026. Then, and only then, send it
+     again with the SAME rid: if the first copy turns up after all, the server
+     answers one of them with "still running" or the stored answer and does the
+     work once. `running` or `done` is never re-sent. Twice at most. */
+  let unknown=0, resent=0;
+  for(let i=0;i<24;i++){
     await apiWait_(i?2500:1500);
     let s=null;
-    try{ s=await apiGet_({fn:'jobStatus',token:T,args:[rid]}); }catch(e){ continue; }
+    try{ s=await apiGet_({fn:'jobStatus',token:T,args:[rid]},API_GET_TIMEOUT_MS); }catch(e){ continue; }
     if(!s||!s._api||Number(s.ok)!==1) continue;
     if(s.state==='done') return {reply:s.reply};
     if(s.state==='running'){ unknown=0; continue; }
     /* "Unknown" the moment we ask can just mean the request is still on its way
        to Google. Only several in a row mean it never arrived. */
-    if(++unknown>=4) return {never:true};
+    if(++unknown<3) continue;
+    if(resent>=2) return {never:true};
+    resent++; unknown=0;
+    try{ toast('That didn\'t reach the server — sending it again…'); }catch(e){}
+    try{
+      const j=await apiPost_(body,API_WRITE_TIMEOUT_MS);
+      if(j&&!apiLostReply_(j)&&!j.pending) return {reply:j,resent:resent};
+    }catch(e){ if(!isTransportErr_(e)) throw e; }
   }
   return {};
 }
@@ -1615,6 +1659,11 @@ async function api(fn,args,opts){
   try{ const j=await apiCall_(fn,args,opts,tr); apiTiming_(fn,t0,j,tr); return j; }
   catch(e){ apiTiming_(fn,t0,null,tr); throw e; }
 }
+/* The write's clock: none for a big upload body, API_WRITE_TIMEOUT_MS otherwise. */
+function apiWriteLimit_(body){
+  try{ if(JSON.stringify(body).length>API_WRITE_NO_LIMIT_BYTES) return 0; }catch(e){ return 0; }
+  return API_WRITE_TIMEOUT_MS;
+}
 async function apiCall_(fn,args,opts,tr){
   tr=tr||[];
   const isRead=!!API_GET_OK[fn];
@@ -1625,7 +1674,7 @@ async function apiCall_(fn,args,opts,tr){
   if(!API_USE_GET||!isRead){
     const tp=Date.now();
     try{
-      const j=await apiPost_(body,(isRead&&API_QUICK_READ[fn])?API_POST_TIMEOUT_MS:0);
+      const j=await apiPost_(body,isRead?(API_QUICK_READ[fn]?API_POST_TIMEOUT_MS:0):apiWriteLimit_(body));
       if(!apiLostReply_(j)){ tr.push('POST'); return apiDone_(j,opts); }
       apiLeg_(tr,'POST lost',tp);
     }catch(e){
@@ -1639,7 +1688,7 @@ async function apiCall_(fn,args,opts,tr){
     for(let i=0;i<3;i++){
       const tg=Date.now();
       try{
-        const g=await apiGet_(body);
+        const g=await apiGet_(body,API_QUICK_READ[fn]?API_GET_TIMEOUT_MS:0);
         if(!apiLostReply_(g)){ API_USE_GET=true; tr.push(i?'GET (try '+(i+1)+')':'GET'); return apiDone_(g,opts); }
         apiLeg_(tr,'GET lost',tg);
         break;  /* a genuine lost-POST fingerprint on the GET route too */
@@ -1654,8 +1703,8 @@ async function apiCall_(fn,args,opts,tr){
       'check the signal and try again.');
   }else if(dropped){
     const ts=Date.now();
-    const s=await settleWrite_(body.rid);
-    apiLeg_(tr,s.reply?'answer recovered by status check':'status check',ts);
+    const s=await settleWrite_(body);
+    apiLeg_(tr,s.reply?(s.resent?'sent again (same request id) — answered':'answer recovered by status check'):'status check',ts);
     if(s.reply) return apiDone_(s.reply,opts);
     if(s.never) throw new Error('The server never received that. Nothing was changed — try again.');
     throw new Error('The connection dropped before the server answered, and it may still be '+

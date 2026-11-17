@@ -163,7 +163,12 @@ B.PRICING.provisional = false;
   if (!dp) fail('did not build for a quote with a deposit');
   else {
     has(dp.html, 'We already have your payment', 'a deposit already paid is acknowledged');
-    has(dp.html, 'Balance due', 'and the balance at the final rates is shown');
+    /* Either wording: before the pay-by date the row reads "Balance due by
+       Nov 15", after it "Balance (was due Nov 15)" (balanceDueLabel). Pinning
+       only the first made this guard start failing on 17 Nov 2026 with no
+       code change at all. */
+    if (/Balance due|Balance \(was due/.test(dp.html)) ok('and the balance at the final rates is shown');
+    else fail('and the balance at the final rates is shown — missing "Balance due" / "Balance (was due"');
     hasnt(dp.html, 'Pay my deposit online', 'nobody is asked for a deposit they already paid');
   }
 

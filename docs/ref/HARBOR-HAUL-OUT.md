@@ -512,7 +512,8 @@ the POST to give up before trying GET, which is the wait in the recording. So:
   six seconds is also sent over GET, and the first real answer wins; the other
   is ignored when it lands, and if one road fails the other is asked at once.
   **Only reads.** A write is sent once, with its `rid`, and if its answer goes
-  missing it is asked about (`settle_`), never re-sent — the guard asserts a
+  missing it is asked about (`settle_`), and re-sent (same `rid`) only when the
+  server says it never arrived. The guard asserts a
   stalled POST is answered over GET, and that `api()` hedges nothing that
   carries a `rid`. The second execution costs nothing that matters: every read
   is idempotent and the storage view is cached on the server.
@@ -989,9 +990,18 @@ became of it instead of guessing.
   server refuses a GET naming a write, so a wrong entry is a retry that can only
   ever fail — at the harbor, with nobody to explain it. `check-harbor-haul-out.js` reads
   both and asserts the subset, and asserts the writes are absent from it.
-- **A write that goes unanswered is never re-sent.** The reply cannot prove
-  whether it ran. The app says so in as many words and tells staff to refresh
-  and look rather than tap again.
+- **A write that goes unanswered is never re-sent blindly.** The reply cannot
+  prove whether it ran, so the app asks `jobStatus`. Only if the server says
+  three times running that it has never heard of the `rid` is the write sent
+  again, **with the same `rid`**, twice at most: the server claims a rid once,
+  so the work still happens once. If the status stays unclear, the app says so
+  in as many words and tells staff to refresh and look rather than tap again.
+- **Every request has a clock** (17 Nov 2026, when Google's front door dropped
+  about one request in three and a request with no limit was a spinner that
+  never ended): a write gets 25s, each read leg 30s, a status check 15s. A body
+  over 64KB (a photo as base64) gets none, because the upload itself is the
+  slow part. These match the console's numbers and reasons
+  (`API_WRITE_TIMEOUT_MS`).
 - The lost-POST fingerprint matches the customer loader's wording, which is
   fragile, so it is pinned against the real string in the `.gs`.
 

@@ -254,12 +254,70 @@ const GOT = (fn, method) => sent.filter((r) => r.fn === fn && (!method || r.meth
   if (/\(/.test(plain)) fail('a clean POST still shows a route: ' + plain);
   else ok('a clean POST shows no route');
 
-  /* ...and a WRITE is never put on a clock. Abandoning one does not stop it. */
+  /* =====================================================================
+     8. A WRITE whose POST stalls. 17 Nov 2026: Google's front door dropped
+        about one request in three, zero bytes, forever; a payment sat on
+        "Working…" through two phone calls because writes had no clock. Now a
+        write has one, and when it runs out the console ASKS — and re-sends
+        only when the server has never heard of the request, under the SAME
+        rid, which the server answers once.
+     ===================================================================== */
+  /* (a) it stalled, but the work had arrived and finished: asked, never re-sent */
   c = stalling(makeConsole());
-  await c.api('pay', ['QW-26-1255', 500, 'Cash', 1]);
-  const pp = GOT('pay', 'POST');
-  if (pp.length !== 1 || pp[0].limited) fail('a write was sent with a time limit — the console would give up on a payment that is still running');
-  else ok('writes are never sent with a time limit');
+  let payRid = null;
+  handler = (r) => (r.fn === 'jobStatus'
+    ? { body: stamped({ ok: 1, state: 'done', reply: { _api: 'console', ok: 1, msg: 'paid' } }) }
+    : { status: 404 });
+  out = null; err = null;
+  try { out = await c.api('pay', ['QW-26-1255', 500, 'Cash', 1]); } catch (e) { err = e; }
+  let pp = GOT('pay', 'POST');
+  if (!pp.length || !pp[0].limited) fail('a write was sent with no time limit — a dropped request leaves "Working…" up forever');
+  else ok('a write is sent with a time limit');
+  if (err || !out || out.msg !== 'paid') fail('a stalled write that did arrive was not reported by its real result: ' + (err ? err.message : JSON.stringify(out)));
+  else if (pp.length !== 1) fail('a stalled write that the server had finished was sent ' + pp.length + ' times');
+  else ok('a stalled write the server finished is asked about and never re-sent');
+
+  /* (b) it stalled and never arrived: re-sent once under the same rid, answered */
+  c = stalling(makeConsole());
+  let resendOk = false;
+  handler = (r) => (r.fn === 'jobStatus' ? { body: stamped({ ok: 1, state: 'unknown' }) } : { status: 404 });
+  const realFetch = c.fetch;
+  c.fetch = (url, opts) => {
+    if (((opts && opts.method) || 'GET') === 'POST' && GOT('pay', 'POST').length >= 1) {
+      const body = JSON.parse(opts.body);
+      sent.push({ method: 'POST', fn: body.fn, rid: body.rid, limited: !!opts.signal });
+      resendOk = true;
+      return Promise.resolve(asResponse({ body: stamped({ ok: 1, msg: 'paid on the second copy' }) }));
+    }
+    return realFetch(url, opts);
+  };
+  out = null; err = null;
+  try { out = await c.api('pay', ['QW-26-1255', 500, 'Cash', 1]); } catch (e) { err = e; }
+  pp = GOT('pay', 'POST');
+  if (err || !out || out.msg !== 'paid on the second copy') fail('a write that never arrived was not re-sent and answered: ' + (err ? err.message : JSON.stringify(out)));
+  else if (pp.length !== 2) fail('expected the write posted twice (stall + one re-send), saw ' + pp.length);
+  else if (pp[0].rid !== pp[1].rid || !pp[0].rid) fail('the re-send carried a NEW request id — the server could run the payment twice');
+  else ok('a write that never arrived is re-sent once, under the same request id');
+  const tw = vm.runInContext('API_TIMINGS[API_TIMINGS.length-1]', c);
+  if (!tw || !/POST timed out after [\d.]+s → sent again \(same request id\)/.test(tw.route)) fail('the footer does not say the write was sent again: ' + JSON.stringify(tw));
+  else ok('the footer names it: "' + tw.route + '"');
+
+  /* (c) a server that says "still running" is never re-sent to */
+  c = stalling(makeConsole());
+  handler = (r) => (r.fn === 'jobStatus' ? { body: stamped({ ok: 1, state: 'running' }) } : { status: 404 });
+  err = null;
+  try { await c.api('pay', ['QW-26-1255', 500, 'Cash', 1]); } catch (e) { err = e; }
+  if (GOT('pay', 'POST').length !== 1) fail('a write the server said was running was sent again');
+  else if (!err || !/do not send it again/i.test(err.message)) fail('a stalled write still running does not warn against repeating it');
+  else ok('a write the server reports running is never re-sent, and says not to repeat it');
+
+  /* (d) an upload body (base64) gets no clock: on harbor signal the upload is the slow part */
+  c = stalling(makeConsole());
+  handler = () => ({ body: stamped({ ok: 1 }) });
+  try { await c.api('uploadPhoto', ['QW-26-1255', '2026-2027', 'a.jpg', 'x'.repeat(200000), 'image/jpeg']); } catch (e) { /* stalled */ }
+  const up = GOT('uploadPhoto', 'POST');
+  if (!up.length || up[0].limited) fail('an upload body was put on the write clock — a slow upload would be cut off mid-file');
+  else ok('an upload body is never put on the write clock');
 
   /* Only reads may carry the limit: the quick list must be a subset of the
      GET allow-list, which is what the server agrees is read-only. */

@@ -184,9 +184,26 @@ put the calls over the edge Google gives up at.
   `API_QUICK_READ`), then the console abandons it and asks over GET. A POST
   stalled on the redirect leg used to wait as long as the browser cared to.
   Abandoning a read is free — the GET asks the same question, and the run left
-  behind only read. **Writes never get a limit**: a write the console stopped
+  behind only read. **A write's POST gets 25 seconds** (`API_WRITE_TIMEOUT_MS`,
+  17 Nov 2026). It used to get no limit, on the grounds that a write still
+  running must not be abandoned. Then Google's front door spent an afternoon
+  dropping about one request in three: zero bytes, no error, for as long as
+  anyone would wait, while the next request answered in under a second. A
+  payment sat on "Working…" through two phone calls on a call that needed 0.7s
+  on the server. Stopping the wait does not stop a write that arrived, because
+  Apps Script runs it to the end. So when the clock runs out the console asks
+  `jobStatus`: `running` or `done` is **never re-sent**. `unknown` three times
+  in a row means the request never arrived, and only then is it **sent again
+  under the same `rid`**, twice at most. The server claims a rid once, under
+  the lock, so a late first copy is answered "still running" or with the stored
+  answer and the work happens once. The footer shows it as
+  `sent again (same request id)`. A body over 64KB (a photo or contract as
+  base64) gets no clock, because on harbor signal the upload itself can take
+  that long. The GET fallback and the status checks get 15 seconds each
+  (`API_GET_TIMEOUT_MS`), quick reads and `jobStatus` only.
+  The old rule's reason still holds: a write the console stopped
   waiting for may still be running, and `rid` / `jobStatus` is how that is
-  found out. Heavy reads (the storage view, the previews) are left out too,
+  found out. Heavy reads (the storage view, the previews) get no read limit,
   since a GET would only start the same long run again.
   `tools/check-console-recovery.js` runs it against a POST that never answers.
 - **`ping` does nothing, on purpose.** The console and Harbor Haul Out call it on

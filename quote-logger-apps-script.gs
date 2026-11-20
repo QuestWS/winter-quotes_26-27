@@ -1653,6 +1653,8 @@ const CONSOLE_GET_FNS_ = {
   /* Read the Inbox Review tab (and GitHub's last run); change nothing. */
   inboxScanState: 1, inboxList: 1,
   listStaff: 1, autoPause: 1, draftList: 1, hhListInfo: 1, receivables: 1,
+  /* Possible duplicates: reads every quote tab, writes and deletes nothing. */
+  duplicates: 1,
   /* The Synchrony follow-up list: reads one Script Property, writes nothing. */
   financeFollowups: 1,
   /* Does nothing, on purpose: the console and the yard app call it as they
@@ -1720,6 +1722,7 @@ function consoleFns_(p) {
     lateFee:     function (a) { return adminLateFee(p.token, a[0], a[1], a[2], a[3]); },
     storageView: function (a) { return adminStorageView(p.token, a[0]); },
     receivables: function (a) { return adminReceivables(p.token, a[0]); },
+    duplicates:  function (a) { return adminDuplicates(p.token); },
     draftList:   function (a) { return adminDraftList(p.token); },
     jobStatus:   function (a) { return adminJobStatus(p.token, a[0]); },
     photoInfo:   function (a) { return adminPhotoInfo(p.token, a[0]); },
@@ -9902,6 +9905,271 @@ function receivablesBuild_(opt) {
   out.reads = grids ? _gridsRoute_ : 'scan';
   out._t = { total: Date.now() - T0 };
   return out;
+}
+
+/* POSSIBLE DUPLICATES — a review list, never a delete.
+   ---------------------------------------------------------------------------
+   Chris, Nov 2026: "flag potential duplicate quotes. Do not delete the
+   duplicates automatically but create a list of them to be reviewed. Keep the
+   one that has a deposit; if no deposit keep the one that was edited most
+   recently. Same customer name but different units are not duplicates."
+
+   Duplicates arrive three ways, and the first run over the live sheet (Nov
+   2026) found all three: an Import-tab draft left behind after the same quote
+   was sent from its real tab, the same old-sheet file imported twice, and an
+   unfinished lead (Quote Started) for a boat that was then quoted properly.
+
+   SAME CUSTOMER: same last name (spaces and punctuation ignored, so "Van Dyke"
+   is "VanDyke", and a name split across the wrong boxes still meets itself --
+   dupSameSurname_) AND the same first name, email or phone. Surname alone would
+   merge spouses and relatives -- Gail and Larry share one, with two units.
+
+   SAME UNIT (dupUnitSame_): same kind (jet ski / PWC / waverunner are one
+   kind), and then the descriptions must not CONTRADICT and must AGREE:
+     - contradict: two different model years (a 2019 and a 2022 VX Cruiser
+       are two skis), a different unit number ("#2", "Tandem Trailer 1/3" vs
+       "2/3" -- staff number a customer's second unit exactly this way), or
+       lengths more than DUP_LEN_SLACK_FT_ apart.
+     - agree: a shared make/model word (spelling slips allowed: "Chaparrel"
+       is "Chaparral"), or, when neither says a make, identical dimensions.
+   A pair that agrees on everything is `high`; one that only shares a word or
+   two is `medium` -- still listed, worded as a maybe.
+
+   WHICH ONE TO KEEP, in this order (dupKeeper_):
+     1. One with money on it (Paid column > 0). Two with money: both are real
+        and the group says so -- that is a refund conversation, not a tidy-up.
+     2. A quote on a real tab over a draft on the Import or lead tab. Chris's
+        rule is "most recently edited", but on the first run every Import
+        draft carried a NEWER date than the quote actually sent to the
+        customer -- the Nov 5 re-price touched the drafts and nothing else.
+        Keeping the draft would have listed the quote the customer holds (one
+        of them signed) for deletion. A draft is never the quote of record.
+     3. The most recently edited: the payload's `ts`, which every save
+        stamps; the Timestamp column when the payload will not parse.
+   The reason is sent with every pick, so the screen can say WHY.
+
+   Read-only, on CONSOLE_GET_FNS_, no cache: it runs when somebody asks, and a
+   stale copy of a list whose whole point is "what is still there" is worse
+   than a few seconds' wait. Nothing here writes, deletes or emails; deleting
+   one is still `Delete this quote` on the quote, admin-only, archived first.
+   Deleted Quotes is left out by the header probe (its column 3 says
+   'Quote # (deleted)'). tools/check-duplicates.js runs it over a fake sheet. */
+const DUP_LEN_SLACK_FT_ = 4;
+/* Words that say what KIND of thing it is, not which one. A description made
+   only of these ("Jetski", "Golf Cart") names no make, so dimensions decide. */
+const DUP_GENERIC_ = ['boat', 'boats', 'jet', 'ski', 'skis', 'jetski', 'jetskis', 'pwc', 'golf', 'cart',
+  'carts', 'ebike', 'bike', 'e', 'trailer', 'tandem', 'the', 'and', 'with', 'a', 'of', 'my', 'new', 'old',
+  'unit', 'none', 'na', 'n', 'tbd', 'unknown', 'stored', 'no'];
+
+function adminDuplicates(token) {
+  requireAuth_(token, 'view');
+  return duplicatesBuild_();
+}
+
+function dupNorm_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function dupKind_(unit) {
+  const u = dupNorm_(unit);
+  if (/jet|ski|pwc|wave|seadoo/.test(u)) return 'jetski';
+  if (/golf/.test(u)) return 'golfcart';
+  if (/bike/.test(u)) return 'ebike';
+  return u || 'boat';
+}
+/* Four-digit model years only. "99 Cruisers" could be a year or a model
+   number, and a wrong guess here splits a real duplicate in two. */
+function dupYears_(s) {
+  const m = String(s || '').match(/\b(19[5-9]\d|20[0-4]\d)\b/g) || [];
+  return m.filter(function (y, i) { return m.indexOf(y) === i; });
+}
+/* "#2", "No. 2", "unit 2", "1/3", "2 of 3", "second": the ways staff number a
+   customer's second unit. '' when the description carries none. */
+function dupOrdinal_(s) {
+  const t = String(s || '').toLowerCase();
+  let m = t.match(/\b(\d+)\s*(?:\/|of)\s*\d+\b/);
+  if (m) return m[1];
+  m = t.match(/(?:#|\bno\.?\s*|\bunit\s+|\bnumber\s+)(\d+)\b/);
+  if (m) return m[1];
+  if (/\bsecond\b|\b2nd\b/.test(t)) return '2';
+  if (/\bthird\b|\b3rd\b/.test(t)) return '3';
+  return '';
+}
+function dupWords_(s) {
+  const years = dupYears_(s);
+  return String(s || '').toLowerCase()
+    .replace(/\(?\b\d+\s*(?:\/|of)\s*\d+\b\)?/g, ' ').replace(/#\s*\d+/g, ' ')
+    .replace(/(\d)'(\s*\d+")?/g, '$1 ').split(/[^a-z0-9]+/)
+    .filter(function (w) { return w && DUP_GENERIC_.indexOf(w) < 0 && years.indexOf(w) < 0 && !/^\d{1,2}$/.test(w); });
+}
+/* Two words for the same thing: equal, one a prefix of the other ("waverunner"
+   / "waverunners", "21" / "21ssi"), or one typo apart in a word of five
+   letters or more ("chaparrel" / "chaparral"). */
+function dupWordSame_(a, b) {
+  if (a === b) return true;
+  const s = a.length < b.length ? a : b, l = a.length < b.length ? b : a;
+  if (s.length >= 3 && l.indexOf(s) === 0) return true;
+  if (s.length < 5 || l.length - s.length > 1) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < s.length && j < l.length) {
+    if (s[i] === l[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (s.length === l.length) { i++; j++; } else j++;
+  }
+  return edits + (l.length - j) + (s.length - i) <= 1;
+}
+/* The longest length the dimensions give (LOA / LWT / stored L), in feet. */
+function dupLength_(dims) {
+  let best = 0;
+  String(dims || '').replace(/\b(?:LOA|LWT|stored L|L)\s*(\d+(?:\.\d+)?)'\s*(?:(\d+)")?/g, function (m0, ft, inch) {
+    const v = Number(ft) + (inch ? Number(inch) / 12 : 0);
+    if (v > best) best = v;
+    return m0;
+  });
+  return best;
+}
+/* `''` = different units; otherwise 'high' or 'medium'. */
+function dupUnitSame_(a, b) {
+  if (dupKind_(a.unit) !== dupKind_(b.unit)) return '';
+  const ya = dupYears_(a.ymm), yb = dupYears_(b.ymm);
+  if (ya.length && yb.length && !ya.some(function (y) { return yb.indexOf(y) >= 0; })) return '';
+  if (dupOrdinal_(a.ymm) !== dupOrdinal_(b.ymm)) return '';
+  const la = dupLength_(a.dims), lb = dupLength_(b.dims);
+  if (la && lb && Math.abs(la - lb) > DUP_LEN_SLACK_FT_) return '';
+  const wa = dupWords_(a.ymm), wb = dupWords_(b.ymm);
+  const sameDims = !!dupNorm_(a.dims) && dupNorm_(a.dims) === dupNorm_(b.dims);
+  if (!wa.length || !wb.length) {
+    /* No make on at least one side: the only evidence left is the size. */
+    if (sameDims) return (!wa.length && !wb.length) ? 'high' : 'medium';
+    if (!wa.length && !wb.length && !dupNorm_(a.dims) && !dupNorm_(b.dims)) return 'medium';
+    return '';
+  }
+  const hit = function (w, list) { return list.some(function (x) { return dupWordSame_(w, x); }); };
+  const shared = wa.filter(function (w) { return hit(w, wb); }).length;
+  if (!shared) return '';
+  const all = wa.every(function (w) { return hit(w, wb); }) && wb.every(function (w) { return hit(w, wa); });
+  return all && (sameDims || !dupNorm_(a.dims) || !dupNorm_(b.dims)) && ya.join() === yb.join() ? 'high' : 'medium';
+}
+/* The surname test forgives a name typed across the wrong box: "Chris Van" /
+   "Dyke" is the same man as "Christopher" / "VanDyke" -- the full name of one
+   ends with the other's surname. That is the only looseness; the first name,
+   email or phone must still agree. */
+function dupSameSurname_(a, b) {
+  if (!a.lastKey || !b.lastKey) return false;
+  if (a.lastKey === b.lastKey) return true;
+  const ends = function (x, y) { return y.lastKey.length >= 4 && (x.firstKey + x.lastKey).slice(-y.lastKey.length) === y.lastKey &&
+    (x.firstKey + x.lastKey).length > y.lastKey.length && x.lastKey.length < y.lastKey.length; };
+  return ends(a, b) || ends(b, a);
+}
+function dupSameCustomer_(a, b) {
+  if (!dupSameSurname_(a, b)) return false;
+  if (a.firstKey && a.firstKey === b.firstKey) return true;
+  if (a.email && a.email === b.email) return true;
+  return !!(a.phone && a.phone.length >= 7 && a.phone === b.phone);
+}
+function dupEditedAt_(pd, tsCell) {
+  const t1 = pd && pd.ts ? Date.parse(pd.ts) : NaN;
+  if (isFinite(t1)) return t1;
+  const t2 = tsCell instanceof Date ? tsCell.getTime() : Date.parse(String(tsCell || ''));
+  return isFinite(t2) ? t2 : 0;
+}
+/* Pick the one to keep; the rest are the review list. */
+function dupKeeper_(list) {
+  const paid = list.filter(function (q) { return q.paid > 0.005; });
+  const live = list.filter(function (q) { return !q.draft; });
+  const newest = function (xs) { return xs.slice().sort(function (a, b) { return b.editedAt - a.editedAt; })[0]; };
+  if (paid.length === 1) return { keep: paid[0], why: 'deposit', note: '' };
+  if (paid.length > 1) return { keep: newest(paid), why: 'deposit',
+    note: 'More than one of these has money on it — check which payment belongs where before removing anything.' };
+  if (live.length && live.length < list.length) {
+    const k = newest(live);
+    return { keep: k, why: 'live', note: '' };
+  }
+  return { keep: newest(list), why: 'recent', note: '' };
+}
+
+function duplicatesBuild_() {
+  const T0 = Date.now();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  const grids = quoteTabGrids_(ss, sheets, [[1, COL.DIMS], [COL.PAYLOAD, COL.PAID]]);
+  const quotes = [];
+  sheets.forEach(function (sh, si) {
+    let head = [], tail = [];
+    if (grids) {
+      if (!grids[si]) return;
+      head = grids[si][0].slice(1);
+      tail = grids[si][1].slice(1);
+    } else {
+      if (sh.getRange(1, 3).getValue() !== 'Quote #') return;
+      const last = sh.getLastRow();
+      if (last < 2) return;
+      head = sh.getRange(2, 1, last - 1, COL.DIMS).getValues();
+      tail = sh.getRange(2, COL.PAYLOAD, last - 1, 2).getValues();
+    }
+    const tabName = sh.getName();
+    head.forEach(function (r, i) {
+      const qn = String(r[COL.QN - 1] || '').trim();
+      if (!qn) return;
+      const t = tail[i] || [];
+      let pd = null;
+      try { pd = JSON.parse(t[0] || 'null'); } catch (e) { pd = null; }
+      const paid = pd ? paymentsTotal_(pd) : Number(t[1] || 0);
+      quotes.push({
+        qn: qn, tab: tabName, draft: isOffstageTab_(tabName),
+        name: [r[COL.FIRST - 1], r[COL.LAST - 1]].map(function (x) { return String(x || '').trim(); }).filter(Boolean).join(' '),
+        lastKey: dupNorm_(r[COL.LAST - 1]), firstKey: dupNorm_(r[COL.FIRST - 1]),
+        email: String(r[COL.EMAIL - 1] || '').trim().toLowerCase(),
+        phone: String(r[COL.PHONE - 1] || '').replace(/\D/g, '').slice(-10),
+        unit: String(r[COL.UNIT - 1] || ''), ymm: String(r[COL.YMM - 1] || ''), dims: String(r[COL.DIMS - 1] || ''),
+        status: String(r[COL.STATUS - 1] || ''),
+        total: pd ? Number(pd.total || 0) : 0, paid: paid,
+        contract: !!(pd && pd.contractUrl), emails: (pd && pd.emailLog && pd.emailLog.length) || 0,
+        editedAt: dupEditedAt_(pd, r[COL.TS - 1])
+      });
+    });
+  });
+  /* Every same-customer, same-unit pair, joined into groups. A quote copied
+     to a second tab mid-relocation shares its number: one quote, not two. */
+  const parent = quotes.map(function (q, i) { return i; });
+  const find = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+  const edges = [];
+  for (let i = 0; i < quotes.length; i++) {
+    for (let j = i + 1; j < quotes.length; j++) {
+      const a = quotes[i], b = quotes[j];
+      if (a.qn === b.qn || !dupSameCustomer_(a, b)) continue;
+      const c = dupUnitSame_(a, b);
+      if (!c) continue;
+      edges.push({ i: i, c: c });
+      parent[find(i)] = find(j);
+    }
+  }
+  const byRoot = {}, conf = {};
+  quotes.forEach(function (q, i) { (byRoot[find(i)] = byRoot[find(i)] || []).push(q); });
+  /* One maybe in a group makes the whole group a maybe. */
+  edges.forEach(function (e) { const r = find(e.i); if (conf[r] !== 'medium') conf[r] = e.c; });
+  const card = function (q) {
+    return { qn: q.qn, tab: q.tab, draft: q.draft, name: q.name, unit: q.unit, ymm: q.ymm, dims: q.dims,
+      status: q.status, total: q.total, paid: q.paid, contract: q.contract, emails: q.emails,
+      editedAt: q.editedAt ? new Date(q.editedAt).toISOString() : '' };
+  };
+  const groups = [];
+  Object.keys(byRoot).forEach(function (k) {
+    const list = byRoot[k];
+    const seen = {};
+    const uniq = list.filter(function (q) { if (seen[q.qn]) return false; seen[q.qn] = 1; return true; });
+    if (uniq.length < 2) return;
+    const pick = dupKeeper_(uniq);
+    groups.push({ name: pick.keep.name, unit: pick.keep.unit, ymm: pick.keep.ymm,
+      confidence: conf[k] || 'high', why: pick.why, note: pick.note,
+      keep: card(pick.keep),
+      review: uniq.filter(function (q) { return q !== pick.keep; })
+        .sort(function (a, b) { return b.editedAt - a.editedAt; }).map(card) });
+  });
+  groups.sort(function (a, b) {
+    return (a.confidence === b.confidence ? 0 : a.confidence === 'high' ? -1 : 1) ||
+      String(a.name).localeCompare(String(b.name));
+  });
+  return { ok: 1, builtAt: new Date().toISOString(), scanned: quotes.length, groups: groups,
+    reviewCount: groups.reduce(function (n, g) { return n + g.review.length; }, 0),
+    reads: grids ? _gridsRoute_ : 'scan', _t: { total: Date.now() - T0 } };
 }
 
 /* THE CUSTOMER'S NOTE — "Notes / special requests" on the quote page.

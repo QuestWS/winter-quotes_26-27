@@ -837,6 +837,14 @@ if [ -f quote-logger-apps-script.gs ]; then
   else
     echo "  FAIL gate: receivables broken"; sed 's/^/       /' "$TMP/recv.txt"; FAIL=1
   fi
+  # Possible duplicates: duplicatesBuild_ is RUN over a fake sheet holding
+  # every real duplicate shape and every look-alike that is two real units.
+  # It deletes nothing, so the failure that matters is a wrong list.
+  if node tools/check-duplicates.js > "$TMP/dups.txt" 2>&1; then
+    echo "  OK   gate: possible duplicates — right groups, right keeper, look-alikes left out"
+  else
+    echo "  FAIL gate: possible duplicates broken"; sed 's/^/       /' "$TMP/dups.txt"; FAIL=1
+  fi
   # Items to Quote: itemsToQuoteOf_ is RUN over engine-priced quotes — open,
   # priced, jetski detail, powerwash, acid wash, missing dimensions, taken off.
   if node tools/check-items-to-quote.js > "$TMP/tq.txt" 2>&1; then

@@ -275,6 +275,45 @@ records nothing; a payment or refund is still recorded on the quote.
   said in words. Unpaid, Partly paid and Credit due get a tick box and a
   Notes column for working the phone.
 
+## Possible duplicates (console)
+
+**Possible duplicates** in the menu (and a home tile): every place the same
+customer has the same unit on more than one quote, with the one to **keep**
+and the ones to **review**. Chris, Nov 2026: flag them, do not delete them;
+keep the one with a deposit, else the one edited most recently; the same name
+with a different unit is not a duplicate. Read-only — removing one is still
+**Delete this quote** on the quote (admin-only, archived to Deleted Quotes).
+
+- **One call, `duplicates`,** on `CONSOLE_GET_FNS_`, `view` permission, no
+  cache: a stale copy of "what is still there" is worse than the wait.
+- **Every quote tab, the Import and lead tabs included** — that is where they
+  come from. The first run over the live sheet found three shapes: an Import
+  draft left behind after the same quote was sent from its real tab, the same
+  old sheet imported twice, and an unfinished lead for a boat then quoted
+  properly. Deleted Quotes fails the header probe and is never read.
+- **Same customer** (`dupSameCustomer_`): same surname, spaces and punctuation
+  ignored, AND the same first name, email or phone. Surname alone merges
+  spouses. A name typed across the wrong boxes ("Chris Van" / "Dyke") still
+  meets "VanDyke" (`dupSameSurname_`).
+- **Same unit** (`dupUnitSame_`): the same kind (jet ski / PWC / waverunner are
+  one), nothing contradicting — a different model year, a different unit
+  number (`#2`, `1/3` vs `2/3`: how staff number a second unit), lengths more
+  than `DUP_LEN_SLACK_FT_` apart — and something agreeing: a shared make/model
+  word, spelling slips forgiven, or identical dimensions when neither names a
+  make. Anything short of full agreement is shown as a **maybe**.
+- **Which to keep** (`dupKeeper_`): the one with money on it; then a quote on a
+  real tab over an Import or lead draft; then the most recently edited (the
+  payload's `ts`). The middle rule is a deliberate exception to "most recent":
+  on the first run every Import draft carried a newer date than the quote the
+  customer actually held, because the Nov 5 re-price touched only the drafts —
+  one of those customers had signed. Two quotes with money on one unit are
+  both kept in view with a warning: that is a refund question, not a tidy-up.
+- **Every review row says what deleting it would lose** — money paid, a signed
+  contract, emails the customer already has — in red.
+- `tools/check-duplicates.js` runs the builder over invented quotes covering
+  every shape above and every look-alike that is really two units, on both
+  read routes, and fails if any of it writes, deletes or emails.
+
 ## Payments received (console)
 
 Every open quote shows a **Payments received** card above Quote history: the

@@ -537,6 +537,7 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
       <button class="linkbtn" id="quickOpen" onclick="navGo(toggleQuick)">Quick quote</button>
       <button class="linkbtn" onclick="navGo(toggleStorage)">Storage view</button>
       <button class="linkbtn" onclick="navGo(toggleReceivables)">Receivables</button>
+      <button class="linkbtn" onclick="navGo(toggleDuplicates)">Possible duplicates</button>
       <button class="linkbtn" onclick="navGo(toggleFinFollow)">Synchrony follow-ups</button>
       <button class="linkbtn" onclick="navGo(printBlankContract)">Print blank contract</button>
       <button class="linkbtn hide" id="bulkOpen" onclick="navGo(toggleBulk)">Send to all</button>
@@ -585,6 +586,8 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         <span>Who is in each building, with the printable storage sheets and the haul-out list.</span></button>
       <button class="tile" onclick="navGo(toggleReceivables)"><b>Receivables</b>
         <span>The latest payments and refunds, and every customer by payment status — unpaid, part paid, paid, credit due.</span></button>
+      <button class="tile" onclick="navGo(toggleDuplicates)"><b>Possible duplicates</b>
+        <span>The same customer and unit quoted more than once, with which one to keep and which to look at. Deletes nothing.</span></button>
       <button class="tile" onclick="navGo(toggleFinFollow)"><b>Synchrony follow-ups</b>
         <span>Customers who went to the Synchrony application a day or more ago and never authorized the charge.</span></button>
       <button class="tile" onclick="printBlankContract()"><b>Print blank contract</b>
@@ -1366,6 +1369,22 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
         follow-up that fits — <b>approved</b> or <b>still want to pay over time?</b></div>
       <div id="finFollowBody"></div>
     </div>
+    <!-- Possible duplicates: read-only. Lists, never deletes — removing one is
+         still Delete this quote on the quote itself, admin-only, archived first. -->
+    <div class="card hide" id="dupCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">Possible duplicates</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn navy sm" onclick="loadDuplicates()">Check again</button>
+          <button class="btn ghost sm" onclick="$('dupCard').classList.add('hide')">✕ Close</button>
+        </div>
+      </div>
+      <div class="msg" style="margin:6px 0 10px">The same customer with the same unit on more than one quote.
+        Nothing here is deleted. <b>Keep</b> is the one with a deposit; with no deposit, a quote on a real tab
+        over an Import draft or an unfinished lead, then the one edited most recently. Same customer with a
+        different unit is not listed. Tap a quote to open it.</div>
+      <div id="dupBody"></div>
+    </div>
     <!-- Receivables: read-only. Every tab and range re-renders one fetch. -->
     <div class="card hide" id="recvCard">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1473,7 +1492,7 @@ const $=id=>document.getElementById(id);
 
    API_GET_OK mirrors CONSOLE_GET_FNS_ in the .gs. The server enforces it too —
    this list only decides what the console bothers retrying. */
-const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,financeFollowups:1,draftList:1,photoInfo:1,hhListInfo:1,
+const API_GET_OK={auth:1,ping:1,warmup:1,lookup:1,quoteHistory:1,quoteHtml:1,search:1,storageView:1,receivables:1,duplicates:1,financeFollowups:1,draftList:1,photoInfo:1,hhListInfo:1,
   listStaff:1,autoPause:1,inboxScanState:1,inboxList:1,emailPreview:1,dimsPreview:1,servicesPreview:1,bulkPreview:1,
   repricePreview:1,importList:1,importPreview:1,backupPreview:1,jobStatus:1,
   bulkImpState:1};
@@ -1821,7 +1840,7 @@ function boot(){
    an inline classList.add('hide'), and the one that forgets to tell us is the
    one that leaves the console looking empty again. */
 const HOME_PANELS=['resultsCard','quoteArea','quickCard','adminCard','pauseCard','inboxCard','importCard',
-  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard','finCard'];
+  'repriceCard','bulkCard','backupCard','hhListUpCard','storageCard','recvCard','finCard','dupCard'];
 /* PRINT BLANK CONTRACT (Oct 2026). For the customer who insists on paper: the
    same Storage Terms the Adobe web form carries, as a one-page PDF in the repo
    (storage-agreement-blank.pdf), so it opens on any phone or desk without a
@@ -3542,6 +3561,63 @@ async function loadFinFollow(){
   }catch(e){b.innerHTML='<span class="msg err">'+esc(e.message)+'</span>';}
 }
 function openFinFollow(qn){ $('finCard').classList.add('hide'); doLookup(qn); }
+/* ---------------------------------------------------------------------------
+   POSSIBLE DUPLICATES (Chris, Nov 2026)
+   ---------------------------------------------------------------------------
+   One read (duplicates) and a list. The server decides what is a duplicate
+   and which one to keep (duplicatesBuild_, dupKeeper_) and says why; this
+   only shows it. Nothing here writes: removing one is Delete this quote on
+   the quote, so the reason, the archive and the admin gate all still apply.
+   Each quote row warns about what deleting it would throw away — money, a
+   signed contract, emails the customer already has. */
+const DUP_WHY_={deposit:'has the deposit',live:'the quote the customer was sent — the other is a draft (Import tab or unfinished lead)',
+  recent:'no deposit on any — edited most recently'};
+function toggleDuplicates(){
+  const c=$('dupCard');
+  if(c.classList.contains('hide')) loadDuplicates(); else c.classList.add('hide');
+}
+async function loadDuplicates(){
+  const c=$('dupCard'), b=$('dupBody');
+  c.classList.remove('hide');
+  b.innerHTML='<span class="msg">Checking every quote…</span>';
+  try{
+    const r=await api('duplicates',[]);
+    if(!r.ok){b.innerHTML='<span class="msg err">'+esc(r.error)+'</span>';return;}
+    b.innerHTML=renderDuplicates_(r);
+  }catch(e){b.innerHTML='<span class="msg err">'+esc(e.message)+'</span>';}
+}
+function dupRow_(q,keep){
+  const warn=[];
+  if(!keep){
+    if(q.paid>0.005) warn.push('has '+fmt$(q.paid)+' paid');
+    if(q.contract) warn.push('signed contract');
+    if(q.emails) warn.push('customer has been emailed it');
+  }
+  const ed=q.editedAt?new Date(q.editedAt).toLocaleDateString():'';
+  return '<div class="lnrow" style="cursor:pointer" onclick="openDup(\''+esc(q.qn)+'\')">'+
+    '<div class="ll"><b>'+(keep?'Keep':'Review')+' · '+esc(q.qn)+'</b> · '+esc(q.tab)+
+      (warn.length?' <span class="tagred">'+esc(warn.join(' · '))+'</span>':'')+
+      '<div class="sec">'+esc([q.ymm,q.dims].filter(Boolean).join(' · ')||q.unit)+
+      ' · '+esc(q.status||'')+' · total '+fmt$(q.total)+' · paid '+fmt$(q.paid)+(ed?' · edited '+esc(ed):'')+'</div></div>'+
+    '<span class="amt">Open ›</span></div>';
+}
+function renderDuplicates_(r){
+  const gs=r.groups||[];
+  const head='<div class="msg" style="margin:0 0 8px">'+(gs.length?
+    '<b>'+gs.length+'</b> possible duplicate'+(gs.length===1?'':'s')+' — '+r.reviewCount+' quote'+(r.reviewCount===1?'':'s')+' to review':
+    'No possible duplicates')+' out of '+r.scanned+' quotes. Checked '+
+    esc(new Date(r.builtAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}))+'.</div>';
+  return head+gs.map(g=>
+    '<div style="border:1px solid var(--line,#ddd);border-radius:10px;padding:8px 10px;margin:0 0 10px">'+
+      '<div><b>'+esc(g.name||'(no name)')+'</b> · '+esc(g.unit)+(g.ymm?' · '+esc(g.ymm):'')+
+        (g.confidence==='medium'?' <span class="tagmute">maybe — the descriptions differ a little</span>':'')+'</div>'+
+      '<div class="msg" style="margin:2px 0 4px">Keep '+esc(g.keep.qn)+': '+esc(DUP_WHY_[g.why]||g.why)+'.'+
+        (g.note?' <b>'+esc(g.note)+'</b>':'')+'</div>'+
+      dupRow_(g.keep,true)+g.review.map(q=>dupRow_(q,false)).join('')+
+    '</div>').join('')+
+    (gs.length?'<div class="msg">To remove one: open it, check it, then <b>Delete this quote</b> at the bottom (admins). It is archived on the Deleted Quotes tab, not destroyed.</div>':'');
+}
+function openDup(qn){ $('dupCard').classList.add('hide'); doLookup(qn); window.scrollTo({top:0,behavior:'smooth'}); }
 async function setFinanceDisclosure(state){
   try{const r=await api('financeDisclosure',[QN,state],{withQuote:QN});
     if(!r.ok){setMsg('finDiscMsg',r.error,false);return;}

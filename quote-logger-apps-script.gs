@@ -12533,6 +12533,14 @@ function latePenalty_(d, balance, now, forceLate) {
    and the line goes. */
 /* The dated "Balance due …" label for a quote (balanceDueLabel, the engine's
    one wording), escaped for an email or the PDF. */
+/* Whether the pay-by day is over -- the same test balanceDueLabel uses for
+   "was due". After it, an email asks for the balance, never a deposit. */
+function payByPassed_(payByLong, now) {
+  const pb = new Date(String(payByLong || SEASON.payByDate));
+  const t = now ? new Date(now).getTime() : Date.now();
+  return !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+}
+
 function balanceDueLabel_(d) {
   const sn = (d && d.season) || {};
   return esc_(balanceDueLabel({
@@ -12919,7 +12927,9 @@ function buildEmailFor_(d, kind, extra, photos) {
         ? moneyRow_('Payments received', '\u2212' + usd_(paid), false) +
           (bal < -0.005 ? moneyRow_('Credit due to you', usd_(-bal), true)
             : moneyRow_(balanceDueLabel_(d), usd_(Math.max(0, bal)), true))
-        : (noStorage ? '' : moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false)));
+        : (noStorage ? ''
+          : payByPassed_((d.season && d.season.payBy) || '') ? moneyRow_(balanceDueLabel_(d), usd_(total), true)
+          : moneyRow_(lockinCopy().depositEmail, usd_(d.deposit), false)));
     const box = '<div style="background:#FDFCF7;border:1px solid #C7D5E0;border-radius:8px;padding:14px 18px;margin:4px 0 16px">' +
       '<table width="100%" cellpadding="0" cellspacing="0">' + rowsHtml + '</table></div>';
 
@@ -14055,10 +14065,17 @@ function customerEmailHtml_(o) {
     ? 'Just a friendly reminder — your winter services quote is still waiting for you. Everything below is ready whenever you are.'
     : 'Thanks for getting your winter services quote from Quest Watersports! Your full itemized quote is attached as a PDF. When you\'re ready, you can sign your agreement and pay online — no extra trip needed.';
   let money = '';
+  const pastPayBy = payByPassed_(o.payByLong);
   if (o.noStorage) {
     money = moneyRow_('Total — due when the work is completed (Cash, Check, Debit, Zelle or ACH)', usd_(o.total), true);
   } else if (o.dueToday) {
     money = moneyRow_('Total due today — Cash, Check, Debit, Zelle or ACH', usd_(o.total), true);
+  } else if (pastPayBy) {
+    /* Past the pay-by date nothing is "a deposit" any more -- the whole
+       balance was due then (Chris, Nov 2026: "don't let it ask for a deposit
+       if sending after 11/15"). Total, then the dated balance row. */
+    money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH)', usd_(o.total), true) +
+            (o.paid > 0 ? '' : moneyRow_(esc_(balanceDueLabel({ payBy: o.payByLong || '', payByShort: o.payBy || '' })), usd_(o.total), true));
   } else {
     money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH' + (o.payBy ? ' by ' + o.payBy : '') + ')', usd_(o.total), true) +
             (o.paid > 0 ? '' : moneyRow_(lockinCopy().depositEmail, usd_(o.deposit), false));
@@ -14078,7 +14095,7 @@ function customerEmailHtml_(o) {
      button, and no "confirm your email" box telling them signing isn't done. */
   const signUrl = o.signed ? '' : o.signUrl;
   if (signUrl) buttons += buttonHtml_(signUrl, 'Review &amp; sign your agreement', '#14293E') + signConfirmHtml_();
-  if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
+  if (!o.paidInFull && !o.creditDue) buttons += buttonHtml_(PAYMENT_URL, (o.noStorage || o.dueToday || o.paid > 0 || pastPayBy) ? 'Pay online' : 'Pay your deposit online', '#C08A22');
   /* Synchrony, next to paying — callers pass financeOfferUrl_(d), which is ''
      whenever there is nothing to finance. */
   if (!o.paidInFull && !o.creditDue && o.financeUrl) buttons += financeButtonHtml_(o.financeUrl);

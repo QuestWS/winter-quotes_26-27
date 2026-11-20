@@ -81,7 +81,10 @@ const FIXTURE = {
 };
 const emailOpts = {
   firstName: 'Fixture', quoteNo: 'QW-26-0000', unit: 'Boat',
-  total: 1200, deposit: 500, paid: 0, payBy: 'Nov 15'
+  /* A pay-by date that never passes: after it the email asks for the whole
+     balance instead of a deposit, so a real date would fail this check the
+     day after the season's deadline. */
+  total: 1200, deposit: 500, paid: 0, payBy: 'Nov 15', payByLong: 'November 15, 2099'
 };
 
 console.log('=== while pricing is provisional ===');
@@ -146,6 +149,11 @@ if (!N) {
   const mail = B.customerEmailHtml_(emailOpts);
   has(mail, N.heading, 'customer email carries the notice');
   has(mail, C.depositEmail, 'customer email deposit row uses the reserve wording');
+  /* Past the pay-by date there is no deposit to ask for (Chris, Nov 2026). */
+  const late = B.customerEmailHtml_(Object.assign({}, emailOpts, { payByLong: 'November 15, 2020', payBy: 'Nov 15' }));
+  hasnt(late, C.depositEmail, 'past the pay-by date the email asks for no deposit');
+  hasnt(late, 'Pay your deposit online', 'past the pay-by date the button says Pay online');
+  has(late, 'was due Nov 15', 'past the pay-by date the balance says when it was due');
   hasnt(mail, 'Deposit to lock in your spot', 'customer email has no lock-in deposit row');
 
   /* An operational notice that prints a balance is quoting an estimate too. */

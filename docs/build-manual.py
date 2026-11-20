@@ -679,7 +679,7 @@ def manual():
     s += [P('Every email except two is a human decision: previewed, then sent by a named staff '
             'member, and recorded in the quote\'s Email history. Replies go to service@.')]
     s += [table(['Email', 'Sent by', 'Needs', 'Use it when'], [
-        ['Quote / invoice', 'Customer ("Email me this quote") or staff (Re-send invoice)', perms('email'), 'Any time; attaches the PDF'],
+        ['Quote / invoice', 'Customer ("Email me this quote") or staff (Send invoice / Send updated invoice)', perms('email'), 'Any time; attaches the PDF'],
         ['Payment receipt', 'Staff, on recording a payment', perms('pay'), 'Each payment (tick box)'],
         ['Updated copy', 'Staff, on an adjustment', perms('adjust'), 'After a discount/charge (tick box)'],
         ['We have your unit', 'Staff', perms('email'), 'Unit has arrived / been pulled'],
@@ -759,7 +759,8 @@ def manual():
             'whoever can edit the sheet — no PIN. It only appears in a desktop browser.')]
     s += [table(['Menu item', 'Console equivalent'], [
         ['Adjust selected quote (no email) / Adjust &amp; email customer', 'Adjustment card'],
-        ['Email updated quote to customer', 'Re-send invoice'],
+        ['Email updated quote to customer', 'Send updated invoice'],
+        ['Email quote / invoice to customer (not "updated")', 'Send invoice'],
         ['Show customer link for selected quote', 'Customer link'],
         ['Edit / remove line items', 'Line items → Edit / X'],
         ['Price a quote request', 'Quote requests → Price this'],

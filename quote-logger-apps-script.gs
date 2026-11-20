@@ -2841,6 +2841,7 @@ function onOpen() {
     .addItem('Adjust selected quote (no email)…', 'adjustSelectedQuote')
     .addItem('Adjust & email customer…', 'adjustAndEmail')
     .addItem('Email updated quote to customer…', 'emailUpdatedQuote')
+    .addItem('Email quote / invoice to customer (not "updated")', 'emailInvoicePlain')
     .addItem('Show customer link for selected quote…', 'showQuoteLink')
     .addItem('Edit / remove line items…', 'editLineItems')
     .addItem('Price a quote request…', 'priceQuoteRequest')
@@ -3597,6 +3598,19 @@ function emailUpdatedQuote() {
   const ctx = getSelectedQuoteRow_();
   if (!ctx) return;
   sendUpdate_(ctx, '');
+}
+
+/* Menu: the console's "Send invoice" -- the current quote/invoice with no
+   "we've updated" wording and no status change. */
+function emailInvoicePlain() {
+  const ctx = getSelectedQuoteRow_();
+  if (!ctx) return;
+  const ui = ctx.ui, d = ctx.d;
+  if (!d.email) { ui.alert('Quote ' + ctx.quoteNo + ' has no customer email — nothing sent.'); return; }
+  if (ui.alert('Email ' + docTerm_(d).toLowerCase() + ' ' + ctx.quoteNo + ' to ' + d.email + '?', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  sendCustomerEmail_(d, '', false, null, null, true);
+  followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, 'invoice', 'Sheet menu'));
+  ui.alert(docTerm_(d) + ' emailed to ' + d.email + '.');
 }
 
 function saveQuoteRow_(ctx, statusOverride) {
@@ -7390,7 +7404,7 @@ function adminSendEmail(token, qn, kind, extra, staff) {
   if (!d.email) return { ok: 0, error: 'No customer email on this quote.' };
   const photos = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
   // notice kinds route through the shared builder (same HTML the preview showed)
-  if (kind !== 'updated') {
+  if (kind !== 'updated' && kind !== 'invoice') {
     const built = buildEmailFor_(d, kind, extra, photos);
     if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
     const opts = { htmlBody: withStaffNote_(built.html, sx.note), name: 'Quest Watersports', replyTo: REPLY_TO };
@@ -7418,6 +7432,10 @@ function adminSendEmail(token, qn, kind, extra, staff) {
   if (kind === 'updated') {
     sendCustomerEmail_(d, String(extra || ''), true, null, sx);
     statusVal = 'Adjusted & emailed';
+  } else if (kind === 'invoice') {
+    /* Nothing changed, so the status column is left alone; the send is
+       still in Email History. */
+    sendCustomerEmail_(d, '', false, null, sx, true);
   } else return { ok: 0, error: 'Unknown email type.' };
   if (statusVal) ctx.sh.getRange(ctx.rowNum, COL.STATUS).setValue(statusVal);
   followRow_(ctx, recordEmail_(ctx.sh, ctx.rowNum, d, kind, who.name));
@@ -13520,20 +13538,12 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
   const d = ctx.d;
   if (!d.email) return { ok: 0, error: 'No customer email on this quote.' };
   const photos = String(ctx.sh.getRange(ctx.rowNum, COL.PHOTOS).getValue() || '');
-  if (kind === 'updated') {
-    const paid = paymentsTotal_(d);
-    const balance = Number(d.total || 0) - paid;
-    const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
-    const noStorage = noStorageOf_(d);
-    const html = customerEmailHtml_({ firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
-      total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
-      paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
-      payBy: (d.season && d.season.payByShort) || '', payByLong: (d.season && d.season.payBy) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
-      signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
-      reminder: false, updateNote: '', isUpdate: true, receipt: null, surveyBase: surveyBase_(d) });
-    /* (The object used to carry `html` twice, and the second -- without the
-       note -- won, so this one preview never showed the staff note.) */
-    return { ok: 1, to: d.email, cc: sx.cc, html: withStaffNote_(html, sx.note), subject: 'Updated: your Quest Watersports winter ' + docTerm_(d).toLowerCase() + ' — ' + d.quoteNo };
+  if (kind === 'updated' || kind === 'invoice') {
+    /* The same builder sendCustomerEmail_ uses, so the preview is what sends.
+       (It used to be a second hand-built copy, which once carried `html` twice
+       and dropped the staff note.) */
+    const em = customerEmailFor_(d, '', kind === 'updated', null, kind === 'invoice');
+    return { ok: 1, to: d.email, cc: sx.cc, html: withStaffNote_(em.html, sx.note), subject: em.subject };
   }
   const built = buildEmailFor_(d, kind, extra, photos);
   if (!built) return { ok: 0, error: unbuildableMsg_(kind, d) };
@@ -14033,6 +14043,12 @@ function customerEmailHtml_(o) {
     : '<div style="font-family:Arial Black,Arial;font-size:24px;color:#14293E;letter-spacing:1px">QUEST WATERSPORTS</div>';
   const intro = o.receipt
     ? 'We\'ve received your payment of <b>' + usd_(o.receipt.amt) + '</b>' + (o.receipt.method ? ' by ' + esc_(o.receipt.method) : '') + ' — thank you!' + (o.paidInFull ? ' Your winter services are <b>paid in full</b>. Your updated quote is attached for your records.' : ' Your updated balance is below, and your quote reflecting this payment is attached.')
+    /* A plain send (the console's "Send invoice"): the current quote or
+       invoice, with no claim that anything changed. Chris, Nov 2026 -- the
+       "updated" wording told customers something had moved when nothing had. */
+    : o.plainSend
+    ? 'Here\'s your winter services ' + (o.paid > 0 ? 'invoice' : 'quote') + ' from Quest Watersports. The full itemized copy is attached as a PDF' +
+      (o.paidInFull || o.creditDue ? ', with your account summary below.' : ', with what\'s due below. You can take care of it online using the buttons below — no extra trip needed.')
     : o.isUpdate
     ? 'We\'ve updated your winter services quote' + (o.updateNote ? ': <b>' + esc_(o.updateNote) + '</b>' : '') + '. Your revised quote is attached with the new totals below — the links to sign and pay are the same.'
     : o.reminder
@@ -14295,8 +14311,24 @@ function signLookup_(quoteNo) {
   return { ok: 0 };
 }
 
-function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
+function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx, plainSend) {
   try {
+    const built = customerEmailFor_(d, updateNote, isUpdate, receipt, plainSend);
+    const pdf = getPdfBlob_(d.quoteNo, d);
+    /* sx: the console preview's CC box and staff note (staffExtras_). */
+    const opts = { htmlBody: withStaffNote_(built.html, sx && sx.note), name: 'Quest Watersports', replyTo: REPLY_TO };
+    if (sx && sx.cc) opts.cc = sx.cc;
+    if (pdf) opts.attachments = [pdf];
+    const logo = getLogoBlob_();
+    if (logo) opts.inlineImages = { questlogo: logo };
+    if (FROM_ALIAS) opts.from = FROM_ALIAS;
+    GmailApp.sendEmail(d.email, built.subject, 'Your winter quote is attached. Quote# ' + (d.quoteNo || ''), opts);
+  } catch (err) { console.error('Customer email failed: ' + err); }
+}
+
+/* The quote/invoice email's HTML and subject -- one builder, so the console
+   preview and the send cannot drift apart. */
+function customerEmailFor_(d, updateNote, isUpdate, receipt, plainSend) {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
     const noStorage = noStorageOf_(d);
     const paid = paymentsTotal_(d);
@@ -14308,23 +14340,15 @@ function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
       creditDue: balance < -0.005 ? -balance : 0,
       payBy: (d.season && d.season.payByShort) || '', payByLong: (d.season && d.season.payBy) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
-      reminder: false, updateNote: updateNote || '', isUpdate: !!(isUpdate || updateNote),
+      reminder: false, updateNote: updateNote || '', isUpdate: !plainSend && !!(isUpdate || updateNote),
+      plainSend: !!plainSend && !receipt,
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
-    const pdf = getPdfBlob_(d.quoteNo, d);
-    /* sx: the console preview's CC box and staff note (staffExtras_). */
-    const opts = { htmlBody: withStaffNote_(html, sx && sx.note), name: 'Quest Watersports', replyTo: REPLY_TO };
-    if (sx && sx.cc) opts.cc = sx.cc;
-    if (pdf) opts.attachments = [pdf];
-    const logo = getLogoBlob_();
-    if (logo) opts.inlineImages = { questlogo: logo };
-    if (FROM_ALIAS) opts.from = FROM_ALIAS;
     const term = docTerm_(d).toLowerCase();
     const subject = (receipt
       ? (paid > 0 && balance <= 0 ? 'Receipt — paid in full: Quest Watersports winter ' + term + ' ' : 'Receipt — payment received: Quest Watersports winter ' + term + ' ')
-      : (isUpdate || updateNote) ? 'Updated: your Quest Watersports winter ' + term + ' — ' : 'Your Quest Watersports winter ' + term + ' — ') + (d.quoteNo || '');
-    GmailApp.sendEmail(d.email, subject, 'Your winter quote is attached. Quote# ' + (d.quoteNo || ''), opts);
-  } catch (err) { console.error('Customer email failed: ' + err); }
+      : (!plainSend && (isUpdate || updateNote)) ? 'Updated: your Quest Watersports winter ' + term + ' — ' : 'Your Quest Watersports winter ' + term + ' — ') + (d.quoteNo || '');
+    return { html: html, subject: subject };
 }
 
 /* ================= AUTO REMINDER =================

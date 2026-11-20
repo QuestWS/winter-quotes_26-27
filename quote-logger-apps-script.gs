@@ -651,8 +651,11 @@ function pricesValidSentence(payBy){
 /* Every balance owed says WHEN it is due (Chris, Nov 2026: "any reference to
    a balance owed needs a due date on it" — customers said they never got
    another bill). One wording for the page, the PDF and every email.
-   o: { noStorage, dueToday, payBy (long date), payByShort, now }. Once the
-   pay-by day is over it reads "was due", never a bare "Balance". */
+   o: { noStorage, dueToday, payBy (long date), payByShort, now, lateSignup }.
+   Once the pay-by day is over it reads "was due", never a bare "Balance" --
+   unless staff marked the quote a late sign-up (manual.lateSignup): someone
+   who only just inquired, or whom Quest had not reached yet, is not late, and
+   "was due" would tell them they were (Chris, Nov 2026). Then it is due now. */
 function balanceDueLabel(o){
   o = o || {};
   if (o.noStorage) return 'Balance due when the work is completed';
@@ -661,6 +664,7 @@ function balanceDueLabel(o){
   const pb = new Date(String(o.payBy || SEASON.payByDate));
   const t = o.now ? new Date(o.now).getTime() : Date.now();
   const past = !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+  if (past && o.lateSignup) return 'Balance due now';
   return past ? 'Balance (was due ' + short + ')' : 'Balance due by ' + short;
 }
 
@@ -1685,6 +1689,7 @@ function consoleFns_(p) {
     dimsApply:   function (a) { return adminDimsApply(p.token, a[0], a[1], a[2]); },
     keysApply:   function (a) { return adminKeysApply(p.token, a[0], a[1]); },
     penalty:     function (a) { return adminPenalty(p.token, a[0], a[1], a[2]); },
+    lateSignup:  function (a) { return adminLateSignup(p.token, a[0], a[1]); },
     servicesPreview: function (a) { return adminServicesPreview(p.token, a[0], a[1]); },
     servicesApply:   function (a) { return adminServicesApply(p.token, a[0], a[1]); },
     hho:         function (a) { return adminHho(p.token, a[0], a[1], a[2], a[3]); },
@@ -3027,6 +3032,27 @@ function effectiveState_(d) {
    offered them on the quote page, staff apply them when they are earned. */
 const PENALTY_KEYS_ = { pumpout: 'Pumpout service charge',
                         lateRetrieval: 'Late retrieval surcharge' };
+
+/* Late sign-up (Chris, Nov 2026): "in case someone signs up late I don't
+   want to send something and make them sound already late if I just haven't
+   reached out or they just inquired." Wording only -- no money moves, the
+   status column keeps what it said -- but the PDF is rebuilt so the copy
+   attached to the next email matches. */
+function adminLateSignup(token, qn, on) {
+  const who = requireAuth_(token, 'adjust');
+  const ctx = findQuoteCtx_(qn);
+  if (!ctx) return { ok: 0, error: 'Quote not found.' };
+  const d = ctx.d;
+  const want = !!on;
+  if (lateSignupOf_(d) === want) return { ok: 1, on: want, msg: 'Already ' + (want ? 'marked' : 'not marked') + ' as a late sign-up.' };
+  const m = ensureManual_(d);
+  if (want) m.lateSignup = true; else delete m.lateSignup;
+  saveQuoteRow_(ctx, String(ctx.sh.getRange(ctx.rowNum, COL.STATUS).getValue() || '') || undefined);
+  auditLog_(who.name, (want ? 'Marked ' : 'Unmarked ') + qn + ' as a late sign-up');
+  return { ok: 1, on: want, msg: want
+    ? 'Marked as a late sign-up: past the pay-by date its balance now reads "due now", not "was due". The customer has not been emailed.'
+    : 'No longer a late sign-up: past the pay-by date its balance reads "was due" again.' };
+}
 
 function adminPenalty(token, qn, which, on) {
   const who = requireAuth_(token, 'adjust');
@@ -6805,6 +6831,7 @@ function adminLookup(token, qn) {
     hasEmail: !!d.email, email: d.email || '', phone: fmtPhone(d.phone || ''),
     /* The Customer details card's fields, split (name above is joined). */
     contact: contactOf_(d),
+    lateSignup: lateSignupOf_(d),
     penalties: (function () {
       const pen = (d.manual && d.manual.penalties) || {};
       const st = effectiveState_(d) || {};
@@ -12541,9 +12568,14 @@ function payByPassed_(payByLong, now) {
   return !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
 }
 
+/* Staff marked this quote a late sign-up: past the pay-by date its balance
+   reads "due now", never "was due". Lives in the manual journal so the
+   customer's own re-save cannot clear it. */
+function lateSignupOf_(d) { return !!(d && d.manual && d.manual.lateSignup); }
+
 function balanceDueLabel_(d) {
   const sn = (d && d.season) || {};
-  return esc_(balanceDueLabel({
+  return esc_(balanceDueLabel({ lateSignup: lateSignupOf_(d),
     noStorage: noStorageOf_(d),
     dueToday: Number(d && d.total || 0) > 0 && Number(d && d.deposit || 0) >= Number(d && d.total || 0),
     payBy: sn.payBy || '', payByShort: sn.payByShort || '' }));
@@ -12556,6 +12588,8 @@ function noticeDueRows_(d, paid, balance, gentle, oneRow) {
   const cutoff = new Date(payByLong);
   // Due through the whole of the pay-by day, Central.
   const pastDue = !isNaN(cutoff.getTime()) && Date.now() > cutoff.getTime() + 36 * 3600 * 1000;
+  /* A late sign-up past the date: all of it is owed, but it is not overdue. */
+  const dueNow = pastDue && lateSignupOf_(d);
   if (noStorage) {
     return { rows: moneyRow_('Balance due when the work is completed', usd_(balance), true), note: '' };
   }
@@ -12574,8 +12608,11 @@ function noticeDueRows_(d, paid, balance, gentle, oneRow) {
     const amt = '<b>' + usd_(balance) + '</b>';
     return {
       strong: true,
-      rows: moneyRow_('Remaining balance — due ' + payByShort, usd_(balance), true),
-      note: pastDue
+      rows: moneyRow_('Remaining balance — due ' + (dueNow ? 'now' : payByShort), usd_(balance), true),
+      note: dueNow
+        ? 'Your remaining balance of ' + amt + ' is due now. You can take care of it ' + how + '. ' +
+          'If you need a little more time, just reply or call and let us know when works for you.'
+        : pastDue
         ? 'Your remaining balance of ' + amt + ' was due on <b>' + payByShort + '</b>. If it\'s already on its way, thank you! ' +
           'If not, please take care of it as soon as you\'re able — ' + how + '. If you need a little more time, just reply ' +
           'or call and let us know when you\'ll be able to, and we\'ll work it out with you.'
@@ -14075,7 +14112,7 @@ function customerEmailHtml_(o) {
        balance was due then (Chris, Nov 2026: "don't let it ask for a deposit
        if sending after 11/15"). Total, then the dated balance row. */
     money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH)', usd_(o.total), true) +
-            (o.paid > 0 ? '' : moneyRow_(esc_(balanceDueLabel({ payBy: o.payByLong || '', payByShort: o.payBy || '' })), usd_(o.total), true));
+            (o.paid > 0 ? '' : moneyRow_(esc_(balanceDueLabel({ payBy: o.payByLong || '', payByShort: o.payBy || '', lateSignup: !!o.lateSignup })), usd_(o.total), true));
   } else {
     money = moneyRow_('Quote total (Cash, Check, Debit, Zelle or ACH' + (o.payBy ? ' by ' + o.payBy : '') + ')', usd_(o.total), true) +
             (o.paid > 0 ? '' : moneyRow_(lockinCopy().depositEmail, usd_(o.deposit), false));
@@ -14087,7 +14124,7 @@ function customerEmailHtml_(o) {
       : o.paidInFull
       ? '<tr><td style="padding:6px 0;font-size:15px;font-weight:bold;color:#1E6B3A">PAID IN FULL — thank you!</td><td align="right" style="padding:6px 0;font-size:18px;font-weight:bold;color:#1E6B3A">$0.00</td></tr>'
       : moneyRow_(esc_(balanceDueLabel({ noStorage: o.noStorage, dueToday: o.dueToday,
-          payBy: o.payByLong || '', payByShort: o.payBy || '' })), usd_(o.balance), true);
+          payBy: o.payByLong || '', payByShort: o.payBy || '', lateSignup: !!o.lateSignup })), usd_(o.balance), true);
   }
   let buttons = '';
   /* A signed contract already on file (o.signed, from d.contractUrl -- the same
@@ -14358,7 +14395,7 @@ function customerEmailFor_(d, updateNote, isUpdate, receipt, plainSend) {
       payBy: (d.season && d.season.payByShort) || '', payByLong: (d.season && d.season.payBy) || '', signUrl: signUrlFor_(d) || d.adobeUrl || '',
       signed: !!d.contractUrl, quoteUrl: quoteLinkFor_(d), financeUrl: financeOfferUrl_(d),
       reminder: false, updateNote: updateNote || '', isUpdate: !plainSend && !!(isUpdate || updateNote),
-      plainSend: !!plainSend && !receipt,
+      plainSend: !!plainSend && !receipt, lateSignup: lateSignupOf_(d),
       receipt: receipt || null, surveyBase: receipt ? '' : surveyBase_(d)
     });
     const term = docTerm_(d).toLowerCase();
@@ -14564,6 +14601,7 @@ function dailyReminderCheck() {
              one that most needs the one-tap way back in. Built from the row's
              own last name, the same halves quoteLinkFor_ takes off a payload. */
           quoteUrl: quoteLink_(quoteNo, last), reminder: true,
+          payByLong: (pdRow && pdRow.season && pdRow.season.payBy) || '', lateSignup: !!(pdRow && pdRow.manual && pdRow.manual.lateSignup),
           /* No payment yet (the sweep skips anyone who has paid), so the plan
              cannot be settled: the payload is enough to say whether to offer it. */
           financeUrl: finUrl

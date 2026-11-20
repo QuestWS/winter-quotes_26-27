@@ -988,6 +988,14 @@ text-transform:uppercase;margin-bottom:3px;white-space:normal}
 
           <div class="card hide" id="emailCard">
             <h2>Customer emails</h2>
+            <!-- Late sign-up: after the pay-by date, balances say "due now"
+                 instead of "was due" -- for someone who only just inquired or
+                 whom we had not reached yet. Emails, PDF and their quote page. -->
+            <label class="hide" id="lateSignupRow" style="display:flex;gap:8px;align-items:flex-start;margin:0 0 10px;font-size:14px">
+              <input type="checkbox" id="lateSignupChk" onchange="toggleLateSignup(this.checked)" style="margin-top:3px">
+              <span><b>Late sign-up</b> — say the balance is <b>due now</b>, not that it <b>was due</b> on the pay-by date</span>
+            </label>
+            <div class="msg" id="lateSignupMsg"></div>
             <div class="emailbtns">
               <button class="btn navy" id="em_stored" onclick="sendKind('stored')">We have your unit</button>
               <button class="btn navy" id="em_fall" onclick="sendKind('fall')">End of season note</button>
@@ -2227,6 +2235,19 @@ function renderPenalties(list){
     '</div>').join('');
   setMsg('penaltyMsg','');
 }
+async function toggleLateSignup(on){
+  if(!QN) return;
+  const chk=$('lateSignupChk');
+  chk.disabled=true; setMsg('lateSignupMsg','Saving…',null);
+  try{
+    const r=await api('lateSignup',[QN,on?1:0],{withQuote:QN});
+    if(!r||!r.ok){ chk.checked=!on; setMsg('lateSignupMsg',(r&&r.error)||'Could not do that.',false); return; }
+    toast(on?'Marked late sign-up':'Late sign-up cleared');
+    await afterWrite_(r);
+    setMsg('lateSignupMsg',r.msg,true);
+  }catch(e){ chk.checked=!on; setMsg('lateSignupMsg',e.message,false); }
+  finally{ chk.disabled=false; }
+}
 async function togglePenalty(key,on){
   if(!QN) return;
   const p=(PENALTIES||[]).find(x=>x.key===key)||{label:key};
@@ -2741,6 +2762,10 @@ function renderQuote(r){
   /* Same permission as any other change that moves money. */
   $('penaltyCard').classList.toggle('hide',!P.adjust);
   if(P.adjust) renderPenalties(r.penalties);
+  /* An older backend sends no lateSignup at all; hide the box rather than
+     show it unticked and wrong. */
+  $('lateSignupRow').classList.toggle('hide',!P.adjust||r.lateSignup===undefined);
+  $('lateSignupChk').checked=!!r.lateSignup; setMsg('lateSignupMsg','');
   /* Adding a service moves money, so it sits with the other adjustments. An
      older backend sends no `services` at all; the card then says so. */
   $('svcCard').classList.toggle('hide',!P.adjust);

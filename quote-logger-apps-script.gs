@@ -12518,13 +12518,13 @@ function latePenalty_(d, balance, now, forceLate) {
 function balanceDueLabel_(d) {
   const sn = (d && d.season) || {};
   return esc_(balanceDueLabel({
-    noStorage: !!(d && d.state && d.state.storage === 'none'),
+    noStorage: noStorageOf_(d),
     dueToday: Number(d && d.total || 0) > 0 && Number(d && d.deposit || 0) >= Number(d && d.total || 0),
     payBy: sn.payBy || '', payByShort: sn.payByShort || '' }));
 }
 
 function noticeDueRows_(d, paid, balance, gentle, oneRow) {
-  const noStorage = !!(d.state && d.state.storage === 'none');
+  const noStorage = noStorageOf_(d);
   const payByShort = esc_((d.season && d.season.payByShort) || SEASON.payByShort);
   const payByLong = (d.season && d.season.payBy) || SEASON.payByDate;
   const cutoff = new Date(payByLong);
@@ -12873,7 +12873,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const paid = paymentsTotal_(d);
     const total = Number(d.total || 0);
     const bal = total - paid;
-    const noStorage = !!(d.state && d.state.storage === 'none');
+    const noStorage = noStorageOf_(d);
     const signed = !!d.contractUrl;
     const signLink = signed ? '' : (signUrlFor_(d) || '');
     const quoteUrl = quoteLinkFor_(d);
@@ -13255,7 +13255,7 @@ function buildEmailFor_(d, kind, extra, photos) {
     const fee = usd_(Number(sn.lateRetrievalFee) || PRICES.lateRetrieval);
     const pct = Number(RULES.latePct) || 10;
     const feeNum = Number(sn.lateRetrievalFee) || PRICES.lateRetrieval;
-    const noStorage = !!(d.state && d.state.storage === 'none');
+    const noStorage = noStorageOf_(d);
 
     /* WHEN THE LATE RETRIEVAL FEE APPLIES — Chris, Nov 2026: only when the
        customer's own timing puts it after the date: they sign up after it, or
@@ -13524,7 +13524,7 @@ function adminEmailPreview(token, qn, kind, extra, staff) {
     const paid = paymentsTotal_(d);
     const balance = Number(d.total || 0) - paid;
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
-    const noStorage = !!(d.state && d.state.storage === 'none');
+    const noStorage = noStorageOf_(d);
     const html = customerEmailHtml_({ firstName: d.firstName, quoteNo: d.quoteNo, unit: d.unit,
       total: d.total, deposit: d.deposit, dueToday: dueToday, noStorage: noStorage, paid: paid, balance: balance,
       paidInFull: paid > 0 && Math.abs(balance) <= 0.005, creditDue: balance < -0.005 ? -balance : 0,
@@ -14298,7 +14298,7 @@ function signLookup_(quoteNo) {
 function sendCustomerEmail_(d, updateNote, isUpdate, receipt, sx) {
   try {
     const dueToday = Number(d.total || 0) > 0 && Number(d.deposit || 0) >= Number(d.total || 0);
-    const noStorage = !!(d.state && d.state.storage === 'none');
+    const noStorage = noStorageOf_(d);
     const paid = paymentsTotal_(d);
     const balance = Number(d.total || 0) - paid;
     const html = customerEmailHtml_({
@@ -14495,7 +14495,7 @@ function dailyReminderCheck() {
          SIGN column: this email goes to people who saved a quote and never
          came back, which is exactly the set whose stored link predates the
          web form. See signUrlFor_. */
-      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); pdRow = pd; payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = !!(pd.state && pd.state.storage === 'none'); signLink = signUrlFor_(pd) || ''; } catch (e) {}
+      try { const pd = JSON.parse(r[COL.PAYLOAD-1] || '{}'); pdRow = pd; payByShort = (pd.season && pd.season.payByShort) || ''; noStorage = noStorageOf_(pd); signLink = signUrlFor_(pd) || ''; } catch (e) {}
       /* An imported quote that a human has since emailed restarts its ten
          days from THAT send. Every other marker still means "done, say no
          more" — including the HOLD on an import nobody has contacted yet. */
@@ -14734,7 +14734,7 @@ function surveyBlurb_(o) {
    coming off a normal storage term (10 days from service completion). Shared
    across every terms paragraph in quoteHtml_ below so they can't drift apart. */
 function pickupTermsSentence_(d, sn) {
-  const noStorage = !!(d.state && d.state.storage === 'none');
+  const noStorage = noStorageOf_(d);
   return noStorage
     ? 'Units not stored with Quest must be picked up within 2 weeks of being notified the work is complete. After that, a $25/day fee applies until the unit is removed from Quest\'s property, and any open invoice must be paid in full before it is released.'
     : 'Units not removed at end of storage term or within 10 days of service completion are subject to $25/day short-term storage. Storage runs ' + esc_(sn.storageStart || '') + ' – ' + esc_(sn.storageEnd || '') + ' and is subject to Quest\'s Storage Terms.';
@@ -14856,7 +14856,7 @@ function quoteHtml_(d) {
       if (paidInFull) {
         return '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. This quote is paid in full — thank you. ' + pickupTermsSentence_(d, sn) + provisionalTerms + '</p>';
       }
-      const noStorage = !!(d.state && d.state.storage === 'none');
+      const noStorage = noStorageOf_(d);
       return dueToday
         ? '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + (noStorage ? 'Payment is due when the work is completed' : 'Payment is due today') + '; no surcharge for cash, check, debit card, Zelle, or ACH, and credit card payments are subject to a 3% fee. ' + pickupTermsSentence_(d, sn) + provisionalTerms + '</p>'
         : '<p class="terms">Totals include sales tax and related supply costs, per invoice(s). All quoted charges are calculated from Owner-provided information and are subject to Quest\'s review; Quest reserves the right to remeasure the unit and to make corrective charges or credits in the event of any measurement discrepancy, calculation error, or misapplied rate. ' + esc_(pricesValidSentence(sn.payBy)) + ' Credit card payments are subject to a 3% fee. Balances unpaid after ' + esc_(sn.payByShort || '') + ' increase by ' + RULES.latePct + '%, and a ' + RULES.monthlyPct + '% monthly service charge (min. $' + RULES.monthlyMin + ') applies beginning ' + esc_(sn.lateStart || '') + '. ' + pickupTermsSentence_(d, sn) + '</p>';

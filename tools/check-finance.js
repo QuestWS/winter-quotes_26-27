@@ -313,11 +313,13 @@ console.log('=== invoice emails and the late fee warning ===');
   hasnt(B.customerEmailHtml_(Object.assign({}, base, { financeUrl: url, paidInFull: true, balance: 0 })),
     'Pay over time with Synchrony', 'never on a paid-in-full invoice');
   hasnt(B.customerEmailHtml_(base), 'Pay over time with Synchrony', 'and not when the caller has no link');
-  /* Every caller passes the same rule — the three builders of invoice email. */
+  /* Every caller passes the same rule — the two builders of invoice email
+     (customerEmailFor_, which the console preview and every send share, and
+     the 10-day reminder). The preview used to be a third, hand-built copy. */
   const calls = gasSrc.split('customerEmailHtml_({').length - 1;
   const passing = (gasSrc.match(/customerEmailHtml_\(\{[\s\S]{0,1200}?financeUrl: [^\n]*financeOfferUrl_\(/g) || []).length;
   const reminder = /finUrl = pdRow \? financeOfferUrl_\([\s\S]{0,400}?customerEmailHtml_\(\{[\s\S]{0,1200}?financeUrl: finUrl/.test(gasSrc);
-  eq([calls, passing, reminder], [3, 2, true],
+  eq([calls, passing, reminder], [2, 1, true],
     're-send and every sent quote/invoice/receipt pass financeOfferUrl_; the 10-day reminder passes it too, guarded');
 
   const lw = B.buildEmailFor_(owed, 'latewarn', '', '');

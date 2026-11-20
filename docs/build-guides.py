@@ -557,7 +557,10 @@ def doc2():
          ['Dimensions updated', 'Explains a re-measure, storage move or motor correction, and '
           'attaches the rebuilt quote or invoice. The wording follows what actually changed.'],
          ['Late fee warning', 'Warns before a fee is applied. You write the wording.'],
-         ['Re-send invoice', 'Sends the current quote or invoice again.'],
+         ['Send invoice', 'Sends the current quote or invoice, with no "we\'ve updated" wording. '
+          'Use it to send a bill or a reminder of what is owed.'],
+         ['Send updated invoice', 'Sends it as an update — subject starts "Updated:" and the email says '
+          'the quote changed. Use it after a discount, line edit or other change.'],
          ['You\'re up next', 'Pick the direction first — <b>haul-out / pick-up</b> in the autumn '
           'or <b>relaunch / return</b> in the spring — then type when you expect to do the work. '
           'The two read differently on purpose: in autumn it is the last easy moment to add work, '

@@ -392,6 +392,16 @@ human**: the 10-day reminder and the lead follow-up.
   about the monthly charge instead — it never offers to waive a fee already
   applied. The spreadsheet-menu "Send late-fee warning" sends this same
   email (`menuSendKind_`).
+- **Late sign-up — "due now", never "was due"** (Chris, Nov 2026: "in case
+  someone signs up late I don't want to send something and make them sound
+  already late if I just haven't reached out or they just inquired"). A
+  checkbox on the console's Customer emails card sets `manual.lateSignup`
+  (`adminLateSignup`, `adjust` permission). Past the pay-by date,
+  `balanceDueLabel({lateSignup})` then reads "Balance due now" — in every
+  invoice email, the 9am reminder, the notices, the firm quote, the PDF and
+  the quote page — and still asks for no deposit. Wording only: no money
+  moves and the status column is kept. The late fee warning ignores it on
+  purpose — that email is about lateness.
 - **Every balance owed carries a due date** (Chris, Nov 2026: "any reference
   to a balance owed needs a due date on it" — customers said they never got
   another bill after the deposit). `balanceDueLabel()` in the engine is the

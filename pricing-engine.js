@@ -334,8 +334,11 @@ function pricesValidSentence(payBy){
 /* Every balance owed says WHEN it is due (Chris, Nov 2026: "any reference to
    a balance owed needs a due date on it" — customers said they never got
    another bill). One wording for the page, the PDF and every email.
-   o: { noStorage, dueToday, payBy (long date), payByShort, now }. Once the
-   pay-by day is over it reads "was due", never a bare "Balance". */
+   o: { noStorage, dueToday, payBy (long date), payByShort, now, lateSignup }.
+   Once the pay-by day is over it reads "was due", never a bare "Balance" --
+   unless staff marked the quote a late sign-up (manual.lateSignup): someone
+   who only just inquired, or whom Quest had not reached yet, is not late, and
+   "was due" would tell them they were (Chris, Nov 2026). Then it is due now. */
 function balanceDueLabel(o){
   o = o || {};
   if (o.noStorage) return 'Balance due when the work is completed';
@@ -344,6 +347,7 @@ function balanceDueLabel(o){
   const pb = new Date(String(o.payBy || SEASON.payByDate));
   const t = o.now ? new Date(o.now).getTime() : Date.now();
   const past = !isNaN(pb.getTime()) && t >= new Date(pb.getFullYear(), pb.getMonth(), pb.getDate() + 1).getTime();
+  if (past && o.lateSignup) return 'Balance due now';
   return past ? 'Balance (was due ' + short + ')' : 'Balance due by ' + short;
 }
 

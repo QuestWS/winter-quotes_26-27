@@ -154,6 +154,15 @@ if (!N) {
   hasnt(late, C.depositEmail, 'past the pay-by date the email asks for no deposit');
   hasnt(late, 'Pay your deposit online', 'past the pay-by date the button says Pay online');
   has(late, 'was due Nov 15', 'past the pay-by date the balance says when it was due');
+  /* A late sign-up is not late: same email, "due now" (Chris, Nov 2026). */
+  const lateSu = B.customerEmailHtml_(Object.assign({}, emailOpts, { payByLong: 'November 15, 2020', payBy: 'Nov 15', lateSignup: true }));
+  hasnt(lateSu, 'was due', 'a late sign-up is never told the balance was due');
+  has(lateSu, 'Balance due now', 'a late sign-up is told it is due now');
+  hasnt(lateSu, C.depositEmail, 'and is still not asked for a deposit');
+  if (E.balanceDueLabel({ payBy: 'November 15, 2020', payByShort: 'Nov 15', lateSignup: true }) === 'Balance due now' &&
+      E.balanceDueLabel({ payBy: 'November 15, 2099', payByShort: 'Nov 15', lateSignup: true }) === 'Balance due by Nov 15')
+    ok('the engine label: due now once past, the normal date before');
+  else fail('the engine label ignores lateSignup');
   hasnt(mail, 'Deposit to lock in your spot', 'customer email has no lock-in deposit row');
 
   /* An operational notice that prints a balance is quoting an estimate too. */
